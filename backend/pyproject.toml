@@ -4,18 +4,19 @@ version = "0.1.0"
 description = "Local desktop workbench for visual anomaly detection"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "fastapi>=0.115",
-    "uvicorn[standard]>=0.32",
-    "pydantic>=2.9",
-    "pydantic-settings>=2.6",
+    "fastapi>=0.141",
+    "uvicorn[standard]>=0.52",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.14",
 ]
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.9.1",
-    "mypy>=1.13",
-    "pytest>=8.3",
-    "ruff>=0.8",
+    # httpx2, not httpx: starlette's TestClient deprecates the httpx 0.x backend.
+    "httpx2>=2.9",
+    "mypy>=2.3",
+    "pytest>=9.1",
+    "ruff>=0.16",
 ]
 
 [build-system]
