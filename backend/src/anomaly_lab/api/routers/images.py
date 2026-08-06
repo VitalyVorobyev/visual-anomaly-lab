@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import FileResponse
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
@@ -25,6 +25,7 @@ from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.media.cache import TIERS, ImageTier, ensure_cached, etag_for, render
 from anomaly_lab.media.decode import UnreadableImageError
 from anomaly_lab.media.prewarm import PrewarmParams
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/images", tags=["images"])
 
@@ -34,7 +35,7 @@ IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
 
 
 class PrewarmRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     dataset_id: int
     tiers: list[ImageTier] | None = Field(

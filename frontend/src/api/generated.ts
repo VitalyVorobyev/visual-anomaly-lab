@@ -438,7 +438,7 @@ export interface components {
         };
         /** CommitRequest */
         CommitRequest: {
-            manifest: components["schemas"]["Manifest"];
+            manifest: components["schemas"]["Manifest-Input"];
             /**
              * Dataset Id
              * @description Commit into this dataset explicitly. Omit to resolve by the manifest's root path, which is what makes re-importing a directory idempotent.
@@ -467,7 +467,7 @@ export interface components {
              * Missing Paths
              * @description Recorded images this manifest no longer mentions. Reported, not deleted.
              */
-            missing_paths?: string[];
+            missing_paths: string[];
         };
         /** CreateSplitRequest */
         CreateSplitRequest: {
@@ -481,7 +481,7 @@ export interface components {
              * @default 0
              */
             seed: number;
-            params?: components["schemas"]["SplitParams"];
+            params?: components["schemas"]["SplitParams-Input"];
         };
         /** DatasetDetail */
         DatasetDetail: {
@@ -492,25 +492,25 @@ export interface components {
             /** Root Path */
             root_path: string;
             /** Adapter */
-            adapter?: string | null;
+            adapter: string | null;
             /** Created At */
             created_at: string;
             /** Notes */
-            notes?: string | null;
+            notes: string | null;
             /** Samples */
             samples: number;
             /** Images */
             images: number;
             /** Label Counts */
-            label_counts?: {
+            label_counts: {
                 [key: string]: number;
             };
             /** Manifest Path */
-            manifest_path?: string | null;
+            manifest_path: string | null;
             /** Channels */
-            channels?: components["schemas"]["Channel"][];
+            channels: components["schemas"]["Channel"][];
             /** Group Keys */
-            group_keys?: string[];
+            group_keys: string[];
             /**
              * Splits
              * @default 0
@@ -526,17 +526,17 @@ export interface components {
             /** Root Path */
             root_path: string;
             /** Adapter */
-            adapter?: string | null;
+            adapter: string | null;
             /** Created At */
             created_at: string;
             /** Notes */
-            notes?: string | null;
+            notes: string | null;
             /** Samples */
             samples: number;
             /** Images */
             images: number;
             /** Label Counts */
-            label_counts?: {
+            label_counts: {
                 [key: string]: number;
             };
         };
@@ -578,9 +578,9 @@ export interface components {
             /** Id */
             id: number;
             /** Channel */
-            channel?: string | null;
+            channel: string | null;
             /** Channel Id */
-            channel_id?: number | null;
+            channel_id: number | null;
             /** Width */
             width: number;
             /** Height */
@@ -609,25 +609,25 @@ export interface components {
             /** Progress */
             progress: number;
             /** Message */
-            message?: string | null;
+            message: string | null;
             /** Experiment Id */
-            experiment_id?: number | null;
+            experiment_id: number | null;
             /** Started At */
-            started_at?: string | null;
+            started_at: string | null;
             /** Finished At */
-            finished_at?: string | null;
+            finished_at: string | null;
             /** Error */
-            error?: string | null;
+            error: string | null;
             /** Params */
-            params?: {
+            params: {
                 [key: string]: unknown;
             };
             /** Result */
-            result?: {
+            result: {
                 [key: string]: unknown;
             };
             /** Log Tail */
-            log_tail?: string[];
+            log_tail: string[];
         };
         /**
          * JobKind
@@ -651,15 +651,15 @@ export interface components {
             /** Progress */
             progress: number;
             /** Message */
-            message?: string | null;
+            message: string | null;
             /** Experiment Id */
-            experiment_id?: number | null;
+            experiment_id: number | null;
             /** Started At */
-            started_at?: string | null;
+            started_at: string | null;
             /** Finished At */
-            finished_at?: string | null;
+            finished_at: string | null;
             /** Error */
-            error?: string | null;
+            error: string | null;
         };
         /**
          * Label
@@ -680,7 +680,7 @@ export interface components {
          * Manifest
          * @description A complete import proposal. Nothing has been written when this is produced.
          */
-        Manifest: {
+        "Manifest-Input": {
             /**
              * Manifest Version
              * @default 1
@@ -701,15 +701,47 @@ export interface components {
             /** Channel Mapping */
             channel_mapping?: components["schemas"]["ChannelMapping"][];
             /** Samples */
-            samples?: components["schemas"]["ManifestSample"][];
+            samples?: components["schemas"]["ManifestSample-Input"][];
             /** Warnings */
-            warnings?: components["schemas"]["ManifestWarning"][];
-            stats?: components["schemas"]["ManifestStats"];
+            warnings?: components["schemas"]["ManifestWarning-Input"][];
+            stats?: components["schemas"]["ManifestStats-Input"];
             /** Scanned At */
             scanned_at?: string;
         };
+        /**
+         * Manifest
+         * @description A complete import proposal. Nothing has been written when this is produced.
+         */
+        "Manifest-Output": {
+            /**
+             * Manifest Version
+             * @default 1
+             */
+            manifest_version: number;
+            /** Adapter */
+            adapter: string;
+            /** Options */
+            options: {
+                [key: string]: unknown;
+            };
+            /** Dataset Name */
+            dataset_name: string;
+            /** Root Path */
+            root_path: string;
+            /** Channels */
+            channels: string[];
+            /** Channel Mapping */
+            channel_mapping: components["schemas"]["ChannelMapping"][];
+            /** Samples */
+            samples: components["schemas"]["ManifestSample-Output"][];
+            /** Warnings */
+            warnings: components["schemas"]["ManifestWarning-Output"][];
+            stats: components["schemas"]["ManifestStats-Output"];
+            /** Scanned At */
+            scanned_at: string;
+        };
         /** ManifestImage */
-        ManifestImage: {
+        "ManifestImage-Input": {
             /** Path */
             path: string;
             /** Channel */
@@ -725,8 +757,25 @@ export interface components {
             /** File Size */
             file_size: number;
         };
+        /** ManifestImage */
+        "ManifestImage-Output": {
+            /** Path */
+            path: string;
+            /** Channel */
+            channel: string | null;
+            /** Sha256 */
+            sha256: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Bit Depth */
+            bit_depth: number;
+            /** File Size */
+            file_size: number;
+        };
         /** ManifestSample */
-        ManifestSample: {
+        "ManifestSample-Input": {
             /** Group Key */
             group_key: string;
             /** External Id */
@@ -734,13 +783,55 @@ export interface components {
             /** @default unlabeled */
             label: components["schemas"]["Label"];
             /** Images */
-            images?: components["schemas"]["ManifestImage"][];
+            images?: components["schemas"]["ManifestImage-Input"][];
+        };
+        /** ManifestSample */
+        "ManifestSample-Output": {
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            /** @default unlabeled */
+            label: components["schemas"]["Label"];
+            /** Images */
+            images: components["schemas"]["ManifestImage-Output"][];
         };
         /**
          * ManifestStats
          * @description What the scan actually did, so the review screen can show its scope.
          */
-        ManifestStats: {
+        "ManifestStats-Input": {
+            /**
+             * Files Seen
+             * @default 0
+             */
+            files_seen: number;
+            /**
+             * Files Excluded
+             * @default 0
+             */
+            files_excluded: number;
+            /**
+             * Files Skipped
+             * @default 0
+             */
+            files_skipped: number;
+            /**
+             * Samples
+             * @default 0
+             */
+            samples: number;
+            /**
+             * Images
+             * @default 0
+             */
+            images: number;
+        };
+        /**
+         * ManifestStats
+         * @description What the scan actually did, so the review screen can show its scope.
+         */
+        "ManifestStats-Output": {
             /**
              * Files Seen
              * @default 0
@@ -768,12 +859,20 @@ export interface components {
             images: number;
         };
         /** ManifestWarning */
-        ManifestWarning: {
+        "ManifestWarning-Input": {
             code: components["schemas"]["WarningCode"];
             /** Message */
             message: string;
             /** Paths */
             paths?: string[];
+        };
+        /** ManifestWarning */
+        "ManifestWarning-Output": {
+            code: components["schemas"]["WarningCode"];
+            /** Message */
+            message: string;
+            /** Paths */
+            paths: string[];
         };
         /** PrewarmRequest */
         PrewarmRequest: {
@@ -794,7 +893,7 @@ export interface components {
             /** Offset */
             offset: number;
             /** Items */
-            items?: components["schemas"]["SampleSummary"][];
+            items: components["schemas"]["SampleSummary"][];
         };
         /** SampleSummary */
         SampleSummary: {
@@ -809,9 +908,9 @@ export interface components {
             label: components["schemas"]["Label"];
             label_source: components["schemas"]["LabelSource"];
             /** Notes */
-            notes?: string | null;
+            notes: string | null;
             /** Images */
-            images?: components["schemas"]["ImageSummary"][];
+            images: components["schemas"]["ImageSummary"][];
         };
         /** ScanRequest */
         ScanRequest: {
@@ -844,14 +943,45 @@ export interface components {
             /** Created At */
             created_at: string;
             /** Composition */
-            composition?: components["schemas"]["SubsetComposition"][];
-            params: components["schemas"]["SplitParams"];
+            composition: components["schemas"]["SubsetComposition"][];
+            params: components["schemas"]["SplitParams-Output"];
         };
         /**
          * SplitParams
          * @description How a split is drawn. Stored with the split so it can be rebuilt exactly.
          */
-        SplitParams: {
+        "SplitParams-Input": {
+            /** @default normal_only_train */
+            strategy: components["schemas"]["SplitStrategy"];
+            /**
+             * Train Normal Fraction
+             * @description Share of normal samples used for fitting. Defects never train.
+             * @default 0.6
+             */
+            train_normal_fraction: number;
+            /**
+             * Val Normal Fraction
+             * @description Share of normal samples held out for threshold selection.
+             * @default 0.2
+             */
+            val_normal_fraction: number;
+            /**
+             * Val Defect Fraction
+             * @description Share of defect samples in validation; the rest are reported on.
+             * @default 0.3
+             */
+            val_defect_fraction: number;
+            /**
+             * @description Where unlabelled samples go. They are excluded from every metric but must be scored to appear in the ranked lists. `null` leaves them out of the split.
+             * @default test
+             */
+            unlabeled_subset: components["schemas"]["Subset"] | null;
+        };
+        /**
+         * SplitParams
+         * @description How a split is drawn. Stored with the split so it can be rebuilt exactly.
+         */
+        "SplitParams-Output": {
             /** @default normal_only_train */
             strategy: components["schemas"]["SplitStrategy"];
             /**
@@ -1287,7 +1417,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Manifest"];
+                    "application/json": components["schemas"]["Manifest-Output"];
                 };
             };
             /** @description Validation Error */

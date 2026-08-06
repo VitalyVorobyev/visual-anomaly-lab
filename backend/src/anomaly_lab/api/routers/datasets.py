@@ -14,7 +14,7 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
@@ -24,6 +24,7 @@ from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.samples import SampleFilter
 from anomaly_lab.domain.entities import Channel, Dataset, Image, Label, LabelSource, Sample, Subset
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -38,7 +39,7 @@ class ImageSummary(BaseModel):
     document.
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     channel: str | None = None
@@ -51,7 +52,7 @@ class ImageSummary(BaseModel):
 
 
 class SampleSummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     dataset_id: int
@@ -64,7 +65,7 @@ class SampleSummary(BaseModel):
 
 
 class SamplePage(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     total: int
     limit: int
@@ -73,7 +74,7 @@ class SamplePage(BaseModel):
 
 
 class DatasetSummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     name: str
@@ -94,7 +95,7 @@ class DatasetDetail(DatasetSummary):
 
 
 class LabelUpdate(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     label: Label
 

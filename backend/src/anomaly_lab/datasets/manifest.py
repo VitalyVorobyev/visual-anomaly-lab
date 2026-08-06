@@ -20,9 +20,10 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.domain.entities import Label
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 # Bump when a change to these models is not backwards compatible. Readers check it before
 # trusting anything else in the file.
@@ -52,7 +53,7 @@ class WarningCode(StrEnum):
 
 
 class ManifestWarning(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     code: WarningCode
     message: str
@@ -67,7 +68,7 @@ class ChannelMapping(BaseModel):
     a code change (ADR-0006).
     """
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     source: str
     channel: str
@@ -76,7 +77,7 @@ class ChannelMapping(BaseModel):
 
 
 class ManifestImage(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     path: str
     channel: str | None = None
@@ -88,7 +89,7 @@ class ManifestImage(BaseModel):
 
 
 class ManifestSample(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     group_key: str
     external_id: str
@@ -99,7 +100,7 @@ class ManifestSample(BaseModel):
 class ManifestStats(BaseModel):
     """What the scan actually did, so the review screen can show its scope."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     files_seen: int = 0
     files_excluded: int = 0
@@ -111,7 +112,7 @@ class ManifestStats(BaseModel):
 class Manifest(BaseModel):
     """A complete import proposal. Nothing has been written when this is produced."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     manifest_version: int = MANIFEST_VERSION
     adapter: str

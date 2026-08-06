@@ -25,10 +25,11 @@ import sqlite3
 from collections import defaultdict
 from enum import StrEnum
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import Label, Sample, Subset
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 
 class SplitStrategy(StrEnum):
@@ -42,7 +43,7 @@ class SplitPlanError(Exception):
 class SplitParams(BaseModel):
     """How a split is drawn. Stored with the split so it can be rebuilt exactly."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     strategy: SplitStrategy = SplitStrategy.NORMAL_ONLY_TRAIN
     train_normal_fraction: float = Field(

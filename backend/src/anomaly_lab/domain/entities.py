@@ -19,7 +19,9 @@ import json
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, Field, field_validator
+
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 
 def _decode_json_object(value: object) -> object:
@@ -71,7 +73,7 @@ class Subset(StrEnum):
 class Job(BaseModel):
     """An asynchronous execution record (§6)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     kind: JobKind
@@ -96,7 +98,7 @@ class Job(BaseModel):
 class Dataset(BaseModel):
     """A named collection of samples rooted at a path on disk."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     name: str
@@ -110,7 +112,7 @@ class Dataset(BaseModel):
 class Channel(BaseModel):
     """One entry of a dataset's acquisition-channel dictionary."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     dataset_id: int
@@ -121,7 +123,7 @@ class Channel(BaseModel):
 class Sample(BaseModel):
     """One logical physical part, identified by `(dataset_id, group_key, external_id)`."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     dataset_id: int
@@ -135,7 +137,7 @@ class Sample(BaseModel):
 class Image(BaseModel):
     """One file on disk, referenced in place and never copied (ADR-0001)."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     sample_id: int
@@ -152,7 +154,7 @@ class Image(BaseModel):
 class Split(BaseModel):
     """A named, seeded partition of a dataset's samples. Immutable once created."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     dataset_id: int
@@ -171,7 +173,7 @@ class Split(BaseModel):
 class SplitAssignment(BaseModel):
     """Sample-level subset membership. There is deliberately no image-level equivalent."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     split_id: int
     sample_id: int

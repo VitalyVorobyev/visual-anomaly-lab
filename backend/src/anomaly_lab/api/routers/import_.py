@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
@@ -36,6 +36,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/import", tags=["import"])
 
@@ -43,7 +44,7 @@ router = APIRouter(prefix="/api/import", tags=["import"])
 class AdapterInfo(BaseModel):
     """One registered adapter, with the schema its options form is generated from."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     name: str
     summary: str
@@ -51,7 +52,7 @@ class AdapterInfo(BaseModel):
 
 
 class ScanRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     root_path: str
     dataset_name: str
@@ -60,7 +61,7 @@ class ScanRequest(BaseModel):
 
 
 class CommitRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     manifest: Manifest
     dataset_id: int | None = Field(
@@ -73,7 +74,7 @@ class CommitRequest(BaseModel):
 
 
 class CommitResponse(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     dataset_id: int
     dataset_created: bool
@@ -90,7 +91,7 @@ class CommitResponse(BaseModel):
 
 
 class VerifyRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     dataset_id: int
 

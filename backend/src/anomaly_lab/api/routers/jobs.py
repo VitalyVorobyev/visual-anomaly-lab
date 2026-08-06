@@ -15,13 +15,14 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.queue import END_EVENT, JobQueue
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/jobs", tags=["jobs"])
 ws_router = APIRouter(tags=["ws"])
@@ -33,7 +34,7 @@ LOG_TAIL_LINES = 200
 class JobSummary(BaseModel):
     """A job as the list view sees it."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     kind: JobKind

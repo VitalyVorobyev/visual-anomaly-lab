@@ -13,11 +13,9 @@
  * UI stays a pure HTTP/WebSocket client and the browser path remains first-class (§2).
  */
 
-declare global {
-  interface Window {
-    __ANOMALY_LAB__?: { apiBaseUrl?: string };
-  }
-}
+// The shape of the injected global is declared once, in `shell.ts`, alongside the other
+// capabilities the shell hands over.
+import "./shell";
 
 export const DEFAULT_API_BASE_URL = "http://127.0.0.1:8000";
 

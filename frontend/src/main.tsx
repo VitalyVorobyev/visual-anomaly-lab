@@ -4,9 +4,14 @@ import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
 import { App } from "./App";
+import { DatasetRoute } from "./routes/DatasetRoute";
+import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
 import { HealthRoute } from "./routes/HealthRoute";
+import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
+import { SampleRoute } from "./routes/SampleRoute";
+import { SplitsRoute } from "./routes/SplitsRoute";
 import "./styles.css";
 
 const queryClient = new QueryClient();
@@ -27,7 +32,13 @@ createRoot(container).render(
       <HashRouter>
         <Routes>
           <Route element={<App />}>
-            <Route index element={<HealthRoute />} />
+            <Route index element={<DatasetsRoute />} />
+            <Route path="import" element={<ImportRoute />} />
+            <Route path="datasets/:datasetId" element={<DatasetRoute />} />
+            <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
+            <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
+            <Route path="health" element={<HealthRoute />} />
+            {/* Kept as a debugging aid for the WebSocket path, off the navigation. */}
             <Route path="echo" element={<EchoRoute />} />
             {/* Never fail to an empty document again. */}
             <Route path="*" element={<NotFoundRoute />} />

@@ -10,7 +10,7 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.splitting import SplitParams, SplitPlanError, plan_split
@@ -18,6 +18,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.domain.entities import Split, Subset
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/splits", tags=["splits"])
 
@@ -25,7 +26,7 @@ router = APIRouter(prefix="/api/splits", tags=["splits"])
 class SubsetComposition(BaseModel):
     """What a subset actually contains, so a split can report itself honestly."""
 
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     subset: Subset
     total: int
@@ -35,7 +36,7 @@ class SubsetComposition(BaseModel):
 
 
 class SplitSummary(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     id: int
     dataset_id: int
@@ -51,7 +52,7 @@ class SplitDetail(SplitSummary):
 
 
 class CreateSplitRequest(BaseModel):
-    model_config = ConfigDict(frozen=True)
+    model_config = API_MODEL_CONFIG
 
     dataset_id: int
     name: str
