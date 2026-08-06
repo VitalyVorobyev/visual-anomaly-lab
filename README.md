@@ -30,7 +30,7 @@ The product is one loop, end to end:
 
 | Stage | Capability |
 | --- | --- |
-| **Import** | Point the app at a directory; review a proposed manifest (detected channels, grouping, warnings) before anything is written; commit it into the catalog. |
+| **Import** | Point the app at a directory; review a proposed manifest (detected channels, grouping, warnings) before anything is written; commit it into the catalog. Re-importing the same directory updates it rather than duplicating it. |
 | **Label & split** | Mark logical samples normal / defect / unlabeled; create seeded, sample-level train/val/test splits so no two views of the same object straddle a subset. |
 | **Train** | Create an experiment (dataset + split + method + config), run it as an async job, and watch live progress and streaming logs. |
 | **Infer** | Score samples with a trained experiment, producing per-image scores and anomaly maps. |
@@ -41,16 +41,18 @@ Throughout: **grouped multi-view samples** (one physical object, many images, on
 overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
 experiment comes back with identical configuration, metrics, results, and logs.
 
-> ### Project status — walking skeleton
+> ### Project status — import and browse
 >
-> **M0** (repository safety guards + foundation documentation) and **M1** (walking skeleton) are complete:
-> the desktop app opens, spawns its Python sidecar, and displays live backend health over HTTP, with a
-> WebSocket echo proving the streaming path. The same UI runs in a plain browser against a standalone
-> backend — see [Getting started](#getting-started).
+> **M0**–**M2** are complete. The application imports a directory of images into a catalog of grouped
+> samples, browses them in a virtualized thumbnail grid, opens one sample across all of its channels with
+> synchronized zoom and pan, and creates seeded, sample-level train/val/test splits. Import is two-phase —
+> a scan proposes a reviewable manifest, and nothing is written until you commit it — and re-importing the
+> same directory is idempotent. Long operations run as jobs with live progress, streaming logs and working
+> cancellation.
 >
-> **There are no features yet.** Importing a dataset starts at **M2**; training and evaluating a method
-> starts at **M3**. Everything under [Methods](#methods) below describes the designed system, not shipped
-> software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
+> **Training and evaluation start at M3.** The [Methods](#methods) table below describes the designed
+> system, not shipped software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and
+> honest sizing.
 
 ## Methods
 
@@ -111,7 +113,7 @@ no pixel masks, so evaluation is image-level, with sample-level ROC-AUC as the h
 | [`docs/system-design.md`](docs/system-design.md) | Architecture, domain model, canonical terminology, API surface, job and evaluation protocols |
 | [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M7, scope, exit criteria, sizing |
 | [`docs/backlog.md`](docs/backlog.md) | Task-level breakdown by epic |
-| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0011 — what was decided, why, and what it costs |
+| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0014 — what was decided, why, and what it costs |
 
 ## Getting started
 
@@ -166,6 +168,13 @@ uv run --directory backend ruff check .   # lint
 uv run --directory backend mypy           # types, strict
 cd frontend && bun run test && bun run typecheck
 ./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
+```
+
+A handful of backend tests assert the exact composition of the private showcase tree. They are skipped
+unless you point them at it, and CI never does:
+
+```bash
+ANOMALY_LAB_SHOWCASE_ROOT=/path/to/tree uv run --directory backend pytest -k showcase
 ```
 
 After changing any API route or response model, regenerate the typed client and commit the result — the

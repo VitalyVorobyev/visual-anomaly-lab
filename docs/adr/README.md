@@ -22,6 +22,8 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0010](0010-classical-circular-part-baseline-algorithm.md) | Classical circular-part baseline algorithm | Accepted |
 | [0011](0011-evaluation-protocol-for-grouped-samples.md) | Evaluation protocol for grouped samples | Accepted |
 | [0012](0012-frontend-stack-and-generated-api-client.md) | Frontend stack and a generated API client | Accepted |
+| [0013](0013-import-rescan-and-commit-semantics.md) | Import re-scan and commit semantics | Accepted |
+| [0014](0014-shell-capabilities-are-injected-not-imported.md) | Shell capabilities are injected, not imported | Accepted |
 
 ## Conventions
 
