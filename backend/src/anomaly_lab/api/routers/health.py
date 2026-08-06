@@ -28,14 +28,15 @@ class HealthResponse(BaseModel):
     started_at: datetime
 
 
+# Declared `def`, not `async def`: it opens SQLite, and a blocking driver call inside a
+# coroutine would stall the event loop. FastAPI runs synchronous handlers in a threadpool
+# instead. Every DB-touching handler in this application follows the same rule.
+#
+# Docstrings on route functions become the endpoint description in the OpenAPI schema, and
+# from there the generated TypeScript — so they describe the contract, not the implementation.
 @router.get("/health", summary="Backend liveness, version and database state")
 def read_health(request: Request) -> HealthResponse:
-    """Defined as `def`, not `async def`.
-
-    It opens SQLite, and a blocking driver call inside a coroutine would stall the event
-    loop; FastAPI runs synchronous handlers in a threadpool instead. Every DB-touching
-    handler in this application follows the same rule.
-    """
+    """Report the backend's version, its schema version, and where its data lives."""
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         schema_version = current_schema_version(conn)
