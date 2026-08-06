@@ -85,13 +85,13 @@ def write_image(
     image = Image.new(mode, size, fill)
 
     if colour is None:
-        # Stamp a digest of the path into the first row. Keyed on the directory as well
-        # as the name, because the same stem in sibling channel directories is the normal
-        # case and those must not come out byte-identical. Four bytes rather than one
-        # shade: a single byte gives 256 possible images, and fixtures collide by
-        # accident long before that.
-        identity = f"{path.parent.name}/{path.name}".encode()
-        for offset, byte in enumerate(zlib.crc32(identity).to_bytes(4, "big")):
+        # Stamp a digest of the whole path into the first row. Real trees repeat both the
+        # stem and its directory name across the label and channel dimensions — `1.png`
+        # lives under `defect/Dome` *and* `no-defect/Dome` — so anything less than the
+        # full path produces byte-identical fixtures and spurious duplicate-hash
+        # warnings. Four bytes rather than one shade, because 256 possible images collide
+        # by accident almost immediately.
+        for offset, byte in enumerate(zlib.crc32(str(path).encode()).to_bytes(4, "big")):
             image.putpixel((offset, 0), byte if mode == "L" else (byte, byte, byte))
 
     image.save(path)

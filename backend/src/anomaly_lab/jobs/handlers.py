@@ -18,10 +18,25 @@ class UnknownJobKindError(Exception):
     """No handler is registered for this kind — a bug, not a user error."""
 
 
-# Populated as each kind's handler lands. The queue, protocol, cancellation and event
-# fan-out around them are complete and kind-agnostic; `train` and `infer` arrive with the
-# model plugins in M3 and will need nothing here but another entry.
-LOADERS: dict[JobKind, Callable[[], JobHandler]] = {}
+def _import_scan() -> JobHandler:
+    from anomaly_lab.datasets.scan import run_scan_job
+
+    return run_scan_job
+
+
+def _verify() -> JobHandler:
+    from anomaly_lab.datasets.verify import run_verify_job
+
+    return run_verify_job
+
+
+# `train` and `infer` arrive with the model plugins in M3. The queue, protocol,
+# cancellation and event fan-out are already kind-agnostic, so each will need nothing
+# here but another entry.
+LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
+    JobKind.IMPORT: _import_scan,
+    JobKind.VERIFY: _verify,
+}
 
 
 def get_handler(kind: JobKind) -> JobHandler:

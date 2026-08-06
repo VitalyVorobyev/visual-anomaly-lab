@@ -44,7 +44,9 @@ def _configure_logging() -> None:
     )
 
 
-def _install_cancel_handler(flag: threading.Event) -> None:
+def install_cancel_handler(flag: threading.Event) -> None:
+    """Turn SIGTERM and SIGINT into a cooperative stop request."""
+
     def _handle(_signum: int, _frame: FrameType | None) -> None:
         flag.set()
 
@@ -61,7 +63,7 @@ def run_job(job_id: int, settings: Settings) -> int:
         return EXIT_FAILED
 
     cancel_flag = threading.Event()
-    _install_cancel_handler(cancel_flag)
+    install_cancel_handler(cancel_flag)
 
     context = JobContext(
         job_id=job.id,

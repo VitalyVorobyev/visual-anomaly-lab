@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from anomaly_lab import __version__
-from anomaly_lab.api.routers import health, jobs, ws
+from anomaly_lab.api.routers import health, import_, jobs, ws
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_migrations_to
@@ -87,6 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(import_.router)
     app.include_router(jobs.router)
     app.include_router(jobs.ws_router)
     app.include_router(ws.router)

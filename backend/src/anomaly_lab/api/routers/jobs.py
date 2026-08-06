@@ -54,7 +54,7 @@ class JobDetail(JobSummary):
     log_tail: list[str] = Field(default_factory=list)
 
 
-def _summary(job: Job) -> JobSummary:
+def summary_of(job: Job) -> JobSummary:
     return JobSummary(
         id=job.id,
         kind=job.kind,
@@ -103,7 +103,7 @@ def list_jobs(
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         found = jobs_repo.list_jobs(conn, kind=kind, status=status, limit=limit)
-    return [_summary(job) for job in found]
+    return [summary_of(job) for job in found]
 
 
 @router.get("/{job_id}", summary="Current state of one job, with a log tail")
@@ -111,7 +111,7 @@ def get_job(request: Request, job_id: int) -> JobDetail:
     """Snapshot a job. Take this before subscribing to its event stream."""
     job = _load_job(request, job_id)
     return JobDetail(
-        **_summary(job).model_dump(),
+        **summary_of(job).model_dump(),
         params=dict(job.params),
         result=dict(job.result),
         log_tail=_log_tail(job.log_path),
@@ -135,7 +135,7 @@ def cancel_job(request: Request, job_id: int) -> JobSummary:
 
     queue: JobQueue = request.app.state.job_queue
     queue.request_cancel(job_id)
-    return _summary(_load_job(request, job_id))
+    return summary_of(_load_job(request, job_id))
 
 
 @ws_router.websocket("/ws/jobs/{job_id}")

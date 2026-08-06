@@ -71,6 +71,7 @@ class JobQueue:
         self._current_id: int | None = None
         self._current_process: asyncio.subprocess.Process | None = None
         self._cancelled: set[int] = set()
+        self._escalations: set[asyncio.Task[None]] = set()
 
     # -- lifecycle ---------------------------------------------------------------
 
@@ -193,7 +194,6 @@ class JobQueue:
 
         log_path = self.log_path_for(job)
         log_path.parent.mkdir(parents=True, exist_ok=True)
-        await asyncio.to_thread(self._mark_running, job.id, str(log_path))
 
         state = _JobRunState()
         try:
@@ -205,6 +205,13 @@ class JobQueue:
 
         self._current_id = job.id
         self._current_process = process
+        # Marked running only once a process exists. Doing it before the spawn would make
+        # `running` mean "about to start", and a cancel arriving in that window would find
+        # nothing to signal, report the job cancelled, and leave the worker running.
+        await asyncio.to_thread(self._mark_running, job.id, str(log_path))
+        if job.id in self._cancelled:
+            await self._terminate(job.id)
+
         try:
             stdout, stderr = process.stdout, process.stderr
             if stdout is None or stderr is None:  # pragma: no cover - PIPE was requested
@@ -365,11 +372,22 @@ class JobQueue:
     # -- cancellation ------------------------------------------------------------
 
     async def _terminate(self, job_id: int) -> None:
+        """Ask the worker to stop, and arrange for it to be made to.
+
+        Returns as soon as the signal is sent; the grace period is timed separately so
+        that this never blocks the loop that is draining the worker's output.
+        """
         process = self._current_process
         if process is None or self._current_id != job_id or process.returncode is not None:
             return
 
         self._signal_group(process, signal.SIGTERM)
+        escalation = asyncio.create_task(self._escalate(job_id, process))
+        # Held so the task cannot be garbage collected mid-flight.
+        self._escalations.add(escalation)
+        escalation.add_done_callback(self._escalations.discard)
+
+    async def _escalate(self, job_id: int, process: asyncio.subprocess.Process) -> None:
         await asyncio.sleep(CANCEL_GRACE_SECONDS)
 
         still_running = (
