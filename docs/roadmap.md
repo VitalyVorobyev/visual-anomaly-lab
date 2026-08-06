@@ -39,21 +39,28 @@
 
 **Scope**
 
-- `uv`-managed Python backend package; FastAPI app with `GET /health` returning version and database status (**ADR-0003**).
-- SQLite migration runner (forward-only, versioned SQL files) and schema v1 covering every entity in the domain model (**ADR-0004**, **ADR-0005**).
-- Vite + React + TypeScript frontend scaffold: routing, typed API client, application shell.
-- Tauri desktop shell that spawns the sidecar as a child process, hands the chosen port to the frontend, and tears the process down on window close — including the crash and force-quit paths.
+- `uv`-managed Python backend package on Python 3.12; FastAPI app with `GET /api/health` returning version and database status (**ADR-0003**).
+- SQLite migration runner (forward-only, versioned SQL files, `PRAGMA user_version`) and schema v1 covering every entity in the domain model (**ADR-0004**, **ADR-0005**).
+- Vite + React + TypeScript frontend scaffold: routing, application shell, and an API client generated from the backend's OpenAPI schema (**ADR-0012**).
+- Tauri desktop shell that spawns the sidecar as a child process, reads the chosen port back from it, and tears the process down on window close — including the crash and force-quit paths.
 - WebSocket echo endpoint proven end-to-end from the React app.
 - Dev scripts: run backend alone, run frontend alone against it, run the full desktop app.
+- Guardrails: `ruff`, `mypy --strict`, `pytest`, `vitest`, a versioned pre-commit hook running the private-data guard, and CI.
 
 **Exit criteria**
 
-- [ ] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
-- [ ] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
-- [ ] Closing the app leaves no orphaned Python process (verified with `ps`).
+- [x] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
+- [x] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
+- [x] Closing the app leaves no orphaned Python process (verified with `ps`).
 - [ ] A fresh clone reaches a running app using only the documented dev scripts.
 
 **Size:** days. Mostly scaffolding; the only genuinely fiddly part is sidecar lifecycle and port handoff.
+
+**What the fiddly part actually turned out to be.** Three things, all worth knowing before M7 touches packaging:
+`uv run` sits between the shell and the interpreter, so the sidecar's orphan watchdog must probe the *recorded*
+parent pid rather than compare `os.getppid()`; macOS keeps an application alive after its last window closes,
+which would strand a sidecar; and a path-based router renders a blank page when the WebView loads
+`…/index.html`, which is why routing is fragment-based (**ADR-0012**).
 
 ---
 

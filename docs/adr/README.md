@@ -21,6 +21,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Job execution — subprocess per job, single FIFO queue | Accepted |
 | [0010](0010-classical-circular-part-baseline-algorithm.md) | Classical circular-part baseline algorithm | Accepted |
 | [0011](0011-evaluation-protocol-for-grouped-samples.md) | Evaluation protocol for grouped samples | Accepted |
+| [0012](0012-frontend-stack-and-generated-api-client.md) | Frontend stack and a generated API client | Accepted |
 
 ## Conventions
 

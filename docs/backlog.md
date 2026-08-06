@@ -23,12 +23,13 @@ Working task list for **visual-anomaly-lab**, organised as epics keyed to the mi
 
 ## E2 — Walking skeleton (M1)
 
-- [ ] Backend scaffold: `uv` project, package layout, FastAPI app, `GET /health` (version, schema version, DB path), settings module, ruff + pytest wired (S) — **ADR-0003**
-- [ ] SQLite migration runner (forward-only numbered SQL files, `schema_version` table, applied at startup) + schema v1 covering **all** ADR-0005 entities: Dataset, Channel, Sample, Image, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet — with indices and foreign keys (M) — **ADR-0004**, **ADR-0005**
-- [ ] Frontend scaffold: Vite + React + TypeScript, router, app shell/layout, typed API client with a single configurable base URL (S)
-- [ ] Tauri shell: spawn the Python sidecar, pick a free port, hand it to the frontend, terminate the child on window close *and* on crash; verify no orphan process survives (M) — **ADR-0003**
-- [ ] WebSocket echo endpoint + frontend hook, proven end-to-end in both the desktop app and a plain browser (S)
-- [ ] Dev scripts (backend only, frontend only, full desktop) + a README dev section documenting the browser-against-`uv run` workflow (S)
+- [x] Backend scaffold: `uv` project on Python 3.12, package layout, FastAPI app, `GET /api/health` (version, schema version, DB path), settings module, ruff + mypy + pytest wired (S) — **ADR-0003**
+- [x] SQLite migration runner (forward-only numbered SQL files, `PRAGMA user_version`, applied at startup) + schema v1 covering **all** ADR-0005 entities: Dataset, Channel, Sample, Image, Mask, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet — with indices and foreign keys (M) — **ADR-0004**, **ADR-0005**
+- [x] Frontend scaffold: Vite + React + TypeScript, router, app shell/layout, API client generated from the OpenAPI schema with a single configurable base URL (S) — **ADR-0012**
+- [x] Tauri shell: spawn the Python sidecar, read the port it bound back from it, hand it to the frontend, terminate the child on window close *and* on crash; verify no orphan process survives (M) — **ADR-0003**
+- [x] WebSocket echo endpoint + frontend hook, proven end-to-end in both the desktop app and a plain browser (S)
+- [x] Dev scripts (backend only, frontend only, full desktop) + a README dev section documenting the browser-against-`uv run` workflow (S)
+- [x] Guardrails: versioned `.githooks/pre-commit` running the private-data guard (closing ADR-0001's "advisory unless invoked" gap), and CI running the guard, ruff, mypy, pytest, tsc, vitest, the frontend build, `cargo fmt`/`clippy`, and an API-contract check that regenerates the TypeScript client and fails on a diff (S)
 
 ## E3 — Dataset & import (M2)
 

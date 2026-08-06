@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Refuse any commit that would put private data into the repository (ADR-0001).
+#
+# Enable with scripts/setup-hooks.sh. The guard inspects the index, which is exactly
+# what is about to be committed.
+set -euo pipefail
+
+if ! "$(git rev-parse --show-toplevel)/scripts/check-repo-safety.sh"; then
+    echo >&2
+    echo "Commit aborted: the repo safety check failed." >&2
+    echo "Unstage the offending paths. Never use 'git add -A' in this repository." >&2
+    exit 1
+fi

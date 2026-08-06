@@ -60,7 +60,7 @@ user, one machine, one job at a time.
 flowchart TB
     subgraph desktop["Tauri desktop app"]
         UI["React + TypeScript UI<br/>Vite build, runs in WebView"]
-        SHELL["Tauri shell (Rust)<br/>spawns sidecar, port handoff,<br/>teardown on exit"]
+        SHELL["Tauri shell (Rust)<br/>spawns sidecar, reads port from child,<br/>teardown on exit"]
     end
 
     subgraph backend["FastAPI sidecar — 127.0.0.1, no auth"]
@@ -83,7 +83,8 @@ flowchart TB
 
     UI -->|"HTTP + WebSocket"| API
     UI -.->|"WebSocket"| WS
-    SHELL -->|"spawn / health-check / SIGTERM"| API
+    SHELL -->|"spawn / SIGTERM"| API
+    API -.->|"ready line on stdout: port"| SHELL
     SHELL -->|"injects base URL"| UI
 
     API --> QUEUE
@@ -113,12 +114,27 @@ by the shell, falling back to a dev default (`http://127.0.0.1:8000`) so the sam
 
 **Tauri shell (Rust).** Thin desktop wrapper. Its entire job is process lifecycle (ADR-0003):
 
-- resolve or allocate a free localhost port, then **spawn the FastAPI sidecar** as a child process with that
-  port and the data directory in its environment;
-- poll `GET /api/health` until the sidecar is ready, then load the WebView and **hand off the base URL**;
-- **tear down on exit** — send `SIGTERM` to the sidecar, wait a grace period, then `SIGKILL`; the sidecar in
-  turn terminates any running job worker. The child is also killed if the shell dies unexpectedly, so no
-  orphaned Python process survives an app crash.
+- **spawn the FastAPI sidecar** as a child process with the data directory in its environment and
+  `ANOMALY_LAB_PORT=0`, then **read the port back from the child**. The sidecar binds the socket itself and
+  announces `{"ev":"ready","port":N,"pid":N}` as one JSON line on stdout, in the ADR-0009 event envelope.
+  The port is chosen by the OS and never released between choosing and serving, so there is no
+  bind → close → re-bind race. (The shell allocating a port and passing it down would have one; ADR-0003
+  specifies child-to-shell handoff for this reason.)
+- **build the window only once the sidecar is ready**, injecting the base URL as `window.__ANOMALY_LAB__`
+  before the page loads. The UI therefore never renders against a URL that does not exist yet and needs no
+  retry-on-boot logic (ADR-0012);
+- **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the sidecar
+  in turn terminates any running job worker. Closing the last window quits the application, since macOS
+  would otherwise keep it alive with a sidecar serving a window that no longer exists.
+
+Because stdout carries structured events, the sidecar's own logging goes to **stderr**, and the shell drains
+**both** pipes for the life of the process — a child whose pipe fills up blocks on write.
+
+macOS has no `PDEATHSIG` equivalent, so none of the above runs when the shell is force-quit or crashes. The
+sidecar therefore **also watches its parent independently**: given `ANOMALY_LAB_PARENT_PID` it probes that pid
+with signal 0 and exits when it disappears. It probes the recorded pid rather than comparing `os.getppid()`,
+because `uv run` sits between the shell and the interpreter — the immediate parent is not the shell. This
+watchdog, not the exit handler, is what guarantees no orphaned Python process survives an app crash.
 
 The shell additionally provides native file/folder pickers for the import flow, since a browser cannot return
 a server-visible absolute directory path.
@@ -155,7 +171,13 @@ uv run --directory backend uvicorn anomaly_lab.api.app:create_app --factory --re
 
 and the React app runs under `vite dev` against it. Every feature is exercisable from a plain browser, which
 keeps the Python and TypeScript work independently testable and makes the Rust layer optional until packaging.
-CORS is permitted for `http://localhost:*` origins in dev mode only.
+
+CORS is permitted in dev mode only, and covers `http://localhost:*` and `http://127.0.0.1:*` **plus
+`tauri://localhost` and `http://tauri.localhost`** — the Tauri v2 WebView origins. They are not localhost
+*ports*, so a rule written only for the browser lets the browser path work while the desktop path fails.
+
+Convenience scripts wrap the three ways to run the system: `scripts/dev-backend.sh` (backend alone, the
+command above), `scripts/dev-frontend.sh` (Vite against it), and `scripts/dev-app.sh` (the full desktop app).
 
 ---
 
@@ -312,10 +334,12 @@ unambiguously attributable to one immutable configuration, which is the whole po
 
 **`Job`** — `id`, `kind ∈ {import, train, infer}`, `experiment_id` (nullable — import jobs have none),
 `status ∈ {queued, running, succeeded, failed, cancelled}`, `progress` (0–1), `message`, `log_path`,
-`started_at`, `finished_at`, `error`.
+`params` (JSON), `started_at`, `finished_at`, `error`.
 The async execution record (§6). On backend startup, any job still marked `running` is a leftover from a crash
 or a hard kill and is transitioned to `failed` with an explanatory error — the process that owned it is
 provably gone, so the UI never shows a phantom running job.
+`params` carries the per-kind payload: `experiment_id` identifies what a train or infer job acts on, but an
+import job has no experiment and still needs its dataset, adapter and manifest path recorded.
 
 **`ImageResult`** — `(experiment_id, image_id)`, `score`, `map_path` (nullable), `inference_ms`.
 Per-image model output. `map_path` references a float32 `.npy` under the experiment's `maps/` directory;
@@ -469,8 +493,10 @@ in a log file, and needs no shared-memory or socket setup between the two proces
 The parent does three things with each line:
 
 1. **persists** `progress` / `message` / terminal state to the `Job` row (so a REST poll is always accurate);
-2. **tees the full stream** to `data/artifacts/exp-<id>/logs/<job>.log` — including any non-JSON output such as
-   third-party library chatter or a native crash message, which is exactly what is needed for post-mortem;
+2. **tees the full stream** to the job's `log_path` — including any non-JSON output such as third-party
+   library chatter or a native crash message, which is exactly what is needed for post-mortem. A job bound to
+   an experiment logs to `data/artifacts/exp-<id>/logs/<job>.log`; one that is not — an import job — logs to
+   `data/jobs/logs/<job_id>.log`;
 3. **fans out** to subscribers of `WS /ws/jobs/{id}`.
 
 ### Frontend reconnection

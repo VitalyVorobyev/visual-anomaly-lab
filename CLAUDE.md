@@ -45,13 +45,19 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **11 accepted ADRs (0001–0011)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **12 accepted ADRs (0001–0012)**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 
 ## Current status and working discipline
 
-- **M0 is done** (repo safety + foundation docs). **No application code exists yet**; code starts at M1.
+- **M0 and M1 are done** (repo safety + foundation docs; walking skeleton). The desktop app runs, spawns
+  its sidecar and shows live health; the browser path works against a standalone backend. **There are no
+  features yet** — M2 (import + browse) is the current milestone.
+- **Schema v1 may still be edited in place** (`001_initial.sql`, delete the dev database and re-apply)
+  until the first real import lands in M2. After that, migrations are strictly forward-only (ADR-0004).
+- **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
+  fails on a stale file.
 - **Follow the milestone order** in the roadmap: M1 walking skeleton → M2 import + browse → M3 vertical
   slice on the classical baseline → M4 EfficientAD → M5 PatchCore + comparison → M6 custom EfficientAD →
   M7 polish + full README. Do not build M4 machinery while M2 is unfinished.

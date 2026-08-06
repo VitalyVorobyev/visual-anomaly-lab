@@ -41,12 +41,16 @@ Throughout: **grouped multi-view samples** (one physical object, many images, on
 overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
 experiment comes back with identical configuration, metrics, results, and logs.
 
-> ### Project status — pre-code
+> ### Project status — walking skeleton
 >
-> **Nothing here runs yet.** Milestone **M0** (repository safety guards + foundation documentation:
-> system design, roadmap, backlog, ADRs 0001–0011) is complete. Application code starts at **M1**.
-> The capabilities above describe the designed system, not shipped software. See
-> [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
+> **M0** (repository safety guards + foundation documentation) and **M1** (walking skeleton) are complete:
+> the desktop app opens, spawns its Python sidecar, and displays live backend health over HTTP, with a
+> WebSocket echo proving the streaming path. The same UI runs in a plain browser against a standalone
+> backend — see [Getting started](#getting-started).
+>
+> **There are no features yet.** Importing a dataset starts at **M2**; training and evaluating a method
+> starts at **M3**. Everything under [Methods](#methods) below describes the designed system, not shipped
+> software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
 
 ## Methods
 
@@ -111,10 +115,62 @@ no pixel masks, so evaluation is image-level, with sample-level ROC-AUC as the h
 
 ## Getting started
 
-**There is nothing to run yet.** The repository currently contains documentation and repository-safety
-scripts only; no backend, frontend, or desktop shell code exists.
+### Prerequisites
 
-Development setup — installing `uv`, `bun`, and the Rust toolchain, running the backend standalone,
-running the UI in a browser against it, and launching the full desktop app — arrives with **M1 (walking
-skeleton)** and will be documented here then. Until then, [`docs/roadmap.md`](docs/roadmap.md) is the
-best description of what is coming and in what order.
+[`uv`](https://docs.astral.sh/uv/) for Python, [`bun`](https://bun.sh/) for the frontend, and a Rust
+toolchain for the desktop shell. On macOS the Xcode command line tools are also needed
+(`xcode-select --install`). Nothing else — `uv` fetches its own Python 3.12.
+
+### First run
+
+```bash
+git clone git@github.com:VitalyVorobyev/visual-anomaly-lab.git
+cd visual-anomaly-lab
+
+./scripts/setup-hooks.sh          # private-data guard runs on every commit
+uv sync --directory backend
+cd frontend && bun install && cd ..
+
+./scripts/dev-app.sh              # the full desktop app
+```
+
+The window opens once the sidecar reports ready and shows its version, schema version and database path.
+
+### The browser workflow
+
+The backend has no dependency on the desktop shell, and **the browser path is first class** — it is how
+debugging actually happens. In two terminals:
+
+```bash
+./scripts/dev-backend.sh          # FastAPI on :8000, with reload
+./scripts/dev-frontend.sh         # Vite on :5173
+```
+
+Then open <http://localhost:5173>. With no shell to inject a base URL, the app falls back to
+`http://127.0.0.1:8000`. The API is equally usable from `curl` or pytest; interactive docs are at
+<http://127.0.0.1:8000/docs>.
+
+### How the two processes fit together
+
+The shell starts the sidecar with `ANOMALY_LAB_PORT=0`, so the OS picks a free port and the **sidecar
+announces it back** on stdout; the shell then injects that URL into the page. On exit it signals the
+child's process group, and the sidecar independently exits if its parent disappears — so a crash or a
+force-quit leaves no stray Python process. Data lives in a gitignored `data/`, relocatable with
+`ANOMALY_LAB_DATA_DIR`; deleting that directory resets the application.
+
+### Checks
+
+```bash
+uv run --directory backend pytest         # backend tests
+uv run --directory backend ruff check .   # lint
+uv run --directory backend mypy           # types, strict
+cd frontend && bun run test && bun run typecheck
+./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
+```
+
+After changing any API route or response model, regenerate the typed client and commit the result — the
+diff is the API contract changing:
+
+```bash
+./scripts/gen-api-types.sh
+```
