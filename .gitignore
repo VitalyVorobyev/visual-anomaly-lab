@@ -1,0 +1,58 @@
+# ── Private data: NEVER commit ─────────────────────────────
+privatedata/
+*.bmp
+*.BMP
+docs/initial-prompt.md
+
+# ── App-managed runtime state (DB, artifacts, thumbnails) ──
+data/
+results/
+
+# ── SQLite ─────────────────────────────────────────────────
+*.sqlite3
+*.sqlite3-journal
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+
+# ── Model artifacts (belt-and-braces; normally under data/) ─
+*.ckpt
+*.pt
+*.pth
+*.onnx
+*.safetensors
+
+# ── Python ─────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+build/
+
+# ── Node / Vite ────────────────────────────────────────────
+node_modules/
+frontend/dist/
+.vite/
+npm-debug.log*
+
+# ── Rust / Tauri ───────────────────────────────────────────
+frontend/src-tauri/target/
+frontend/src-tauri/gen/schemas/
+
+# ── macOS ──────────────────────────────────────────────────
+.DS_Store
+._*
+.AppleDouble
+
+# ── Editors / local env ────────────────────────────────────
+.idea/
+.vscode/
+.env
+.env.*
+*.local
+.claude/settings.local.json
