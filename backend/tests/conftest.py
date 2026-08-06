@@ -7,12 +7,14 @@ Every test runs against a temporary data directory. Nothing here reads the repo-
 from __future__ import annotations
 
 import sqlite3
+import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings, get_settings
@@ -58,6 +60,42 @@ def client(settings: Settings) -> Iterator[TestClient]:
     """A client whose lifespan has run, so migrations have been applied."""
     with TestClient(create_app(settings)) as test_client:
         yield test_client
+
+
+def write_image(
+    path: Path,
+    *,
+    mode: str = "RGB",
+    size: tuple[int, int] = (8, 8),
+    colour: int | None = None,
+) -> Path:
+    """Write a tiny synthetic image, creating parents.
+
+    Fixtures are generated, never checked in, and never a real dataset file (ADR-0001).
+    The format follows the suffix, so a test that needs the BMP decode path asks for
+    `.bmp` and gets one — inside `tmp_path`, which is not the repository.
+
+    Content varies with the filename unless `colour` is given, because otherwise every
+    fixture image would be byte-identical and every scan would report duplicate hashes.
+    Pass an explicit `colour` to two files when a test *wants* them to collide.
+    """
+    path.parent.mkdir(parents=True, exist_ok=True)
+    shade = 128 if colour is None else colour
+    fill: int | tuple[int, int, int] = shade if mode == "L" else (shade, shade, shade)
+    image = Image.new(mode, size, fill)
+
+    if colour is None:
+        # Stamp a digest of the path into the first row. Keyed on the directory as well
+        # as the name, because the same stem in sibling channel directories is the normal
+        # case and those must not come out byte-identical. Four bytes rather than one
+        # shade: a single byte gives 256 possible images, and fixtures collide by
+        # accident long before that.
+        identity = f"{path.parent.name}/{path.name}".encode()
+        for offset, byte in enumerate(zlib.crc32(identity).to_bytes(4, "big")):
+            image.putpixel((offset, 0), byte if mode == "L" else (byte, byte, byte))
+
+    image.save(path)
+    return path
 
 
 @dataclass(frozen=True)

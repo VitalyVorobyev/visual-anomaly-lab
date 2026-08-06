@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn[standard]>=0.52",
     "pydantic>=2.13",
     "pydantic-settings>=2.14",
+    "pillow>=12.3.0",
 ]
 
 [dependency-groups]
