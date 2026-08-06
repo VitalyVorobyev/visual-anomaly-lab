@@ -35,6 +35,8 @@
 
 ## M1 — Walking skeleton
 
+**Status: complete (2026-08-06).**
+
 **Goal.** Get one thin thread of every technology in the stack running at once: Tauri window → React app → HTTP + WebSocket → FastAPI sidecar → SQLite. No features, just the wiring, so that later milestones never have to debug infrastructure and a feature at the same time.
 
 **Scope**
@@ -52,7 +54,7 @@
 - [x] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
 - [x] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
 - [x] Closing the app leaves no orphaned Python process (verified with `ps`).
-- [ ] A fresh clone reaches a running app using only the documented dev scripts.
+- [x] A fresh clone reaches a running app using only the documented dev scripts.
 
 **Size:** days. Mostly scaffolding; the only genuinely fiddly part is sidecar lifecycle and port handoff.
 
