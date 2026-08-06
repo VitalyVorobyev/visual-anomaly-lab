@@ -30,12 +30,19 @@ def _verify() -> JobHandler:
     return run_verify_job
 
 
+def _prewarm() -> JobHandler:
+    from anomaly_lab.media.prewarm import run_prewarm_job
+
+    return run_prewarm_job
+
+
 # `train` and `infer` arrive with the model plugins in M3. The queue, protocol,
 # cancellation and event fan-out are already kind-agnostic, so each will need nothing
 # here but another entry.
 LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.IMPORT: _import_scan,
     JobKind.VERIFY: _verify,
+    JobKind.PREWARM: _prewarm,
 }
 
 
