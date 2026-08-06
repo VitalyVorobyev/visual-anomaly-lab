@@ -52,6 +52,20 @@ select = [
     "W",    # pycodestyle warnings
 ]
 
+[tool.ruff.lint.flake8-bugbear]
+# B008 exists because a mutable default is evaluated once and shared. FastAPI's parameter
+# markers are the documented way to declare validation and docs on a route argument, and
+# they are immutable descriptors rather than shared state, so they are exempt.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
 [tool.ruff.lint.per-file-ignores]
 # Tests legitimately shadow builtins in fixtures and use assert-heavy style.
 "tests/*" = ["A002"]
