@@ -13,11 +13,7 @@ export interface paths {
         };
         /**
          * Backend liveness, version and database state
-         * @description Defined as `def`, not `async def`.
-         *
-         *     It opens SQLite, and a blocking driver call inside a coroutine would stall the event
-         *     loop; FastAPI runs synchronous handlers in a threadpool instead. Every DB-touching
-         *     handler in this application follows the same rule.
+         * @description Report the backend's version, its schema version, and where its data lives.
          */
         get: operations["read_health_api_health_get"];
         put?: never;
