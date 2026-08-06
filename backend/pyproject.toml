@@ -1,0 +1,80 @@
+[project]
+name = "anomaly-lab"
+version = "0.1.0"
+description = "Local desktop workbench for visual anomaly detection"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.141",
+    "uvicorn[standard]>=0.52",
+    "pydantic>=2.13",
+    "pydantic-settings>=2.14",
+    "pillow>=12.3.0",
+]
+
+[dependency-groups]
+dev = [
+    # httpx2, not httpx: starlette's TestClient deprecates the httpx 0.x backend.
+    "httpx2>=2.9",
+    "mypy>=2.3",
+    "pytest>=9.1",
+    "ruff>=0.16",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/anomaly_lab"]
+
+# Migrations are data files, not Python modules; they must ship with the package.
+[tool.hatch.build.targets.wheel.force-include]
+"src/anomaly_lab/db/migrations" = "anomaly_lab/db/migrations"
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "A",    # flake8-builtins
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "I",    # isort
+    "N",    # pep8-naming
+    "PTH",  # flake8-use-pathlib — paths come from Settings, never from string joins
+    "RUF",  # ruff-specific
+    "SIM",  # flake8-simplify
+    "UP",   # pyupgrade
+    "W",    # pycodestyle warnings
+]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 exists because a mutable default is evaluated once and shared. FastAPI's parameter
+# markers are the documented way to declare validation and docs on a route argument, and
+# they are immutable descriptors rather than shared state, so they are exempt.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately shadow builtins in fixtures and use assert-heavy style.
+"tests/*" = ["A002"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

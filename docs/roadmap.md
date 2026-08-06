@@ -35,29 +35,40 @@
 
 ## M1 — Walking skeleton
 
+**Status: complete (2026-08-06).**
+
 **Goal.** Get one thin thread of every technology in the stack running at once: Tauri window → React app → HTTP + WebSocket → FastAPI sidecar → SQLite. No features, just the wiring, so that later milestones never have to debug infrastructure and a feature at the same time.
 
 **Scope**
 
-- `uv`-managed Python backend package; FastAPI app with `GET /health` returning version and database status (**ADR-0003**).
-- SQLite migration runner (forward-only, versioned SQL files) and schema v1 covering every entity in the domain model (**ADR-0004**, **ADR-0005**).
-- Vite + React + TypeScript frontend scaffold: routing, typed API client, application shell.
-- Tauri desktop shell that spawns the sidecar as a child process, hands the chosen port to the frontend, and tears the process down on window close — including the crash and force-quit paths.
+- `uv`-managed Python backend package on Python 3.12; FastAPI app with `GET /api/health` returning version and database status (**ADR-0003**).
+- SQLite migration runner (forward-only, versioned SQL files, `PRAGMA user_version`) and schema v1 covering every entity in the domain model (**ADR-0004**, **ADR-0005**).
+- Vite + React + TypeScript frontend scaffold: routing, application shell, and an API client generated from the backend's OpenAPI schema (**ADR-0012**).
+- Tauri desktop shell that spawns the sidecar as a child process, reads the chosen port back from it, and tears the process down on window close — including the crash and force-quit paths.
 - WebSocket echo endpoint proven end-to-end from the React app.
 - Dev scripts: run backend alone, run frontend alone against it, run the full desktop app.
+- Guardrails: `ruff`, `mypy --strict`, `pytest`, `vitest`, a versioned pre-commit hook running the private-data guard, and CI.
 
 **Exit criteria**
 
-- [ ] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
-- [ ] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
-- [ ] Closing the app leaves no orphaned Python process (verified with `ps`).
-- [ ] A fresh clone reaches a running app using only the documented dev scripts.
+- [x] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
+- [x] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
+- [x] Closing the app leaves no orphaned Python process (verified with `ps`).
+- [x] A fresh clone reaches a running app using only the documented dev scripts.
 
 **Size:** days. Mostly scaffolding; the only genuinely fiddly part is sidecar lifecycle and port handoff.
+
+**What the fiddly part actually turned out to be.** Three things, all worth knowing before M7 touches packaging:
+`uv run` sits between the shell and the interpreter, so the sidecar's orphan watchdog must probe the *recorded*
+parent pid rather than compare `os.getppid()`; macOS keeps an application alive after its last window closes,
+which would strand a sidecar; and a path-based router renders a blank page when the WebView loads
+`…/index.html`, which is why routing is fragment-based (**ADR-0012**).
 
 ---
 
 ## M2 — Import + browse
+
+**Status: complete (2026-08-06).**
 
 **Goal.** Turn 3.2 GB of BMPs on disk into a queryable dataset of grouped samples, and make browsing them fast enough to be pleasant. This is the first milestone that touches the real data, so it is also where the data's irregularities have to be handled rather than assumed away.
 
@@ -65,7 +76,8 @@
 
 - Manifest schema and the `channel_folders` import adapter: scan a directory tree, canonicalize channel names, group images into samples, compute `sha256`, and emit a reviewable manifest before anything is written to the database (**ADR-0006**).
 - Import review UI: proposed samples, detected channels, and **explicit warnings** for irregular groups — the 2-channel group in `unsorted/`, ungroupable orphans, duplicate hashes, unreadable files. Channel count is data, never a constant (**ADR-0005**).
-- Import commit runs as a Job with progress (**ADR-0009**).
+- Import **scan** runs as a Job with progress; commit is one synchronous transaction, because
+  the expensive work is the walk and the hash, not the few hundred inserts (**ADR-0009**, **ADR-0013**).
 - Dataset browser: virtualized thumbnail grid with label and channel filters.
 - Grouped sample viewer: one sample, channel tabs, zoom/pan, metadata panel.
 - Split creation: seeded, **sample-level** (never image-level — no channel of a sample may straddle the split boundary), normal-only training set, labeled normals and defects in val/test (**ADR-0011**).
@@ -74,13 +86,22 @@
 
 **Exit criteria**
 
-- [ ] `set1` + `set2` import as **189 samples** (98 normal + 91 defect), each with its illumination channels correctly grouped; the count is asserted, not eyeballed.
-- [ ] `unsorted/` imports as unlabeled samples with the 2-channel group surfaced as a warning rather than silently dropped or padded.
-- [ ] Scrolling the browser over the full dataset is fluid (thumbnails served from cache, no full-resolution BMP decode on the grid path).
-- [ ] A created split persists across an application relaunch and reports its exact composition (samples per subset, normal/defect counts).
-- [ ] Re-running import on an already-imported directory is idempotent — no duplicate samples.
+- [x] `set1` + `set2` import as **189 samples** (98 normal + 91 defect), each with its illumination channels correctly grouped; the count is asserted, not eyeballed — see `backend/tests/test_showcase_import.py`, which runs against the private tree on demand and is skipped everywhere else.
+- [x] The irregular tree imports as **113 unlabeled samples** with its 2-channel group surfaced as a warning rather than silently dropped or padded, and the commit is blocked until that warning is acknowledged. *Rewritten from the original wording: the labelled corpus is `set1` + `set2` only, because the third tree has no clean defect / no-defect split. It is imported as a separate dataset during verification, which is what keeps the variable-channel-count path exercised against real data rather than only against fixtures.*
+- [x] Scrolling the browser over the full dataset is fluid — the grid requests the `thumb` tier and nothing else, verified in the network panel.
+- [x] A created split persists across an application relaunch and reports its exact composition (samples per subset, normal/defect counts).
+- [x] Re-running import on an already-imported directory is idempotent — no duplicate samples.
 
 **Size:** **1–2 weeks — one of the two big milestones.** The adapter is fiddly (real filenames are messier than expected), the review UI is real UI work, and the media cache has to be built properly or every later milestone feels slow.
+
+**What measuring the data changed.** Three things, recorded in **ADR-0013**. The files that
+were assumed not to group by stem do group, perfectly. Hashing the whole corpus takes about
+two seconds rather than the minutes assumed, so the scan is cheap and *thumbnail rendering*
+is the slow operation that actually justifies the job system. And one capture group has its
+channel name fused into its own directory name, which a component-matching adapter reads as
+twice as many single-image samples with no error anywhere — the reason channel matching is
+token-level. **The ADR-0009 job machinery was built here rather than in M3**, since M2 needs
+it for the scan and the pre-warm; M3 adds train and infer by writing one handler each.
 
 ---
 

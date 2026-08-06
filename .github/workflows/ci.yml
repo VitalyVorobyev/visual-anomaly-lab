@@ -1,0 +1,133 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  safety:
+    name: Repo safety
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      # ADR-0001's guard. CI never has access to privatedata/, so this is checking that
+      # nothing from it was ever committed, not that this run is clean.
+      - run: ./scripts/check-repo-safety.sh
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install
+        run: uv sync --directory backend --locked
+
+      - name: Lint
+        run: uv run --directory backend ruff check .
+
+      - name: Format
+        run: uv run --directory backend ruff format --check .
+
+      - name: Types
+        run: uv run --directory backend mypy
+
+      - name: Tests
+        run: uv run --directory backend pytest
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+        working-directory: frontend
+
+      - name: Types
+        run: bun run typecheck
+        working-directory: frontend
+
+      - name: Tests
+        run: bun run test
+        working-directory: frontend
+
+      - name: Build
+        run: bunx vite build
+        working-directory: frontend
+
+  api-contract:
+    name: API contract is in sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - run: uv sync --directory backend --locked
+
+      # The committed TypeScript client must match the schema the backend actually
+      # serves. Without this, a route change silently desynchronizes the frontend --
+      # exactly the drift ADR-0003 flags as a runtime failure.
+      - name: Regenerate and compare
+        run: |
+          ./scripts/gen-api-types.sh
+          if ! git diff --exit-code -- frontend/src/api/generated.ts; then
+            echo "::error::frontend/src/api/generated.ts is stale. Run scripts/gen-api-types.sh and commit the result."
+            exit 1
+          fi
+
+  shell:
+    name: Tauri shell
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      # tauri-build reads tauri.conf.json, which points at the built frontend.
+      - name: Build the frontend
+        run: |
+          bun install --frozen-lockfile
+          bunx vite build
+        working-directory: frontend
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: frontend/src-tauri
+
+      - name: Format
+        run: cargo fmt --check
+        working-directory: frontend/src-tauri
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+        working-directory: frontend/src-tauri

@@ -30,7 +30,7 @@ The product is one loop, end to end:
 
 | Stage | Capability |
 | --- | --- |
-| **Import** | Point the app at a directory; review a proposed manifest (detected channels, grouping, warnings) before anything is written; commit it into the catalog. |
+| **Import** | Point the app at a directory; review a proposed manifest (detected channels, grouping, warnings) before anything is written; commit it into the catalog. Re-importing the same directory updates it rather than duplicating it. |
 | **Label & split** | Mark logical samples normal / defect / unlabeled; create seeded, sample-level train/val/test splits so no two views of the same object straddle a subset. |
 | **Train** | Create an experiment (dataset + split + method + config), run it as an async job, and watch live progress and streaming logs. |
 | **Infer** | Score samples with a trained experiment, producing per-image scores and anomaly maps. |
@@ -41,12 +41,18 @@ Throughout: **grouped multi-view samples** (one physical object, many images, on
 overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
 experiment comes back with identical configuration, metrics, results, and logs.
 
-> ### Project status — pre-code
+> ### Project status — import and browse
 >
-> **Nothing here runs yet.** Milestone **M0** (repository safety guards + foundation documentation:
-> system design, roadmap, backlog, ADRs 0001–0011) is complete. Application code starts at **M1**.
-> The capabilities above describe the designed system, not shipped software. See
-> [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
+> **M0**–**M2** are complete. The application imports a directory of images into a catalog of grouped
+> samples, browses them in a virtualized thumbnail grid, opens one sample across all of its channels with
+> synchronized zoom and pan, and creates seeded, sample-level train/val/test splits. Import is two-phase —
+> a scan proposes a reviewable manifest, and nothing is written until you commit it — and re-importing the
+> same directory is idempotent. Long operations run as jobs with live progress, streaming logs and working
+> cancellation.
+>
+> **Training and evaluation start at M3.** The [Methods](#methods) table below describes the designed
+> system, not shipped software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and
+> honest sizing.
 
 ## Methods
 
@@ -107,14 +113,73 @@ no pixel masks, so evaluation is image-level, with sample-level ROC-AUC as the h
 | [`docs/system-design.md`](docs/system-design.md) | Architecture, domain model, canonical terminology, API surface, job and evaluation protocols |
 | [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M7, scope, exit criteria, sizing |
 | [`docs/backlog.md`](docs/backlog.md) | Task-level breakdown by epic |
-| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0011 — what was decided, why, and what it costs |
+| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0014 — what was decided, why, and what it costs |
 
 ## Getting started
 
-**There is nothing to run yet.** The repository currently contains documentation and repository-safety
-scripts only; no backend, frontend, or desktop shell code exists.
+### Prerequisites
 
-Development setup — installing `uv`, `bun`, and the Rust toolchain, running the backend standalone,
-running the UI in a browser against it, and launching the full desktop app — arrives with **M1 (walking
-skeleton)** and will be documented here then. Until then, [`docs/roadmap.md`](docs/roadmap.md) is the
-best description of what is coming and in what order.
+[`uv`](https://docs.astral.sh/uv/) for Python, [`bun`](https://bun.sh/) for the frontend, and a Rust
+toolchain for the desktop shell. On macOS the Xcode command line tools are also needed
+(`xcode-select --install`). Nothing else — `uv` fetches its own Python 3.12.
+
+### First run
+
+```bash
+git clone git@github.com:VitalyVorobyev/visual-anomaly-lab.git
+cd visual-anomaly-lab
+
+./scripts/setup-hooks.sh          # private-data guard runs on every commit
+uv sync --directory backend
+cd frontend && bun install && cd ..
+
+./scripts/dev-app.sh              # the full desktop app
+```
+
+The window opens once the sidecar reports ready and shows its version, schema version and database path.
+
+### The browser workflow
+
+The backend has no dependency on the desktop shell, and **the browser path is first class** — it is how
+debugging actually happens. In two terminals:
+
+```bash
+./scripts/dev-backend.sh          # FastAPI on :8000, with reload
+./scripts/dev-frontend.sh         # Vite on :5173
+```
+
+Then open <http://localhost:5173>. With no shell to inject a base URL, the app falls back to
+`http://127.0.0.1:8000`. The API is equally usable from `curl` or pytest; interactive docs are at
+<http://127.0.0.1:8000/docs>.
+
+### How the two processes fit together
+
+The shell starts the sidecar with `ANOMALY_LAB_PORT=0`, so the OS picks a free port and the **sidecar
+announces it back** on stdout; the shell then injects that URL into the page. On exit it signals the
+child's process group, and the sidecar independently exits if its parent disappears — so a crash or a
+force-quit leaves no stray Python process. Data lives in a gitignored `data/`, relocatable with
+`ANOMALY_LAB_DATA_DIR`; deleting that directory resets the application.
+
+### Checks
+
+```bash
+uv run --directory backend pytest         # backend tests
+uv run --directory backend ruff check .   # lint
+uv run --directory backend mypy           # types, strict
+cd frontend && bun run test && bun run typecheck
+./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
+```
+
+A handful of backend tests assert the exact composition of the private showcase tree. They are skipped
+unless you point them at it, and CI never does:
+
+```bash
+ANOMALY_LAB_SHOWCASE_ROOT=/path/to/tree uv run --directory backend pytest -k showcase
+```
+
+After changing any API route or response model, regenerate the typed client and commit the result — the
+diff is the API contract changing:
+
+```bash
+./scripts/gen-api-types.sh
+```

@@ -45,16 +45,30 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **11 accepted ADRs (0001–0011)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **14 accepted ADRs (0001–0014)**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 
 ## Current status and working discipline
 
-- **M0 is done** (repo safety + foundation docs). **No application code exists yet**; code starts at M1.
+- **M0, M1 and M2 are done.** The app imports a directory tree into a catalog of grouped samples, browses
+  them, views one sample across its channels, and creates seeded sample-level splits. The ADR-0009 job
+  machinery was built in M2 (it is needed by the import scan and the thumbnail pre-warm), so M3 adds
+  `train` and `infer` by writing one handler each. **M3 (vertical slice on the classical baseline) is the
+  current milestone.**
+- **Schema v1 is frozen.** It was amended in place through M2, as the rule below allowed; the first real
+  import has now landed, so every further change is a new numbered migration (ADR-0004).
+- **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
+  fails on a stale file.
 - **Follow the milestone order** in the roadmap: M1 walking skeleton → M2 import + browse → M3 vertical
   slice on the classical baseline → M4 EfficientAD → M5 PatchCore + comparison → M6 custom EfficientAD →
-  M7 polish + full README. Do not build M4 machinery while M2 is unfinished.
+  M7 polish + full README. Do not build M4 machinery while M3 is unfinished.
+- **A new job kind costs one entry** in `jobs/handlers.py` and one handler function. The queue, the
+  JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
+  needs a change in any of them, that is a finding about the boundary.
+- **`tests/test_showcase_import.py` runs against the private tree only when
+  `ANOMALY_LAB_SHOWCASE_ROOT` is set**, and is skipped everywhere else. It contains no path and no
+  directory name; keep it that way.
 - **Keep the vertical slice honest (ADR-0007).** Adding or changing a method means adding a module and a
   registry entry. If a change for a new method leaks into the jobs, evaluation, results, or UI layers, the
   plugin boundary is wrong — fix the boundary, not the caller.

@@ -1,7 +1,7 @@
 # System Design — visual-anomaly-lab
 
-**Status:** design baseline for implementation. No application code exists yet; this document describes the
-target system. Decisions referenced as `(ADR-NNNN)` are recorded in [`docs/adr/`](adr/). Sequencing of the work
+**Status:** design baseline, kept in step with the implementation. M0–M2 are built; M3 onward still
+describes the target system. Decisions referenced as `(ADR-NNNN)` are recorded in [`docs/adr/`](adr/). Sequencing of the work
 is in [`docs/roadmap.md`](roadmap.md); task-level breakdown is in [`docs/backlog.md`](backlog.md).
 
 ---
@@ -60,7 +60,7 @@ user, one machine, one job at a time.
 flowchart TB
     subgraph desktop["Tauri desktop app"]
         UI["React + TypeScript UI<br/>Vite build, runs in WebView"]
-        SHELL["Tauri shell (Rust)<br/>spawns sidecar, port handoff,<br/>teardown on exit"]
+        SHELL["Tauri shell (Rust)<br/>spawns sidecar, reads port from child,<br/>teardown on exit"]
     end
 
     subgraph backend["FastAPI sidecar — 127.0.0.1, no auth"]
@@ -83,7 +83,8 @@ flowchart TB
 
     UI -->|"HTTP + WebSocket"| API
     UI -.->|"WebSocket"| WS
-    SHELL -->|"spawn / health-check / SIGTERM"| API
+    SHELL -->|"spawn / SIGTERM"| API
+    API -.->|"ready line on stdout: port"| SHELL
     SHELL -->|"injects base URL"| UI
 
     API --> QUEUE
@@ -113,12 +114,27 @@ by the shell, falling back to a dev default (`http://127.0.0.1:8000`) so the sam
 
 **Tauri shell (Rust).** Thin desktop wrapper. Its entire job is process lifecycle (ADR-0003):
 
-- resolve or allocate a free localhost port, then **spawn the FastAPI sidecar** as a child process with that
-  port and the data directory in its environment;
-- poll `GET /api/health` until the sidecar is ready, then load the WebView and **hand off the base URL**;
-- **tear down on exit** — send `SIGTERM` to the sidecar, wait a grace period, then `SIGKILL`; the sidecar in
-  turn terminates any running job worker. The child is also killed if the shell dies unexpectedly, so no
-  orphaned Python process survives an app crash.
+- **spawn the FastAPI sidecar** as a child process with the data directory in its environment and
+  `ANOMALY_LAB_PORT=0`, then **read the port back from the child**. The sidecar binds the socket itself and
+  announces `{"ev":"ready","port":N,"pid":N}` as one JSON line on stdout, in the ADR-0009 event envelope.
+  The port is chosen by the OS and never released between choosing and serving, so there is no
+  bind → close → re-bind race. (The shell allocating a port and passing it down would have one; ADR-0003
+  specifies child-to-shell handoff for this reason.)
+- **build the window only once the sidecar is ready**, injecting the base URL as `window.__ANOMALY_LAB__`
+  before the page loads. The UI therefore never renders against a URL that does not exist yet and needs no
+  retry-on-boot logic (ADR-0012);
+- **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the sidecar
+  in turn terminates any running job worker. Closing the last window quits the application, since macOS
+  would otherwise keep it alive with a sidecar serving a window that no longer exists.
+
+Because stdout carries structured events, the sidecar's own logging goes to **stderr**, and the shell drains
+**both** pipes for the life of the process — a child whose pipe fills up blocks on write.
+
+macOS has no `PDEATHSIG` equivalent, so none of the above runs when the shell is force-quit or crashes. The
+sidecar therefore **also watches its parent independently**: given `ANOMALY_LAB_PARENT_PID` it probes that pid
+with signal 0 and exits when it disappears. It probes the recorded pid rather than comparing `os.getppid()`,
+because `uv run` sits between the shell and the interpreter — the immediate parent is not the shell. This
+watchdog, not the exit handler, is what guarantees no orphaned Python process survives an app crash.
 
 The shell additionally provides native file/folder pickers for the import flow, since a browser cannot return
 a server-visible absolute directory path.
@@ -155,7 +171,13 @@ uv run --directory backend uvicorn anomaly_lab.api.app:create_app --factory --re
 
 and the React app runs under `vite dev` against it. Every feature is exercisable from a plain browser, which
 keeps the Python and TypeScript work independently testable and makes the Rust layer optional until packaging.
-CORS is permitted for `http://localhost:*` origins in dev mode only.
+
+CORS is permitted in dev mode only, and covers `http://localhost:*` and `http://127.0.0.1:*` **plus
+`tauri://localhost` and `http://tauri.localhost`** — the Tauri v2 WebView origins. They are not localhost
+*ports*, so a rule written only for the browser lets the browser path work while the desktop path fails.
+
+Convenience scripts wrap the three ways to run the system: `scripts/dev-backend.sh` (backend alone, the
+command above), `scripts/dev-frontend.sh` (Vite against it), and `scripts/dev-app.sh` (the full desktop app).
 
 ---
 
@@ -267,9 +289,11 @@ erDiagram
 
 ### Entities
 
-**`Dataset`** — `id`, `name`, `root_path`, `created_at`, `notes`.
+**`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`.
 A named collection of samples rooted at an absolute path on disk (typically under `privatedata/`).
-`root_path` is a reference, never a copy destination.
+`root_path` is a reference, never a copy destination, and it is **unique**: re-importing a directory
+updates the dataset it already produced rather than creating a second one beside it (ADR-0013).
+`adapter` and `manifest_path` record how the dataset came to look the way it does.
 
 **`Channel`** — `id`, `dataset_id`, `name`, `position`.
 The per-dataset acquisition-channel dictionary, created **at import time** from canonicalized source folder
@@ -286,7 +310,11 @@ UI) so that hand corrections are distinguishable from imported guesses.
 
 **`Image`** — `id`, `sample_id`, `channel_id` (nullable), `path`, `width`, `height`, `bit_depth`,
 `file_size`, `sha256`, `imported_at`.
-One file on disk. `channel_id` is nullable so that single-view datasets need no synthetic channel.
+One file on disk, unique on `(sample_id, path)` — the key that makes a re-import idempotent (ADR-0013).
+`channel_id` is nullable so that single-view datasets need no synthetic channel. It is also `RESTRICT`,
+so a channel cannot be dropped out from under the images using it; the cost is that deleting a dataset
+cannot rely on cascades, since SQLite does not order them, and the repository deletes children first
+inside one transaction instead.
 Dimensions, bit depth and `sha256` are captured at import: the hash makes imported files effectively immutable
 identities, which is what allows caching by `image_id` (§9) and lets `verify` detect drift or deletion.
 
@@ -295,9 +323,9 @@ Pixel-level ground truth. The table exists from the first migration but is **unu
 dataset has no masks, so only image-level metrics are computable (§8). Defining it now keeps the schema stable
 when masks appear and prevents pixel-level metrics from being designed in as an afterthought.
 
-**`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `created_at`.
-A named partition of a dataset's samples. `strategy` and `seed` record how it was produced so it can be
-regenerated exactly. Splits are immutable once created; changing a split means creating a new one.
+**`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `params`, `created_at`.
+A named partition of a dataset's samples. `strategy`, `seed` and `params` record how it was produced so it
+can be regenerated exactly — a seed alone reproduces nothing without the fractions it was drawn under. Splits are immutable once created; changing a split means creating a new one.
 
 **`SplitAssignment`** — `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`.
 Primary key `(split_id, sample_id)`. **Sample-level by construction** — there is no image-level assignment
@@ -310,12 +338,17 @@ table, so all channels of a part necessarily share a subset and cross-channel le
 unambiguously attributable to one immutable configuration, which is the whole point of a comparison workbench.
 `artifact_dir` points at `data/artifacts/exp-<id>/`.
 
-**`Job`** — `id`, `kind ∈ {import, train, infer}`, `experiment_id` (nullable — import jobs have none),
+**`Job`** — `id`, `kind ∈ {import, verify, prewarm, train, infer}`, `experiment_id` (nullable — only
+train and infer jobs have one),
 `status ∈ {queued, running, succeeded, failed, cancelled}`, `progress` (0–1), `message`, `log_path`,
-`started_at`, `finished_at`, `error`.
+`params` (JSON), `started_at`, `finished_at`, `error`.
 The async execution record (§6). On backend startup, any job still marked `running` is a leftover from a crash
 or a hard kill and is transitioned to `failed` with an explanatory error — the process that owned it is
 provably gone, so the UI never shows a phantom running job.
+`params` carries the per-kind payload — `experiment_id` identifies what a train or infer job acts on, but
+an import job has no experiment and still needs its root path, adapter and options recorded — and `result`
+carries what the job produced, from its `done` event. Input and output are kept apart so that re-reading a
+finished job never has to guess which is which.
 
 **`ImageResult`** — `(experiment_id, image_id)`, `score`, `map_path` (nullable), `inference_ms`.
 Per-image model output. `map_path` references a float32 `.npy` under the experiment's `maps/` directory;
@@ -469,8 +502,10 @@ in a log file, and needs no shared-memory or socket setup between the two proces
 The parent does three things with each line:
 
 1. **persists** `progress` / `message` / terminal state to the `Job` row (so a REST poll is always accurate);
-2. **tees the full stream** to `data/artifacts/exp-<id>/logs/<job>.log` — including any non-JSON output such as
-   third-party library chatter or a native crash message, which is exactly what is needed for post-mortem;
+2. **tees the full stream** to the job's `log_path` — including any non-JSON output such as third-party
+   library chatter or a native crash message, which is exactly what is needed for post-mortem. A job bound to
+   an experiment logs to `data/artifacts/exp-<id>/logs/<job>.log`; one that is not — an import job — logs to
+   `data/jobs/logs/<job_id>.log`;
 3. **fans out** to subscribers of `WS /ws/jobs/{id}`.
 
 ### Frontend reconnection
@@ -527,7 +562,16 @@ layout:
   code change.
 - **Grouping by filename stem** within a group folder: the same stem across channel folders is the same
   physical part. Group + stem form `(group_key, external_id)`, which is what makes numeric IDs that repeat
-  across groups safe.
+  across groups safe. The **group key keeps the label component** — the same stem exists under both a
+  defect and a no-defect folder, so dropping it would collide two different parts onto one identity.
+
+**Matching is by component, not by position.** The adapter does not know whether label folders sit above
+channel folders or below them: each path component is tested against the label vocabulary, then the channel
+vocabulary, and whatever is left becomes the group key. Prefix matching applies to **tokens** rather than
+whole components, because normalization strips separators — a directory named `"<Channel> <Group>"`
+normalizes to a string that *begins with* the channel name, and matching it whole would swallow the group
+name and silently merge that group into its parent. That case is not hypothetical; it is how one real
+capture group is laid out (ADR-0013).
 
 The adapter emits a **manifest JSON**: proposed samples `{group_key, label, images: [{path, channel}]}`, the
 channel mapping, and a `warnings` list. Warnings are deliberately non-fatal:
@@ -535,14 +579,20 @@ channel mapping, and a `warnings` list. Warnings are deliberately non-fatal:
 - a sample with a channel count different from its siblings (e.g. the two-channel group) is a **warning,
   not an error** — variable channel counts are legitimate data, and the importer must never enforce a fixed
   count;
-- files whose names do not group (machine-generated timestamped filenames) are **surfaced for review** with
-  their proposed one-image-per-sample interpretation, rather than silently dropped or silently merged;
+- images that matched no channel in a dataset that *has* channels are **surfaced for review**, together
+  with the directory names that were not recognized, so the operator can add a mapping rather than
+  discover a mis-import later. (The reference tree's machine-generated timestamped filenames were assumed
+  not to group; measurement shows they group perfectly — see ADR-0013. The path exists for datasets that
+  genuinely do not.)
 - unreadable files, zero-byte files and duplicate hashes are reported with their paths.
 
 ### Stage 2 — `POST /api/import/commit`
 
-Takes the (possibly edited) manifest, creates `Dataset`, `Channel`, `Sample` and `Image` rows in one
-transaction, and **saves the committed manifest to `data/manifests/`**. The stored manifest is the
+Takes the (possibly edited) manifest, creates or updates `Dataset`, `Channel`, `Sample` and `Image` rows in
+one transaction, and **saves the committed manifest to `data/manifests/`**. It is **synchronous, not a
+job**: the walk and the hash already happened during the scan, so this is a few hundred inserts and
+measures in milliseconds. It is also idempotent, never downgrades a hand-made label, and reports rather
+than deletes a recorded file the manifest no longer mentions (ADR-0013). The stored manifest is the
 reproducibility record: it states exactly which files became which samples under which channel mapping, and
 re-importing the same tree can be diffed against it.
 
@@ -550,8 +600,9 @@ re-importing the same tree can be diffed against it.
 
 - **Images are never copied.** Only absolute paths are stored (ADR-0001). The source tree stays read-only.
 - **`sha256` is recorded** for every image at scan time.
-- **`POST /api/datasets/{id}/verify`** re-checks existence and hashes on demand, reporting missing, moved or
-  modified files. This is what keeps a reference-in-place catalog trustworthy over months.
+- **`POST /api/import/verify`** re-checks existence and hashes as a job, reporting missing, modified or
+  unreadable files. It detects drift and never repairs it. This is what keeps a reference-in-place catalog
+  trustworthy over months.
 
 ### Proving the abstraction
 
@@ -656,7 +707,11 @@ defects and to align anomaly-map overlays, where JPEG-style artifacts could be m
 **because imported files are immutable**: paths are recorded once, `sha256` is stored at import, and `verify`
 (§7) detects any drift. There is no invalidation problem to solve, so none is built.
 
-**Generation** is lazy — the first request for a tier renders and stores it — with an optional post-import
+**Only `thumb` and `preview` are cached.** A cached `full` tier costs roughly 1.2 MB per image — most of a
+gigabyte for one dataset — to avoid re-rendering something that is looked at once, so it is rendered per
+request and kept off the wire by its `ETag` instead.
+
+**Generation** is lazy — the first request for a cached tier renders and stores it — with a post-import
 **pre-warm job** (reusing the job system, §6) that generates all thumbs up front so the first browse is
 smooth. Responses carry an `ETag` derived from the image `sha256` plus tier, and `Cache-Control: immutable`,
 so the WebView re-fetches nothing.

@@ -23,38 +23,42 @@ Working task list for **visual-anomaly-lab**, organised as epics keyed to the mi
 
 ## E2 — Walking skeleton (M1)
 
-- [ ] Backend scaffold: `uv` project, package layout, FastAPI app, `GET /health` (version, schema version, DB path), settings module, ruff + pytest wired (S) — **ADR-0003**
-- [ ] SQLite migration runner (forward-only numbered SQL files, `schema_version` table, applied at startup) + schema v1 covering **all** ADR-0005 entities: Dataset, Channel, Sample, Image, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet — with indices and foreign keys (M) — **ADR-0004**, **ADR-0005**
-- [ ] Frontend scaffold: Vite + React + TypeScript, router, app shell/layout, typed API client with a single configurable base URL (S)
-- [ ] Tauri shell: spawn the Python sidecar, pick a free port, hand it to the frontend, terminate the child on window close *and* on crash; verify no orphan process survives (M) — **ADR-0003**
-- [ ] WebSocket echo endpoint + frontend hook, proven end-to-end in both the desktop app and a plain browser (S)
-- [ ] Dev scripts (backend only, frontend only, full desktop) + a README dev section documenting the browser-against-`uv run` workflow (S)
+- [x] Backend scaffold: `uv` project on Python 3.12, package layout, FastAPI app, `GET /api/health` (version, schema version, DB path), settings module, ruff + mypy + pytest wired (S) — **ADR-0003**
+- [x] SQLite migration runner (forward-only numbered SQL files, `PRAGMA user_version`, applied at startup) + schema v1 covering **all** ADR-0005 entities: Dataset, Channel, Sample, Image, Mask, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet — with indices and foreign keys (M) — **ADR-0004**, **ADR-0005**
+- [x] Frontend scaffold: Vite + React + TypeScript, router, app shell/layout, API client generated from the OpenAPI schema with a single configurable base URL (S) — **ADR-0012**
+- [x] Tauri shell: spawn the Python sidecar, read the port it bound back from it, hand it to the frontend, terminate the child on window close *and* on crash; verify no orphan process survives (M) — **ADR-0003**
+- [x] WebSocket echo endpoint + frontend hook, proven end-to-end in both the desktop app and a plain browser (S)
+- [x] Dev scripts (backend only, frontend only, full desktop) + a README dev section documenting the browser-against-`uv run` workflow (S)
+- [x] Guardrails: versioned `.githooks/pre-commit` running the private-data guard (closing ADR-0001's "advisory unless invoked" gap), and CI running the guard, ruff, mypy, pytest, tsc, vitest, the frontend build, `cargo fmt`/`clippy`, and an API-contract check that regenerates the TypeScript client and fails on a diff (S)
 
 ## E3 — Dataset & import (M2)
 
-- [ ] Manifest schema (JSON): datasets, proposed samples, images, per-image `sha256`, detected channels, warnings — versioned, reviewable before commit (M) — **ADR-0006**
-- [ ] `channel_folders` adapter: walk the tree, canonicalize channel names with fuzzy matching (case, separators, near-miss folder spellings) onto a per-dataset channel set, group by sample key, flag ungroupable files (M) — **ADR-0006**
-- [ ] Scan + commit endpoints: `scan` produces a manifest without writing to the DB, `commit` runs as a Job with progress and is idempotent on re-import (M) — **ADR-0009**
-- [ ] Import review UI: dataset summary, detected channels, sample preview, and a **warnings panel** — 2-channel group, orphan images, duplicate hashes, unreadable files — with commit blocked until warnings are acknowledged (M)
-- [ ] Dataset browser: virtualized thumbnail grid, filter by label / channel / split membership, sample count header (M)
-- [ ] Grouped sample viewer: channel tabs (count driven by the data), synchronized zoom/pan across channels, metadata panel (M)
-- [ ] Split creation: seeded RNG, **sample-level** assignment, normal-only train strategy, val/test containing normals and defects, persisted with its seed and strategy so it is reproducible (M) — **ADR-0011**
-- [ ] Dataset verify operation: re-check every recorded path exists and its `sha256` matches; report drift (S)
+- [x] Manifest schema (JSON): datasets, proposed samples, images, per-image `sha256`, detected channels, warnings — versioned, reviewable before commit (M) — **ADR-0006**
+- [x] `channel_folders` adapter: classifies path *components* against label and channel vocabularies in any nesting order, with token-level channel matching so a channel fused into a group folder's name still resolves; every vocabulary is an option carried in the manifest (M) — **ADR-0006**, **ADR-0013**
+- [x] Scan + commit endpoints: `scan` runs as a Job and produces a manifest without writing to the DB; `commit` is one synchronous idempotent transaction, because the walk and the hash are the expensive part and the inserts take milliseconds (M) — **ADR-0009**, **ADR-0013**
+- [x] Import review UI: dataset summary, editable channel mapping, per-group label correction, and a **warnings panel** — variable channel count, unassigned channels, duplicate hashes, unreadable and empty files — with commit blocked until warnings are acknowledged (M)
+- [x] Dataset browser: virtualized thumbnail grid, filter by label / channel / split membership, sample count header (M)
+- [x] Grouped sample viewer: channel tabs (count driven by the data), synchronized zoom/pan across channels, side-by-side comparison, keyboard labelling, metadata panel (M)
+- [x] Split creation: seeded RNG, **sample-level** assignment, normal-only train strategy, stratified by capture group, val/test containing normals and defects, persisted with its seed *and its fractions* so it is reproducible (M) — **ADR-0011**
+- [x] Dataset verify operation: re-check every recorded path exists and its `sha256` matches; report drift and never repair it (S) — **ADR-0013**
 
 ## E4 — Media (M2)
 
-- [ ] Thumbnail + preview cache under `data/` (content-addressed by image `sha256` + size) and serving endpoints with `ETag` and immutable cache headers (M)
-- [ ] Post-import pre-warm job that generates thumbnails for a whole dataset with progress (S)
-- [ ] Full-resolution PNG endpoint for the sample viewer (BMP decoded on demand, never sent raw) (S)
+- [x] Thumbnail + preview cache under `data/`, keyed by image id because imported files are immutable, with an `ETag` derived from `sha256` + tier and immutable cache headers (M)
+- [x] Post-import pre-warm job that generates thumbnails for a whole dataset with progress (S)
+- [x] Full-resolution lossless PNG endpoint for the sample viewer, rendered on demand and deliberately not cached — a cached full tier costs most of a gigabyte per dataset (S)
 
 ## E5 — Model interface & jobs (M3)
 
+*The job machinery landed in M2, which needed it for the import scan and the thumbnail
+pre-warm. What remains here is the model side.*
+
 - [ ] `models/base.py`: `ModelPlugin` interface (`fit`, `predict`, `save`, `load`, config JSON Schema, capability flags) + registry keyed by `classical_circular`, `efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom` (S) — **ADR-0007**
-- [ ] Subprocess worker + JSON-lines event protocol on stdout (`progress`, `log`, `metric`, `artifact`, `done`, `error`), with a parent-side parser resilient to partial lines and interleaved library output (L) — **ADR-0009**
-  - split when scheduled: protocol + parser → worker entrypoint + config handoff → parent supervisor + status transitions
-- [ ] FIFO job queue + Job table persistence + crash recovery on startup (any Job left `running` with a dead PID → `failed`, log preserved) (M) — **ADR-0009**
-- [ ] WebSocket fan-out of job events to the UI + per-job log files written under the experiment's artifact directory (M)
-- [ ] Cancellation: SIGTERM → grace period → SIGKILL, with the Job ending in `cancelled` and no orphan children (S)
+- [x] Subprocess worker + JSON-lines event protocol on stdout (`progress`, `log`, `metric`, `done`, `error`), with a parent-side parser that tolerates interleaved library output (L) — **ADR-0009** *(M2)*
+- [x] FIFO job queue + Job table persistence + crash recovery on startup (any Job left `running` → `failed`, log preserved) (M) — **ADR-0009** *(M2)*
+- [x] WebSocket fan-out of job events to the UI + per-job log files (M) *(M2)*
+- [x] Cancellation: SIGTERM → grace period → SIGKILL, with the Job ending in `cancelled` and no orphan children (S) *(M2)*
+- [ ] `train` and `infer` job handlers, once there is a model to run (S) — **ADR-0009**
 
 ## E6 — Classical baseline (M3)
 
