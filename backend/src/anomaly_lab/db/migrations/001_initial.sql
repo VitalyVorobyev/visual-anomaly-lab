@@ -22,11 +22,17 @@
 -- rowid reuse after a delete could silently attach stale files to a new row.
 
 CREATE TABLE dataset (
-    id          INTEGER PRIMARY KEY AUTOINCREMENT,
-    name        TEXT    NOT NULL UNIQUE,
-    root_path   TEXT    NOT NULL,
-    created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
-    notes       TEXT
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    name           TEXT    NOT NULL UNIQUE,
+    -- Unique so that re-importing a directory updates the dataset it already produced
+    -- instead of creating a second one beside it (ADR-0013).
+    root_path      TEXT    NOT NULL UNIQUE,
+    -- Which adapter proposed this dataset, and the manifest that was accepted. Together
+    -- they answer "how did this dataset come to look like this?" months later (ADR-0006).
+    adapter        TEXT,
+    manifest_path  TEXT,
+    created_at     TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    notes          TEXT
 );
 
 CREATE TABLE channel (
@@ -59,6 +65,11 @@ CREATE INDEX idx_sample_dataset_label ON sample (dataset_id, label);
 CREATE TABLE image (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     sample_id    INTEGER NOT NULL REFERENCES sample (id) ON DELETE CASCADE,
+    -- RESTRICT so a channel cannot be dropped out from under the images that use it.
+    -- The cost: `DELETE FROM dataset` cannot rely on cascades, because SQLite does not
+    -- order them and the channel cascade may run while images still reference it. The
+    -- datasets repository therefore deletes explicitly, children first, in one
+    -- transaction.
     channel_id   INTEGER REFERENCES channel (id) ON DELETE RESTRICT,
     path         TEXT    NOT NULL,
     width        INTEGER NOT NULL,
@@ -66,7 +77,11 @@ CREATE TABLE image (
     bit_depth    INTEGER NOT NULL,
     file_size    INTEGER NOT NULL,
     sha256       TEXT    NOT NULL,
-    imported_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+    imported_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
+    -- The upsert key that makes re-import idempotent: one file contributes one row to
+    -- the sample it belongs to, so a second commit of the same manifest updates rather
+    -- than duplicates (ADR-0013).
+    UNIQUE (sample_id, path)
 );
 
 CREATE INDEX idx_image_sample ON image (sample_id);
@@ -91,6 +106,9 @@ CREATE TABLE split (
     name        TEXT    NOT NULL,
     strategy    TEXT    NOT NULL,
     seed        INTEGER NOT NULL,
+    -- Ratios and stratification key as JSON. A seed alone does not reproduce a split;
+    -- the parameters it was drawn under are part of the record (ADR-0011).
+    params      TEXT    NOT NULL DEFAULT '{}',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Splits are immutable once created; changing one means creating a new one.
     UNIQUE (dataset_id, name)
@@ -130,8 +148,12 @@ CREATE INDEX idx_experiment_split ON experiment (split_id);
 
 CREATE TABLE job (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-    kind          TEXT    NOT NULL CHECK (kind IN ('import', 'train', 'infer')),
-    -- Nullable: import jobs belong to no experiment.
+    -- `import` scans a tree into a manifest, `verify` re-hashes a dataset's recorded
+    -- files, `prewarm` renders its thumbnail tiers. `train` and `infer` arrive with the
+    -- model plugins in M3; they are listed now so adding them costs no migration.
+    kind          TEXT    NOT NULL
+                          CHECK (kind IN ('import', 'verify', 'prewarm', 'train', 'infer')),
+    -- Nullable: import, verify and prewarm jobs belong to no experiment.
     experiment_id INTEGER REFERENCES experiment (id) ON DELETE CASCADE,
     status        TEXT    NOT NULL DEFAULT 'queued'
                           CHECK (status IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
