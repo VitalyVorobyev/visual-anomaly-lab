@@ -52,10 +52,21 @@ export interface UseJobResult {
   isPending: boolean;
 }
 
+/**
+ * A console that started from a snapshot and has been following the socket since.
+ *
+ * `baseline` is frozen the moment the socket is opened. It has to be: every event also
+ * refreshes the snapshot, whose `log_tail` grows to include the very lines the socket
+ * just delivered, so reading the tail live would print each event twice.
+ */
+interface Console {
+  baseline: string[];
+  streamed: string[];
+}
+
 export function useJob(jobId: number | undefined): UseJobResult {
   const queryClient = useQueryClient();
-  const [streamed, setStreamed] = useState<string[]>([]);
-  const socketRef = useRef<WebSocket | null>(null);
+  const [live, setLive] = useState<Console | null>(null);
 
   const snapshot = useQuery({
     queryKey: queryKeys.job(jobId ?? -1),
@@ -66,15 +77,23 @@ export function useJob(jobId: number | undefined): UseJobResult {
 
   const status = snapshot.data?.status;
   const finished = isTerminal(status);
+  const snapshotted = snapshot.data !== undefined;
+
+  // Read inside the effect without making the effect depend on every refetch.
+  const tailRef = useRef<string[]>([]);
+  tailRef.current = snapshot.data?.log_tail ?? [];
 
   useEffect(() => {
-    // Nothing to follow, or the job was already over when we looked. Opening a socket for
-    // a finished job would just add a connection that immediately closes.
-    if (jobId === undefined || finished) return;
+    // **Snapshot, then subscribe** (§6), in that order. Waiting for the snapshot is what
+    // gives the console a defined starting point; opening the socket first would leave
+    // the tail and the stream overlapping by an unknown amount.
+    //
+    // Nothing to follow, or the job was already over when we looked: a socket for a
+    // finished job would connect and immediately close.
+    if (jobId === undefined || !snapshotted || finished) return;
 
-    setStreamed([]);
+    setLive({ baseline: formatLogTail(tailRef.current), streamed: [] });
     const socket = new WebSocket(websocketUrl(`/ws/jobs/${jobId}`));
-    socketRef.current = socket;
 
     socket.onmessage = (event: MessageEvent<string>) => {
       let parsed: JobEvent;
@@ -87,30 +106,62 @@ export function useJob(jobId: number | undefined): UseJobResult {
 
       if (parsed.ev === "end") {
         // Refetch rather than trusting the frame: the snapshot carries the result payload
-        // and the final log tail, which the stream does not.
+        // and the terminal status, which the stream does not.
         void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
         return;
       }
 
       const line = describe(parsed);
-      if (line !== null) setStreamed((previous) => [...previous, line]);
+      if (line !== null) {
+        setLive((current) =>
+          current === null ? current : { ...current, streamed: [...current.streamed, line] },
+        );
+      }
       if (parsed.ev === "progress" || parsed.ev === "done" || parsed.ev === "error") {
         void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
       }
     };
 
-    return () => {
-      socketRef.current = null;
-      socket.close();
-    };
-  }, [jobId, finished, queryClient]);
+    return () => socket.close();
+  }, [jobId, snapshotted, finished, queryClient]);
 
   return {
     job: snapshot.data,
-    lines: [...(snapshot.data?.log_tail ?? []), ...streamed],
+    // A job that was already finished when this screen opened has no stream to follow, so
+    // its console is the log file — the raw worker output, every byte of it, which is what
+    // makes a failed run diagnosable afterwards (ADR-0009).
+    lines: live === null
+      ? formatLogTail(snapshot.data?.log_tail ?? [])
+      : [...live.baseline, ...live.streamed],
     error: snapshot.error,
     isPending: snapshot.isPending && jobId !== undefined,
   };
+}
+
+export function formatLogTail(raw: string[]): string[] {
+  const formatted: string[] = [];
+  for (const line of raw) {
+    const rendered = formatLogLine(line);
+    if (rendered !== null) formatted.push(rendered);
+  }
+  return formatted;
+}
+
+/**
+ * One raw log line as the console should show it.
+ *
+ * A line that is not an event is shown as-is: library chatter and native crash messages
+ * are exactly what someone reading a failed job's log needs to see.
+ */
+export function formatLogLine(line: string): string | null {
+  const trimmed = line.trim();
+  if (trimmed === "") return null;
+  if (!trimmed.startsWith("{")) return trimmed;
+  try {
+    return describe(JSON.parse(trimmed) as JobEvent);
+  } catch {
+    return trimmed;
+  }
 }
 
 /** Render one event as a console line, or `null` if it is not worth showing. */

@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 
 use crate::sidecar::Sidecar;
 
@@ -29,19 +30,42 @@ fn repo_root() -> PathBuf {
         .expect("the crate should live at <repo>/frontend/src-tauri")
 }
 
+/// Choose a directory with the OS picker.
+///
+/// The import flow needs a path the *backend* can open, and a browser cannot produce one:
+/// a file input yields a `File` and a bare name, deliberately. So the shell offers this
+/// and the browser offers a text field (ADR-0014).
+///
+/// `async` on purpose — the blocking picker must not run on the main thread, and an async
+/// command is dispatched to a worker.
+#[tauri::command]
+async fn pick_directory(app: tauri::AppHandle) -> Option<String> {
+    app.dialog()
+        .file()
+        .blocking_pick_folder()
+        .and_then(|chosen| chosen.into_path().ok())
+        .map(|path| path.to_string_lossy().into_owned())
+}
+
 fn main() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![pick_directory])
         .setup(|app| {
             // Start the backend first: the window is built only once the sidecar has
             // announced its port, so the UI never renders against a URL that does not
             // exist yet and needs no retry-on-boot logic.
             let sidecar = Sidecar::spawn(&repo_root())?;
 
-            // Handing the URL over as an injected global rather than through a Tauri
-            // command is what keeps `frontend/src/` free of any Tauri import, so the
-            // same bundle runs in a plain browser (§2).
+            // Everything the shell offers is *injected*, never imported: that is what
+            // keeps `frontend/src/` free of any Tauri dependency, so the same bundle runs
+            // in a plain browser (§2, ADR-0014). The UI feature-detects `pickDirectory`
+            // and falls back to a text field when it is absent.
             let script = format!(
-                "window.__ANOMALY_LAB__ = {{ apiBaseUrl: {} }};",
+                "window.__ANOMALY_LAB__ = {{ \
+                   apiBaseUrl: {}, \
+                   pickDirectory: () => window.__TAURI_INTERNALS__.invoke('pick_directory') \
+                 }};",
                 serde_json::to_string(&sidecar.base_url)?
             );
 
