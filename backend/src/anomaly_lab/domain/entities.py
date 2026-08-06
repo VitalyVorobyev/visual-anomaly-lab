@@ -81,14 +81,15 @@ class Job(BaseModel):
     message: str | None = None
     log_path: str | None = None
     params: dict[str, Any] = Field(default_factory=dict)
+    result: dict[str, Any] = Field(default_factory=dict)
     started_at: str | None = None
     finished_at: str | None = None
     error: str | None = None
 
-    @field_validator("params", mode="before")
+    @field_validator("params", "result", mode="before")
     @classmethod
-    def _decode_params(cls, value: object) -> object:
-        """`job.params` is stored as a JSON string; callers work with a dict."""
+    def _decode_json_columns(cls, value: object) -> object:
+        """Both columns are stored as JSON strings; callers work with dicts."""
         return _decode_json_object(value)
 
 

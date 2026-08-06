@@ -16,11 +16,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from anomaly_lab import __version__
-from anomaly_lab.api.routers import health, ws
+from anomaly_lab.api.routers import health, jobs, ws
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_migrations_to
 from anomaly_lab.db.repositories.jobs import fail_stale_running_jobs
+from anomaly_lab.jobs.queue import JobQueue
 
 logger = logging.getLogger(__name__)
 
@@ -52,7 +53,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             ", ".join(str(job.id) for job in stale_jobs),
         )
 
-    yield
+    # Started after reconciliation, so the runner never sees a row the previous process
+    # left behind, and stopped before the process exits, so no worker outlives us.
+    queue: JobQueue = app.state.job_queue
+    await queue.start()
+    try:
+        yield
+    finally:
+        await queue.stop()
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -67,6 +75,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.version = __version__
     app.state.started_at = datetime.now(UTC)
+    app.state.job_queue = JobQueue(settings)
 
     if settings.dev_cors:
         app.add_middleware(
@@ -78,5 +87,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.include_router(health.router)
+    app.include_router(jobs.router)
+    app.include_router(jobs.ws_router)
     app.include_router(ws.router)
     return app

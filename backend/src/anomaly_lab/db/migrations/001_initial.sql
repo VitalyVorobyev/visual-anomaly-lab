@@ -163,6 +163,10 @@ CREATE TABLE job (
     -- Per-kind payload as JSON. `experiment_id` identifies what a train/infer job acts
     -- on, but an import job needs its dataset, adapter and manifest path recorded too.
     params        TEXT    NOT NULL DEFAULT '{}',
+    -- What the job produced, from its `done` event: a manifest path, a count of images
+    -- rendered, a drift report. Input and output are kept apart so re-reading a finished
+    -- job never has to guess which is which.
+    result        TEXT    NOT NULL DEFAULT '{}',
     started_at    TEXT,
     finished_at   TEXT,
     error         TEXT

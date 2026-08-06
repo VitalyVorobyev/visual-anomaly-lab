@@ -65,6 +65,28 @@ class Settings(BaseSettings):
     def db_path(self) -> Path:
         return self.data_dir / "app.sqlite3"
 
+    @property
+    def manifests_dir(self) -> Path:
+        """Committed import manifests — the reproducibility record (ADR-0006)."""
+        return self.data_dir / "manifests"
+
+    @property
+    def thumbnails_dir(self) -> Path:
+        """Rendered image tiers, keyed by image id (§9)."""
+        return self.data_dir / "thumbnails"
+
+    @property
+    def artifacts_dir(self) -> Path:
+        return self.data_dir / "artifacts"
+
+    @property
+    def jobs_log_dir(self) -> Path:
+        """Logs for jobs bound to no experiment — import, verify, prewarm (§6)."""
+        return self.data_dir / "jobs" / "logs"
+
+    def experiment_dir(self, experiment_id: int) -> Path:
+        return self.artifacts_dir / f"exp-{experiment_id}"
+
     def ensure_directories(self) -> None:
         self.data_dir.mkdir(parents=True, exist_ok=True)
 
