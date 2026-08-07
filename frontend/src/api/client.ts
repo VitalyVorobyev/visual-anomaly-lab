@@ -64,6 +64,20 @@ export type SubsetComposition = Schemas["SubsetComposition"];
 
 export type ImageTier = Schemas["ImageTier"];
 
+export type ModelDescription = Schemas["ModelDescription"];
+export type Capabilities = Schemas["Capabilities"];
+export type MethodCatalog = Schemas["MethodCatalog"];
+export type ExperimentSummary = Schemas["ExperimentSummary"];
+export type ExperimentDetail = Schemas["ExperimentDetail"];
+export type ExperimentStatus = Schemas["ExperimentStatus"];
+export type MetricSummary = Schemas["MetricSummary"];
+export type ResultsPage = Schemas["ResultsPage"];
+export type SampleVerdict = Schemas["SampleVerdict"];
+export type ThresholdReport = Schemas["ThresholdReport"];
+export type ImageScore = Schemas["ImageScore"];
+export type DiagnosticIndex = Schemas["DiagnosticIndex"];
+export type DiagnosticEntry = Schemas["DiagnosticEntry"];
+
 /**
  * Turn an openapi-fetch result into a value or an exception.
  *

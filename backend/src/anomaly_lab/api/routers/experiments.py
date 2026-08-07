@@ -407,11 +407,15 @@ def get_threshold(
     value: float = Query(description="Scores at or above this are predicted defective."),
     subset: Subset | None = Query(default=None),
 ) -> ThresholdReport:
-    """Recomputed on every slider move, from persisted scores. Nothing is written."""
+    """Recomputed on every slider move, from persisted scores. Nothing is written.
+
+    Returns the classified rows alongside the counts so the client never has to apply the
+    threshold rule itself — see `ThresholdReport` for why that matters.
+    """
     experiment, settings = _load(request, experiment_id)
     with connection(settings.db_path) as conn:
         samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
-    return report(samples, value)
+    return report(samples, value, include_samples=True)
 
 
 @router.get("/{experiment_id}/samples/{sample_id}/images", summary="Per-image scores of a sample")

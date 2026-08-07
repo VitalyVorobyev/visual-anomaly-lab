@@ -39,4 +39,15 @@ export const queryKeys = {
 
   jobs: () => ["jobs"] as const,
   job: (jobId: number) => ["jobs", jobId] as const,
+
+  modelTypes: () => ["experiments", "model-types"] as const,
+  experiments: (datasetId?: number) => ["experiments", "list", datasetId ?? null] as const,
+  experiment: (experimentId: number) => ["experiments", experimentId] as const,
+  results: (experimentId: number, subset?: Subset) =>
+    ["experiments", experimentId, "results", subset ?? null] as const,
+  threshold: (experimentId: number, subset: Subset | undefined, value: number) =>
+    ["experiments", experimentId, "threshold", subset ?? null, value] as const,
+  sampleImages: (experimentId: number, sampleId: number) =>
+    ["experiments", experimentId, "sample-images", sampleId] as const,
+  diagnostics: (experimentId: number) => ["experiments", experimentId, "diagnostics"] as const,
 } as const;

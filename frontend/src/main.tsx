@@ -7,6 +7,9 @@ import { App } from "./App";
 import { DatasetRoute } from "./routes/DatasetRoute";
 import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
+import { ExperimentRoute } from "./routes/ExperimentRoute";
+import { ExperimentSampleRoute } from "./routes/ExperimentSampleRoute";
+import { ExperimentsRoute } from "./routes/ExperimentsRoute";
 import { HealthRoute } from "./routes/HealthRoute";
 import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
@@ -37,6 +40,12 @@ createRoot(container).render(
             <Route path="datasets/:datasetId" element={<DatasetRoute />} />
             <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
             <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
+            <Route path="experiments" element={<ExperimentsRoute />} />
+            <Route path="experiments/:experimentId" element={<ExperimentRoute />} />
+            <Route
+              path="experiments/:experimentId/samples/:sampleId"
+              element={<ExperimentSampleRoute />}
+            />
             <Route path="health" element={<HealthRoute />} />
             {/* Kept as a debugging aid for the WebSocket path, off the navigation. */}
             <Route path="echo" element={<EchoRoute />} />

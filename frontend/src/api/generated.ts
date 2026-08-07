@@ -273,6 +273,9 @@ export interface paths {
         /**
          * Confusion matrix at one threshold
          * @description Recomputed on every slider move, from persisted scores. Nothing is written.
+         *
+         *     Returns the classified rows alongside the counts so the client never has to apply the
+         *     threshold rule itself — see `ThresholdReport` for why that matters.
          */
         get: operations["get_threshold_api_experiments__experiment_id__threshold_get"];
         put?: never;
@@ -1794,7 +1797,15 @@ export interface components {
             /** Unlabeled */
             unlabeled: number;
         };
-        /** ThresholdReport */
+        /**
+         * ThresholdReport
+         * @description Everything that changes when the slider moves — counts *and* the classified rows.
+         *
+         *     Both together, in one response, on purpose. The alternative is a client that receives
+         *     counts and re-derives each row's outcome for itself, which means the rule "a score at
+         *     or above the threshold is a defect" would exist twice, in two languages, free to
+         *     drift. One request per slider tick is cheaper than that class of bug.
+         */
         ThresholdReport: {
             /** Threshold */
             threshold: number;
@@ -1812,6 +1823,8 @@ export interface components {
              * @default 0
              */
             unlabeled: number;
+            /** Samples */
+            samples: components["schemas"]["SampleVerdict"][];
         };
         /**
          * TrainParams

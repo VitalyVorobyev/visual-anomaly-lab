@@ -49,6 +49,14 @@ class SampleVerdict(BaseModel):
 
 
 class ThresholdReport(BaseModel):
+    """Everything that changes when the slider moves — counts *and* the classified rows.
+
+    Both together, in one response, on purpose. The alternative is a client that receives
+    counts and re-derives each row's outcome for itself, which means the rule "a score at
+    or above the threshold is a defect" would exist twice, in two languages, free to
+    drift. One request per slider tick is cheaper than that class of bug.
+    """
+
     model_config = API_MODEL_CONFIG
 
     threshold: float
@@ -58,6 +66,7 @@ class ThresholdReport(BaseModel):
     f1: float | None = None
     accuracy: float | None = None
     unlabeled: int = 0
+    samples: list[SampleVerdict] = Field(default_factory=list)
 
 
 def _outcome(label: Label, predicted_defect: bool) -> str:
@@ -87,8 +96,13 @@ def classify(samples: Sequence[ScoredSample], threshold: float) -> list[SampleVe
     return verdicts
 
 
-def report(samples: Sequence[ScoredSample], threshold: float) -> ThresholdReport:
-    """Confusion matrix and the rates derived from it, for one threshold."""
+def report(
+    samples: Sequence[ScoredSample],
+    threshold: float,
+    *,
+    include_samples: bool = False,
+) -> ThresholdReport:
+    """Confusion matrix, the rates derived from it, and optionally every classified row."""
     tallies = dict.fromkeys(("tp", "fp", "tn", "fn", "unlabeled"), 0)
     for sample in samples:
         tallies[_outcome(sample.label, sample.agg_score >= threshold)] += 1
@@ -123,6 +137,7 @@ def report(samples: Sequence[ScoredSample], threshold: float) -> ThresholdReport
         f1=f1,
         accuracy=accuracy,
         unlabeled=unlabeled,
+        samples=classify(samples, threshold) if include_samples else [],
     )
 
 
