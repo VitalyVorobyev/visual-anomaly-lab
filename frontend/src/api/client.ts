@@ -41,6 +41,9 @@ export type JobSummary = Schemas["JobSummary"];
 export type JobDetail = Schemas["JobDetail"];
 export type JobStatus = Schemas["JobStatus"];
 export type JobKind = Schemas["JobKind"];
+export type JobMetrics = Schemas["JobMetrics"];
+export type MetricSeries = Schemas["MetricSeries"];
+export type MetricPoint = Schemas["MetricPoint"];
 
 export type AdapterInfo = Schemas["AdapterInfo"];
 /**
@@ -77,6 +80,10 @@ export type ThresholdReport = Schemas["ThresholdReport"];
 export type ImageScore = Schemas["ImageScore"];
 export type DiagnosticIndex = Schemas["DiagnosticIndex"];
 export type DiagnosticEntry = Schemas["DiagnosticEntry"];
+export type DiagnosticKind = Schemas["DiagnosticKind"];
+export type DiagnosticScope = Schemas["DiagnosticScope"];
+export type Curve = Schemas["Curve"];
+export type CurveSet = Schemas["CurveSet"];
 
 /**
  * Turn an openapi-fetch result into a value or an exception.

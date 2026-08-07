@@ -11,6 +11,7 @@ defects, plus matching ground-truth masks so the pixel metrics have something to
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -490,6 +491,51 @@ def test_asking_for_a_map_from_an_experiment_that_has_none_is_a_404(
     assert response.status_code == 404
 
 
+# ----------------------------------------------------------------- curves
+
+
+def test_curves_are_served_for_the_benchmark_charts(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    payload = client.get(
+        f"/api/experiments/{scored['id']}/curves", params={"subset": "test"}
+    ).json()
+
+    for key in ("sample_roc", "sample_pr", "image_roc", "image_pr"):
+        curve = payload[key]
+        assert curve is not None, key
+        assert len(curve["x"]) == len(curve["y"])
+        assert curve["dropped"] == 0
+
+    roc = payload["sample_roc"]
+    assert (roc["x"][0], roc["y"][0]) == (0.0, 0.0)
+    assert (roc["x"][-1], roc["y"][-1]) == (1.0, 1.0)
+
+
+def test_a_curve_agrees_with_the_metric_it_is_drawn_beside(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """The chart and the number come from one implementation (§8)."""
+    curves = client.get(f"/api/experiments/{scored['id']}/curves", params={"subset": "test"}).json()
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+    stored = next(entry for entry in detail["metrics"] if entry["subset"] == "test")
+
+    area = float(np.trapezoid(curves["sample_roc"]["y"], curves["sample_roc"]["x"]))
+    assert area == pytest.approx(stored["metrics"]["sample_roc_auc"], abs=1e-9)
+
+
+def test_a_subset_with_one_class_has_no_curve_rather_than_an_empty_one(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """`train` is normals only by construction, so it cannot support a ROC curve."""
+    payload = client.get(
+        f"/api/experiments/{scored['id']}/curves", params={"subset": "train"}
+    ).json()
+
+    assert payload["sample_roc"] is None
+    assert payload["sample_pr"] is None
+
+
 # ----------------------------------------------------------------- diagnostics
 
 
@@ -505,6 +551,154 @@ def test_diagnostics_are_self_describing_and_never_keyed_by_method_name(
     for entry in index["entries"]:
         assert entry["title"]
         assert entry.get("path") or entry.get("payload") is not None
+
+
+def _array_entries(client: TestClient, experiment_id: int) -> list[dict[str, Any]]:
+    index = client.get(f"/api/experiments/{experiment_id}/diagnostics").json()
+    return [entry for entry in index["entries"] if entry.get("path")]
+
+
+def test_every_array_diagnostic_renders_as_a_png(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """One route, driven by `kind` — the property M6 inherits for free."""
+    entries = _array_entries(client, scored["id"])
+    assert entries
+
+    for entry in entries:
+        query: dict[str, Any] = {"key": entry["key"]}
+        if entry.get("image_id") is not None:
+            query["image_id"] = entry["image_id"]
+        response = client.get(f"/api/experiments/{scored['id']}/diagnostics/payload", params=query)
+        assert response.status_code == 200, entry
+        assert response.headers["content-type"] == "image/png"
+        assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_a_diagnostic_payload_is_addressed_through_the_index_not_by_path(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """There is no request that can name a file, so none can name the wrong one (§11)."""
+    for key in ("../../../etc/passwd", "../diagnostics", "reference_median/../.."):
+        response = client.get(
+            f"/api/experiments/{scored['id']}/diagnostics/payload",
+            params={"key": key},
+        )
+        assert response.status_code == 404
+
+
+def test_an_unrecorded_diagnostic_is_a_404_naming_the_scope(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    response = client.get(
+        f"/api/experiments/{scored['id']}/diagnostics/payload",
+        params={"key": "no_such_key"},
+    )
+    assert response.status_code == 404
+    assert "no_such_key" in response.text
+
+    # A key that exists run-scoped is still absent for an image, and says so.
+    scoped = client.get(
+        f"/api/experiments/{scored['id']}/diagnostics/payload",
+        params={"key": "reference_median", "image_id": 999999},
+    )
+    assert scoped.status_code == 404
+    assert "image 999999" in scoped.text
+
+
+def test_an_inline_kind_refuses_rather_than_inventing_a_second_source_of_truth(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    root = settings.experiment_dir(scored["id"]) / "diagnostics"
+    index = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))
+    index["entries"].append(
+        {
+            "key": "architecture",
+            "title": "Arch",
+            "kind": "graph",
+            "scope": "model",
+            "payload": {"nodes": [], "edges": []},
+        }
+    )
+    (root / "diagnostics.json").write_text(json.dumps(index), encoding="utf-8")
+
+    response = client.get(
+        f"/api/experiments/{scored['id']}/diagnostics/payload",
+        params={"key": "architecture"},
+    )
+    assert response.status_code == 400
+    assert "inline" in response.text
+
+
+def test_a_deleted_payload_reads_as_gone_rather_than_as_corruption(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """The artifact directory is deletable by design — the same 410 a missing map gets."""
+    entry = _array_entries(client, scored["id"])[0]
+    (settings.experiment_dir(scored["id"]) / "diagnostics" / entry["path"]).unlink()
+
+    query: dict[str, Any] = {"key": entry["key"]}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+    response = client.get(f"/api/experiments/{scored['id']}/diagnostics/payload", params=query)
+    assert response.status_code == 410
+
+
+def test_a_grid_frame_beyond_the_payload_is_a_404_naming_the_count(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    root = settings.experiment_dir(scored["id"]) / "diagnostics"
+    np.save(root / "cells.npy", np.zeros((3, 4, 4), dtype=np.float32))
+    index = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))
+    index["entries"].append(
+        {
+            "key": "cells",
+            "title": "Cells",
+            "kind": "grid",
+            "scope": "model",
+            "path": "cells.npy",
+            "shape": [3, 4, 4],
+        }
+    )
+    (root / "diagnostics.json").write_text(json.dumps(index), encoding="utf-8")
+
+    url = f"/api/experiments/{scored['id']}/diagnostics/payload"
+    assert client.get(url, params={"key": "cells", "frame": 2}).status_code == 200
+
+    missing = client.get(url, params={"key": "cells", "frame": 3})
+    assert missing.status_code == 404
+    assert "3 frame(s)" in missing.text
+
+
+def test_a_payload_revalidates_rather_than_being_cached_forever(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """Re-running inference overwrites an image's maps in place, so `immutable` would lie."""
+    entry = _array_entries(client, scored["id"])[0]
+    query: dict[str, Any] = {"key": entry["key"]}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+
+    url = f"/api/experiments/{scored['id']}/diagnostics/payload"
+    first = client.get(url, params=query)
+    etag = first.headers["etag"]
+    assert first.headers["cache-control"] == "no-cache"
+
+    again = client.get(url, params=query, headers={"if-none-match": etag})
+    assert again.status_code == 304
+
+
+def test_every_image_of_one_key_is_drawn_on_the_run_s_scale(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """A recorded range is what makes two images comparable by eye (ADR-0019)."""
+    root = settings.experiment_dir(scored["id"]) / "diagnostics"
+    ranges = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))["ranges"]
+
+    per_image = [entry for entry in _array_entries(client, scored["id"]) if entry.get("image_id")]
+    assert per_image
+    span = ranges[per_image[0]["key"]]
+    assert span["high"] > span["low"]
 
 
 # ----------------------------------------------------------------- lifecycle

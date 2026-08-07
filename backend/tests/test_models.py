@@ -188,6 +188,70 @@ def test_reading_an_index_that_was_never_written_is_empty_not_an_error(tmp_path:
     assert load_index(tmp_path / "nothing").entries == []
 
 
+def test_one_key_gets_one_range_across_every_image_that_emitted_it(tmp_path: Path) -> None:
+    """Per-array normalization makes a clean part look as alarming as a defective one."""
+    writer = DiagnosticWriter(tmp_path / "diag")
+    writer.emit("m", "M", DiagnosticKind.MAP, np.full((8, 8), 0.2, np.float32), image_id=1)
+    writer.emit("m", "M", DiagnosticKind.MAP, np.full((8, 8), 5.0, np.float32), image_id=2)
+
+    span = writer.flush().ranges["m"]
+    assert span.low == pytest.approx(0.2)
+    assert span.high == pytest.approx(5.0)
+
+
+def test_the_range_high_end_is_a_percentile_so_one_hot_pixel_cannot_flatten_a_run(
+    tmp_path: Path,
+) -> None:
+    """The same choice `write_map` makes, for the same reason."""
+    values = np.zeros((32, 32), dtype=np.float32)
+    values[0, 0] = 1000.0
+
+    writer = DiagnosticWriter(tmp_path / "diag")
+    writer.emit("m", "M", DiagnosticKind.MAP, values)
+
+    assert writer.flush().ranges["m"].high < 1000.0
+
+
+def test_a_kind_rendered_without_a_colormap_records_no_range(tmp_path: Path) -> None:
+    """An `image` payload is already a picture; a range for it would never be read."""
+    writer = DiagnosticWriter(tmp_path / "diag")
+    writer.emit("pca", "PCA", DiagnosticKind.IMAGE, np.zeros((4, 4, 3), np.float32))
+    writer.emit("arch", "Arch", DiagnosticKind.GRAPH, {"nodes": []})
+
+    assert writer.flush().ranges == {}
+
+
+def test_a_later_run_keeps_the_earlier_run_s_ranges_and_replaces_its_own(
+    tmp_path: Path,
+) -> None:
+    """Ranges merge by the same rule as entries — the M3 bug, one level coarser."""
+    root = tmp_path / "diag"
+
+    training = DiagnosticWriter(root)
+    training.emit("teacher", "T", DiagnosticKind.MAP, np.full((4, 4), 3.0, np.float32))
+    training.flush()
+
+    inference = DiagnosticWriter(root)
+    inference.emit("err", "E", DiagnosticKind.MAP, np.full((4, 4), 9.0, np.float32), image_id=1)
+    merged = inference.flush()
+
+    assert set(merged.ranges) == {"teacher", "err"}
+    assert merged.ranges["teacher"].high == pytest.approx(3.0)
+    assert merged.ranges["err"].high == pytest.approx(9.0)
+    assert set(load_index(root).ranges) == {"teacher", "err"}
+
+
+def test_an_index_written_before_ranges_existed_still_loads(tmp_path: Path) -> None:
+    """The field is additive, so `INDEX_VERSION` did not move; prove the reader agrees."""
+    root = tmp_path / "diag"
+    root.mkdir()
+    (root / "diagnostics.json").write_text(
+        '{"version": 1, "entries": [], "truncated_images": 0}', encoding="utf-8"
+    )
+
+    assert load_index(root).ranges == {}
+
+
 # ----------------------------------------------------------------- registry
 
 

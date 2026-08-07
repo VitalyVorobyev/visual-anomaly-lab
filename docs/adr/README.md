@@ -28,6 +28,8 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0016](0016-adapters-for-public-datasets-masks-and-imported-splits.md) | Adapters for public datasets, masks in the catalog, imported splits | Accepted |
 | [0017](0017-pixel-level-evaluation-at-constant-memory.md) | Pixel-level evaluation, at constant memory | Accepted |
 | [0018](0018-model-diagnostics-as-a-declarative-capability.md) | Model diagnostics as a declarative capability | Accepted |
+| [0019](0019-serving-diagnostic-payloads-through-the-index.md) | Serving diagnostic payloads through the index, on a recorded scale | Accepted |
+| [0020](0020-metric-series-are-replayed-from-the-job-log.md) | Metric series are replayed from the job log, not buffered | Accepted |
 
 ## Conventions
 

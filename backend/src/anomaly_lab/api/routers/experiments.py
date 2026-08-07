@@ -12,9 +12,11 @@ a filter over a few hundred floats and never a database write (ADR-0011).
 from __future__ import annotations
 
 import sqlite3
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, Request
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from pydantic import BaseModel, Field
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
@@ -29,8 +31,10 @@ from anomaly_lab.domain.entities import (
     Experiment,
     ExperimentStatus,
     JobKind,
+    Label,
     Subset,
 )
+from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
 from anomaly_lab.eval.threshold import (
     SampleVerdict,
@@ -42,13 +46,23 @@ from anomaly_lab.eval.threshold import (
 from anomaly_lab.experiments.infer import InferParams
 from anomaly_lab.experiments.train import TrainParams
 from anomaly_lab.jobs.queue import JobQueue
-from anomaly_lab.models.base import ModelDescription
-from anomaly_lab.models.diagnostics import DiagnosticIndex, load_index
+from anomaly_lab.media.overlay import render_anomaly_map, render_rgb_image
+from anomaly_lab.models.base import ModelDescription, evenly_spaced
+from anomaly_lab.models.diagnostics import (
+    DiagnosticEntry,
+    DiagnosticIndex,
+    DiagnosticKind,
+    load_index,
+)
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
+
+# A ROC curve has one point per distinct score, so a large test set produces more points
+# than a chart has pixels. Capped, and the cap is reported rather than applied silently.
+CURVE_POINT_LIMIT = 2000
 
 
 class MethodCatalog(BaseModel):
@@ -129,6 +143,35 @@ class ResultsPage(BaseModel):
     score_min: float = 0.0
     score_max: float = 0.0
     samples: list[SampleVerdict] = Field(default_factory=list)
+
+
+class Curve(BaseModel):
+    """One plotted curve, downsampled to a drawable number of points."""
+
+    model_config = API_MODEL_CONFIG
+
+    x: list[float] = Field(description="False-positive rate for ROC; recall for PR.")
+    y: list[float] = Field(description="True-positive rate for ROC; precision for PR.")
+    total: int = Field(description="Points before downsampling.")
+    dropped: int = Field(default=0, description="Points not returned, so a cap is visible.")
+
+
+class CurveSet(BaseModel):
+    """The curves behind one subset's headline numbers.
+
+    Every field is `None` when the subset cannot support that curve — one class present,
+    nothing scored. A fabricated chance diagonal would be a picture of a claim nobody
+    made (§8).
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    subset: Subset | None = None
+    sample_roc: Curve | None = None
+    sample_pr: Curve | None = None
+    image_roc: Curve | None = None
+    image_pr: Curve | None = None
 
 
 class ImageScore(BaseModel):
@@ -418,6 +461,70 @@ def get_threshold(
     return report(samples, value, include_samples=True)
 
 
+@router.get("/{experiment_id}/curves", summary="ROC and PR curves for one subset")
+def get_curves(
+    request: Request,
+    experiment_id: int,
+    subset: Subset | None = Query(default=None),
+) -> CurveSet:
+    """The arrays behind the headline numbers, for the benchmark charts.
+
+    Recomputed from the stored scores on every request — the same read the threshold
+    endpoint does, over a few hundred floats — rather than persisted. Nothing here is
+    threshold-dependent and nothing is written (ADR-0011).
+
+    Pixel-level curves are deliberately absent. The pixel accumulator streams its
+    histograms and discards them by design (ADR-0017), so drawing that curve would mean
+    re-reading every anomaly map — the expensive pass this layer exists to avoid.
+    """
+    experiment, settings = _load(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
+        images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+
+    sample_labels, sample_scores = _labelled(
+        [(row.label, row.agg_score) for row in samples],
+    )
+    image_labels, image_scores = _labelled([(row.label, row.score) for row in images])
+
+    return CurveSet(
+        experiment_id=experiment.id,
+        subset=subset,
+        sample_roc=_curve(roc_curve(sample_labels, sample_scores)),
+        sample_pr=_curve(pr_curve(sample_labels, sample_scores)),
+        image_roc=_curve(roc_curve(image_labels, image_scores)),
+        image_pr=_curve(pr_curve(image_labels, image_scores)),
+    )
+
+
+def _labelled(rows: list[tuple[Label, float]]) -> tuple[np.ndarray, np.ndarray]:
+    """Labels and scores as arrays, with unlabeled rows left out.
+
+    An unlabeled sample has no ground truth, so it cannot be a point on a ROC curve. It
+    is dropped here rather than counted as normal, which is what the evaluation layer
+    does with the same rows.
+    """
+    labelled = [(label, score) for label, score in rows if label is not Label.UNLABELED]
+    return (
+        np.array([label is Label.DEFECT for label, _ in labelled], dtype=bool),
+        np.array([score for _, score in labelled], dtype=np.float64),
+    )
+
+
+def _curve(arrays: tuple[np.ndarray, np.ndarray] | None) -> Curve | None:
+    """Downsample one curve to a drawable number of points, saying what was dropped."""
+    if arrays is None:
+        return None
+    x, y = arrays
+    kept = evenly_spaced(x.size, CURVE_POINT_LIMIT)
+    return Curve(
+        x=[float(x[index]) for index in kept],
+        y=[float(y[index]) for index in kept],
+        total=int(x.size),
+        dropped=int(x.size) - len(kept),
+    )
+
+
 @router.get("/{experiment_id}/samples/{sample_id}/images", summary="Per-image scores of a sample")
 def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> list[ImageScore]:
     """What the result viewer needs to draw one part across its channels."""
@@ -452,3 +559,124 @@ def get_diagnostics(request: Request, experiment_id: int) -> DiagnosticIndex:
     """
     experiment, settings = _load(request, experiment_id)
     return load_index(settings.experiment_dir(experiment.id) / "diagnostics")
+
+
+@router.get(
+    "/{experiment_id}/diagnostics/payload",
+    summary="One diagnostic array, rendered",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/png": {}}},
+        304: {"description": "The client's copy is current."},
+    },
+)
+def read_diagnostic_payload(
+    request: Request,
+    experiment_id: int,
+    key: str = Query(description="The diagnostic's key, as the index reports it."),
+    image_id: int | None = Query(
+        default=None,
+        description="For a per-image diagnostic. Omit for a run-scoped one.",
+    ),
+    frame: int = Query(default=0, ge=0, description="Which cell of a `grid` payload."),
+) -> Response:
+    """Render one stored diagnostic array as a PNG.
+
+    **Addressed through the index, never through `entry.path`.** The client names a
+    `(key, image_id)` pair and this resolves it against the index the model wrote; there
+    is no request that can name a file. That is the same rule the image routes follow
+    (§11), and it means path traversal is impossible by construction rather than by
+    sanitising a query parameter after the fact.
+
+    Colormapped kinds are stretched over the **run-wide** range the writer recorded, so
+    every image's student-teacher error is drawn on one scale and two images can be
+    compared by eye. An index written before ranges were recorded has none, and each
+    array then falls back to its own extremes — visibly worse, and better than refusing.
+    """
+    experiment, settings = _load(request, experiment_id)
+    root = settings.experiment_dir(experiment.id) / "diagnostics"
+    index = load_index(root)
+
+    entry = next(
+        (item for item in index.entries if item.key == key and item.image_id == image_id),
+        None,
+    )
+    if entry is None:
+        scope = "run-scoped" if image_id is None else f"image {image_id}"
+        raise HTTPException(
+            status_code=404,
+            detail=f"experiment {experiment_id} recorded no {scope} diagnostic {key!r}",
+        )
+    if entry.path is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"diagnostic {key!r} is of kind {entry.kind.value}, whose payload is "
+                "already inline in the index; fetching it here would be a second source "
+                "of truth for the same data"
+            ),
+        )
+
+    target = root / entry.path
+    etag = _payload_etag(experiment_id, entry, frame, target)
+    if etag is not None and request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=_diagnostic_headers(etag))
+
+    try:
+        array = np.load(target, allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        # The artifact directory is deletable by design, so a referenced file that is gone
+        # is an expected state rather than corruption — the same 410 a missing source file
+        # or a missing anomaly map gets.
+        raise HTTPException(
+            status_code=410,
+            detail=f"the payload for diagnostic {key!r} is no longer readable",
+        ) from exc
+
+    recorded = index.ranges.get(key)
+    value_range = None if recorded is None else (recorded.low, recorded.high)
+
+    if entry.kind is DiagnosticKind.IMAGE:
+        content = render_rgb_image(array)
+    elif entry.kind is DiagnosticKind.GRID:
+        if frame >= array.shape[0]:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
+                ),
+            )
+        content = render_anomaly_map(
+            array[frame], value_range=value_range, alpha_follows_score=False
+        )
+    else:
+        content = render_anomaly_map(array, value_range=value_range, alpha_follows_score=False)
+
+    headers = {} if etag is None else _diagnostic_headers(etag)
+    return Response(content=content, media_type="image/png", headers=headers)
+
+
+def _payload_etag(
+    experiment_id: int, entry: DiagnosticEntry, frame: int, target: Path
+) -> str | None:
+    """A validator over what actually decides the bytes.
+
+    Diagnostics are **not** immutable the way an imported image is: re-running inference
+    overwrites an image's error maps in place, so the file's size and modification time
+    are part of the identity. Without them a browser would keep showing the previous run's
+    picture under the current run's caption.
+    """
+    try:
+        stat = target.stat()
+    except OSError:
+        return None
+    return (
+        f'W/"diag-{experiment_id}-{entry.key}-{entry.image_id}-{frame}'
+        f'-{stat.st_size}-{stat.st_mtime_ns}"'
+    )
+
+
+def _diagnostic_headers(etag: str) -> dict[str, str]:
+    # `no-cache` means "revalidate", not "do not store": the client keeps the bytes and
+    # asks whether they are still current, which the ETag answers with a 304.
+    return {"ETag": etag, "Cache-Control": "no-cache"}

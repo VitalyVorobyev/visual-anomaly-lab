@@ -286,6 +286,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/curves": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * ROC and PR curves for one subset
+         * @description The arrays behind the headline numbers, for the benchmark charts.
+         *
+         *     Recomputed from the stored scores on every request — the same read the threshold
+         *     endpoint does, over a few hundred floats — rather than persisted. Nothing here is
+         *     threshold-dependent and nothing is written (ADR-0011).
+         *
+         *     Pixel-level curves are deliberately absent. The pixel accumulator streams its
+         *     histograms and discards them by design (ADR-0017), so drawing that curve would mean
+         *     re-reading every anomaly map — the expensive pass this layer exists to avoid.
+         */
+        get: operations["get_curves_api_experiments__experiment_id__curves_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/samples/{sample_id}/images": {
         parameters: {
             query?: never;
@@ -321,6 +349,37 @@ export interface paths {
          *     makes a future method's diagnostics work here with no change.
          */
         get: operations["get_diagnostics_api_experiments__experiment_id__diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/diagnostics/payload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One diagnostic array, rendered
+         * @description Render one stored diagnostic array as a PNG.
+         *
+         *     **Addressed through the index, never through `entry.path`.** The client names a
+         *     `(key, image_id)` pair and this resolves it against the index the model wrote; there
+         *     is no request that can name a file. That is the same rule the image routes follow
+         *     (§11), and it means path traversal is impossible by construction rather than by
+         *     sanitising a query parameter after the fact.
+         *
+         *     Colormapped kinds are stretched over the **run-wide** range the writer recorded, so
+         *     every image's student-teacher error is drawn on one scale and two images can be
+         *     compared by eye. An index written before ranges were recorded has none, and each
+         *     array then falls back to its own extremes — visibly worse, and better than refusing.
+         */
+        get: operations["read_diagnostic_payload_api_experiments__experiment_id__diagnostics_payload_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -384,6 +443,12 @@ export interface paths {
          *     range file the inference job wrote. Normalizing each map to its own extremes would
          *     make a clean part look as alarming as a defective one, which is precisely the
          *     comparison the overlay exists to support.
+         *
+         *     `alpha` is the *overlay* decision, and it is wrong outside an overlay. Laid over a
+         *     photograph, score-driven alpha is what keeps the quiet regions from being tinted; in
+         *     a diagnostics panel beside an opaque per-branch map, it makes a clean image look
+         *     blank and puts the two panes on visibly different scales — which defeats the
+         *     comparison the panel exists for.
          */
         get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
         put?: never;
@@ -579,6 +644,31 @@ export interface paths {
          * @description Snapshot a job. Take this before subscribing to its event stream.
          */
         get: operations["get_job_api_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jobs/{job_id}/metrics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every scalar series this job has emitted
+         * @description The history behind the live chart. Take this before subscribing, like the console.
+         *
+         *     Without it a chart could only show what arrived after the page opened, so reloading
+         *     during a two-hour training run would throw away the run. The `log_tail` cannot serve
+         *     this: it is the last 200 raw lines of a stream that also carries progress and library
+         *     output, which for a long run is a few seconds at the very end.
+         */
+        get: operations["get_job_metrics_api_jobs__job_id__metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -905,6 +995,50 @@ export interface components {
             seed: number;
             params?: components["schemas"]["SplitParams-Input"];
         };
+        /**
+         * Curve
+         * @description One plotted curve, downsampled to a drawable number of points.
+         */
+        Curve: {
+            /**
+             * X
+             * @description False-positive rate for ROC; recall for PR.
+             */
+            x: number[];
+            /**
+             * Y
+             * @description True-positive rate for ROC; precision for PR.
+             */
+            y: number[];
+            /**
+             * Total
+             * @description Points before downsampling.
+             */
+            total: number;
+            /**
+             * Dropped
+             * @description Points not returned, so a cap is visible.
+             * @default 0
+             */
+            dropped: number;
+        };
+        /**
+         * CurveSet
+         * @description The curves behind one subset's headline numbers.
+         *
+         *     Every field is `None` when the subset cannot support that curve — one class present,
+         *     nothing scored. A fabricated chance diagonal would be a picture of a claim nobody
+         *     made (§8).
+         */
+        CurveSet: {
+            /** Experiment Id */
+            experiment_id: number;
+            subset: components["schemas"]["Subset"] | null;
+            sample_roc: components["schemas"]["Curve"] | null;
+            sample_pr: components["schemas"]["Curve"] | null;
+            image_roc: components["schemas"]["Curve"] | null;
+            image_pr: components["schemas"]["Curve"] | null;
+        };
         /** DatasetDetail */
         DatasetDetail: {
             /** Id */
@@ -1007,6 +1141,13 @@ export interface components {
             /** Entries */
             entries: components["schemas"]["DiagnosticEntry"][];
             /**
+             * Ranges
+             * @description Run-wide value span per colormapped key, so every emission of one key is drawn on the same scale. Absent for keys rendered without a colormap, and absent entirely from an index written before ranges were recorded.
+             */
+            ranges: {
+                [key: string]: components["schemas"]["DisplayRange"];
+            };
+            /**
              * Image Budget
              * @description How many images were allowed per-image diagnostics, if capped.
              */
@@ -1030,6 +1171,21 @@ export interface components {
          * @enum {string}
          */
         DiagnosticScope: "model" | "image";
+        /**
+         * DisplayRange
+         * @description The value span one diagnostic key is drawn over, across a whole run.
+         *
+         *     Same shape as the `range.json` an inference job writes beside its anomaly maps, and
+         *     for the same reason: every emission of one key has to be colormapped on a single
+         *     scale or two images cannot be compared by eye. Normalizing each array to its own
+         *     extremes makes a clean part look exactly as alarming as a defective one.
+         */
+        DisplayRange: {
+            /** Low */
+            low: number;
+            /** High */
+            high: number;
+        };
         /** ExperimentDetail */
         ExperimentDetail: {
             /** Id */
@@ -1255,6 +1411,16 @@ export interface components {
          * @enum {string}
          */
         JobKind: "import" | "verify" | "prewarm" | "train" | "infer";
+        /**
+         * JobMetrics
+         * @description Every scalar series a job has emitted so far.
+         */
+        JobMetrics: {
+            /** Job Id */
+            job_id: number;
+            /** Series */
+            series: components["schemas"]["MetricSeries"][];
+        };
         /**
          * JobStatus
          * @enum {string}
@@ -1550,6 +1716,37 @@ export interface components {
             evaluation_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * MetricPoint
+         * @description One `metric` event, reduced to what a chart plots.
+         */
+        MetricPoint: {
+            /** Step */
+            step: number | null;
+            /** Value */
+            value: number;
+        };
+        /**
+         * MetricSeries
+         * @description One named scalar series over a run — a loss term, a learning rate.
+         */
+        MetricSeries: {
+            /** Name */
+            name: string;
+            /** Points */
+            points: components["schemas"]["MetricPoint"][];
+            /**
+             * Total
+             * @description How many points the job actually emitted.
+             */
+            total: number;
+            /**
+             * Dropped
+             * @description Points not returned because the series was downsampled to fit.
+             * @default 0
+             */
+            dropped: number;
         };
         /** MetricSummary */
         MetricSummary: {
@@ -2426,6 +2623,39 @@ export interface operations {
             };
         };
     };
+    get_curves_api_experiments__experiment_id__curves_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CurveSet"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sample_images_api_experiments__experiment_id__samples__sample_id__images_get: {
         parameters: {
             query?: never;
@@ -2477,6 +2707,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["DiagnosticIndex"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_diagnostic_payload_api_experiments__experiment_id__diagnostics_payload_get: {
+        parameters: {
+            query: {
+                /** @description The diagnostic's key, as the index reports it. */
+                key: string;
+                /** @description For a per-image diagnostic. Omit for a run-scoped one. */
+                image_id?: number | null;
+                /** @description Which cell of a `grid` payload. */
+                frame?: number;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description The client's copy is current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -2549,6 +2824,8 @@ export interface operations {
                 experiment_id: number;
                 /** @description Resample the map to the source image's pixel grid so it overlays exactly. */
                 native?: boolean;
+                /** @description Scale opacity with the score, for laying over the source image. Set false for a standalone panel, where a low-scoring map would otherwise be invisible. */
+                alpha?: boolean;
             };
             header?: never;
             path: {
@@ -2850,6 +3127,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_job_metrics_api_jobs__job_id__metrics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobMetrics"];
                 };
             };
             /** @description Validation Error */

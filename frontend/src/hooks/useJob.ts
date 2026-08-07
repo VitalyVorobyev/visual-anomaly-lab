@@ -16,7 +16,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { websocketUrl } from "../api/baseUrl";
 import { api, unwrap } from "../api/client";
-import type { JobDetail, JobStatus } from "../api/client";
+import type { JobDetail, JobMetrics, JobStatus } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
 /** A worker frame, or the parent's closing frame. */
@@ -27,8 +27,19 @@ export interface JobEvent {
   level?: string;
   name?: string;
   value?: number;
+  /** Present on `metric`. The backend has always sent it; this client used to drop it. */
+  step?: number;
   status?: JobStatus;
   type?: string;
+}
+
+/** One scalar series as a chart wants it: named, ordered, with its own truncation note. */
+export interface Series {
+  name: string;
+  points: { step: number; value: number }[];
+  /** How many points the run emitted, which exceeds `points.length` when downsampled. */
+  total: number;
+  dropped: number;
 }
 
 export const TERMINAL: readonly JobStatus[] = ["succeeded", "failed", "cancelled"];
@@ -44,10 +55,19 @@ export async function fetchJob(jobId: number): Promise<JobDetail> {
   );
 }
 
+export async function fetchJobMetrics(jobId: number): Promise<JobMetrics> {
+  return unwrap(
+    await api.GET("/api/jobs/{job_id}/metrics", { params: { path: { job_id: jobId } } }),
+    "the job's metrics",
+  );
+}
+
 export interface UseJobResult {
   job: JobDetail | undefined;
   /** Log lines from the snapshot, then everything the socket has delivered since. */
   lines: string[];
+  /** Scalar series from the snapshot, then everything the socket has delivered since. */
+  series: Series[];
   error: Error | null;
   isPending: boolean;
 }
@@ -64,9 +84,40 @@ interface Console {
   streamed: string[];
 }
 
+/**
+ * The scalar series, under the same freeze rule as the console.
+ *
+ * `baseline` is the metric snapshot taken when the socket opened; `streamed` is what has
+ * arrived since. They are kept apart for the reason the log tail is: every event
+ * invalidates the snapshot, and a snapshot re-read live would already contain the points
+ * the socket just delivered, drawing each one twice.
+ */
+interface Metrics {
+  baseline: JobMetrics;
+  streamed: Map<string, { step: number; value: number }[]>;
+}
+
+/**
+ * Whether **both** snapshots have settled, which is when the socket may be opened.
+ *
+ * "Snapshot, then subscribe" (§6) is now two requests, not one, and gating on the job's
+ * alone is a bug that looks like working software. The job snapshot is the smaller
+ * request and lands first; subscribing there opens the socket while the metric history is
+ * still on the wire, so the baseline freezes empty and the chart redraws from the moment
+ * the page opened. It still *moves*, which is exactly why it reads as fine — and it means
+ * a reload during a two-hour run silently throws the run away.
+ *
+ * Settled, not successful: a metrics read that failed must still give the console a live
+ * socket. The chart is then empty, which is the honest outcome for that case.
+ */
+export function bothSnapshotsSettled(hasJob: boolean, metricsPending: boolean): boolean {
+  return hasJob && !metricsPending;
+}
+
 export function useJob(jobId: number | undefined): UseJobResult {
   const queryClient = useQueryClient();
   const [live, setLive] = useState<Console | null>(null);
+  const [metrics, setMetrics] = useState<Metrics | null>(null);
 
   const snapshot = useQuery({
     queryKey: queryKeys.job(jobId ?? -1),
@@ -75,13 +126,28 @@ export function useJob(jobId: number | undefined): UseJobResult {
     retry: false,
   });
 
+  // The history behind the chart. Without it, reloading during a two-hour training run
+  // would throw the run away — `log_tail` is 200 raw lines of a stream that also carries
+  // progress and library output, which for a long run is its final seconds (ADR-0020).
+  const storedMetrics = useQuery({
+    queryKey: queryKeys.jobMetrics(jobId ?? -1),
+    queryFn: () => fetchJobMetrics(jobId as number),
+    enabled: jobId !== undefined,
+    retry: false,
+  });
+
   const status = snapshot.data?.status;
   const finished = isTerminal(status);
-  const snapshotted = snapshot.data !== undefined;
+  const snapshotted = bothSnapshotsSettled(
+    snapshot.data !== undefined,
+    storedMetrics.isPending,
+  );
 
   // Read inside the effect without making the effect depend on every refetch.
   const tailRef = useRef<string[]>([]);
   tailRef.current = snapshot.data?.log_tail ?? [];
+  const metricsRef = useRef<JobMetrics | undefined>(undefined);
+  metricsRef.current = storedMetrics.data;
 
   useEffect(() => {
     // **Snapshot, then subscribe** (§6), in that order. Waiting for the snapshot is what
@@ -93,6 +159,10 @@ export function useJob(jobId: number | undefined): UseJobResult {
     if (jobId === undefined || !snapshotted || finished) return;
 
     setLive({ baseline: formatLogTail(tailRef.current), streamed: [] });
+    setMetrics({
+      baseline: metricsRef.current ?? { job_id: jobId, series: [] },
+      streamed: new Map(),
+    });
     const socket = new WebSocket(websocketUrl(`/ws/jobs/${jobId}`));
 
     socket.onmessage = (event: MessageEvent<string>) => {
@@ -109,6 +179,17 @@ export function useJob(jobId: number | undefined): UseJobResult {
         // and the terminal status, which the stream does not.
         void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
         return;
+      }
+
+      if (parsed.ev === "metric" && typeof parsed.name === "string") {
+        const point = { step: parsed.step ?? 0, value: parsed.value ?? 0 };
+        const name = parsed.name;
+        setMetrics((current) => {
+          if (current === null) return current;
+          const streamed = new Map(current.streamed);
+          streamed.set(name, [...(streamed.get(name) ?? []), point]);
+          return { ...current, streamed };
+        });
       }
 
       const line = describe(parsed);
@@ -133,9 +214,52 @@ export function useJob(jobId: number | undefined): UseJobResult {
     lines: live === null
       ? formatLogTail(snapshot.data?.log_tail ?? [])
       : [...live.baseline, ...live.streamed],
+    series:
+      metrics === null ? toSeries(storedMetrics.data) : mergeSeries(metrics.baseline, metrics.streamed),
     error: snapshot.error,
     isPending: snapshot.isPending && jobId !== undefined,
   };
+}
+
+/** The stored series alone — what a finished run, or one not yet subscribed to, shows. */
+export function toSeries(stored: JobMetrics | undefined): Series[] {
+  return (stored?.series ?? []).map((entry) => ({
+    name: entry.name,
+    points: entry.points.map((point) => ({ step: point.step ?? 0, value: point.value })),
+    total: entry.total,
+    dropped: entry.dropped,
+  }));
+}
+
+/**
+ * The frozen snapshot, plus whatever the socket has delivered since.
+ *
+ * A name that only ever appeared on the socket still gets a series, which is what makes a
+ * chart move within the first seconds of a run rather than after the first refetch.
+ */
+export function mergeSeries(
+  baseline: JobMetrics,
+  streamed: Map<string, { step: number; value: number }[]>,
+): Series[] {
+  const merged = new Map<string, Series>();
+  for (const entry of baseline.series) {
+    merged.set(entry.name, {
+      name: entry.name,
+      points: entry.points.map((point) => ({ step: point.step ?? 0, value: point.value })),
+      total: entry.total,
+      dropped: entry.dropped,
+    });
+  }
+  for (const [name, points] of streamed) {
+    const existing = merged.get(name);
+    if (existing) {
+      existing.points = [...existing.points, ...points];
+      existing.total += points.length;
+    } else {
+      merged.set(name, { name, points: [...points], total: points.length, dropped: 0 });
+    }
+  }
+  return [...merged.values()].sort((left, right) => left.name.localeCompare(right.name));
 }
 
 export function formatLogTail(raw: string[]): string[] {

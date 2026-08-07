@@ -249,6 +249,8 @@ Two are about the method:
 
 ## M4 — The researcher's workbench UI
 
+**Status: complete (2026-08-07),** with one scope item deliberately not delivered and recorded below.
+
 **Goal.** Make the method *legible*, not just runnable. Everything here is built on M3's diagnostics contract, so it renders whatever a model declares and never branches on model name.
 
 **Scope**
@@ -263,12 +265,26 @@ Two are about the method:
 
 **Exit criteria**
 
-- [ ] A researcher can see what the teacher produces on a chosen sample, without reading any code.
-- [ ] Training is watchable live: per-branch losses update as the run progresses, and the charts survive a page reload mid-run.
-- [ ] The architecture view's shapes and parameter counts are read from the model, and a change to the model's configuration is visible in the diagram without any edit here.
-- [ ] Every visualization is driven by the diagnostics contract, so `efficientad_custom` gets all of them for free in M6.
+- [x] A researcher can see what the teacher produces on a chosen sample, without reading any code. The *Inspector* tab renders every run-scoped picture a method recorded, with the plugin's own description under each. Per-image diagnostics render on the sample page beside the combined map they decompose, which is the comparison that makes a two-branch method legible.
+- [x] Training is watchable live: per-branch losses update as the run progresses, and the charts survive a page reload mid-run. **This did not work and could not have**, and finding out why is the milestone's main finding — see below.
+- [x] The architecture view's shapes and parameter counts are read from the model, and a change to the model's configuration is visible in the diagram without any edit here. The `graph` payload is captured from a dry forward pass at the experiment's own preprocessing size, so changing that size and retraining changes the diagram with no frontend edit.
+- [x] Every visualization is driven by the diagnostics contract, so `efficientad_custom` gets all of them for free in M6. Pinned by a test rather than asserted: `DiagnosticsPanel.test.tsx` feeds the panel an index containing a kind this build has never heard of, and the same key emitted once as `image` and once as `map`.
 
-**Size:** large, but low-risk and pausable — it is frontend work against a contract that already exists.
+**Findings recorded during M4**
+
+- **The exit criterion "the charts survive a page reload" was not reachable from what M3 built**, and the shape of the gap was invisible until a chart needed the data. `metric` events are streamed and tee'd to the job log, and stored in no column: `_observe` handles `progress`, `done` and `error`, and a `MetricEvent` falls through with no branch. The only history served was `log_tail`, 200 raw lines of a stream that also carries progress frames and library chatter — for a 20 000-step run, its final seconds. A chart rebuilt from that would have *looked* like a chart. The fix reads the job's own log file, which was already the durable copy of the stream, so it cost no table and no migration (**ADR-0020**).
+- **The diagnostics contract had a write half and no read half.** M3's index names `map`, `image` and `grid` payloads by a path relative to the diagnostics directory, and no route resolved it — the views had an index of things they could name and not fetch. Serving them by that path would have put a client-supplied string on the filesystem, so the payload route resolves `(key, image_id)` *through* the index instead (**ADR-0019**).
+- **Diagnostic arrays had no run-wide display range**, so twelve images' student-teacher error would have been twelve independent normalizations presented as a comparison — the exact mistake `render_anomaly_map`'s own docstring warns about for anomaly maps. The writer now records one span per key, with a 99.9th-percentile high end so a single hot pixel cannot flatten the key to black.
+- **Score-driven alpha is an *overlay* decision and is wrong outside an overlay.** It is what keeps a map from tinting the whole photograph; in a diagnostics panel beside an opaque per-branch map it makes a clean image render blank and puts the two panes on visibly different scales, which defeats the comparison the panel exists for. Both renderers now take a flag.
+- **"Snapshot, then subscribe" is now two requests, and gating on one of them is a bug that looks like working software.** Found by reloading during a real training run: the job snapshot is the smaller request and lands first, so the socket opened while the metric history was still on the wire, the baseline froze empty, and the chart redrew from the moment the page opened. It still *moved*, which is precisely why it read as fine — the criterion is "the charts survive a reload", and a chart that restarts is the failure mode hardest to see. The gate is now a named predicate with a test rather than an inline condition.
+- **Four findings came from looking at the rendered page rather than from a test.** A chart's font size is in viewBox units and therefore scales with the panel, so the same 10-unit label rendered at 9 px in a two-column grid and 21 px across a full-width one — one screen, two apparent design systems. A series with a single point was drawn as a scatter of one dot against a step axis running −1 to 1, which is a chart of nothing and reads as a run that recorded nothing; `pixel_reference` reports two such scalars and they are now printed as values. And a tick step of 0.25 labelled its axis 0.3 / 0.5 / 0.8, because `ceil(-log10(step))` gives one decimal where the step needs two.
+
+**Not delivered, by decision**
+
+- **Val AUROC per epoch.** The scope above lists it; it cannot be built without changing the plugin interface. `TrainContext.val` is a bare `Sequence[ImageRecord]` with no labels, and the train handler filters it to `Label.NORMAL` by **ADR-0011** — one class, so `roc_auc` correctly returns `None`. Delivering it means giving `TrainContext` labelled validation data, which is an ADR-0007 change and a decision of its own rather than a chart. Promoted to the backlog.
+- **Pixel-level ROC and PR curves.** The pixel accumulator streams its histograms and discards them by design (**ADR-0017**), so drawing that curve means re-reading every anomaly map — the expensive pass the design exists to avoid. The benchmark tab says so on screen rather than leaving a reader to wonder where they went; the pixel ROC-AUC and AU-PRO themselves are unaffected and still reported.
+
+**Size:** large, but low-risk and pausable — it is frontend work against a contract that already exists. That held: of the four backend additions, three were gaps in the M3 contract that only a consumer could reveal.
 
 ---
 
