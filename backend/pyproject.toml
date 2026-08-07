@@ -9,6 +9,12 @@ dependencies = [
     "pydantic>=2.13",
     "pydantic-settings>=2.14",
     "pillow>=12.3.0",
+    "numpy>=2.5.1",
+]
+
+[project.optional-dependencies]
+dl = [
+    "anomalib>=2.6.0",
 ]
 
 [dependency-groups]
@@ -74,6 +80,15 @@ extend-immutable-calls = [
 python_version = "3.12"
 strict = true
 files = ["src", "tests"]
+
+# anomalib ships no py.typed marker, and torch's stubs do not cover everything the
+# EfficientAD wrapper touches. The wrapper is confined to one module and imports these
+# lazily inside functions, so the untyped surface is small and visible rather than
+# spread through the codebase.
+[[tool.mypy.overrides]]
+module = ["anomalib.*", "torchvision.*"]
+ignore_missing_imports = true
+follow_untyped_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

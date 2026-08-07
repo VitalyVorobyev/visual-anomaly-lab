@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
+from dataclasses import dataclass
 
-from anomaly_lab.domain.entities import Image
+from anomaly_lab.domain.entities import Image, Label, Subset
 
 # The grid asks for one page of samples and then all of their images at once. Batching
 # keeps that a single query instead of one per sample, and SQLite's default parameter
@@ -74,6 +76,76 @@ def list_images_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[I
         (dataset_id,),
     ).fetchall()
     return [_to_image(row) for row in rows]
+
+
+@dataclass(frozen=True)
+class SplitImage:
+    """One image selected by split membership, with what a model is allowed to see."""
+
+    image_id: int
+    sample_id: int
+    channel: str | None
+    path: str
+    label: Label
+    subset: Subset
+
+
+def list_images_for_split(
+    conn: sqlite3.Connection,
+    split_id: int,
+    *,
+    subsets: Sequence[Subset],
+    labels: Sequence[Label] | None = None,
+) -> list[SplitImage]:
+    """Images whose *sample* is in one of these subsets, optionally by label.
+
+    Selection is by sample and never by image, which is the mechanism that keeps a
+    part's channels from straddling a subset (ADR-0005). The label filter is what a
+    training run uses to take normals only; it is applied here rather than in the
+    handler so the "which images" question has exactly one answer in the codebase.
+    """
+    if not subsets:
+        return []
+
+    clauses = [
+        "split_assignment.split_id = ?",
+        f"split_assignment.subset IN ({','.join('?' * len(subsets))})",
+    ]
+    params: list[object] = [split_id, *[subset.value for subset in subsets]]
+    if labels:
+        clauses.append(f"sample.label IN ({','.join('?' * len(labels))})")
+        params.extend(label.value for label in labels)
+
+    rows = conn.execute(
+        f"""
+        SELECT image.id          AS image_id,
+               image.sample_id   AS sample_id,
+               channel.name      AS channel,
+               image.path        AS path,
+               sample.label      AS label,
+               split_assignment.subset AS subset
+          FROM split_assignment
+          JOIN sample ON sample.id = split_assignment.sample_id
+          JOIN image  ON image.sample_id = sample.id
+          LEFT JOIN channel ON channel.id = image.channel_id
+         WHERE {" AND ".join(clauses)}
+         ORDER BY sample.group_key, LENGTH(sample.external_id), sample.external_id,
+                  channel.position, channel.name, image.id
+        """,
+        params,
+    ).fetchall()
+
+    return [
+        SplitImage(
+            image_id=int(row["image_id"]),
+            sample_id=int(row["sample_id"]),
+            channel=row["channel"],
+            path=str(row["path"]),
+            label=Label(row["label"]),
+            subset=Subset(row["subset"]),
+        )
+        for row in rows
+    ]
 
 
 def upsert_image(

@@ -84,6 +84,16 @@ class Settings(BaseSettings):
         """Logs for jobs bound to no experiment — import, verify, prewarm (§6)."""
         return self.data_dir / "jobs" / "logs"
 
+    @property
+    def model_cache_dir(self) -> Path:
+        """Downloaded assets shared across experiments — pretrained weights, penalty sets.
+
+        Deliberately outside `artifacts/`: a 1.5 GB ImageNette copy per experiment would
+        be absurd, and these files belong to the method rather than to any one run.
+        Safe to delete; the next training run re-downloads what it needs.
+        """
+        return self.data_dir / "model-cache"
+
     def experiment_dir(self, experiment_id: int) -> Path:
         return self.artifacts_dir / f"exp-{experiment_id}"
 

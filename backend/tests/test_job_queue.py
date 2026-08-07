@@ -1,9 +1,9 @@
 """The job queue, its fan-out, and the worker subprocess.
 
-The end-to-end case here deliberately runs a job whose kind has no handler. That exercises
-the whole pipeline — spawn, stdout parsing, error propagation, terminal state — without
-needing a handler to exist yet. The success, progress and cancellation paths are covered
-where real handlers land: the import scan and the thumbnail pre-warm.
+The end-to-end case here runs a job that fails inside its handler. That exercises the
+whole pipeline — spawn, stdout parsing, error propagation, terminal state — in one test.
+The success, progress and cancellation paths are covered where the real handlers live:
+the import scan, the thumbnail pre-warm, and the training run.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_migrations
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
+from anomaly_lab.jobs.handlers import supported_kinds
 from anomaly_lab.jobs.protocol import LogEvent, ProgressEvent
 from anomaly_lab.jobs.queue import SUBSCRIBER_BUFFER, JobQueue
 
@@ -141,22 +142,32 @@ def test_publishing_to_a_job_nobody_watches_is_harmless(settings: Settings) -> N
     asyncio.run(scenario())
 
 
-def test_a_job_with_no_handler_fails_with_its_reason_recorded(client: TestClient) -> None:
+def test_a_failing_handler_reports_its_reason(client: TestClient) -> None:
     """End-to-end: spawn, event stream, parse, persist, terminal state.
 
-    `train` has no handler until M3, which makes it the honest way to prove the pipeline
-    reports a worker's failure rather than hanging or silently claiming success.
+    This used to enqueue `train` precisely *because* it had no handler. It has one now,
+    so the failure is a real one — a train job naming an experiment that does not exist —
+    which tests the same pipeline against a message an operator could actually receive.
     """
-    job = _queue(client).enqueue(kind=JobKind.TRAIN, params={"experiment_id": 1})
+    job = _queue(client).enqueue(kind=JobKind.TRAIN, params={"experiment_id": 12345})
 
     finished = _await_terminal(client, job.id)
     log_tail: list[str] = finished["log_tail"]
 
     assert finished["status"] == "failed"
-    assert "no handler is registered" in finished["error"]
+    assert "no experiment with id 12345" in finished["error"]
     assert finished["finished_at"] is not None
     # The raw stream is on disk whether or not anyone was watching (ADR-0009).
-    assert any("UnknownJobKindError" in line for line in log_tail)
+    assert any("ExperimentJobError" in line for line in log_tail)
+
+
+def test_every_declared_job_kind_has_a_handler() -> None:
+    """The invariant the old test stood in for: no kind is declarable but unrunnable.
+
+    `JobKind` is a closed enum and the schema's CHECK constraint mirrors it, so a kind
+    with no entry in the registry would be enqueueable and then immediately dead.
+    """
+    assert supported_kinds() == frozenset(JobKind)
 
 
 def test_a_running_job_left_by_a_previous_process_is_reconciled(settings: Settings) -> None:

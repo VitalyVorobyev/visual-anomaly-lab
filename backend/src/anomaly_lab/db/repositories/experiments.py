@@ -1,0 +1,107 @@
+"""Experiment repository.
+
+An experiment freezes its configuration at creation. Nothing here offers a way to edit
+`model_config`, `preprocessing_config` or `split_id` afterwards, because a stored metric
+that was computed under different settings than the row claims is worse than no metric —
+and the schema already refuses to let the dataset or split be deleted out from under one.
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections.abc import Mapping
+from typing import Any
+
+from anomaly_lab.domain.entities import Experiment, ExperimentStatus
+
+
+def _to_experiment(row: sqlite3.Row) -> Experiment:
+    return Experiment.model_validate(dict(row))
+
+
+def get_experiment(conn: sqlite3.Connection, experiment_id: int) -> Experiment | None:
+    row = conn.execute("SELECT * FROM experiment WHERE id = ?", (experiment_id,)).fetchone()
+    return _to_experiment(row) if row is not None else None
+
+
+def list_experiments(
+    conn: sqlite3.Connection,
+    *,
+    dataset_id: int | None = None,
+    limit: int = 200,
+) -> list[Experiment]:
+    """Experiments, newest first — the order the list screen wants."""
+    if dataset_id is None:
+        rows = conn.execute(
+            "SELECT * FROM experiment ORDER BY id DESC LIMIT ?",
+            (limit,),
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            "SELECT * FROM experiment WHERE dataset_id = ? ORDER BY id DESC LIMIT ?",
+            (dataset_id, limit),
+        ).fetchall()
+    return [_to_experiment(row) for row in rows]
+
+
+def create_experiment(
+    conn: sqlite3.Connection,
+    *,
+    name: str,
+    dataset_id: int,
+    split_id: int,
+    model_type: str,
+    model_config: Mapping[str, Any],
+    preprocessing_config: Mapping[str, Any],
+    eval_config: Mapping[str, Any],
+    artifact_dir: str,
+    notes: str | None = None,
+) -> Experiment:
+    cursor = conn.execute(
+        """
+        INSERT INTO experiment
+               (name, dataset_id, split_id, model_type, model_config,
+                preprocessing_config, eval_config, artifact_dir, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            name,
+            dataset_id,
+            split_id,
+            model_type,
+            json.dumps(dict(model_config), sort_keys=True),
+            json.dumps(dict(preprocessing_config), sort_keys=True),
+            json.dumps(dict(eval_config), sort_keys=True),
+            artifact_dir,
+            notes,
+        ),
+    )
+    created = get_experiment(conn, int(cursor.lastrowid or 0))
+    if created is None:  # pragma: no cover - the insert above just succeeded
+        msg = "the experiment row vanished immediately after insertion"
+        raise RuntimeError(msg)
+    return created
+
+
+def set_status(
+    conn: sqlite3.Connection,
+    experiment_id: int,
+    status: ExperimentStatus,
+) -> Experiment | None:
+    conn.execute(
+        "UPDATE experiment SET status = ? WHERE id = ?",
+        (status.value, experiment_id),
+    )
+    return get_experiment(conn, experiment_id)
+
+
+def delete_experiment(conn: sqlite3.Connection, experiment_id: int) -> bool:
+    """Delete an experiment and everything cascading from it.
+
+    Artifacts on disk are *not* removed here: the repository owns rows, and a filesystem
+    deletion inside a database transaction cannot be rolled back with it. The caller
+    removes the directory after the transaction commits.
+    """
+    cursor = conn.execute("DELETE FROM experiment WHERE id = ?", (experiment_id,))
+    return cursor.rowcount > 0
