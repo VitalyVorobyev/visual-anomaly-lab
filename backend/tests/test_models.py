@@ -370,10 +370,10 @@ def test_a_saved_model_reloads_to_the_same_scores(tmp_path: Path) -> None:
 
 def test_the_reference_cap_samples_across_the_set_not_the_first_n(tmp_path: Path) -> None:
     """Datasets arrive in acquisition order; the first N is often one batch."""
-    from anomaly_lab.models.pixel_reference import _evenly_spaced
+    from anomaly_lab.models.base import evenly_spaced
 
-    assert _evenly_spaced(4, 10) == [0, 1, 2, 3]
-    chosen = _evenly_spaced(100, 5)
+    assert evenly_spaced(4, 10) == [0, 1, 2, 3]
+    chosen = evenly_spaced(100, 5)
     assert chosen[0] == 0
     assert chosen[-1] == 99
     assert len(chosen) == 5

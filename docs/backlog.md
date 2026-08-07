@@ -48,19 +48,29 @@ Working task list for **visual-anomaly-lab**, organised as epics keyed to the mi
 - [x] Post-import pre-warm job that generates thumbnails for a whole dataset with progress (S)
 - [x] Full-resolution lossless PNG endpoint for the sample viewer, rendered on demand and deliberately not cached — a cached full tier costs most of a gigabyte per dataset (S)
 
-## E5 — Model interface & jobs (M3)
+## E5 — Model interface & jobs (M3) — done
 
 *The job machinery landed in M2, which needed it for the import scan and the thumbnail
-pre-warm. What remains here is the model side.*
+pre-warm. The model side landed in M3, and cost exactly what ADR-0009 predicted: one
+registry entry and one handler function per new job kind, with no change inside the
+queue, the protocol, cancellation or the fan-out.*
 
-- [ ] `models/base.py`: `ModelPlugin` interface (`fit`, `predict`, `save`, `load`, config JSON Schema, capability flags) + registry keyed by `classical_circular`, `efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom` (S) — **ADR-0007**
+- [x] `models/base.py`: `AnomalyModel` interface (`fit`, `predict`, `save`, `load`, config JSON Schema, capability flags) + a lazy-loading registry (S) — **ADR-0007**
 - [x] Subprocess worker + JSON-lines event protocol on stdout (`progress`, `log`, `metric`, `done`, `error`), with a parent-side parser that tolerates interleaved library output (L) — **ADR-0009** *(M2)*
 - [x] FIFO job queue + Job table persistence + crash recovery on startup (any Job left `running` → `failed`, log preserved) (M) — **ADR-0009** *(M2)*
 - [x] WebSocket fan-out of job events to the UI + per-job log files (M) *(M2)*
 - [x] Cancellation: SIGTERM → grace period → SIGKILL, with the Job ending in `cancelled` and no orphan children (S) *(M2)*
-- [ ] `train` and `infer` job handlers, once there is a model to run (S) — **ADR-0009**
+- [x] `train` and `infer` job handlers (S) — **ADR-0009**
+- [x] Preprocessing bridge: one config on the experiment, one loader every method uses, so a comparison is not partly measuring a resize (M)
+- [x] Diagnostics contract: `produces_diagnostics` + `emit_diagnostic`, float32 `.npy` behind a self-describing index, scalar series reusing the existing `metric` event (M) — **ADR-0018**
+- [x] Device resolution that never raises and always records the reason it chose what it chose (S)
 
-## E6 — Classical baseline (M3)
+## E6 — Classical baseline (M8, optional)
+
+*Moved off the critical path by **ADR-0015**: making the showcase-specific method the
+first one would have proved the architecture works for exactly one dataset. `pixel_reference`
+took its place in the slice and is the geometry-free core of the same algorithm, so what
+remains here is a circle-fit front end onto a component that already exists and is tested.*
 
 - [ ] Circle detection: Hough seed → radial-ray subpixel edge sampling → robust circle fit (RANSAC + Taubin), with a per-dataset median-prior fallback when the fit is unreliable (M) — **ADR-0010**
 - [ ] Polar transform + orientation estimation by FFT angular correlation, with reference bootstrap (first pass builds the reference from mutually aligned training samples) (M) — **ADR-0010**
@@ -69,29 +79,31 @@ pre-warm. What remains here is the model side.*
 - [ ] Parameter defaults sweep on `set1` (ray count, smoothing sigma, score percentile, polar resolution); record chosen defaults and the numbers that justified them (M)
 - [ ] Unit tests on synthetic discs: known centre/radius/rotation recovered within tolerance; injected blob raises the score (S)
 
-## E7 — Evaluation (M3)
+## E7 — Evaluation (M3) — done
 
-- [ ] Channel → sample score aggregation (`max` and `mean`, configurable per experiment) (S) — **ADR-0011**
-- [ ] Sample-level and image-level ROC-AUC (image-level metrics only — no pixel masks in this dataset) (S)
-- [ ] On-demand threshold endpoint: given a threshold, return the confusion matrix plus FP and FN sample lists without recomputing inference (M)
-- [ ] Ranked lists: most-anomalous and most-normal samples with scores (S)
-- [ ] Timing statistics: per-sample inference time, mean/median/p95, recorded in the MetricSet (S)
+- [x] Channel → sample score aggregation (`max` and `mean`, configurable per experiment) (S) — **ADR-0011**
+- [x] Sample-level and image-level ROC-AUC and average precision, tie-aware, returning `None` rather than a fabricated number when a subset has one class (S)
+- [x] **Pixel-level ROC-AUC and AU-PRO**, streamed through fixed-bin histograms so memory is constant in the number of test images (M) — **ADR-0017**
+- [x] On-demand threshold endpoint returning the confusion matrix *and* the classified rows, so the threshold rule lives in one language (M)
+- [x] Ranked lists: most-anomalous and most-normal samples with scores (S)
+- [x] Timing statistics: per-sample inference time, mean/median/p95, recorded in the MetricSet (S)
+- [ ] ROC and PR *curve* endpoints for the M4 benchmark charts — the arrays exist, nothing serves them yet (S)
 
-## E8 — Experiment UI (M3)
+## E8 — Experiment UI (M3) — done
 
-- [ ] Experiment create screen: dataset + split pickers, method picker, config form generated from the plugin's JSON Schema, preprocessing section (M) — **ADR-0007**
-- [ ] Progress + logs screen: live WebSocket progress bar, streaming log view, cancel button, terminal states (M)
-- [ ] Results screen: anomaly-map overlay with opacity slider, ranked lists, threshold slider driving the confusion matrix, TP/FP/TN/FN filtering of the sample list (L)
-  - split when scheduled: overlay viewer → threshold + confusion panel → filtered sample list + ranked lists
-- [ ] Experiment list with status, metrics summary, and reopen-from-persistence (S)
+- [x] Experiment create screen: dataset + split pickers, method picker, config form generated from the plugin's JSON Schema, preprocessing and evaluation sections (M) — **ADR-0007**
+- [x] Progress + logs screen: live WebSocket progress bar, streaming log view, cancel button, terminal states — reusing `JobProgress` and `useJob` unchanged (M)
+- [x] Results screen: threshold slider driving the confusion matrix, TP/FP/TN/FN filtering, ranked lists (L)
+- [x] Sample result viewer: anomaly-map overlay with an opacity slider, ground-truth outline where a mask exists (M)
+- [x] Experiment list with status, headline metric, and reopen-from-persistence (S)
 
-## E9 — Anomalib integration (M4–M5)
+## E9 — Anomalib integration (M3 done; PatchCore at M7)
 
-- [ ] Add anomalib dependency + standalone MPS smoke test script (train a few steps on a handful of images, report device and any unsupported ops) — **do this before writing wrapper code** (S) — **ADR-0008**
-- [ ] `efficientad_anomalib` wrapper: `fit` / `predict` / `save` / `load`, epoch and step progress mapped onto the job event protocol, checkpoints into the experiment artifact directory (L)
-  - split when scheduled: dataloader bridge from our Split → training loop + progress mapping → predict + map extraction → save/load round-trip
-- [ ] `patchcore_anomalib` wrapper + memory sizing for 1280×1024 inputs (coreset ratio, memory-bank footprint, documented limits) (M)
-- [ ] Preprocessing config bridge: our resize/normalization config drives anomalib rather than its defaults, so all methods see identical inputs (M)
+- [x] Add anomalib as an optional dependency group + standalone MPS smoke test script — **run before writing wrapper code** (S) — **ADR-0008**. It earned itself immediately: the penalty batch turned out to be mandatory despite defaulting to `None`.
+- [x] `efficientad_anomalib`: `fit` / `predict` / `save` / `load`, step progress and per-branch losses onto the job event protocol, forward-hook diagnostics, explicit downloads (L)
+- [x] Preprocessing config bridge — see E5 (M)
+- [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M) — **M7**
+- [ ] Revisit the training loop against anomalib's Lightning path when their datamodule stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
 
 ## E10 — Comparison UI (M5)
 
@@ -102,7 +114,7 @@ pre-warm. What remains here is the model side.*
 - [ ] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface: PDN student/teacher distillation, autoencoder branch, quantile-based score normalization, MPS training loop (L)
   - split when scheduled: PDN backbone → teacher pretraining/distillation → student loss → autoencoder branch → quantile normalization → training loop + progress events → comparison run against `efficientad_anomalib`
 
-## E12 — README & polish (M7)
+## E12 — README & polish (M9)
 
 - [ ] Full README: setup from a fresh machine, dataset conventions, architecture overview, troubleshooting (M)
 - [ ] "How to add a new anomaly-detection method" guide, written against the real interface with a worked example (S) — **ADR-0007**
@@ -117,7 +129,9 @@ Not scheduled. Revisit at each milestone re-triage; promote into an epic when th
 - Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate the sample score by scale alone.
 - Explicit detector for the part's asymmetric surface features as an orientation fallback when FFT angular correlation is ambiguous (near-rotationally-symmetric parts).
 - Per-set classical references (separate `set1` / `set2` references) if lighting or fixturing drift between sets turns out to matter.
-- `flat_folder` import adapter for single-image-per-sample datasets with no channel structure.
-- Pixel-mask support (mask storage, pixel-level ROC-AUC / PRO) if masks are ever produced for this dataset.
 - Uninformed Students (Student-Teacher Anomaly Detection, [papers.md](papers.md) #4) as a fourth method.
 - Export / report generation: experiment results and comparison tables to PDF or HTML for sharing without the app.
+- **`mask.sha256`, as a numbered migration.** `verify` can check that a mask file is still there and not that it is still the same file, so a mask re-exported in place silently changes a pixel metric. Worth doing before pixel numbers are relied on (ADR-0016, ADR-0017).
+- **Warn when an imported split's train subset contains defects.** The `imported` strategy trusts the source completely, which is the point, but a bad benchmark file currently produces a bad experiment quietly. The training handler already excludes them and logs it; the split screen says nothing.
+- Per-image inference batching for the deep methods — currently one image per forward pass, which is simple and leaves throughput on the table.
+- Show the pixel-metric protocol on the results screen. "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.

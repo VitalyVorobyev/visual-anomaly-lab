@@ -26,6 +26,8 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0014](0014-shell-capabilities-are-injected-not-imported.md) | Shell capabilities are injected, not imported | Accepted |
 | [0015](0015-public-reference-datasets-and-a-dataset-agnostic-first-method.md) | Public reference datasets, and a dataset-agnostic method first | Accepted |
 | [0016](0016-adapters-for-public-datasets-masks-and-imported-splits.md) | Adapters for public datasets, masks in the catalog, imported splits | Accepted |
+| [0017](0017-pixel-level-evaluation-at-constant-memory.md) | Pixel-level evaluation, at constant memory | Accepted |
+| [0018](0018-model-diagnostics-as-a-declarative-capability.md) | Model diagnostics as a declarative capability | Accepted |
 
 ## Conventions
 

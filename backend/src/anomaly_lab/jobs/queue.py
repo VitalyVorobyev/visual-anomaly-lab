@@ -17,11 +17,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 import os
 import signal
 import sys
 import time
-from collections.abc import Mapping
+from collections.abc import AsyncIterator, Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -38,6 +39,8 @@ from anomaly_lab.jobs.protocol import (
     encode,
     parse_line,
 )
+
+logger = logging.getLogger(__name__)
 
 # How long a cancelled worker is given to unwind before the group is killed outright.
 CANCEL_GRACE_SECONDS = 5.0
@@ -57,6 +60,22 @@ SUBSCRIBER_BUFFER = 256
 # The parent's own closing event. Not part of the worker protocol — no worker emits it —
 # but a WebSocket client needs to know the stream ended and how.
 END_EVENT = "end"
+
+# How much output is read from a worker pipe at a time.
+READ_CHUNK_BYTES = 64 * 1024
+
+# A "line" longer than this is flushed anyway rather than buffered further.
+#
+# This exists because of a real failure. `StreamReader.readline` raises `ValueError` once
+# a line exceeds asyncio's 64 KiB stream limit, and a **progress bar is one line**: tqdm
+# separates its frames with `\r`, never `\n`. A short download stays under the limit; the
+# 1.5 GB penalty set EfficientAD needs does not. The exception propagated out of the
+# runner, which had no guard, and the queue wedged — the running job stayed `running`
+# forever and every later job stayed `queued`, with no error recorded anywhere.
+#
+# So output is read in chunks and split here rather than by `readline`, and there is no
+# input a library can produce that stops the queue.
+MAX_LINE_BYTES = 16 * 1024
 
 
 class JobQueue:
@@ -169,12 +188,26 @@ class JobQueue:
             loop.call_soon_threadsafe(self._wake.set)
 
     async def _run(self) -> None:
+        """The runner loop. It must outlive every failure a job can produce.
+
+        The guard is not decoration. Without it, one exception escaping `_execute` kills
+        this task, and because nothing awaits it the failure is silent: the running job
+        stays `running` for ever, every later job stays `queued`, and the application
+        looks merely slow. `_execute` already finalizes its own job on failure, so this
+        is the second line of defence — for a bug in the supervisor itself.
+        """
         while True:
-            job = await asyncio.to_thread(self._next_queued)
-            if job is None:
+            try:
+                job = await asyncio.to_thread(self._next_queued)
+                if job is None:
+                    await self._idle()
+                    continue
+                await self._execute(job)
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception("the job runner raised; continuing with the next job")
                 await self._idle()
-                continue
-            await self._execute(job)
 
     async def _idle(self) -> None:
         self._wake.clear()
@@ -224,6 +257,17 @@ class JobQueue:
                     self._drain(job.id, stderr, log, state, is_stderr=True),
                 )
             returncode = await process.wait()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Supervising the worker failed, which is different from the worker failing.
+            # The job is recorded as failed with the supervisor's reason, and the worker
+            # is killed rather than left running against a parent that stopped reading it
+            # — an orphan holding the MPS device would block every job after it.
+            logger.exception("supervising job %d failed", job.id)
+            state.error = f"the job supervisor failed: {type(exc).__name__}: {exc}"
+            self._signal_group(process, signal.SIGKILL)
+            returncode = 1
         finally:
             self._current_id = None
             self._current_process = None
@@ -266,11 +310,7 @@ class JobQueue:
         Both pipes must be drained for the life of the process: a child whose pipe fills
         up blocks on write, and a blocked worker looks exactly like a hung one.
         """
-        while True:
-            raw = await stream.readline()
-            if not raw:
-                return
-            line = raw.decode("utf-8", errors="replace").rstrip("\r\n")
+        async for line in _iter_lines(stream):
             log.write(line + "\n")
             log.flush()
 
@@ -405,6 +445,57 @@ class JobQueue:
         """Signal the worker's whole process group, not just the interpreter."""
         with contextlib.suppress(ProcessLookupError, PermissionError):
             os.killpg(os.getpgid(process.pid), sig)
+
+
+def split_output(buffer: bytes, *, at_eof: bool = False) -> tuple[list[str], bytes]:
+    """Split worker output into display lines, returning `(lines, remainder)`.
+
+    Both `\\n` and `\\r` end a line. Treating the carriage return as a terminator is what
+    turns a progress bar into a series of readable log lines instead of one line
+    megabytes long — which is how it looked in a terminal all along, and which is the
+    difference between a log tail that renders and one that does not.
+
+    An over-long fragment with no terminator at all is flushed once it passes
+    `MAX_LINE_BYTES`, so no amount of output can grow the buffer without bound.
+    """
+    lines: list[str] = []
+    remainder = buffer
+
+    while True:
+        index = min(
+            (
+                position
+                for position in (remainder.find(b"\n"), remainder.find(b"\r"))
+                if position >= 0
+            ),
+            default=-1,
+        )
+        if index < 0:
+            break
+        lines.append(remainder[:index].decode("utf-8", errors="replace"))
+        remainder = remainder[index + 1 :]
+
+    if len(remainder) >= MAX_LINE_BYTES or (at_eof and remainder):
+        lines.append(remainder.decode("utf-8", errors="replace"))
+        remainder = b""
+
+    return lines, remainder
+
+
+async def _iter_lines(stream: asyncio.StreamReader) -> AsyncIterator[str]:
+    """Yield a worker pipe's output line by line, with no limit on what it may contain.
+
+    Deliberately not `StreamReader.readline`, which raises `ValueError` on a line over
+    64 KiB — see `MAX_LINE_BYTES`.
+    """
+    pending = b""
+    while True:
+        chunk = await stream.read(READ_CHUNK_BYTES)
+        lines, pending = split_output(pending + chunk, at_eof=not chunk)
+        for line in lines:
+            yield line
+        if not chunk:
+            return
 
 
 def _release_transport(process: asyncio.subprocess.Process) -> None:

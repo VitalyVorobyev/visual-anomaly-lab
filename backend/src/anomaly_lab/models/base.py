@@ -294,6 +294,20 @@ class AnomalyModel(ABC):
         """Restore a fitted model written by `save`."""
 
 
+def evenly_spaced(count: int, limit: int) -> list[int]:
+    """Indices sampled across the whole range, not the first `limit` of it.
+
+    Every plugin here has at least one pass whose cost is linear in the training set and
+    whose accuracy is not — building a per-pixel reference, fitting a quantile. Capping
+    such a pass by taking the first N is the tempting shortcut and the wrong one:
+    datasets arrive in acquisition order often enough that the first 128 images are one
+    production batch, one lighting condition, one shift.
+    """
+    if count <= limit:
+        return list(range(count))
+    return [round(index) for index in np.linspace(0, count - 1, limit)]
+
+
 def module_available(module: str, extra: str, purpose: str) -> Availability:
     """Report whether an optional dependency is importable, without importing it.
 

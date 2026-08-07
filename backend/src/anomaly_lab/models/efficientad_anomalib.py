@@ -22,15 +22,24 @@ That is why the statistics and quantile code is *called* rather than reimplement
 parts most likely to silently change an AUROC are the parts we do not own.
 
 **Two network downloads are required, and neither is hidden.** The pretrained teacher
-(~10 MB) and the ImageNette penalty set (~1.5 GB) are fetched into the shared model cache
-on first training run, with a log line before each. `allow_downloads=false` turns them
-into an error naming the file instead of a silent fetch, because a tool that claims to be
-local-only should not quietly reach for the network.
+(40 MB) and the ImageNette penalty set (~1.5 GB) are fetched on the first training run,
+with a log line before each. `allow_downloads=false` turns them into an error naming the
+asset instead of a silent fetch, because a tool that claims to be local-only should not
+quietly reach for the network.
+
+They do not land in the same place, and that is anomalib's call rather than ours: the
+penalty set goes to `ctx.cache_dir` because the path is a constructor argument, while
+`prepare_pretrained_model` resolves the teacher through anomalib's own platform cache
+(`~/Library/Caches/anomalib` on macOS). Overriding that would mean reimplementing the
+download rather than calling it, which is the trade this module refuses everywhere else —
+so the teacher's location is documented instead. Deleting our data directory therefore
+leaves a 40 MB teacher behind; deleting anomalib's cache is a separate act.
 """
 
 from __future__ import annotations
 
 import contextlib
+import shutil
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
@@ -49,6 +58,7 @@ from anomaly_lab.models.base import (
     InferContext,
     Prediction,
     TrainContext,
+    evenly_spaced,
     module_available,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
@@ -102,6 +112,16 @@ class EfficientAdConfig(BaseModel):
         description=(
             "Batch size for the teacher-statistics and quantile passes only. Training "
             "itself is fixed at 1, which EfficientAD requires."
+        ),
+    )
+    quantile_images: int = Field(
+        default=128,
+        ge=8,
+        le=4096,
+        description=(
+            "How many normals fit the score-normalization quantiles. anomalib holds every "
+            "map in memory for this, so the whole training set would cost gigabytes; "
+            "images are sampled evenly rather than taking the first N."
         ),
     )
     seed: int = Field(default=0, description="Seeds the training sample order.")
@@ -229,12 +249,30 @@ class EfficientAdAnomalibModel(AnomalyModel):
     def _ensure_teacher(self, module: Any, ctx: Any) -> None:
         if not self.config.allow_downloads:
             _refuse_download_if_missing()
+        # anomalib's downloader writes its progress bar to stderr, which the job log
+        # captures but the progress bar cannot show. Without a message here the UI sits
+        # at 0% for minutes on the first run, which is indistinguishable from a hang.
+        ctx.progress(0.01, "fetching the pretrained teacher (40 MB, first run only)")
         ctx.log("loading the pretrained EfficientAD teacher (downloads on first run)")
         module.prepare_pretrained_model()
         ctx.log("pretrained teacher loaded")
 
     def _ensure_penalty_set(self, module: Any, ctx: Any) -> None:
         penalty_dir = ctx.cache_dir / PENALTY_SUBDIR
+
+        # anomalib decides whether to download by asking whether the *directory* exists.
+        # A 1.5 GB download interrupted halfway leaves the directory there holding a
+        # partial tarball, so the next run skips the download and then fails inside
+        # `ImageFolder` on an empty tree — a confusing error a long way from its cause.
+        # An incomplete download is cleared here so the retry is simply a retry.
+        if penalty_dir.is_dir() and not _penalty_set_is_extracted(penalty_dir):
+            ctx.log(
+                f"the penalty set at {penalty_dir} is incomplete — an interrupted "
+                "download — and is being discarded so it can be fetched again",
+                level="warning",
+            )
+            shutil.rmtree(penalty_dir, ignore_errors=True)
+
         if not penalty_dir.is_dir():
             if not self.config.allow_downloads:
                 msg = (
@@ -244,6 +282,13 @@ class EfficientAdAnomalibModel(AnomalyModel):
                     "extract it there, or turn allow_downloads back on."
                 )
                 raise RuntimeError(msg)
+            # Several minutes on a normal connection, and it happens exactly once per
+            # machine. Saying so beats a progress bar that has not moved.
+            ctx.progress(
+                0.02,
+                "downloading the ImageNette penalty set (~1.5 GB, first run only) — "
+                "several minutes, then training starts",
+            )
             ctx.log(f"downloading the ImageNette penalty set (~1.5 GB) into {penalty_dir}")
         module.prepare_imagenette_data((ctx.preprocessing.height, ctx.preprocessing.width))
         ctx.log("penalty set ready")
@@ -341,11 +386,12 @@ class EfficientAdAnomalibModel(AnomalyModel):
         fitted on data the student has already memorized, so the normalization is
         optimistic — and it is logged as a warning rather than silently substituted.
         """
-        calibration = ctx.val
-        if calibration:
-            ctx.log(f"fitting score-normalization quantiles on {len(calibration)} held-out normals")
+        source = ctx.val
+        if source:
+            origin = f"{len(source)} held-out normals"
         else:
-            calibration = train
+            source = train
+            origin = "the training normals themselves"
             ctx.log(
                 "this split has no val subset, so the score-normalization quantiles are "
                 "fitted on the training normals themselves. The normalization is "
@@ -353,6 +399,20 @@ class EfficientAdAnomalibModel(AnomalyModel):
                 "affected by it.",
                 level="warning",
             )
+
+        # anomalib's quantile routine holds every map it computes in a list before taking
+        # a quantile over the lot, so the memory is linear in the number of images. 900
+        # maps is gigabytes; a sampled subset estimates the same quantile for a fraction
+        # of it. Capped here rather than there, and said out loud rather than assumed.
+        chosen = evenly_spaced(len(source), self.config.quantile_images)
+        calibration = [source[index] for index in chosen]
+        if len(calibration) < len(source):
+            ctx.log(
+                f"fitting quantiles on {len(calibration)} of {len(source)} images from "
+                f"{origin}, sampled evenly (quantile_images={self.config.quantile_images})"
+            )
+        else:
+            ctx.log(f"fitting score-normalization quantiles on {origin}")
 
         ctx.progress(0.92, "fitting score-normalization quantiles")
         stream = _BatchStream(
@@ -544,6 +604,15 @@ def _next_penalty_batch(module: Any) -> Any:
     except StopIteration:
         module.imagenet_iterator = iter(module.imagenet_loader)
         return next(module.imagenet_iterator)[0]
+
+
+def _penalty_set_is_extracted(penalty_dir: Path) -> bool:
+    """Whether the penalty set is usable, rather than merely present.
+
+    `ImageFolder` needs class subdirectories holding images. A lone `.tgz` means the
+    download was interrupted before extraction.
+    """
+    return any(child.is_dir() for child in penalty_dir.iterdir())
 
 
 def _refuse_download_if_missing() -> None:

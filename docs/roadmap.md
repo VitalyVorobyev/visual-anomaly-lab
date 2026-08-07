@@ -135,13 +135,37 @@ The milestone was re-aimed after M2. It previously put `classical_circular` firs
 - [x] GKN imports through `folder_classes` as 203 normal + 197 defect single-image samples, with `Nick` / `Scratch` recorded as the defect type.
 - [x] One VisA class imports through `csv_table` with its **official** train/test split (900 train normal, 100 test normal, 100 test anomaly) and its 100 ground-truth masks attached, and `verify` reports no drift on either.
 - [x] The import screen's options form is generated from the adapter's schema, and a required option blocks the scan with the field named.
+- [x] The **MPS smoke test runs first**, as a standalone script, before any wrapper code (**ADR-0008**). Measured on this Mac: MPS 123 ms/step against CPU 295 ms. It earned itself immediately — EfficientAD's penalty batch defaults to `None` in the signature and is dereferenced unconditionally in training, which the script found before a line of wrapper existed.
 - [ ] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime) on that split.
 - [ ] Image-level and **pixel-level** ROC-AUC are both reported, and the image-level number is in the neighbourhood of the published VisA figure — a gap is acceptable, an unexplained gap is not.
-- [ ] `pixel_reference` runs on the same split through the identical interface and the same results screen, giving the deep result a floor to beat.
-- [ ] Adding both methods required **no** change to the queue, protocol, cancellation or fan-out — or the change is recorded as a finding.
-- [ ] Anomaly maps overlay in spatial alignment with the source image, with ground-truth contours where masks exist.
-- [ ] Force-quitting the app mid-training leaves an orphan-free system, and the interrupted Job is marked `failed` with its log preserved on the next startup.
-- [ ] Closing and reopening the app restores the experiment list; any past experiment reopens with identical numbers.
+- [x] `pixel_reference` runs on the same split through the identical interface and the same results screen, giving the deep result a floor to beat: **0.814 sample ROC-AUC, 0.888 pixel ROC-AUC, 0.808 AU-PRO** on VisA candle, trained and scored in 6 seconds on CPU.
+- [x] Adding both methods required **no** change to the queue, protocol, cancellation or fan-out — each cost one registry entry and one handler function. Two defects were *found* in the queue by the first job long enough to draw a progress bar, and are recorded below rather than papered over.
+- [x] Anomaly maps overlay in spatial alignment with the source image, with ground-truth contours where masks exist.
+- [x] Force-quitting the app mid-training leaves an orphan-free system, and the interrupted Job is marked `failed` with its log preserved on the next startup.
+- [x] Closing and reopening the app restores the experiment list; any past experiment reopens with identical numbers — nothing is recomputed on read, so this is structural rather than lucky.
+
+**Findings recorded during M3**
+
+Two are about the job machinery M2 built, and were invisible until a job ran for more than a few
+seconds while a library drew a progress bar:
+
+- **`readline` cannot read a progress bar.** `asyncio.StreamReader.readline` raises `ValueError`
+  past a 64 KiB line, and tqdm separates its frames with `\r`, never `\n` — so a progress bar is
+  one line, and a long enough download makes it an over-long one. Worker output is now read in
+  chunks and split on both terminators, which also makes the log tail render as a terminal would.
+- **The runner had no guard.** That `ValueError` escaped `_execute` and killed the runner task.
+  Because nothing awaited it the failure was silent: the running job stayed `running` for ever and
+  every later job stayed `queued`, with no error anywhere. `_execute` now finalizes its own job on
+  failure and kills the worker, and the runner loop survives anything `_execute` can raise.
+
+One is about the method:
+
+- **The EfficientAD wrapper does not use Lightning**, as the plan assumed it would.
+  `EfficientAd.on_train_start` reads `self.trainer.datamodule`, so the Lightning path means adopting
+  anomalib's datamodule and with it anomalib's preprocessing — which would break the property that
+  makes any comparison meaningful. anomalib still supplies the architecture, the losses, the maps,
+  the pretrained teacher and the statistics routines. Recorded in the module and in **ADR-0018**'s
+  neighbourhood; the cost is that our loop can drift from theirs.
 
 **Size:** **2–3 weeks — the big milestone.** The EfficientAD integration carries the schedule risk; the import layer and labelling workflow landed first and are usable on their own.
 

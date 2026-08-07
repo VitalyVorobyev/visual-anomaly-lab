@@ -24,7 +24,7 @@ from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.handlers import supported_kinds
 from anomaly_lab.jobs.protocol import LogEvent, ProgressEvent
-from anomaly_lab.jobs.queue import SUBSCRIBER_BUFFER, JobQueue
+from anomaly_lab.jobs.queue import MAX_LINE_BYTES, SUBSCRIBER_BUFFER, JobQueue, split_output
 
 TERMINAL_WAIT_SECONDS = 30.0
 
@@ -207,3 +207,75 @@ def test_cancelling_an_already_finished_job_is_a_conflict(client: TestClient) ->
 
     assert response.status_code == 409
     assert "already finished" in response.json()["detail"]
+
+
+# -- output splitting ------------------------------------------------------------
+#
+# These pin a real failure, found by the first job long enough to draw a progress bar.
+# `StreamReader.readline` raises `ValueError` past asyncio's 64 KiB limit, and a tqdm bar
+# is *one line* — its frames are separated by `\r`, never `\n`. Downloading EfficientAD's
+# 1.5 GB penalty set blew the limit, the exception escaped the runner, and the queue
+# wedged: the running job stayed `running` and every later job stayed `queued`, silently.
+
+
+def test_a_progress_bar_becomes_readable_lines_rather_than_one_huge_one() -> None:
+    """`\\r` ends a line. That is how a terminal renders it, and how the log should too."""
+    lines, remainder = split_output(b"10%\r50%\r90%\rdone\n")
+    assert lines == ["10%", "50%", "90%", "done"]
+    assert remainder == b""
+
+
+def test_a_partial_line_is_held_until_it_is_finished() -> None:
+    lines, remainder = split_output(b"first\nsecond-half")
+    assert lines == ["first"]
+    assert remainder == b"second-half"
+
+    lines, remainder = split_output(remainder + b"-arrived\n")
+    assert lines == ["second-half-arrived"]
+    assert remainder == b""
+
+
+def test_crlf_does_not_produce_a_phantom_blank_line_of_content() -> None:
+    lines, _ = split_output(b"a\r\nb\r\n")
+    assert [line for line in lines if line] == ["a", "b"]
+
+
+def test_output_with_no_terminator_at_all_is_flushed_rather_than_buffered() -> None:
+    """The exact shape that broke it: megabytes with no newline anywhere.
+
+    The old reader raised `ValueError` here. Nothing a library prints may be able to stop
+    the queue, so an over-long fragment is emitted rather than accumulated.
+    """
+    flood = b"x" * (MAX_LINE_BYTES * 3)
+    lines, remainder = split_output(flood)
+
+    assert lines != []
+    assert remainder == b""
+    assert sum(len(line) for line in lines) == len(flood)
+
+
+def test_the_tail_of_a_stream_is_not_lost_at_eof() -> None:
+    lines, remainder = split_output(b"no trailing newline", at_eof=True)
+    assert lines == ["no trailing newline"]
+    assert remainder == b""
+
+
+def test_undecodable_bytes_are_replaced_rather_than_raising() -> None:
+    """A native crash message is not guaranteed to be UTF-8, and is exactly what is wanted."""
+    lines, _ = split_output(b"before \xff\xfe after\n")
+    assert lines[0].startswith("before ")
+
+
+def test_a_worker_that_floods_stderr_still_reaches_a_terminal_state(client: TestClient) -> None:
+    """End to end over the real subprocess path, with the output shape that broke it.
+
+    A train job for a missing experiment fails fast; what matters is that the job is
+    finalized and that the queue then runs the *next* job — a wedged runner leaves both
+    of those undone and reports nothing.
+    """
+    queue = _queue(client)
+    first = queue.enqueue(kind=JobKind.TRAIN, params={"experiment_id": 999_999})
+    assert _await_terminal(client, first.id)["status"] == "failed"
+
+    second = queue.enqueue(kind=JobKind.PREWARM, params={"dataset_id": 999_999})
+    assert _await_terminal(client, second.id)["status"] in {"succeeded", "failed"}

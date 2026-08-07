@@ -35,6 +35,7 @@ from anomaly_lab.models.base import (
     InferContext,
     Prediction,
     TrainContext,
+    evenly_spaced,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.preprocessing import load_array
@@ -110,17 +111,6 @@ def gaussian_blur(image: np.ndarray, sigma: float) -> np.ndarray:
     return np.apply_along_axis(lambda row: np.convolve(row, kernel, mode="valid"), 1, padded)
 
 
-def _evenly_spaced(count: int, limit: int) -> list[int]:
-    """Indices sampled across the whole range, not the first `limit` of it.
-
-    Datasets arrive in acquisition order often enough that the first 128 images are one
-    production batch. Taking a stride keeps the reference representative of the set.
-    """
-    if count <= limit:
-        return list(range(count))
-    return [round(index) for index in np.linspace(0, count - 1, limit)]
-
-
 class PixelReferenceModel(AnomalyModel):
     """Per-pixel robust reference statistics, compared pixelwise."""
 
@@ -152,7 +142,7 @@ class PixelReferenceModel(AnomalyModel):
         )
 
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None:
-        chosen = _evenly_spaced(len(train), self.config.max_reference_images)
+        chosen = evenly_spaced(len(train), self.config.max_reference_images)
         if len(chosen) < len(train):
             ctx.log(
                 f"building the reference from {len(chosen)} of {len(train)} training "

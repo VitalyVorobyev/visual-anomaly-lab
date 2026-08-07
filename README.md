@@ -41,18 +41,20 @@ Throughout: **grouped multi-view samples** (one physical object, many images, on
 overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
 experiment comes back with identical configuration, metrics, results, and logs.
 
-> ### Project status — import and browse
+> ### Project status — the loop closes
 >
-> **M0**–**M2** are complete. The application imports a directory of images into a catalog of grouped
-> samples, browses them in a virtualized thumbnail grid, opens one sample across all of its channels with
-> synchronized zoom and pan, and creates seeded, sample-level train/val/test splits. Import is two-phase —
-> a scan proposes a reviewable manifest, and nothing is written until you commit it — and re-importing the
-> same directory is idempotent. Long operations run as jobs with live progress, streaming logs and working
-> cancellation.
+> **M0**–**M3** are complete: the whole loop above runs. Point the app at a directory or a public
+> benchmark, review the proposed manifest, commit it, adopt the benchmark's own split, train a method,
+> score it, and read image- **and** pixel-level metrics with a working anomaly-map overlay. Experiments
+> persist; reopening one gives back identical numbers.
 >
-> **Training and evaluation start at M3.** The [Methods](#methods) table below describes the designed
-> system, not shipped software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and
-> honest sizing.
+> Two methods ship: `pixel_reference`, a dataset-agnostic floor baseline that needs numpy and Pillow and
+> trains in seconds, and `efficientad_anomalib`, which trains on Apple Silicon via MPS. The remaining rows
+> of the [Methods](#methods) table are designed, not shipped.
+>
+> **Next is M4**, which makes the method *legible* — architecture view, teacher inspector, live training
+> charts, benchmark charts, diagnostic overlays — all built on the diagnostics contract M3 established.
+> See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
 
 ## Methods
 
@@ -137,9 +139,9 @@ which is what makes the resulting figure comparable to the paper's.
 | Document | Contents |
 | --- | --- |
 | [`docs/system-design.md`](docs/system-design.md) | Architecture, domain model, canonical terminology, API surface, job and evaluation protocols |
-| [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M7, scope, exit criteria, sizing |
+| [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M9, scope, exit criteria, sizing |
 | [`docs/backlog.md`](docs/backlog.md) | Task-level breakdown by epic |
-| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0014 — what was decided, why, and what it costs |
+| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0018 — what was decided, why, and what it costs |
 
 ## Getting started
 
@@ -194,6 +196,15 @@ uv run --directory backend ruff check .   # lint
 uv run --directory backend mypy           # types, strict
 cd frontend && bun run test && bun run typecheck
 ./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
+```
+
+The deep-learning methods live behind an optional dependency group, so a checkout that only wants the
+baseline never pays for torch. Install it when you want EfficientAD, and check the accelerator before
+trusting it:
+
+```bash
+uv sync --directory backend --extra dl
+./scripts/mps-smoke-test.py               # is MPS actually usable here? (ADR-0008)
 ```
 
 A handful of backend tests assert the exact composition of the private showcase tree. They are skipped
