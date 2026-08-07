@@ -690,8 +690,11 @@ are configurable — this table is guidance for the current dataset, not a const
 
 ## 9. Media and thumbnail cache
 
-Source images are 1280×1024 BMPs of roughly 3.9 MB. Serving those directly to a browser grid would move
-hundreds of megabytes per screen and stall the UI, so the media layer serves **three tiers**:
+Source images are whatever the dataset supplies — the showcase tree holds 1280×1024 BMPs of roughly
+3.9 MB, the public reference datasets hold multi-megapixel JPEGs. Nothing below depends on which:
+resolution and format are per-image data, recorded at import. Serving source files directly to a browser
+grid would move hundreds of megabytes per screen and stall the UI, so the media layer serves
+**three tiers**:
 
 | Tier | Size | Format | Used by |
 | --- | --- | --- | --- |
@@ -724,9 +727,11 @@ casing at any call site.
 
 ## 10. Classical baseline (summary)
 
-`classical_circular` is the non-neural reference method and the vertical slice's first model: it needs no
-training infrastructure, no GPU and no external framework, so it proves the whole import → experiment → job →
-results → evaluation pipeline end to end before any deep model is wired in. In outline (ADR-0010): a **circle
+`classical_circular` is the non-neural reference method. It was originally planned as the vertical slice's
+first model, on the grounds that it needs no training infrastructure, no GPU and no external framework. That
+ordering has been **superseded**: making the *showcase-specific* method the first one contradicted the
+universal goal, so the slice is now proven with a dataset-agnostic method and a dataset-agnostic floor
+baseline, and this method is scheduled later as an optional milestone. In outline (ADR-0010): a **circle
 fit** on the part boundary with a **prior-based fallback** when the fit is poor; the resulting geometry is
 **shared across all channels of a sample**, since the views are near-simultaneous images of the same physical
 object; a **polar transform** about the fitted centre turns rotation into translation; **FFT angular

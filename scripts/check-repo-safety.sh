@@ -27,6 +27,16 @@ if git ls-files --cached | grep -iE 'privatedata'; then
   fail=1
 fi
 
+# The public reference datasets are gitignored for size, not secrecy, so nothing here
+# would catch a stray CSV or split file from one -- the extension rules below only see
+# images. Anchored to the repository root so the backend's own `datasets/` package,
+# which legitimately lives at backend/src/anomaly_lab/datasets/, is untouched.
+if git ls-files --cached | grep -E '^datasets/'; then
+  echo "ERROR: paths under datasets/ are tracked/staged (see above)." >&2
+  echo "       Reference datasets are downloaded, not committed -- see the README." >&2
+  fail=1
+fi
+
 if git ls-files --cached | grep -iE "$BANNED_EXTENSIONS"; then
   echo "ERROR: image or array data is tracked/staged (see above)." >&2
   echo "       Source images are referenced in place, never committed. Test fixtures" >&2

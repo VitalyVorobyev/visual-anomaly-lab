@@ -9,6 +9,7 @@ images".
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 
 from anomaly_lab.domain.entities import Label, LabelSource, Sample, Subset
@@ -167,6 +168,69 @@ def set_label(conn: sqlite3.Connection, sample_id: int, label: Label) -> Sample 
         (label.value, LabelSource.MANUAL.value, sample_id),
     )
     return get_sample(conn, sample_id)
+
+
+# SQLite caps host parameters per statement — 999 on builds predating 3.32 — and a
+# selection can be larger than one page of the grid. Chunking keeps that limit from
+# becoming the caller's problem.
+_MAX_IDS_PER_STATEMENT = 500
+
+
+def set_labels(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    sample_ids: Sequence[int],
+    label: Label,
+) -> int:
+    """Label an explicit selection, returning how many samples now carry the label.
+
+    Scoped by `dataset_id` as well as by id, so a request cannot reach across datasets by
+    naming ids belonging to another one. The chunks run inside one transaction: a bulk
+    edit that half-applied would be worse than one that failed.
+    """
+    if not sample_ids:
+        return 0
+
+    updated = 0
+    conn.execute("BEGIN")
+    try:
+        for start in range(0, len(sample_ids), _MAX_IDS_PER_STATEMENT):
+            chunk = sample_ids[start : start + _MAX_IDS_PER_STATEMENT]
+            placeholders = ", ".join("?" * len(chunk))
+            cursor = conn.execute(
+                f"""
+                UPDATE sample
+                   SET label = ?, label_source = ?
+                 WHERE dataset_id = ? AND id IN ({placeholders})
+                """,
+                [label.value, LabelSource.MANUAL.value, dataset_id, *chunk],
+            )
+            updated += cursor.rowcount
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+    return updated
+
+
+def set_labels_matching(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    filters: SampleFilter,
+    label: Label,
+) -> int:
+    """Label every sample matching a browser filter, returning how many.
+
+    Built from the same `_where` clause the grid pages with, so "label everything I am
+    looking at" and "what I am looking at" cannot drift apart — which is the whole reason
+    this is a filter rather than a list of ids the client assembled for itself.
+    """
+    where, params = _where(dataset_id, filters)
+    cursor = conn.execute(
+        f"UPDATE sample SET label = ?, label_source = ? WHERE {where}",
+        [label.value, LabelSource.MANUAL.value, *params],
+    )
+    return cursor.rowcount
 
 
 def list_group_keys(conn: sqlite3.Connection, dataset_id: int) -> list[str]:

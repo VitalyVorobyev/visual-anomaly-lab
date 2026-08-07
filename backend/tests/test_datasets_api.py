@@ -197,6 +197,85 @@ def test_a_sample_from_another_dataset_is_not_reachable_through_this_one(
     )
 
 
+# -- bulk labelling ------------------------------------------------------------------
+
+
+def _bulk(client: TestClient, dataset_id: int, **body: Any) -> dict[str, Any]:
+    response = client.patch(f"/api/datasets/{dataset_id}/samples", json=body)
+    assert response.status_code == 200, response.text
+    return dict(response.json())
+
+
+def test_a_selection_is_labelled_in_one_request_and_marked_manual(
+    client: TestClient, dataset_id: int
+) -> None:
+    chosen = [s["id"] for s in _samples(client, dataset_id, label="normal")["items"]]
+
+    assert _bulk(client, dataset_id, label="defect", sample_ids=chosen) == {"updated": 3}
+
+    after = _samples(client, dataset_id, label="defect")["items"]
+    relabelled = [s for s in after if s["id"] in set(chosen)]
+    assert len(relabelled) == len(chosen)
+    assert all(s["label_source"] == "manual" for s in relabelled)
+
+
+def test_labelling_by_filter_touches_exactly_what_the_grid_counted(
+    client: TestClient, dataset_id: int
+) -> None:
+    """The count the UI shows and the set that gets labelled come from one clause."""
+    counted = _samples(client, dataset_id, label="unlabeled")["total"]
+
+    result = _bulk(client, dataset_id, label="normal", filters={"label": "unlabeled"})
+
+    assert result["updated"] == counted
+    assert _samples(client, dataset_id, label="unlabeled")["total"] == 0
+
+
+def test_empty_filters_mean_the_whole_dataset(client: TestClient, dataset_id: int) -> None:
+    total = _samples(client, dataset_id)["total"]
+
+    assert _bulk(client, dataset_id, label="normal", filters={})["updated"] == total
+    assert _samples(client, dataset_id, label="normal")["total"] == total
+
+
+def test_a_filter_that_matches_nothing_labels_nothing(client: TestClient, dataset_id: int) -> None:
+    _bulk(client, dataset_id, label="normal", filters={"label": "unlabeled"})
+
+    assert _bulk(client, dataset_id, label="defect", filters={"label": "unlabeled"}) == {
+        "updated": 0
+    }
+
+
+def test_bulk_labelling_cannot_reach_into_another_dataset(
+    client: TestClient, settings: Settings, dataset_id: int
+) -> None:
+    with connection(settings.db_path) as conn:
+        other = datasets_repo.create_dataset(conn, name="other", root_path="/roots/other")
+        stranger, _ = samples_repo.upsert_sample(
+            conn, other.id, group_key="g", external_id="1", label=Label.NORMAL
+        )
+
+    assert _bulk(client, dataset_id, label="defect", sample_ids=[stranger.id]) == {"updated": 0}
+
+    with connection(settings.db_path) as conn:
+        untouched = samples_repo.get_sample(conn, stranger.id)
+    assert untouched is not None
+    assert untouched.label is Label.NORMAL
+
+
+def test_naming_the_target_twice_or_not_at_all_is_rejected(
+    client: TestClient, dataset_id: int
+) -> None:
+    for body in (
+        {"label": "normal"},
+        {"label": "normal", "sample_ids": [1], "filters": {}},
+    ):
+        assert client.patch(f"/api/datasets/{dataset_id}/samples", json=body).status_code == 422
+
+    # Nothing was written by either rejected request.
+    assert _samples(client, dataset_id, label="unlabeled")["total"] == 1
+
+
 # -- splits --------------------------------------------------------------------------
 
 

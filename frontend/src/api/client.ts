@@ -28,6 +28,9 @@ export type LabelSource = Schemas["LabelSource"];
 export type Subset = Schemas["Subset"];
 export type Channel = Schemas["Channel"];
 
+export type BulkLabelFilter = Schemas["BulkLabelFilter"];
+export type BulkLabelRequest = Schemas["BulkLabelRequest"];
+
 export type DatasetSummary = Schemas["DatasetSummary"];
 export type DatasetDetail = Schemas["DatasetDetail"];
 export type SampleSummary = Schemas["SampleSummary"];

@@ -73,7 +73,19 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Label many samples at once
+         * @description Label a selection, or everything matching a filter, in one request.
+         *
+         *     Labelling one sample at a time is fine for correcting a handful and hopeless for a
+         *     directory that is entirely one class — which is the common case on import, and the
+         *     reason this exists. Like the single-sample route it marks every row it touches
+         *     `manual`, so a re-import of the same tree cannot undo the work (ADR-0013).
+         *
+         *     The filter form is resolved server-side from the grid's own `_where` clause, so the
+         *     set that gets labelled is provably the set whose count the UI displayed.
+         */
+        patch: operations["update_labels_api_datasets__dataset_id__samples_patch"];
         trace?: never;
     };
     "/api/datasets/{dataset_id}/samples/{sample_id}": {
@@ -402,6 +414,43 @@ export interface components {
             options_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * BulkLabelFilter
+         * @description The browser's filters, as a request body rather than a query string.
+         */
+        BulkLabelFilter: {
+            label?: components["schemas"]["Label"] | null;
+            /** Channel Id */
+            channel_id?: number | null;
+            /** Split Id */
+            split_id?: number | null;
+            /** @description Only meaningful together with `split_id`. */
+            subset?: components["schemas"]["Subset"] | null;
+        };
+        /**
+         * BulkLabelRequest
+         * @description Label a selection, or everything matching a filter.
+         *
+         *     The two ways of naming the target are deliberately exclusive. A selection is what the
+         *     grid's checkboxes produce; a filter is what "label everything I am currently looking
+         *     at" means, and it is evaluated *server-side* from the same clause the grid pages with,
+         *     so it cannot label a different set than the one whose count was shown.
+         */
+        BulkLabelRequest: {
+            label: components["schemas"]["Label"];
+            /**
+             * Sample Ids
+             * @description An explicit selection. Ids outside this dataset are ignored.
+             */
+            sample_ids?: number[] | null;
+            /** @description Every sample matching these filters. An empty object means the whole dataset. */
+            filters?: components["schemas"]["BulkLabelFilter"] | null;
+        };
+        /** BulkLabelResult */
+        BulkLabelResult: {
+            /** Updated */
+            updated: number;
         };
         /**
          * Channel
@@ -1173,6 +1222,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SamplePage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_labels_api_datasets__dataset_id__samples_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkLabelResult"];
                 };
             };
             /** @description Validation Error */
