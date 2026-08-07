@@ -136,8 +136,33 @@ The milestone was re-aimed after M2. It previously put `classical_circular` firs
 - [x] One VisA class imports through `csv_table` with its **official** train/test split (900 train normal, 100 test normal, 100 test anomaly) and its 100 ground-truth masks attached, and `verify` reports no drift on either.
 - [x] The import screen's options form is generated from the adapter's schema, and a required option blocks the scan with the field named.
 - [x] The **MPS smoke test runs first**, as a standalone script, before any wrapper code (**ADR-0008**). Measured on this Mac: MPS 123 ms/step against CPU 295 ms. It earned itself immediately — EfficientAD's penalty batch defaults to `None` in the signature and is dereferenced unconditionally in training, which the script found before a line of wrapper existed.
-- [ ] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime) on that split.
-- [ ] Image-level and **pixel-level** ROC-AUC are both reported, and the image-level number is in the neighbourhood of the published VisA figure — a gap is acceptable, an unexplained gap is not.
+- [x] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime) on that split. Two runs at the default 256×256: **4 000 steps in 526 s** and **20 000 steps in 2 624 s**, both on MPS, inference 46.3 ms/image. The CPU fallback is selected automatically when MPS is unavailable and costs the ratio the smoke test measured — 295 against 123 ms/step, so roughly 2.4× — putting the 20 000-step run near 1 h 45 m on CPU. That ratio is measured per step; no full CPU run was made, and the number is presented as the extrapolation it is.
+- [x] Image-level and **pixel-level** ROC-AUC are both reported, and the gap against the published VisA figure is accounted for rather than waved at. Best run — 20 000 steps on the official split — is **0.809 sample ROC-AUC, 0.810 image AP, 0.933 pixel ROC-AUC, 0.809 AU-PRO**, against a published EfficientAD figure of roughly 0.98 image AU-ROC (reported as a mean over the twelve VisA classes, not for candle alone). The gap is real and is broken down below rather than left as a number.
+
+  *Measured, by controlled experiment:*
+
+  | | sample ROC-AUC | pixel ROC-AUC | AU-PRO |
+  | --- | --- | --- | --- |
+  | 4 000 steps, official split | 0.744 | 0.853 | 0.571 |
+  | 4 000 steps, quantiles on held-out normals | 0.769 | 0.873 | 0.595 |
+  | 20 000 steps, official split | **0.809** | **0.933** | **0.809** |
+
+  Step count is the larger effect (+0.065 image, +0.080 pixel, +0.238 AU-PRO from 4 000 to 20 000);
+  score-normalization calibration is the smaller one (+0.025 image at fixed steps on a byte-identical
+  test set), and is a lower bound because the holdout also costs 90 training images.
+
+  *Ruled out by reading anomalib's source rather than by assumption:* input normalization
+  (`imagenet_norm_batch` runs inside every branch's forward, so `[0, 1]` tensors are what it wants);
+  preprocessing (anomalib's own EfficientAD pre-processor is a bare `Resize` and it *rejects* a
+  `Normalize` in the transform, which is exactly what our bridge feeds); optimizer and schedule
+  (Adam plus `StepLR(0.95 · max_steps, γ = 0.1)`, identical); batch size 1; and the penalty
+  pipeline, since `prepare_imagenette_data` is anomalib's routine called directly.
+
+  *Named and untested:* the paper trains **70 000 steps**, 3.5× what was run here, and the measured
+  trend points that way — that run was started and then deliberately stopped, so it is deferred, not
+  overlooked. Two smaller candidates remain open: `model_size` is `small` (EfficientAD-S) where
+  headline tables often quote the -M variant, and the training loop samples uniformly *with
+  replacement* where a shuffled `DataLoader` would not.
 - [x] `pixel_reference` runs on the same split through the identical interface and the same results screen, giving the deep result a floor to beat: **0.814 sample ROC-AUC, 0.888 pixel ROC-AUC, 0.808 AU-PRO** on VisA candle, trained and scored in 6 seconds on CPU.
 - [x] Adding both methods required **no** change to the queue, protocol, cancellation or fan-out — each cost one registry entry and one handler function. Two defects were *found* in the queue by the first job long enough to draw a progress bar, and are recorded below rather than papered over.
 - [x] Anomaly maps overlay in spatial alignment with the source image, with ground-truth contours where masks exist.
@@ -179,8 +204,19 @@ And two are about how the results read rather than whether they are right:
   already-defaulted options is right for an adapter and leaves a model — whose
   hyperparameters all have defaults — showing nothing at all.
 
-One is about the method:
+Two are about the method:
 
+- **"ROC-AUC is threshold-free, so the score normalization cannot affect it" is wrong**, and it
+  was written into the wrapper as a reassurance next to the fallback that triggers it. EfficientAD
+  scores an image as `max_p [ w_st·map_st[p] + w_ae·map_stae[p] ]`, and the two weights come from
+  *different* quantile pairs. A shared scale and an offset are monotone and genuinely cannot move a
+  ranking — but the fit decides the **ratio** of the two weights, which is the relative influence of
+  the student-teacher and autoencoder branches before the max. Change it and images reorder, which
+  is exactly what ROC-AUC measures. Measured, not argued: at a fixed 4 000 steps on a byte-identical
+  test set, fitting the quantiles on 90 genuinely held-out normals instead of on the training
+  normals moved sample ROC-AUC 0.744 → **0.769**, pixel ROC-AUC 0.853 → **0.873** and AU-PRO
+  0.571 → **0.595** — and that understates it, since the holdout also costs 90 training images.
+  `holdout_from_train` exists so this is testable without touching the published test set.
 - **The EfficientAD wrapper does not use Lightning**, as the plan assumed it would.
   `EfficientAd.on_train_start` reads `self.trainer.datamodule`, so the Lightning path means adopting
   anomalib's datamodule and with it anomalib's preprocessing — which would break the property that

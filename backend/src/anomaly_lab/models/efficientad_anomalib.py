@@ -384,8 +384,22 @@ class EfficientAdAnomalibModel(AnomalyModel):
         EfficientAD calibrates on **held-out** normals. VisA's official one-class protocol
         has no `val` subset at all, so there are none, and the only alternative is the
         training normals themselves. That is a real weakening — the quantiles are then
-        fitted on data the student has already memorized, so the normalization is
-        optimistic — and it is logged as a warning rather than silently substituted.
+        fitted on data the student has already memorized — and it is logged as a warning
+        rather than silently substituted.
+
+        It is worth being precise about *what* it weakens, because the obvious reading is
+        wrong. The normalization looks like a display convenience that a threshold-free
+        metric would be immune to, and it is not. Writing the score out:
+
+            s = c + max_p [ w_st * map_st[p] + w_ae * map_stae[p] ]
+
+        with ``w_st = 0.05 / (qb_st - qa_st)`` and ``w_ae = 0.05 / (qb_ae - qa_ae)``. A
+        shared scale and the offset ``c`` are monotone and cannot move a ranking — but the
+        two weights come from *different* quantile pairs, so what the fit really decides is
+        their **ratio**, the relative weight of the two branches before the max. Change
+        that and images reorder, which is precisely what ROC-AUC measures. Quantiles fitted
+        on memorized data understate the student-teacher spread, inflating ``w_st``, and
+        the combined map tilts toward the branch with the least honest calibration.
         """
         source = ctx.val
         if source:
