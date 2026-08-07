@@ -1731,6 +1731,12 @@ export interface components {
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
             /**
+             * Holdout From Train
+             * @description For `imported` only: move this share of the published *training* normals to `val`. The official one-class protocols publish no validation subset, but methods that calibrate on held-out normals need one. Taking it out of train leaves the published test set untouched, so the reported number stays comparable; 0 reproduces the source's partition exactly.
+             * @default 0
+             */
+            holdout_from_train: number;
+            /**
              * Manifest Id
              * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
              */
@@ -1766,6 +1772,12 @@ export interface components {
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
+            /**
+             * Holdout From Train
+             * @description For `imported` only: move this share of the published *training* normals to `val`. The official one-class protocols publish no validation subset, but methods that calibrate on held-out normals need one. Taking it out of train leaves the published test set untouched, so the reported number stays comparable; 0 reproduces the source's partition exactly.
+             * @default 0
+             */
+            holdout_from_train: number;
             /**
              * Manifest Id
              * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.

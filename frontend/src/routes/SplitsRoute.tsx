@@ -33,6 +33,7 @@ export function SplitsRoute() {
   const [trainFraction, setTrainFraction] = useState(0.6);
   const [valFraction, setValFraction] = useState(0.2);
   const [valDefectFraction, setValDefectFraction] = useState(0.3);
+  const [holdout, setHoldout] = useState(0);
 
   const drawn = strategy === "normal_only_train";
 
@@ -49,6 +50,9 @@ export function SplitsRoute() {
               train_normal_fraction: trainFraction,
               val_normal_fraction: valFraction,
               val_defect_fraction: valDefectFraction,
+              // Only meaningful for `imported`, and zero everywhere else so a drawn
+              // split's stored params do not imply a holdout was considered.
+              holdout_from_train: drawn ? 0 : holdout,
               // Assigned rather than left out: unlabelled samples are excluded from
               // every metric later, but they have to be scored to appear in the
               // ranked lists.
@@ -104,6 +108,23 @@ export function SplitsRoute() {
                 <option value="imported">imported — adopt the published one</option>
               </select>
             </Field>
+            {!drawn && (
+              <>
+                <Fraction
+                  label="Hold out this share of the published training normals"
+                  value={holdout}
+                  onChange={setHoldout}
+                />
+                <Field label="Seed (for the holdout only)">
+                  <input
+                    className={`${inputClasses} font-mono`}
+                    type="number"
+                    value={seed}
+                    onChange={(event) => setSeed(Number(event.target.value))}
+                  />
+                </Field>
+              </>
+            )}
             {drawn && (
               <>
                 <Field label="Seed">
@@ -144,11 +165,24 @@ export function SplitsRoute() {
             ) : (
               <>
                 Takes the partition the source dataset published, read from the manifest
-                this dataset was imported from. There is no seed and there are no
-                fractions — the point is to reproduce someone else's split exactly, so that
-                a number computed here is comparable to the one they published. Official
-                one-class protocols usually have no validation subset at all, and an empty
-                one is expected rather than a fault.
+                this dataset was imported from — the point is to reproduce someone else's
+                split exactly, so that a number computed here is comparable to the one they
+                published. Official one-class protocols usually have no validation subset
+                at all, and an empty one is expected rather than a fault.{" "}
+                {holdout > 0 ? (
+                  <>
+                    The holdout above moves {(holdout * 100).toFixed(0)}% of the published{" "}
+                    <em>training</em> normals into validation, for methods that calibrate on
+                    held-out normals. The published <em>test</em> subset is untouched, so the
+                    reported figure is still the one the protocol defines.
+                  </>
+                ) : (
+                  <>
+                    Leave the holdout at zero to reproduce the source exactly. Raise it if a
+                    method needs held-out normals to calibrate — it comes out of train, never
+                    out of test.
+                  </>
+                )}
               </>
             )}
           </p>

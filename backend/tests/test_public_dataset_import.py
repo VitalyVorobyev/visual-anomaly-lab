@@ -195,10 +195,8 @@ def test_verify_walks_masks_and_reports_a_missing_one(client: TestClient, publis
 
 
 def _create_split(client: TestClient, dataset_id: int, **body: Any) -> Any:
-    return client.post(
-        "/api/splits",
-        json={"dataset_id": dataset_id, "name": "official", **body},
-    )
+    payload = {"dataset_id": dataset_id, "name": "official", **body}
+    return client.post("/api/splits", json=payload)
 
 
 def test_an_imported_split_reproduces_the_published_partition(
@@ -310,3 +308,60 @@ def test_a_defect_type_read_at_import_reaches_the_sample(
 
     assert {sample.notes for sample in stored} == {"Nick", "Scratch"}
     assert all(sample.label is Label.DEFECT for sample in stored)
+
+
+def test_a_holdout_can_be_carved_out_of_the_published_training_set(
+    client: TestClient, published: Path
+) -> None:
+    """EfficientAD needs held-out normals; the official protocol publishes none.
+
+    The one thing that must not move is the **test** subset, because that is what the
+    published figure is defined over. The holdout therefore comes out of train.
+    """
+    result = _import(client, published)
+
+    baseline = _create_split(
+        client, result["dataset_id"], name="official", params={"strategy": "imported"}
+    ).json()
+    with_holdout = _create_split(
+        client,
+        result["dataset_id"],
+        name="official-with-holdout",
+        seed=7,
+        params={"strategy": "imported", "holdout_from_train": 0.2},
+    ).json()
+
+    before = {row["subset"]: row for row in baseline["composition"]}
+    after = {row["subset"]: row for row in with_holdout["composition"]}
+
+    assert after["test"] == before["test"], "the published test subset must not move"
+    assert after["val"]["total"] == round(TRAIN_NORMAL * 0.2)
+    assert after["val"]["defect"] == 0, "validation for a one-class method means normals"
+    assert after["train"]["total"] == TRAIN_NORMAL - after["val"]["total"]
+
+
+def test_the_same_seed_carves_the_same_holdout(client: TestClient, published: Path) -> None:
+    result = _import(client, published)
+    params = {"strategy": "imported", "holdout_from_train": 0.25}
+
+    first = _create_split(client, result["dataset_id"], name="a", seed=3, params=params).json()
+    second = _create_split(client, result["dataset_id"], name="b", seed=3, params=params).json()
+
+    assert [row["total"] for row in first["composition"]] == [
+        row["total"] for row in second["composition"]
+    ]
+    assert first["params"]["holdout_from_train"] == 0.25
+
+
+def test_a_holdout_that_would_empty_the_training_set_is_refused(
+    client: TestClient, published: Path
+) -> None:
+    result = _import(client, published)
+    response = _create_split(
+        client,
+        result["dataset_id"],
+        name="too-greedy",
+        params={"strategy": "imported", "holdout_from_train": 0.999},
+    )
+    assert response.status_code == 409
+    assert "training" in response.text

@@ -135,7 +135,13 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
         try:
             if params.strategy is SplitStrategy.IMPORTED:
                 manifest, manifest_id = _committed_manifest(dataset)
-                assignments = plan_imported_split(conn, body.dataset_id, manifest)
+                assignments = plan_imported_split(
+                    conn,
+                    body.dataset_id,
+                    manifest,
+                    seed=body.seed,
+                    holdout_from_train=params.holdout_from_train,
+                )
                 # Record which import asserted this partition, so the split stays
                 # traceable to the file that decided it rather than to a seed it ignored.
                 params = params.model_copy(update={"manifest_id": manifest_id})

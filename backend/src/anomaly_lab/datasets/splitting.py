@@ -82,6 +82,19 @@ class SplitParams(BaseModel):
         ),
     )
 
+    holdout_from_train: float = Field(
+        default=0.0,
+        ge=0.0,
+        lt=1.0,
+        description=(
+            "For `imported` only: move this share of the published *training* normals to "
+            "`val`. The official one-class protocols publish no validation subset, but "
+            "methods that calibrate on held-out normals need one. Taking it out of train "
+            "leaves the published test set untouched, so the reported number stays "
+            "comparable; 0 reproduces the source's partition exactly."
+        ),
+    )
+
     manifest_id: str | None = Field(
         default=None,
         description=(
@@ -170,6 +183,9 @@ def plan_imported_split(
     conn: sqlite3.Connection,
     dataset_id: int,
     manifest: Manifest,
+    *,
+    seed: int = 0,
+    holdout_from_train: float = 0.0,
 ) -> dict[int, Subset]:
     """Materialize the partition a source dataset published, as recorded in its manifest.
 
@@ -180,6 +196,15 @@ def plan_imported_split(
     Samples the manifest does not place are **left out of the split** rather than swept
     into `test`. A benchmark's protocol says what belongs in its test set; adding samples
     it never scored would change the denominator of every metric.
+
+    `holdout_from_train` is the one permitted departure, and it is careful about which
+    number it is allowed to move. The official one-class protocols publish no validation
+    subset, but EfficientAD — and any method that calibrates on held-out normals — has to
+    fit those statistics on *something*, and falling back to the training normals means
+    calibrating on data the model has already memorized. Carving the holdout out of the
+    published **train** subset leaves the published **test** subset byte-identical, so the
+    reported figure remains the one the protocol defines. Zero reproduces the source
+    exactly, and is the default.
     """
     if not manifest.has_imported_split():
         msg = (
@@ -212,7 +237,48 @@ def plan_imported_split(
         msg = "the published partition has no training samples"
         raise SplitPlanError(msg)
 
+    if holdout_from_train > 0.0:
+        _hold_out_from_train(conn, dataset_id, assignments, seed, holdout_from_train)
+
     return assignments
+
+
+def _hold_out_from_train(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    assignments: dict[int, Subset],
+    seed: int,
+    fraction: float,
+) -> None:
+    """Move a seeded share of the *normal* training samples into `val`, in place.
+
+    Normals only, because validation for a one-class method means "more of what normal
+    looks like"; a defect moved here would be a defect the model is calibrated against
+    but never scored on. Seeded and consumed in sorted id order, so the same request
+    reproduces the same holdout.
+    """
+    labels = {
+        sample.id: sample.label
+        for sample in samples_repo.list_samples(conn, dataset_id, limit=_ALL, offset=0)
+    }
+    candidates = sorted(
+        sample_id
+        for sample_id, subset in assignments.items()
+        if subset is Subset.TRAIN and labels.get(sample_id) is Label.NORMAL
+    )
+
+    count = round(len(candidates) * fraction)
+    if count == 0 or count == len(candidates):
+        msg = (
+            f"holdout_from_train={fraction} would move {count} of {len(candidates)} "
+            "training normals, leaving either no validation set or no training set"
+        )
+        raise SplitPlanError(msg)
+
+    rng = random.Random(seed)
+    rng.shuffle(candidates)
+    for sample_id in candidates[:count]:
+        assignments[sample_id] = Subset.VAL
 
 
 # `list_samples` pages by default; a split needs the whole dataset at once, and a dataset
