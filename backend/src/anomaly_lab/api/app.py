@@ -29,6 +29,7 @@ from anomaly_lab.api.routers import (
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_migrations_to
+from anomaly_lab.db.repositories.experiments import fail_stale_training_experiments
 from anomaly_lab.db.repositories.jobs import fail_stale_running_jobs
 from anomaly_lab.jobs.queue import JobQueue
 
@@ -53,6 +54,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # is what makes the plain `uv run uvicorn` path migrate as well.
         schema_version = apply_migrations_to(conn)
         stale_jobs = fail_stale_running_jobs(conn)
+        stale_experiments = fail_stale_training_experiments(conn)
 
     logger.info("Database %s ready at schema version %d", settings.db_path, schema_version)
     if stale_jobs:
@@ -60,6 +62,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Marked %d job(s) left running by a previous process as failed: %s",
             len(stale_jobs),
             ", ".join(str(job.id) for job in stale_jobs),
+        )
+    if stale_experiments:
+        logger.warning(
+            "Marked %d experiment(s) left mid-training as failed: %s",
+            len(stale_experiments),
+            ", ".join(str(experiment_id) for experiment_id in stale_experiments),
         )
 
     # Started after reconciliation, so the runner never sees a row the previous process

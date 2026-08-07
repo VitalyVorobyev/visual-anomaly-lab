@@ -96,6 +96,30 @@ def set_status(
     return get_experiment(conn, experiment_id)
 
 
+def fail_stale_training_experiments(conn: sqlite3.Connection) -> list[int]:
+    """Reconcile experiments left mid-training by a process that is gone.
+
+    The sibling of `jobs.fail_stale_running_jobs`, and needed for the same reason: only
+    one job runs at a time, so at startup nothing is running, and an experiment still
+    reading `training` is the record of a run that died. Without this it reads `training`
+    for ever — which is not merely cosmetic, because `training` is indistinguishable on
+    screen from a run that is genuinely in progress.
+
+    Returns the ids it corrected, so startup can say what it found.
+    """
+    rows = conn.execute(
+        "SELECT id FROM experiment WHERE status = ?",
+        (ExperimentStatus.TRAINING.value,),
+    ).fetchall()
+    stale = [int(row["id"]) for row in rows]
+    if stale:
+        conn.execute(
+            "UPDATE experiment SET status = ? WHERE status = ?",
+            (ExperimentStatus.FAILED.value, ExperimentStatus.TRAINING.value),
+        )
+    return stale
+
+
 def delete_experiment(conn: sqlite3.Connection, experiment_id: int) -> bool:
     """Delete an experiment and everything cascading from it.
 

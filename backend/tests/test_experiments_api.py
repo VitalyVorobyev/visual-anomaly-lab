@@ -25,6 +25,7 @@ from PIL import Image
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.db.repositories import samples as samples_repo
@@ -563,3 +564,28 @@ def test_the_queue_carries_a_train_job_with_no_change_to_itself(
     assert payload["status"] == "succeeded", payload.get("error")
     assert payload["result"]["train_images"] == TRAIN_NORMALS
     assert client.get(f"/api/experiments/{experiment['id']}").json()["status"] == "trained"
+
+
+def test_an_experiment_left_mid_training_is_reconciled_at_startup(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """The sibling of the stale-job reconciliation, and needed for the same reason.
+
+    A crash or a force-quit leaves the row reading `training`, which on screen is
+    indistinguishable from a run that is genuinely in progress. Only one job runs at a
+    time, so at startup nothing is — and anything still `training` is the record of a
+    run that died.
+    """
+    from fastapi.testclient import TestClient as Client
+
+    from anomaly_lab.api.app import create_app
+    from anomaly_lab.domain.entities import ExperimentStatus
+
+    experiment = _create(client, seeded)
+    with connection(settings.db_path) as conn:
+        experiments_repo.set_status(conn, experiment["id"], ExperimentStatus.TRAINING)
+
+    with Client(create_app(settings)) as restarted:
+        reopened = restarted.get(f"/api/experiments/{experiment['id']}").json()
+
+    assert reopened["status"] == "failed"
