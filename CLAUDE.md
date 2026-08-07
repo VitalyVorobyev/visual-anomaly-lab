@@ -49,9 +49,13 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **18 accepted ADRs (0001–0018)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **21 accepted ADRs (0001–0021)**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
+- `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
+  there and nowhere else. Components name `surface`, `line`, `fg-muted`, `signal`, `normal`,
+  `defect`, `warn` — **never a raw Tailwind ramp step** like `slate-500`. A raw colour will compile
+  and look almost right, and quietly ignore the theme.
 
 ## Current status and working discipline
 
@@ -61,11 +65,25 @@ comparing them under one evaluation protocol.
   creates an experiment, trains a method, scores it, and reports image- **and** pixel-level metrics with a
   working anomaly-map overlay. Two methods ship: `pixel_reference` (numpy + Pillow, the floor) and
   `efficientad_anomalib` (MPS).
-- **M4 is the current milestone**: the researcher's workbench UI — architecture view, teacher inspector,
-  live training charts, benchmark charts, diagnostic overlays. It is built **entirely on M3's diagnostics
-  contract (ADR-0018)**, so every view is written once against the index and renders by `kind`. If a view
-  needs to know which method produced a diagnostic, that is a finding about the contract, not a place to
-  branch. Check `docs/roadmap.md` — it is current.
+- **M4 is complete**, and was followed by a UI/UX pass that gave the app a visual system: a semantic
+  token layer, a primitive set under `frontend/src/components/ui/`, light and dark themes with a
+  toggle, and the schema→control mapping fixed so a closed set renders as a picker (**ADR-0021**).
+  **M5 — the comparison UI — is next.** Check `docs/roadmap.md` before starting work.
+- **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
+  `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
+  `Skeleton`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
+  `<select>`, `<input type="range">` or `<table>` — those are what the pass removed. A raw
+  `<details>` in particular now renders **with no caret**, because the base layer drops the UA
+  marker; use `Disclosure`.
+- **A method or adapter option needs no frontend work, and that now holds for every pydantic shape.**
+  `enum` is read before `type` and `$ref` is resolved through `$defs`, so `Literal` and `StrEnum`
+  both become pickers and numeric bounds reach the control. If a new option still needs a change in
+  `SchemaForm.tsx`, that is a finding about the schema-to-control mapping, not a place to
+  special-case.
+- **An empty control means unset, and that contract is load-bearing.** `toOptions` sends nothing for
+  a field nobody touched, so a default is defined in Python alone. A segmented control highlights
+  the *effective* value and stores `""` when that is the schema default; a select carries an
+  explicit `Default · <value>` entry. Do not "fix" this by pre-filling.
 - **Schema v1 is frozen.** It was amended in place through M2, as the rule below allowed; the first real
   import has now landed, so every further change is a new numbered migration (ADR-0004).
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI

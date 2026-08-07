@@ -12,7 +12,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import {
   PAGE_SIZE,
@@ -23,7 +23,7 @@ import {
 import type { ImageSummary, Label } from "../api/client";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
-import { Badge, Button, Empty, ErrorBox, Panel } from "../components/ui";
+import { Badge, Button, Empty, ErrorBox, PageHeader, Panel, SkeletonRows, ReadoutStrip, Switch } from "../components/ui";
 import { useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 
 const MIN_ZOOM = 1;
@@ -145,7 +145,7 @@ export function SampleRoute() {
   }, [apply, step]);
 
   if (sample.error) return <ErrorBox>{sample.error.message}</ErrorBox>;
-  if (sample.isPending || !sample.data) return <Empty>Loading…</Empty>;
+  if (sample.isPending || !sample.data) return <SkeletonRows rows={6} />;
 
   const current = sample.data;
   const images = current.images;
@@ -153,25 +153,33 @@ export function SampleRoute() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <Link
-            to={`/datasets/${datasetId}${search ? `?${search}` : ""}`}
-            className="text-xs text-slate-500 hover:underline dark:text-slate-400"
-          >
-            ← back to the browser
-          </Link>
-          <h2 className="font-mono text-lg font-semibold tracking-tight">
+      <PageHeader
+        back={{
+          to: `/datasets/${datasetId}${search ? `?${search}` : ""}`,
+          label: "Back to the browser",
+        }}
+        title={
+          <span className="font-mono">
             {current.group_key}/{current.external_id}
-          </h2>
-        </div>
-        <div className="flex items-center gap-2">
-          <Badge tone={LABEL_TONE[current.label]}>{current.label}</Badge>
-          <Badge tone={current.label_source === "manual" ? "info" : "neutral"}>
-            {current.label_source}
-          </Badge>
-        </div>
-      </div>
+          </span>
+        }
+        actions={
+          <>
+            <Badge tone={LABEL_TONE[current.label]}>{current.label}</Badge>
+            <Badge tone={current.label_source === "manual" ? "info" : "neutral"}>
+              {current.label_source}
+            </Badge>
+          </>
+        }
+        meta={
+          <ReadoutStrip
+            items={[
+              { label: "group", value: current.group_key },
+              { label: "channels", value: images.length },
+            ]}
+          />
+        }
+      />
 
       {/* Paging walks the filtered set the grid was showing, not the whole dataset. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -190,7 +198,7 @@ export function SampleRoute() {
           >
             →
           </Button>
-          <span className="text-sm text-slate-500 dark:text-slate-400">
+          <span className="text-sm text-fg-muted">
             {index < 0 ? (
               // Labelling under a label filter drops the sample out of its own set. Say
               // so rather than silently disabling the arrows.
@@ -203,21 +211,17 @@ export function SampleRoute() {
           </span>
         </span>
 
-        <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
-          <input
-            type="checkbox"
-            checked={autoAdvance}
-            onChange={(event) => setAutoAdvance(event.target.checked)}
-            className="h-4 w-4 accent-slate-900 dark:accent-slate-100"
-          />
-          Advance after labelling
-        </label>
+        <Switch
+          checked={autoAdvance}
+          onCheckedChange={setAutoAdvance}
+          label="Advance after labelling"
+        />
       </div>
 
       <Panel
         title="Label"
         actions={
-          <span className="text-xs text-slate-500 dark:text-slate-400">
+          <span className="text-xs text-fg-muted">
             keys: n · d · u — ← → to page — 0 resets the view
           </span>
         }
@@ -278,7 +282,7 @@ export function SampleRoute() {
 
       <Panel title="Metadata">
         <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+          <thead className="text-xs font-medium text-fg-muted">
             <tr>
               <th className="pr-4 pb-2 whitespace-nowrap">Channel</th>
               <th className="pr-4 pb-2 whitespace-nowrap">Size</th>
@@ -289,7 +293,7 @@ export function SampleRoute() {
           </thead>
           <tbody>
             {images.map((image) => (
-              <tr key={image.id} className="border-t border-slate-100 dark:border-slate-800">
+              <tr key={image.id} className="border-t border-line">
                 <td className="py-1.5 pr-4 font-mono text-xs whitespace-nowrap">
                   {image.channel ?? "—"}
                 </td>
@@ -302,7 +306,7 @@ export function SampleRoute() {
                 <td className="py-1.5 pr-4 font-mono text-xs whitespace-nowrap">
                   {(image.file_size / 1_000_000).toFixed(2)} MB
                 </td>
-                <td className="py-1.5 font-mono text-xs break-all text-slate-400">{image.path}</td>
+                <td className="py-1.5 font-mono text-xs break-all text-fg-subtle">{image.path}</td>
               </tr>
             ))}
           </tbody>
@@ -333,7 +337,7 @@ function ZoomPan({
 
   return (
     <div
-      className="relative h-96 cursor-grab overflow-hidden rounded bg-slate-100 select-none dark:bg-slate-800"
+      className="relative h-96 cursor-grab overflow-hidden rounded bg-raised select-none "
       onWheel={(event) => {
         const next = Math.min(
           MAX_ZOOM,

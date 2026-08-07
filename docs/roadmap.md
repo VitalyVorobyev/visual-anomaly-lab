@@ -288,6 +288,32 @@ Two are about the method:
 
 ---
 
+## M4.5 — The UI/UX pass
+
+**Status: complete (2026-08-07).** Unplanned, and taken before M5 on the grounds that a comparison screen built in the old idiom would have to be rebuilt in the new one.
+
+By the end of M4 the application had eleven working screens and no visual system. `styles.css` was one line, no `font-family` was declared anywhere so it rendered in whatever the OS thought `system-ui` was, colour was a raw `slate-*` utility at 250-odd call sites, and dark mode followed the OS with no way to override it — on a tool whose job is judging images.
+
+**What was built**
+
+- **A semantic token layer** (`frontend/src/styles.css`) under one thesis: *the chrome is grey so the data can be loud*. Zero saturation in chrome, one accent that means "you can act here", and the verdict colours reserved for verdicts. True-neutral greys rather than blue-cast `slate`, because a blue-tinted grey beside an inferno map shifts how the map's cool end reads. Light and dark, with a three-state toggle. IBM Plex Sans and Mono, self-hosted, tabular figures throughout (**ADR-0021**).
+- **A primitive set** under `frontend/src/components/ui/`, replacing eight OS-styled `<select>`s, three unstyled range inputs, five hand-rolled tables, and a dataset delete that fired on one click with no confirmation. Four Radix primitives — `Select`, `Dialog`, `Tooltip`, `Slider` — which are exactly the controls ADR-0012 named as its test for revisiting.
+- **A visible focus ring**, which the application did not previously have anywhere.
+
+**The bug the pass was really about**
+
+`api/schemaForm.ts` tested `type === "string"` before it ever looked at `enum`, and `enum` was declared on the type and read by nobody. So `Literal["small", "medium"]` rendered as a **free text box** whose placeholder was the default — a value the backend would reject was a typo away — and a `StrEnum`, which pydantic emits as a `$ref` into `$defs`, fell through every branch to a **JSON textarea**, its options not merely un-offered but invisible. Numeric bounds went the same way: `max_steps` carries `minimum: 10, maximum: 200000` and the control accepted anything, so an out-of-range value surfaced as a 422 half a screen from the field that caused it.
+
+On the experiment screen that was 15 fields, four of them enums, and zero pickers. The same bug hit every import adapter. Fixed by reading `enum` first and resolving `$ref` through `$defs`; a set of three or fewer becomes a segmented control, more becomes a select.
+
+**Findings recorded**
+
+- **The "empty means unset" contract survived, and had to be verified on the wire rather than assumed.** A picker whose default is pre-selected would send that default back on every run, so a later change to it would silently not reach anyone who had once opened the form. A segmented control now highlights the *effective* value and stores `""` when that is the schema default. Confirmed by intercepting the POST: an untouched form sends `config: {}`.
+- **Removing the UA `<summary>` marker globally is a trap that bites once per raw `<details>`.** The experiment's Configuration panel rendered as an empty box with no caret and read as broken. Found by looking at the page, not by a test — the same way four of M4's findings were.
+- **Two rendering models for controls now coexist.** A Radix `Checkbox` is a `button[role="checkbox"]` with no `.checked` property, so a test reaching for the DOM property had to move to the ARIA role.
+
+---
+
 ## M5 — Comparison UI
 
 **Goal.** Several methods, one split, one evaluation protocol, compared directly. This is what makes the workbench worth having.

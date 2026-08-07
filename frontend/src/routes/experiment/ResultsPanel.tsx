@@ -13,9 +13,10 @@ import { Link } from "react-router";
 
 import type { SampleVerdict, Subset } from "../../api/client";
 import { StackedBars } from "../../components/charts/BarChart";
+import { DEFECT_COLOUR, NORMAL_COLOUR } from "../../components/charts/Frame";
 import { ScoreHistogram } from "../../components/charts/Histogram";
 import { Tabs } from "../../components/Tabs";
-import { Badge, Empty, ErrorBox, Panel } from "../../components/ui";
+import { Badge, Empty, ErrorBox, Panel, Select, Slider } from "../../components/ui";
 import type { Tone } from "../../components/ui";
 import { useResults, useThreshold } from "../../hooks/useExperiments";
 
@@ -66,18 +67,13 @@ export function Results({
     <Panel
       title="Results"
       actions={
-        <select
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800"
+        <Select
+          className="w-40"
           aria-label="Subset"
           value={subset}
-          onChange={(event) => onSubset(event.target.value as Subset)}
-        >
-          {subsets.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-        </select>
+          options={subsets.map((name) => ({ value: name, label: name }))}
+          onValueChange={(value) => onSubset(value as Subset)}
+        />
       }
     >
       {results.error && <ErrorBox>{results.error.message}</ErrorBox>}
@@ -87,24 +83,20 @@ export function Results({
 
       {results.data && results.data.samples.length > 0 && (
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-3">
-              <label className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-                Threshold
-              </label>
-              <input
-                type="range"
+              <span className="shrink-0 text-xs font-medium text-fg">Threshold</span>
+              <Slider
                 aria-label="Threshold"
-                className="flex-1"
                 min={results.data.score_min}
                 max={results.data.score_max}
                 step={step}
                 value={active}
-                onChange={(event) => setThreshold(Number(event.target.value))}
+                onValueChange={setThreshold}
+                readout={<span className="inline-block w-16 text-right">{active.toFixed(4)}</span>}
               />
-              <span className="w-24 text-right font-mono text-sm">{active.toFixed(4)}</span>
             </div>
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-fg-muted">
               Opens at {results.data.suggested_threshold.toFixed(4)} —{" "}
               {results.data.threshold_rationale}.
             </p>
@@ -179,14 +171,14 @@ function DefectTypes({ samples }: { samples: SampleVerdict[] }) {
     .map(([label, counts]) => ({
       label,
       segments: [
-        { name: "caught", value: counts.caught, colour: "#10b981" },
-        { name: "missed", value: counts.missed, colour: "#ef4444" },
+        { name: "caught", value: counts.caught, colour: NORMAL_COLOUR },
+        { name: "missed", value: counts.missed, colour: DEFECT_COLOUR },
       ],
     }));
 
   return (
     <div className="flex flex-col gap-2">
-      <h3 className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+      <h3 className="text-xs font-semibold text-fg">
         By defect type, at this threshold
       </h3>
       <StackedBars rows={rows} label="Defects caught and missed by type" />
@@ -214,7 +206,7 @@ export function Confusion({
     <div className="flex flex-wrap items-center gap-6">
       <table className="text-sm">
         <thead>
-          <tr className="text-xs text-slate-500">
+          <tr className="text-xs text-fg-muted">
             <th className="px-2" />
             <th className="px-2 font-medium">called defect</th>
             <th className="px-2 font-medium">called normal</th>
@@ -222,16 +214,16 @@ export function Confusion({
         </thead>
         <tbody className="font-mono">
           <tr>
-            <th className="px-2 text-xs font-medium text-slate-500">is defect</th>
-            <td className="px-2 text-emerald-700 dark:text-emerald-300">
+            <th className="px-2 text-xs font-medium text-fg-muted">is defect</th>
+            <td className="px-2 text-normal">
               {confusion.true_positive}
             </td>
-            <td className="px-2 text-red-700 dark:text-red-300">{confusion.false_negative}</td>
+            <td className="px-2 text-defect">{confusion.false_negative}</td>
           </tr>
           <tr>
-            <th className="px-2 text-xs font-medium text-slate-500">is normal</th>
-            <td className="px-2 text-amber-700 dark:text-amber-300">{confusion.false_positive}</td>
-            <td className="px-2 text-emerald-700 dark:text-emerald-300">
+            <th className="px-2 text-xs font-medium text-fg-muted">is normal</th>
+            <td className="px-2 text-warn">{confusion.false_positive}</td>
+            <td className="px-2 text-normal">
               {confusion.true_negative}
             </td>
           </tr>
@@ -247,9 +239,9 @@ export function Confusion({
           ] as const
         ).map(([label, value]) => (
           <div key={label} className="flex flex-col">
-            <dt className="text-xs text-slate-500">{label}</dt>
+            <dt className="text-xs text-fg-muted">{label}</dt>
             <dd className="font-mono">
-              {value === null ? <span className="text-slate-400">—</span> : value.toFixed(3)}
+              {value === null ? <span className="text-fg-subtle">—</span> : value.toFixed(3)}
             </dd>
           </div>
         ))}
@@ -291,7 +283,7 @@ function VerdictTable({
         })}
       />
 
-      <ul className="max-h-96 divide-y divide-slate-200 overflow-y-auto text-sm dark:divide-slate-700">
+      <ul className="max-h-96 divide-y divide-line overflow-y-auto text-sm ">
         {shown.map((sample) => (
           <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
             <Link
@@ -304,7 +296,7 @@ function VerdictTable({
             <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
               {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
             </Badge>
-            {sample.notes && <span className="text-xs text-slate-500">{sample.notes}</span>}
+            {sample.notes && <span className="text-xs text-fg-muted">{sample.notes}</span>}
             <span className="ml-auto font-mono text-xs">{sample.score.toFixed(4)}</span>
           </li>
         ))}

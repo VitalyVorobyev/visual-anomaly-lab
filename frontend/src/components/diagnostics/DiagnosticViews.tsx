@@ -26,7 +26,7 @@ export function DiagnosticImage({
   caption?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded border border-slate-200 bg-slate-950 dark:border-slate-700">
+    <div className="overflow-hidden rounded border border-line bg-[#08090a] ">
       <img
         src={diagnosticPayloadUrl(experimentId, entry, frame)}
         alt={caption ?? entry.title}
@@ -69,7 +69,7 @@ export function DiagnosticGrid({
               frame={frame}
               caption={`${entry.title}, channel ${frame}`}
             />
-            <figcaption className="text-center font-mono text-[10px] text-slate-400">
+            <figcaption className="text-center font-mono text-[10px] text-fg-subtle">
               {frame}
             </figcaption>
           </figure>
@@ -79,7 +79,7 @@ export function DiagnosticGrid({
         <button
           type="button"
           onClick={() => setShown(total)}
-          className="self-start text-xs text-slate-500 hover:underline"
+          className="self-start text-xs text-fg-muted hover:underline"
         >
           Showing {shown} of {total} — show all
         </button>
@@ -100,7 +100,7 @@ export function DiagnosticTable({ payload }: { payload: Record<string, unknown> 
       <table className="text-sm">
         {columns.length > 0 && (
           <thead>
-            <tr className="text-xs text-slate-500">
+            <tr className="text-xs text-fg-muted">
               {columns.map((column, index) => (
                 <th key={index} className="px-2 py-1 text-left font-medium">
                   {String(column)}
@@ -111,7 +111,7 @@ export function DiagnosticTable({ payload }: { payload: Record<string, unknown> 
         )}
         <tbody className="font-mono">
           {rows.map((row, rowIndex) => (
-            <tr key={rowIndex} className="border-t border-slate-200 dark:border-slate-700">
+            <tr key={rowIndex} className="border-t border-line">
               {(Array.isArray(row) ? row : [row]).map((cell, cellIndex) => (
                 <td key={cellIndex} className="px-2 py-1">
                   {String(cell)}
@@ -128,7 +128,7 @@ export function DiagnosticTable({ payload }: { payload: Record<string, unknown> 
 /** A kind this build does not know how to draw. Named, not swallowed. */
 export function UnknownKind({ entry }: { entry: DiagnosticEntry }) {
   return (
-    <p className="rounded border border-dashed border-slate-300 px-3 py-2 text-xs text-slate-500 dark:border-slate-600 dark:text-slate-400">
+    <p className="rounded border border-dashed border-line-strong px-3 py-2 text-xs text-fg-muted ">
       This run recorded a diagnostic of kind <span className="font-mono">{entry.kind}</span>,
       which this version of the workbench cannot draw. The data is on disk under the
       experiment's <span className="font-mono">diagnostics/</span> directory.

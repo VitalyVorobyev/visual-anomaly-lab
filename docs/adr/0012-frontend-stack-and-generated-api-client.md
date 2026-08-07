@@ -1,6 +1,7 @@
 # ADR-0012: Frontend stack and a generated API client
 
-**Status:** Accepted (2026-08-06)
+**Status:** Accepted (2026-08-06). Its **Styling** clause is superseded by **ADR-0021**; the rest —
+routing, server state, and the generated client — stands.
 
 ## Context
 

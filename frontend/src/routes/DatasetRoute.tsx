@@ -30,7 +30,21 @@ import {
 } from "../api/browseState";
 import { imageUrl } from "../api/imageUrl";
 import type { Label, SampleSummary, Subset } from "../api/client";
-import { Badge, Button, CountRun, Empty, ErrorBox, Panel, inputClasses } from "../components/ui";
+import { Scissors } from "lucide-react";
+
+import {
+  Badge,
+  Button,
+  CountRun,
+  Empty,
+  ErrorBox,
+  Field,
+  PageHeader,
+  Panel,
+  ReadoutStrip,
+  Select,
+  SkeletonRows,
+} from "../components/ui";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 
 const COLUMNS = 6;
@@ -68,7 +82,7 @@ export function DatasetRoute() {
   }, [search]);
 
   if (dataset.error) return <ErrorBox>{dataset.error.message}</ErrorBox>;
-  if (dataset.isPending || !dataset.data) return <Empty>Loading…</Empty>;
+  if (dataset.isPending || !dataset.data) return <SkeletonRows rows={6} />;
 
   const detail = dataset.data;
   const items = page.data?.items ?? [];
@@ -94,96 +108,106 @@ export function DatasetRoute() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold tracking-tight">{detail.name}</h2>
-          <p className="font-mono text-xs break-all text-slate-400">{detail.root_path}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <CountRun
-            counts={[
-              ["normal", detail.label_counts["normal"] ?? 0, "normal"],
-              ["defect", detail.label_counts["defect"] ?? 0, "defect"],
-              ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
+      <PageHeader
+        title={detail.name}
+        actions={
+          <Link to={`/datasets/${datasetId}/splits`}>
+            <Button icon={<Scissors />}>Splits ({detail.splits})</Button>
+          </Link>
+        }
+        meta={
+          <ReadoutStrip
+            items={[
+              { label: "samples", value: detail.samples },
+              { label: "images", value: detail.images },
+              // A dataset with one image per sample has no channel dictionary, and
+              // "channels 0" states a fact about a concept that does not apply to it.
+              ...(detail.channels.length > 0
+                ? [{ label: "channels", value: detail.channels.length }]
+                : []),
+              { value: detail.root_path },
             ]}
           />
-          <Link to={`/datasets/${datasetId}/splits`}>
-            <Button>Splits ({detail.splits})</Button>
-          </Link>
-        </div>
-      </div>
+        }
+      />
+
+      <CountRun
+        counts={[
+          ["normal", detail.label_counts["normal"] ?? 0, "normal"],
+          ["defect", detail.label_counts["defect"] ?? 0, "defect"],
+          ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
+        ]}
+      />
 
       <Panel title="Filters">
-        <div className="flex flex-wrap gap-3">
-          <select
-            aria-label="Label"
-            className={inputClasses}
-            value={browse.label ?? ""}
-            onChange={(event) =>
-              setFilter({ label: (event.target.value || undefined) as Label | undefined })
-            }
-          >
-            <option value="">Any label</option>
-            {LABELS.map((label) => (
-              <option key={label} value={label}>
-                {label}
-              </option>
-            ))}
-          </select>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <Field as="group" label="Label">
+            <Select
+              aria-label="Label"
+              value={browse.label ?? ""}
+              placeholder="Any label"
+              unsetLabel="Any label"
+              options={LABELS.map((label) => ({ value: label, label }))}
+              onValueChange={(value) =>
+                setFilter({ label: (value || undefined) as Label | undefined })
+              }
+            />
+          </Field>
 
           {/* Options come from the dataset's channel dictionary, whatever its length. */}
-          <select
-            aria-label="Channel"
-            className={inputClasses}
-            value={browse.channelId ?? ""}
-            onChange={(event) =>
-              setFilter({
-                channelId: event.target.value === "" ? undefined : Number(event.target.value),
-              })
-            }
-          >
-            <option value="">Any channel</option>
-            {detail.channels.map((channel) => (
-              <option key={channel.id} value={channel.id}>
-                {channel.name}
-              </option>
-            ))}
-          </select>
+          <Field as="group" label="Channel">
+            <Select
+              aria-label="Channel"
+              value={browse.channelId === undefined ? "" : String(browse.channelId)}
+              placeholder="Any channel"
+              unsetLabel="Any channel"
+              options={detail.channels.map((channel) => ({
+                value: String(channel.id),
+                label: channel.name,
+              }))}
+              onValueChange={(value) =>
+                setFilter({ channelId: value === "" ? undefined : Number(value) })
+              }
+            />
+          </Field>
 
-          <select
-            aria-label="Split"
-            className={inputClasses}
-            value={browse.splitId ?? ""}
-            onChange={(event) =>
-              setFilter({
-                splitId: event.target.value === "" ? undefined : Number(event.target.value),
-                // A subset without a split is meaningless.
-                ...(event.target.value === "" ? { subset: undefined } : {}),
-              })
-            }
-          >
-            <option value="">No split</option>
-            {(splits.data ?? []).map((split) => (
-              <option key={split.id} value={split.id}>
-                {split.name}
-              </option>
-            ))}
-          </select>
+          <Field as="group" label="Split">
+            <Select
+              aria-label="Split"
+              value={browse.splitId === undefined ? "" : String(browse.splitId)}
+              placeholder="No split"
+              unsetLabel="No split"
+              options={(splits.data ?? []).map((split) => ({
+                value: String(split.id),
+                label: split.name,
+              }))}
+              onValueChange={(value) =>
+                setFilter({
+                  splitId: value === "" ? undefined : Number(value),
+                  // A subset without a split is meaningless.
+                  ...(value === "" ? { subset: undefined } : {}),
+                })
+              }
+            />
+          </Field>
 
-          <select
-            aria-label="Subset"
-            className={inputClasses}
-            value={browse.subset ?? ""}
-            disabled={browse.splitId === undefined}
-            onChange={(event) =>
-              setFilter({ subset: (event.target.value || undefined) as Subset | undefined })
-            }
-          >
-            <option value="">Any subset</option>
-            <option value="train">train</option>
-            <option value="val">val</option>
-            <option value="test">test</option>
-          </select>
+          <Field as="group" label="Subset">
+            <Select
+              aria-label="Subset"
+              value={browse.subset ?? ""}
+              placeholder={browse.splitId === undefined ? "Pick a split first" : "Any subset"}
+              unsetLabel="Any subset"
+              disabled={browse.splitId === undefined}
+              options={[
+                { value: "train", label: "train" },
+                { value: "val", label: "val" },
+                { value: "test", label: "test" },
+              ]}
+              onValueChange={(value) =>
+                setFilter({ subset: (value || undefined) as Subset | undefined })
+              }
+            />
+          </Field>
         </div>
       </Panel>
 
@@ -192,7 +216,7 @@ export function DatasetRoute() {
 
       {page.data && (
         <>
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-500 dark:text-slate-400">
+          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-fg-muted">
             <span className="flex flex-wrap items-center gap-2">
               <span>
                 {total} sample{total === 1 ? "" : "s"}
@@ -205,7 +229,7 @@ export function DatasetRoute() {
               {total > 0 &&
                 (labellingAll ? (
                   <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-slate-700 dark:text-slate-200">
+                    <span className="text-fg">
                       Label all {total} as
                     </span>
                     {LABELS.map((label) => (
@@ -258,10 +282,10 @@ export function DatasetRoute() {
       )}
 
       {selected.size > 0 && (
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-300 bg-white/95 px-4 py-3 shadow-lg backdrop-blur dark:border-slate-600 dark:bg-slate-900/95">
+        <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-strong bg-white/95 px-4 py-3 shadow-lg backdrop-blur ">
           <span className="text-sm font-medium">
             {selected.size} selected
-            <span className="ml-2 font-normal text-slate-500 dark:text-slate-400">
+            <span className="ml-2 font-normal text-fg-muted">
               shift-click for a range · ⌘/ctrl-click to toggle
             </span>
           </span>
@@ -349,7 +373,7 @@ function SampleGrid({
           selectAll();
         }
       }}
-      className="h-[60vh] overflow-y-auto rounded-lg border border-slate-200 dark:border-slate-700"
+      className="h-[60vh] overflow-y-auto rounded-lg border border-line"
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((row) => (
@@ -411,10 +435,8 @@ function SampleTile({
           onSelect(event);
         }
       }}
-      className={`relative flex flex-col overflow-hidden rounded border ${
-        selected
-          ? "border-slate-900 ring-2 ring-slate-900 dark:border-slate-100 dark:ring-slate-100"
-          : "border-slate-200 hover:border-slate-400 dark:border-slate-700"
+      className={`relative flex flex-col overflow-hidden rounded-control border transition-colors ${
+        selected ? "border-signal ring-2 ring-signal" : "border-line hover:border-line-strong"
       }`}
       title={`${sample.group_key}/${sample.external_id}`}
     >
@@ -430,9 +452,9 @@ function SampleTile({
           onSelect(event);
         }}
         onChange={() => undefined}
-        className="absolute top-1 left-1 z-10 h-4 w-4 cursor-pointer accent-slate-900 dark:accent-slate-100"
+        className="absolute top-1 left-1 z-10 h-4 w-4 cursor-pointer accent-signal"
       />
-      <div className="flex h-20 items-center justify-center bg-slate-100 dark:bg-slate-800">
+      <div className="flex h-20 items-center justify-center bg-raised">
         {cover ? (
           <img
             // The grid never asks for a full-resolution decode.
@@ -442,14 +464,14 @@ function SampleTile({
             className="h-full w-full object-contain"
           />
         ) : (
-          <span className="text-xs text-slate-400">no image</span>
+          <span className="text-xs text-fg-subtle">no image</span>
         )}
       </div>
       <div className="flex items-center justify-between gap-1 px-1.5 py-1">
         <span className="truncate font-mono text-xs">{sample.external_id}</span>
         <span className="flex items-center gap-1">
           {/* The channel count is whatever this sample has. */}
-          <span className="font-mono text-[10px] text-slate-400">{sample.images.length}ch</span>
+          <span className="font-mono text-[10px] text-fg-subtle">{sample.images.length}ch</span>
           <Badge tone={LABEL_TONE[sample.label]}>{sample.label.slice(0, 3)}</Badge>
         </span>
       </div>

@@ -11,7 +11,7 @@ import { useState } from "react";
 
 import type { MetricSummary, Subset } from "../../api/client";
 import { CurveChart } from "../../components/charts/CurveChart";
-import { Empty, Panel } from "../../components/ui";
+import { Empty, Panel, SkeletonRows } from "../../components/ui";
 import { useCurves } from "../../hooks/useExperiments";
 import { Results } from "./ResultsPanel";
 
@@ -38,7 +38,7 @@ export function BenchmarkTab({
   return (
     <div className="flex flex-col gap-6">
       <Panel title={`Curves — ${subset}`}>
-        {curves.isPending && <p className="text-sm text-slate-500">Loading…</p>}
+        {curves.isPending && <SkeletonRows rows={3} />}
         {curves.data && (
           <div className="grid gap-8 lg:grid-cols-2">
             <CurveChart
@@ -75,7 +75,7 @@ export function BenchmarkTab({
             />
           </div>
         )}
-        <p className="mt-4 text-xs text-slate-500 dark:text-slate-400">
+        <p className="mt-4 text-xs text-fg-muted">
           {/* Stating the gap rather than leaving a reader to wonder where it went. */}
           Pixel-level curves are not drawn. The pixel metrics stream their histograms and
           discard them so memory stays constant in the number of test images (ADR-0017);

@@ -80,7 +80,7 @@ export function Frame({
   const PLOT = GEOMETRY[variant];
 
   return (
-    <figure className="flex flex-col gap-1 text-slate-500 dark:text-slate-400">
+    <figure className="flex flex-col gap-1 text-fg-muted">
       <svg
         role="img"
         aria-label={label}
@@ -200,17 +200,34 @@ export function Legend({ items }: { items: { label: string; colour: string }[] }
  * The shared series palette.
  *
  * Ordered so the first three — the EfficientAD loss terms — are distinguishable to a
- * colourblind reader, and picked from the same families `ui.tsx` already uses for tone.
+ * colourblind reader. Under ADR-0021 the chrome carries no saturation at all, which makes
+ * this the *only* place in the application allowed to be loud: a chart and an anomaly map
+ * are the data, and nothing around them should compete.
+ *
+ * Fixed hexes rather than the theme's custom properties because these are read through
+ * `fill`/`stroke` on an SVG and, more importantly, they must stay identical between the
+ * light and dark palettes — a series that changed colour with the theme would make two
+ * screenshots of one run disagree about which curve is which.
  */
 export const SERIES_COLOURS = [
-  "#0ea5e9",
-  "#f59e0b",
-  "#8b5cf6",
-  "#10b981",
-  "#ef4444",
-  "#64748b",
+  "#3bc9db", // cyan, the accent's own hue
+  "#f0883e", // orange
+  "#a78bfa", // violet
+  "#34d399", // green
+  "#f87171", // red
+  "#8b949b", // grey, the fallback
 ] as const;
 
+/**
+ * The verdict pair, for the charts that plot outcomes rather than series.
+ *
+ * Exported so the histogram and the caught/missed bars stop restating them: the same two
+ * hexes were written out in three files, and a green that means "normal" has to be one
+ * green.
+ */
+export const NORMAL_COLOUR = "#34d399";
+export const DEFECT_COLOUR = "#f87171";
+
 export function seriesColour(index: number): string {
-  return SERIES_COLOURS[index % SERIES_COLOURS.length] ?? "#64748b";
+  return SERIES_COLOURS[index % SERIES_COLOURS.length] ?? "#8b949b";
 }

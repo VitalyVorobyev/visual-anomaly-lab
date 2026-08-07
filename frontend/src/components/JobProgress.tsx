@@ -13,7 +13,7 @@ import { api } from "../api/client";
 import type { JobDetail, JobStatus } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, ErrorBox, ProgressBar } from "./ui";
+import { Badge, Button, ErrorBox, ProgressBar, SkeletonRows } from "./ui";
 import type { Tone } from "./ui";
 
 const STATUS_TONE: Record<JobStatus, Tone> = {
@@ -54,7 +54,7 @@ export function JobProgress({
   }, [lines.length]);
 
   if (error) return <ErrorBox>{error.message}</ErrorBox>;
-  if (!job) return <p className="text-sm text-slate-500">Starting…</p>;
+  if (!job) return <SkeletonRows rows={2} />;
 
   const finished = isTerminal(job.status);
 
@@ -62,12 +62,13 @@ export function JobProgress({
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
         <Badge tone={STATUS_TONE[job.status]}>{job.status}</Badge>
-        <span className="text-sm text-slate-600 dark:text-slate-300">{job.message ?? ""}</span>
+        <span className="min-w-0 truncate text-sm text-fg-muted">{job.message ?? ""}</span>
         {!finished && (
           <Button
             className="ml-auto"
+            size="sm"
             variant="danger"
-            disabled={cancel.isPending}
+            loading={cancel.isPending}
             onClick={() => cancel.mutate()}
           >
             Cancel
@@ -82,7 +83,9 @@ export function JobProgress({
       {lines.length > 0 && (
         <pre
           ref={consoleRef}
-          className="max-h-56 overflow-y-auto rounded bg-slate-950 p-3 font-mono text-xs whitespace-pre-wrap text-slate-200"
+          /* Held on a near-black field regardless of theme: this is a terminal, and a log
+             tail that changes colour with the app reads as chrome rather than as output. */
+          className="max-h-56 overflow-y-auto rounded-control border border-line bg-[#08090a] p-3 font-mono text-xs whitespace-pre-wrap text-[#c9d1d9]"
         >
           {lines.join("\n")}
         </pre>

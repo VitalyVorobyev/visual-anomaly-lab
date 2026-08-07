@@ -60,7 +60,7 @@ export function DiagnosticCard({
       <figcaption className="flex flex-col gap-0.5">
         <span className="text-sm font-medium">{entry.title}</span>
         {entry.description && (
-          <span className="text-xs text-slate-500 dark:text-slate-400">{entry.description}</span>
+          <span className="text-xs text-fg-muted">{entry.description}</span>
         )}
       </figcaption>
       <DiagnosticBody experimentId={experimentId} entry={entry} />

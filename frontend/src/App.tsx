@@ -1,4 +1,20 @@
+/**
+ * The shell: what is true on every screen.
+ *
+ * The old header set the wordmark at `text-sm` — the same size as the navigation links
+ * beside it — so nothing in it was more important than anything else, and the active route
+ * was distinguished only by font weight. It also had no way to tell whether the backend was
+ * up: that fact lived exclusively on `/health`, which is the one screen you cannot reach a
+ * conclusion from if the sidecar has died while you were on another one.
+ */
+
+import { Moon, Sun, SunMoon } from "lucide-react";
+import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
+
+import { Tooltip, TooltipProvider, cn, focusRing } from "./components/ui";
+import { useHealth } from "./hooks/useHealth";
+import { readThemeChoice, setThemeChoice, type ThemeChoice } from "./theme";
 
 const NAV = [
   { to: "/", label: "Datasets", end: true },
@@ -9,36 +25,138 @@ const NAV = [
 
 export function App() {
   return (
-    <div className="min-h-screen bg-white text-slate-900 dark:bg-slate-900 dark:text-slate-100">
-      <header className="border-b border-slate-200 dark:border-slate-700">
-        <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-4">
-          <h1 className="text-sm font-semibold tracking-tight">visual-anomaly-lab</h1>
-          <nav className="flex gap-4">
-            {NAV.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                end={item.end}
-                className={({ isActive }) =>
-                  `text-sm ${
-                    isActive
-                      ? "font-medium text-slate-900 dark:text-slate-100"
-                      : "text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-                  }`
-                }
-              >
-                {item.label}
-              </NavLink>
-            ))}
-          </nav>
-        </div>
-      </header>
+    <TooltipProvider>
+      <div className="min-h-screen bg-ground text-fg">
+        <header className="sticky top-0 z-40 border-b border-line bg-ground/85 backdrop-blur-sm">
+          <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
+            <Wordmark />
 
-      {/* Wider than M1's reading-width shell: the browser grid and the side-by-side
-          channel viewer are the screens this application exists for. */}
-      <main className="mx-auto max-w-6xl px-6 py-8">
-        <Outlet />
-      </main>
-    </div>
+            <nav className="flex items-center gap-1" aria-label="Main">
+              {NAV.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.end}
+                  className={({ isActive }) =>
+                    cn(
+                      "rounded-control px-2.5 py-1 text-sm transition-colors",
+                      focusRing,
+                      isActive
+                        ? "bg-raised font-medium text-fg"
+                        : "text-fg-muted hover:bg-raised/60 hover:text-fg",
+                    )
+                  }
+                >
+                  {item.label}
+                </NavLink>
+              ))}
+            </nav>
+
+            <div className="ml-auto flex items-center gap-3">
+              <BackendStatus />
+              <ThemeToggle />
+            </div>
+          </div>
+        </header>
+
+        <main className="mx-auto max-w-6xl px-6 py-8">
+          <Outlet />
+        </main>
+      </div>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * The mark is an aperture: concentric rings around a point, which is both what a lens is
+ * and what this application draws over and over — a map with a hot spot in it.
+ */
+function Wordmark() {
+  return (
+    <span className="flex shrink-0 items-center gap-2">
+      <svg viewBox="0 0 16 16" className="size-4 text-signal" aria-hidden>
+        <circle cx="8" cy="8" r="7" fill="none" stroke="currentColor" strokeWidth="1.25" />
+        <circle cx="8" cy="8" r="3.5" fill="none" stroke="currentColor" strokeWidth="1.25" />
+        <circle cx="8" cy="8" r="1.25" fill="currentColor" />
+      </svg>
+      <span className="text-sm font-semibold tracking-tight text-fg">anomaly lab</span>
+    </span>
+  );
+}
+
+/**
+ * Whether the sidecar is answering, in the corner, always.
+ *
+ * `useHealth` already polls every five seconds for the health screen; mounting it here
+ * costs nothing extra because TanStack Query dedupes the two subscribers onto one request.
+ */
+function BackendStatus() {
+  const { data, error, isPending } = useHealth();
+
+  const state = error ? "down" : isPending && data === undefined ? "connecting" : "up";
+  const copy = {
+    up: "Backend is answering",
+    down: "Backend is not reachable. Start it with scripts/dev-backend.sh.",
+    connecting: "Contacting the backend…",
+  }[state];
+
+  return (
+    <Tooltip content={copy}>
+      <span className="flex items-center gap-1.5" role="status" aria-label={copy}>
+        <span
+          className={cn(
+            "size-1.5 rounded-full",
+            state === "up" && "bg-normal",
+            state === "down" && "bg-defect",
+            state === "connecting" && "animate-pulse bg-warn",
+          )}
+          aria-hidden
+        />
+        <span className="font-mono text-[11px] text-fg-subtle">
+          {state === "up" ? "online" : state}
+        </span>
+      </span>
+    </Tooltip>
+  );
+}
+
+const THEME_ORDER: ThemeChoice[] = ["system", "light", "dark"];
+const THEME_ICON = { system: SunMoon, light: Sun, dark: Moon };
+const THEME_LABEL = {
+  system: "Theme: following the system",
+  light: "Theme: light",
+  dark: "Theme: dark",
+};
+
+function ThemeToggle() {
+  const [choice, setChoice] = useState<ThemeChoice>("system");
+
+  // Read after mount rather than during render: the inline script in index.html has already
+  // painted the right palette, and touching localStorage during render would make the
+  // first client render disagree with itself under StrictMode's double invocation.
+  useEffect(() => setChoice(readThemeChoice()), []);
+
+  const advance = () => {
+    const next = THEME_ORDER[(THEME_ORDER.indexOf(choice) + 1) % THEME_ORDER.length]!;
+    setChoice(next);
+    setThemeChoice(next);
+  };
+
+  const Icon = THEME_ICON[choice];
+
+  return (
+    <Tooltip content={THEME_LABEL[choice]}>
+      <button
+        type="button"
+        onClick={advance}
+        aria-label={THEME_LABEL[choice]}
+        className={cn(
+          "rounded-control p-1.5 text-fg-muted transition-colors hover:bg-raised hover:text-fg",
+          focusRing,
+        )}
+      >
+        <Icon className="size-4" />
+      </button>
+    </Tooltip>
   );
 }

@@ -92,19 +92,19 @@ export function ArchitectureGraph({ payload }: { payload: Record<string, unknown
           return (
             <div key={node.id} className="flex items-stretch gap-2">
               {index > 0 && (
-                <div className="flex flex-col items-center justify-center px-1 text-slate-400">
+                <div className="flex flex-col items-center justify-center px-1 text-fg-subtle">
                   <span aria-hidden className="text-lg leading-none">
                     →
                   </span>
                   {connector && <span className="text-[10px]">{connector}</span>}
                 </div>
               )}
-              <figure className="min-w-44 rounded-lg border border-slate-200 p-3 dark:border-slate-700">
+              <figure className="min-w-44 rounded-lg border border-line p-3 ">
                 <figcaption className="flex items-center gap-2">
                   <span className="text-sm font-semibold">{node.label ?? node.id}</span>
                   {node.type && <Badge tone="info">{node.type}</Badge>}
                 </figcaption>
-                <dl className="mt-2 flex flex-col gap-0.5 font-mono text-xs text-slate-500 dark:text-slate-400">
+                <dl className="mt-2 flex flex-col gap-0.5 font-mono text-xs text-fg-muted">
                   <div className="flex justify-between gap-3">
                     <dt>in</dt>
                     <dd>{shape(node.input_shape)}</dd>
@@ -125,7 +125,7 @@ export function ArchitectureGraph({ payload }: { payload: Record<string, unknown
       </div>
 
       {typeof total === "number" && (
-        <p className="font-mono text-xs text-slate-500 dark:text-slate-400">
+        <p className="font-mono text-xs text-fg-muted">
           {parameterCount(total)} parameters in total
         </p>
       )}

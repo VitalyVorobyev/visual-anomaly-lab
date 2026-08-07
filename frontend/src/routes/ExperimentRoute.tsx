@@ -16,12 +16,12 @@
  */
 
 import { useEffect, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 
 import type { Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
 import { Tabs } from "../components/Tabs";
-import { Badge, Empty, ErrorBox } from "../components/ui";
+import { Badge, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows } from "../components/ui";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment } from "../hooks/useExperiments";
 import { BenchmarkTab } from "./experiment/BenchmarkTab";
@@ -67,7 +67,7 @@ export function ExperimentRoute() {
     setParams(updated, { replace: true });
   };
 
-  if (experiment.isPending) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (experiment.isPending) return <SkeletonRows rows={5} />;
   if (experiment.error) return <ErrorBox>{experiment.error.message}</ErrorBox>;
   if (!experiment.data || experimentId === undefined) return <Empty>No such experiment.</Empty>;
 
@@ -80,17 +80,26 @@ export function ExperimentRoute() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">{detail.name}</h2>
-        <Badge tone={detail.status === "trained" ? "normal" : "unlabeled"}>{detail.status}</Badge>
-        <span className="font-mono text-xs text-slate-500">{detail.model_type}</span>
-        <span className="text-xs text-slate-500">
-          {detail.dataset_name} · split {detail.split_name}
-        </span>
-        <Link to="/experiments" className="ml-auto text-sm text-slate-500 hover:underline">
-          All experiments
-        </Link>
-      </header>
+      <PageHeader
+        back={{ to: "/experiments", label: "All experiments" }}
+        title={detail.name}
+        actions={
+          <Badge tone={detail.status === "trained" ? "normal" : "unlabeled"}>{detail.status}</Badge>
+        }
+        meta={
+          /* The readout: what this run is, in one line, in the same slot on every screen
+             that has a run. The app has a real hierarchy and no breadcrumbs, so without
+             this the only way to tell which dataset you are inside is to recognise the
+             name in the heading. */
+          <ReadoutStrip
+            items={[
+              { label: "dataset", value: detail.dataset_name },
+              { label: "split", value: detail.split_name },
+              { label: "method", value: detail.model_type },
+            ]}
+          />
+        }
+      />
 
       {/* A tab appears when there is something in it. Gated on what the run recorded, never
           on which method recorded it — a method that emits no diagnostics simply has fewer

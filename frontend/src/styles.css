@@ -1,1 +1,153 @@
 @import "tailwindcss";
+
+/*
+ * The design token layer (ADR-0021).
+ *
+ * ADR-0012 chose Tailwind with no component library and recorded the cost: "a design-token
+ * layer will eventually be wanted if the UI grows a real visual system". By the end of M4
+ * the UI had eleven screens and every colour inlined as a raw `slate-*` utility at 250-odd
+ * call sites, which is the same palette restated 250 times rather than defined once.
+ *
+ * The direction is *instrument*: the chrome is grey so the data can be loud. Anomaly maps,
+ * colormaps and grayscale sensor images are what this application exists to show, so the
+ * chrome around them carries no saturation at all. Exactly one accent -- `signal` -- and it
+ * means "you can act here": focus, selection, the active nav item, the primary button. The
+ * verdict colours are reserved for verdicts and never used as decoration; a green border
+ * that means nothing is a green border that teaches a reader to ignore green.
+ *
+ * The greys are true neutral rather than Tailwind's blue-tinted `slate`. A blue-cast grey
+ * beside a viridis or inferno map shifts how the map's cool end reads, which is a real cost
+ * on the one screen that matters most.
+ *
+ * Mechanism: `@theme inline` registers semantic *names* that point at custom properties, so
+ * `bg-surface` compiles to `var(--surface)` rather than to a baked hex. Both themes are then
+ * one class swap on <html>, and the whole palette is retunable in this file alone.
+ */
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme inline {
+  --color-ground: var(--ground);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-overlay: var(--overlay);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+
+  --color-signal: var(--signal);
+  --color-signal-strong: var(--signal-strong);
+  --color-signal-fg: var(--signal-fg);
+
+  --color-normal: var(--normal);
+  --color-defect: var(--defect);
+  --color-warn: var(--warn);
+
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  --radius-control: 0.375rem;
+  --radius-panel: 0.625rem;
+}
+
+/*
+ * Light is the default so a document with no class still renders legibly -- the no-flash
+ * script in index.html sets `.dark` before first paint, but a failure there should degrade
+ * to a readable page rather than black text on black.
+ */
+:root {
+  /* Held a little below the panel surface so a card reads as raised off the page without
+     needing a shadow to say so. */
+  --ground: #eef1f2;
+  --surface: #ffffff;
+  --raised: #f4f6f7;
+  --overlay: #ffffff;
+  --line: #e3e6e8;
+  --line-strong: #c8cdd1;
+
+  --fg: #14171a;
+  --fg-muted: #5f6871;
+  --fg-subtle: #8b949b;
+
+  --signal: #0e8fa3;
+  --signal-strong: #0b7080;
+  --signal-fg: #ffffff;
+
+  --normal: #059669;
+  --defect: #dc2626;
+  --warn: #b45309;
+}
+
+.dark {
+  --ground: #0b0d0f;
+  --surface: #14171a;
+  --raised: #1b1f23;
+  --overlay: #1f242a;
+  --line: #23282d;
+  --line-strong: #3a4147;
+
+  --fg: #e8ebed;
+  --fg-muted: #8b949b;
+  --fg-subtle: #616a71;
+
+  --signal: #3bc9db;
+  --signal-strong: #6fdde8;
+  --signal-fg: #04262c;
+
+  --normal: #34d399;
+  --defect: #f87171;
+  --warn: #fbbf24;
+}
+
+@layer base {
+  html {
+    background-color: var(--ground);
+    /* Native scrollbars, range thumbs and select popups follow the app, not the OS. */
+    color-scheme: light;
+  }
+
+  html.dark {
+    color-scheme: dark;
+  }
+
+  body {
+    font-family: var(--font-sans);
+    /* Metric tables and live-updating counters must not reflow as digits change. */
+    font-variant-numeric: tabular-nums;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* A zero that cannot be read as an O, in a UI that prints a great many of both. */
+  code,
+  kbd,
+  pre,
+  samp,
+  .font-mono {
+    font-variant-numeric: tabular-nums slashed-zero;
+  }
+
+  /*
+   * The disclosure marker is drawn by us wherever a <details> is styled, so the UA triangle
+   * would be a second, differently-aligned caret next to it.
+   */
+  summary::-webkit-details-marker {
+    display: none;
+  }
+
+  summary {
+    list-style: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}

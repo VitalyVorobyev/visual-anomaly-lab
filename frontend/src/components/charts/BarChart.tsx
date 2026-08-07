@@ -29,7 +29,7 @@ export function StackedBars({ rows, label }: { rows: BarRow[]; label: string }) 
               {row.label}
             </span>
             <div
-              className="flex h-4 flex-1 overflow-hidden rounded bg-slate-100 dark:bg-slate-800"
+              className="flex h-4 flex-1 overflow-hidden rounded bg-raised"
               role="cell"
             >
               {row.segments.map((segment) =>
@@ -46,7 +46,7 @@ export function StackedBars({ rows, label }: { rows: BarRow[]; label: string }) 
                 ),
               )}
             </div>
-            <span className="w-24 shrink-0 text-right font-mono text-slate-500" role="cell">
+            <span className="w-24 shrink-0 text-right font-mono text-fg-muted" role="cell">
               {row.segments
                 .filter((segment) => segment.value > 0)
                 .map((segment) => `${segment.value} ${segment.name}`)

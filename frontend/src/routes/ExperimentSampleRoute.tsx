@@ -26,13 +26,13 @@
  */
 
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { useParams } from "react-router";
 
 import { budgetNote, imageScoped, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
 import { anomalyMapUrl, imageUrl, maskUrl } from "../api/imageUrl";
 import type { DiagnosticEntry, ImageScore } from "../api/client";
-import { Badge, Empty, ErrorBox, Panel } from "../components/ui";
+import { Badge, Empty, ErrorBox, PageHeader, Panel, ReadoutStrip, SkeletonRows, Slider, Switch } from "../components/ui";
 import { useDiagnostics, useExperiment, useSampleImages } from "../hooks/useExperiments";
 
 export function ExperimentSampleRoute() {
@@ -48,7 +48,7 @@ export function ExperimentSampleRoute() {
   const [showMask, setShowMask] = useState(true);
 
   if (images.error) return <ErrorBox>{images.error.message}</ErrorBox>;
-  if (images.isPending) return <p className="text-sm text-slate-500">Loading…</p>;
+  if (images.isPending) return <SkeletonRows rows={5} />;
   if (!images.data || images.data.length === 0) {
     return <Empty>This experiment scored no images for this sample.</Empty>;
   }
@@ -61,47 +61,53 @@ export function ExperimentSampleRoute() {
 
   return (
     <div className="flex flex-col gap-6">
-      <header className="flex flex-wrap items-center gap-3">
-        <h2 className="text-lg font-semibold tracking-tight">Sample {sampleId}</h2>
-        <span className="font-mono text-xs text-slate-500">{experiment.data?.model_type}</span>
-        <Link
-          to={`/experiments/${experimentId}`}
-          className="ml-auto text-sm text-slate-500 hover:underline"
-        >
-          Back to results
-        </Link>
-      </header>
+      <PageHeader
+        back={{ to: `/experiments/${experimentId}`, label: "Back to results" }}
+        title={`Sample ${sampleId}`}
+        meta={
+          <ReadoutStrip
+            items={[
+              {
+                label: "experiment",
+                value: experiment.data?.name,
+                to: `/experiments/${experimentId}`,
+              },
+              { label: "method", value: experiment.data?.model_type },
+              { label: "channels", value: images.data.length },
+            ]}
+          />
+        }
+      />
 
       <Panel title="Overlay">
-        <div className="flex flex-wrap items-center gap-6">
-          <label className="flex items-center gap-3 text-sm">
-            <span className="text-xs font-medium tracking-wide text-slate-500 uppercase">
-              Anomaly map
-            </span>
-            <input
-              type="range"
+        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
+          <div className="flex min-w-64 flex-1 items-center gap-3">
+            <span className="shrink-0 text-xs font-medium text-fg">Anomaly map</span>
+            <Slider
               aria-label="Anomaly map opacity"
               min={0}
               max={1}
               step={0.02}
               value={opacity}
-              onChange={(event) => setOpacity(Number(event.target.value))}
+              onValueChange={setOpacity}
+              readout={
+                <span className="inline-block w-9 text-right">
+                  {Math.round(opacity * 100)}%
+                </span>
+              }
             />
-            <span className="w-10 font-mono text-xs">{Math.round(opacity * 100)}%</span>
-          </label>
+          </div>
 
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="checkbox"
-              aria-label="Ground truth"
-              checked={showMask}
-              disabled={!anyMask}
-              onChange={(event) => setShowMask(event.target.checked)}
-            />
-            <span className={anyMask ? "" : "text-slate-400"}>
-              Ground-truth outline{anyMask ? "" : " (none for this sample)"}
-            </span>
-          </label>
+          <Switch
+            checked={showMask}
+            disabled={!anyMask}
+            onCheckedChange={setShowMask}
+            label={
+              <span className={anyMask ? undefined : "text-fg-subtle"}>
+                Ground-truth outline{anyMask ? "" : " — none for this sample"}
+              </span>
+            }
+          />
         </div>
       </Panel>
 
@@ -120,7 +126,7 @@ export function ExperimentSampleRoute() {
       <Panel title="Diagnostics">
         {anyDiagnostic ? (
           <div className="flex flex-col gap-6">
-            <p className="text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-xs text-fg-muted">
               What the method recorded about this particular image, beside the combined map
               it produced. Every pane is drawn on the run's own scale, so the same region
               looks the same across images.
@@ -168,7 +174,7 @@ function ChannelView({
         <span className="ml-auto font-mono text-xs">score {image.score.toFixed(4)}</span>
       </figcaption>
 
-      <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-950 dark:border-slate-700">
+      <div className="relative overflow-hidden rounded border border-line bg-[#08090a] ">
         <img
           src={imageUrl(image.image_id, "preview")}
           alt={`Channel ${image.channel ?? "single view"}`}
@@ -196,7 +202,7 @@ function ChannelView({
         )}
       </div>
 
-      <p className="font-mono text-xs text-slate-500">
+      <p className="font-mono text-xs text-fg-muted">
         {image.inference_ms.toFixed(1)} ms
         {image.has_map ? "" : " · no anomaly map"}
       </p>
@@ -228,7 +234,7 @@ function DiagnosticRow({
     <section className="flex flex-col gap-2">
       <h3 className="text-sm font-medium">
         {image.channel ?? "single view"}
-        <span className="ml-2 font-mono text-xs text-slate-500">
+        <span className="ml-2 font-mono text-xs text-fg-muted">
           score {image.score.toFixed(4)}
         </span>
       </h3>
@@ -272,7 +278,7 @@ function DiagnosticPane({
 }) {
   return (
     <figure className="flex flex-col gap-1">
-      <div className="relative overflow-hidden rounded border border-slate-200 bg-slate-950 dark:border-slate-700">
+      <div className="relative overflow-hidden rounded border border-line bg-[#08090a] ">
         <img src={src} alt={title} className="block w-full" loading="lazy" />
         {maskSrc && (
           <img
@@ -286,7 +292,7 @@ function DiagnosticPane({
       <figcaption className="flex flex-col gap-0.5">
         <span className="text-xs font-medium">{title}</span>
         {description && (
-          <span className="text-[11px] text-slate-500 dark:text-slate-400">{description}</span>
+          <span className="text-[11px] text-fg-muted">{description}</span>
         )}
       </figcaption>
     </figure>

@@ -102,15 +102,6 @@ Images are referenced **in place** and treated as a read-only mount: the applica
 display and training and never writes to that tree, never copies them into a tracked path, and never
 sends them anywhere off the machine.
 
-### The showcase dataset
-
-The first dataset is private: multi-illumination photographs of a manufactured circular part, with
-**98 normal + 91 defect logical samples**. Each sample is captured under several illumination channels
-(bright-field / dark-field / dome) — but one group has only two, a small irregularity with a large design
-consequence: **channel count is data, not schema**, and no component may hard-code it. The dataset carries
-no pixel masks, so evaluation of *this* dataset is image-level, with sample-level ROC-AUC as the headline
-metric. Pixel-level metrics come from the public datasets below, which do ship masks.
-
 ## Reference datasets
 
 Methods are developed and validated against public benchmarks, not only against the private tree. That is

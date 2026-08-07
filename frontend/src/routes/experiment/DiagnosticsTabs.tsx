@@ -40,7 +40,7 @@ export function ArchitectureTab({
         <Empty>{NOTHING_YET}</Empty>
       ) : (
         <div className="flex flex-col gap-6">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-fg-muted">
             Read from a real forward pass when the model was trained, not drawn by hand — so
             these shapes are the shapes this experiment actually ran, and change with its
             configuration.
@@ -67,7 +67,7 @@ export function InspectorTab({
         <Empty>{NOTHING_YET}</Empty>
       ) : (
         <div className="flex flex-col gap-6">
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-fg-muted">
             What this method recorded about itself during training. Per-image diagnostics live
             on each sample's page, beside its anomaly map.
           </p>

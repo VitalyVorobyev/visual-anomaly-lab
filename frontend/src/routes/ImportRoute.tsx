@@ -36,7 +36,23 @@ import type {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { hasDirectoryPicker, pickDirectory } from "../api/shell";
-import { Badge, Button, CountRun, Empty, ErrorBox, Field, Panel, inputClasses } from "../components/ui";
+import { Check } from "lucide-react";
+
+import {
+  Badge,
+  Button,
+  Checkbox,
+  CountRun,
+  Empty,
+  ErrorBox,
+  Field,
+  Input,
+  PageHeader,
+  Panel,
+  Section,
+  Select,
+  cn,
+} from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
 import { SchemaForm } from "../components/SchemaForm";
 import { WarningsPanel, commitBlocked } from "../components/WarningsPanel";
@@ -48,18 +64,66 @@ type Stage =
   | { kind: "review"; manifestId: string }
   | { kind: "committed"; result: CommitResponse };
 
+const STAGES: { kind: Stage["kind"]; label: string }[] = [
+  { kind: "configure", label: "Configure" },
+  { kind: "scanning", label: "Scan" },
+  { kind: "review", label: "Review" },
+  { kind: "committed", label: "Commit" },
+];
+
+/**
+ * Where you are in the import, and how much is left.
+ *
+ * The four stages were a state machine with no rendering: each one replaced the screen
+ * entirely, so a reader who had just watched a scan finish had no way to tell whether
+ * reviewing was the last step or the second of five. Nothing is written until the last one,
+ * which is exactly the fact a progress indicator is for.
+ */
+function Stepper({ stage }: { stage: Stage["kind"] }) {
+  const current = STAGES.findIndex((entry) => entry.kind === stage);
+
+  return (
+    <ol className="flex flex-wrap items-center gap-2" aria-label="Import progress">
+      {STAGES.map((entry, index) => {
+        const done = index < current;
+        const active = index === current;
+        return (
+          <li key={entry.kind} className="flex items-center gap-2">
+            {index > 0 && <span className="h-px w-6 bg-line" aria-hidden />}
+            <span
+              aria-current={active ? "step" : undefined}
+              className={cn(
+                "flex items-center gap-1.5 rounded-control px-2 py-1 text-xs font-medium",
+                active && "bg-signal/12 text-signal ring-1 ring-signal/25",
+                done && "text-fg-muted",
+                !active && !done && "text-fg-subtle",
+              )}
+            >
+              {done ? (
+                <Check className="size-3.5" aria-label="done" />
+              ) : (
+                <span className="font-mono tabular-nums">{index + 1}</span>
+              )}
+              {entry.label}
+            </span>
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
 export function ImportRoute() {
   const [stage, setStage] = useState<Stage>({ kind: "configure" });
 
   return (
     <div className="flex flex-col gap-6">
-      <div>
-        <h2 className="text-lg font-semibold tracking-tight">Import a dataset</h2>
-        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-          Images are read where they are and never copied. A scan proposes; nothing is
-          written until you commit.
-        </p>
-      </div>
+      <PageHeader
+        title="Import a dataset"
+        meta="Images are read where they are and never copied. A scan proposes; nothing is written until you commit."
+      />
+
+      <Stepper stage={stage.kind} />
 
       {stage.kind === "configure" && (
         <ConfigureStep onStarted={(jobId) => setStage({ kind: "scanning", jobId })} />
@@ -151,8 +215,8 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
       >
         <Field label="Source directory">
           <div className="flex gap-2">
-            <input
-              className={`${inputClasses} flex-1 font-mono`}
+            <Input
+              className="font-mono"
               placeholder="/absolute/path/to/images"
               value={rootPath}
               onChange={(event) => setRootPath(event.target.value)}
@@ -173,42 +237,30 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
         </Field>
 
         <Field label="Dataset name">
-          <input
-            className={inputClasses}
+          <Input
             value={datasetName}
             onChange={(event) => setDatasetName(event.target.value)}
           />
         </Field>
 
-        <Field label="Adapter">
-          <select
-            className={inputClasses}
+        <Field as="group" label="Adapter" description={chosen?.summary}>
+          <Select
             aria-label="Adapter"
             value={adapter}
-            onChange={(event) => pickAdapter(event.target.value)}
-          >
-            {(adapters.data ?? []).map((entry) => (
-              <option key={entry.name} value={entry.name}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
+            onValueChange={pickAdapter}
+            options={(adapters.data ?? []).map((entry) => ({
+              value: entry.name,
+              label: entry.name,
+            }))}
+          />
         </Field>
-        {chosen && (
-          <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">{chosen.summary}</p>
-        )}
 
-        <fieldset className="rounded border border-slate-200 p-3 dark:border-slate-700">
-          <legend className="px-1 text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
-            {adapter} options
-          </legend>
-          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
-            Generated from the adapter's own schema. An empty box keeps the default shown
-            inside it, and everything you set travels in the manifest — so a later re-scan
-            proposes the same thing rather than needing the same corrections again.
-          </p>
+        <Section
+          title={`${adapter} options`}
+          hint="Anything left empty keeps the default shown inside it."
+        >
           <SchemaForm fields={fields} values={options} onChange={setOptions} />
-        </fieldset>
+        </Section>
 
         {scan.error && <ErrorBox>{scan.error.message}</ErrorBox>}
         {malformed.length > 0 && (
@@ -217,10 +269,10 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
 
         <div className="flex items-center gap-2">
           <Button type="submit" variant="primary" disabled={!ready || scan.isPending}>
-            {scan.isPending ? "Starting…" : "Scan"}
+            Scan
           </Button>
           {missing.length > 0 && (
-            <span className="text-xs text-amber-700 dark:text-amber-300">
+            <span className="text-xs text-warn">
               {missing.join(", ")} {missing.length === 1 ? "is" : "are"} required.
             </span>
           )}
@@ -323,7 +375,7 @@ function ReviewStep({
         </dl>
         <LabelRun samples={current.samples} />
         <ImportedSplit samples={current.samples} />
-        <p className="mt-3 font-mono text-xs break-all text-slate-500 dark:text-slate-400">
+        <p className="mt-3 font-mono text-xs break-all text-fg-muted">
           {current.root_path}
         </p>
       </Panel>
@@ -354,7 +406,7 @@ function ReviewStep({
         </Button>
         <Button onClick={onRestart}>Start over</Button>
         {mustAcknowledge && (
-          <span className="text-xs text-amber-700 dark:text-amber-300">
+          <span className="text-xs text-warn">
             Acknowledge the warnings first.
           </span>
         )}
@@ -406,7 +458,7 @@ function ImportedSplit({ samples }: { samples: ManifestSample[] }) {
 
   return (
     <div className="mt-3">
-      <p className="mb-1 text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+      <p className="mb-1 text-xs font-medium text-fg-muted">
         Published split
       </p>
       <CountRun
@@ -416,7 +468,7 @@ function ImportedSplit({ samples }: { samples: ManifestSample[] }) {
           ["test", counts.test, "neutral"],
         ]}
       />
-      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mt-1 text-xs text-fg-muted">
         Create a split with the <span className="font-mono">imported</span> strategy after
         committing to use this partition instead of drawing one.
       </p>
@@ -427,7 +479,7 @@ function ImportedSplit({ samples }: { samples: ManifestSample[] }) {
 function Stat({ label, value }: { label: string; value: number }) {
   return (
     <div>
-      <dt className="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+      <dt className="text-xs font-medium text-fg-muted">
         {label}
       </dt>
       <dd className="font-mono text-lg">{value}</dd>
@@ -453,7 +505,7 @@ function ChannelPanel({
 
   return (
     <Panel title={`Channels (${manifest.channels.length})`}>
-      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-3 text-sm text-fg-muted">
         The matcher is a convenience, not an authority. Anything you exclude here imports
         with no channel rather than a guessed one.
       </p>
@@ -461,7 +513,7 @@ function ChannelPanel({
         <Empty>This dataset has no channels — one image per sample.</Empty>
       ) : (
         <table className="w-full text-left text-sm">
-          <thead className="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+          <thead className="text-xs font-medium text-fg-muted">
             <tr>
               <th className="pb-2">Keep</th>
               <th className="pb-2">Source directory</th>
@@ -471,13 +523,12 @@ function ChannelPanel({
           </thead>
           <tbody>
             {manifest.channel_mapping.map((row: ChannelMapping) => (
-              <tr key={row.source} className="border-t border-slate-100 dark:border-slate-800">
+              <tr key={row.source} className="border-t border-line">
                 <td className="py-1.5">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     aria-label={`Keep ${row.channel}`}
                     checked={manifest.channels.includes(row.channel)}
-                    onChange={() => toggle(row.channel)}
+                    onCheckedChange={() => toggle(row.channel)}
                   />
                 </td>
                 <td className="py-1.5 font-mono text-xs">{row.source}</td>
@@ -518,12 +569,12 @@ function GroupPanel({
 
   return (
     <Panel title={`Capture groups (${groups.size})`}>
-      <p className="mb-3 text-sm text-slate-500 dark:text-slate-400">
+      <p className="mb-3 text-sm text-fg-muted">
         Labels came from directory names. Correct a whole group here; individual samples
         can be relabelled in the browser afterwards.
       </p>
       <table className="w-full text-left text-sm">
-        <thead className="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+        <thead className="text-xs font-medium text-fg-muted">
           <tr>
             <th className="pb-2">Group</th>
             <th className="pb-2">Samples</th>
@@ -533,24 +584,25 @@ function GroupPanel({
         </thead>
         <tbody>
           {[...groups.entries()].map(([groupKey, entry]) => (
-            <tr key={groupKey} className="border-t border-slate-100 dark:border-slate-800">
+            <tr key={groupKey} className="border-t border-line">
               <td className="py-1.5 font-mono text-xs break-all">{groupKey}</td>
               <td className="py-1.5 font-mono text-xs">{entry.total}</td>
               <td className="py-1.5 font-mono text-xs">
                 {[...entry.channels].sort((a, b) => a - b).join(", ")}
               </td>
               <td className="py-1.5">
-                <select
+                <Select
+                  className="w-36"
                   aria-label={`Label for ${groupKey}`}
-                  className={`${inputClasses} py-0.5 text-xs`}
-                  value={entry.labels.size === 1 ? [...entry.labels][0] : ""}
-                  onChange={(event) => onLabel(groupKey, event.target.value as Label)}
-                >
-                  {entry.labels.size > 1 && <option value="">(mixed)</option>}
-                  <option value="normal">normal</option>
-                  <option value="defect">defect</option>
-                  <option value="unlabeled">unlabeled</option>
-                </select>
+                  value={entry.labels.size === 1 ? ([...entry.labels][0] ?? "") : ""}
+                  placeholder="mixed"
+                  options={[
+                    { value: "normal", label: "normal" },
+                    { value: "defect", label: "defect" },
+                    { value: "unlabeled", label: "unlabeled" },
+                  ]}
+                  onValueChange={(value) => onLabel(groupKey, value as Label)}
+                />
               </td>
             </tr>
           ))}
@@ -591,7 +643,7 @@ function CommittedStep({
               tree. They were <strong>reported, not deleted</strong> — an unmounted disk
               should not become data loss.
             </p>
-            <ul className="mt-1 max-h-32 overflow-y-auto rounded bg-slate-50 p-2 font-mono text-xs dark:bg-slate-800">
+            <ul className="mt-1 max-h-32 overflow-y-auto rounded bg-raised p-2 font-mono text-xs ">
               {result.missing_paths.map((path) => (
                 <li key={path} className="truncate">
                   {path}

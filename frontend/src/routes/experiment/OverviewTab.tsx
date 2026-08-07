@@ -13,7 +13,7 @@ import { caveats, detectionRows, pixelRows, timingRows } from "../../api/metrics
 import type { MetricRow } from "../../api/metrics";
 import type { JobSummary, Subset } from "../../api/client";
 import { JobProgress } from "../../components/JobProgress";
-import { Badge, Button, CountRun, Empty, ErrorBox, Panel } from "../../components/ui";
+import { Badge, Button, CountRun, Disclosure, Empty, ErrorBox, Panel } from "../../components/ui";
 import type { Tone } from "../../components/ui";
 import { useJob, isTerminal } from "../../hooks/useJob";
 import { useReevaluate, useStartRun } from "../../hooks/useExperiments";
@@ -53,19 +53,19 @@ export function Runs({
       {jobs.length === 0 && <Empty>Nothing has run yet. Train first, then score.</Empty>}
 
       {jobs.length > 0 && (
-        <ul className="divide-y divide-slate-200 text-sm dark:divide-slate-700">
+        <ul className="divide-y divide-line text-sm ">
           {jobs.map((job) => (
             <li key={job.id} className="flex items-center gap-3 py-2">
-              <span className="font-mono text-xs text-slate-500">#{job.id}</span>
+              <span className="font-mono text-xs text-fg-muted">#{job.id}</span>
               <span className="w-16">{job.kind}</span>
               <Badge tone={jobTone(job.status)}>{job.status}</Badge>
-              <span className="truncate text-xs text-slate-500">
+              <span className="truncate text-xs text-fg-muted">
                 {job.message ?? job.error ?? ""}
               </span>
               {job.id !== followingJobId && (
                 <button
                   type="button"
-                  className="ml-auto text-xs text-slate-500 hover:underline"
+                  className="ml-auto text-xs text-fg-muted hover:underline"
                   onClick={() => onFollow(job.id)}
                 >
                   show log
@@ -101,30 +101,36 @@ export function Configuration({
   detail: { config: Record<string, unknown>; preprocessing: Record<string, unknown> };
 }) {
   return (
-    <details className="rounded-lg border border-slate-200 px-4 py-3 dark:border-slate-700">
-      <summary className="cursor-pointer text-sm font-semibold tracking-tight">
-        Configuration
-      </summary>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2">
-        <ConfigBlock title="Method" values={detail.config} />
-        <ConfigBlock title="Preprocessing" values={detail.preprocessing} />
-      </div>
-    </details>
+    <Panel title="Configuration">
+      {/* Frozen into the experiment at creation, so this is what the run *used* rather than
+          what the form currently defaults to. Worth reading before comparing two runs. */}
+      <Disclosure summary="What this run was configured with">
+        <div className="grid gap-5 sm:grid-cols-2">
+          <ConfigBlock title="Method" values={detail.config} />
+          <ConfigBlock title="Preprocessing" values={detail.preprocessing} />
+        </div>
+      </Disclosure>
+    </Panel>
   );
 }
 
 function ConfigBlock({ title, values }: { title: string; values: Record<string, unknown> }) {
+  const entries = Object.entries(values);
   return (
-    <div>
-      <h3 className="text-xs font-medium tracking-wide text-slate-500 uppercase">{title}</h3>
-      <dl className="mt-1 font-mono text-xs">
-        {Object.entries(values).map(([key, value]) => (
-          <div key={key} className="flex gap-2">
-            <dt className="text-slate-500">{key}</dt>
-            <dd>{JSON.stringify(value)}</dd>
-          </div>
-        ))}
-      </dl>
+    <div className="flex flex-col gap-1.5">
+      <h3 className="text-xs font-semibold text-fg">{title}</h3>
+      {entries.length === 0 ? (
+        <p className="text-xs text-fg-muted">Every option left at its default.</p>
+      ) : (
+        <dl className="flex flex-col gap-1 font-mono text-xs">
+          {entries.map(([key, value]) => (
+            <div key={key} className="flex items-baseline justify-between gap-3 border-b border-line/60 pb-1 last:border-0">
+              <dt className="text-fg-muted">{key}</dt>
+              <dd className="text-fg tabular-nums">{JSON.stringify(value)}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
     </div>
   );
 }
@@ -149,7 +155,7 @@ export function Metrics({
         </Button>
       }
     >
-      <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+      <p className="mb-3 text-xs text-fg-muted">
         Threshold-independent, computed from stored scores. Channels aggregate to a part by{" "}
         <span className="font-mono">{aggregation}</span>; recomputing re-reads without
         re-running inference.
@@ -184,7 +190,7 @@ function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricVal
       <MetricList rows={detectionRows(metrics)} />
       {pixelRows(metrics).length > 0 && (
         <>
-          <h4 className="mt-1 text-xs font-medium tracking-wide text-slate-500 uppercase">
+          <h4 className="mt-1 text-xs font-semibold text-fg">
             Pixel level
           </h4>
           <MetricList rows={pixelRows(metrics)} />
@@ -192,7 +198,7 @@ function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricVal
       )}
       {timingRows(metrics).length > 0 && (
         <>
-          <h4 className="mt-1 text-xs font-medium tracking-wide text-slate-500 uppercase">
+          <h4 className="mt-1 text-xs font-semibold text-fg">
             Timing
           </h4>
           <MetricList rows={timingRows(metrics)} />
@@ -202,7 +208,7 @@ function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricVal
       {notes.length > 0 && (
         <ul className="mt-1 flex flex-col gap-1">
           {notes.map((note) => (
-            <li key={note} className="text-xs text-amber-700 dark:text-amber-300">
+            <li key={note} className="text-xs text-warn">
               {note}
             </li>
           ))}
@@ -217,11 +223,11 @@ export function MetricList({ rows }: { rows: MetricRow[] }) {
     <dl className="flex flex-col gap-1">
       {rows.map((row) => (
         <div key={row.key} className="flex items-baseline gap-2" title={row.hint}>
-          <dt className="text-xs text-slate-500 dark:text-slate-400">{row.label}</dt>
+          <dt className="text-xs text-fg-muted">{row.label}</dt>
           <dd className="ml-auto font-mono text-sm">
             {/* A metric that could not be computed stays visibly absent. Rendering it as
                 0.000 would answer a question that should be asked. */}
-            {row.value ?? <span className="text-slate-400">—</span>}
+            {row.value ?? <span className="text-fg-subtle">—</span>}
           </dd>
         </div>
       ))}

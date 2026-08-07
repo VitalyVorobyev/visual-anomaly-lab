@@ -14,7 +14,22 @@ import { Link, useParams } from "react-router";
 import { api, unwrap } from "../api/client";
 import type { SplitDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
-import { Badge, Button, Empty, ErrorBox, Field, Panel, inputClasses } from "../components/ui";
+import {
+  Badge,
+  Button,
+  Empty,
+  ErrorBox,
+  Field,
+  Input,
+  NumberInput,
+  PageHeader,
+  Panel,
+  ReadoutStrip,
+  Select,
+  Slider,
+  Table,
+  type Column,
+} from "../components/ui";
 import { useDataset, useSplits } from "../hooks/useCatalog";
 
 type Strategy = "normal_only_train" | "imported";
@@ -69,17 +84,20 @@ export function SplitsRoute() {
 
   return (
     <div className="flex flex-col gap-4">
-      <div>
-        <Link
-          to={`/datasets/${datasetId}`}
-          className="text-xs text-slate-500 hover:underline dark:text-slate-400"
-        >
-          ← back to the browser
-        </Link>
-        <h2 className="text-lg font-semibold tracking-tight">
-          Splits{dataset.data ? ` — ${dataset.data.name}` : ""}
-        </h2>
-      </div>
+      <PageHeader
+        back={{ to: `/datasets/${datasetId}`, label: "Back to the browser" }}
+        title="Splits"
+        meta={
+          dataset.data && (
+            <ReadoutStrip
+              items={[
+                { label: "dataset", value: dataset.data.name, to: `/datasets/${datasetId}` },
+                { label: "splits", value: splits.data?.length ?? 0 },
+              ]}
+            />
+          )
+        }
+      />
 
       <Panel title="Create a split">
         <form
@@ -91,22 +109,18 @@ export function SplitsRoute() {
         >
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Name">
-              <input
-                className={inputClasses}
-                value={name}
-                onChange={(event) => setName(event.target.value)}
-              />
+              <Input value={name} onChange={(event) => setName(event.target.value)} />
             </Field>
-            <Field label="Strategy">
-              <select
-                className={inputClasses}
+            <Field as="group" label="Strategy">
+              <Select
                 aria-label="Strategy"
                 value={strategy}
-                onChange={(event) => setStrategy(event.target.value as Strategy)}
-              >
-                <option value="normal_only_train">normal_only_train — draw one</option>
-                <option value="imported">imported — adopt the published one</option>
-              </select>
+                onValueChange={(value) => setStrategy(value as Strategy)}
+                options={[
+                  { value: "normal_only_train", label: "Draw one", note: "normal_only_train" },
+                  { value: "imported", label: "Adopt the published one", note: "imported" },
+                ]}
+              />
             </Field>
             {!drawn && (
               <>
@@ -116,9 +130,7 @@ export function SplitsRoute() {
                   onChange={setHoldout}
                 />
                 <Field label="Seed (for the holdout only)">
-                  <input
-                    className={`${inputClasses} font-mono`}
-                    type="number"
+                  <NumberInput
                     value={seed}
                     onChange={(event) => setSeed(Number(event.target.value))}
                   />
@@ -128,9 +140,7 @@ export function SplitsRoute() {
             {drawn && (
               <>
                 <Field label="Seed">
-                  <input
-                    className={`${inputClasses} font-mono`}
-                    type="number"
+                  <NumberInput
                     value={seed}
                     onChange={(event) => setSeed(Number(event.target.value))}
                   />
@@ -154,7 +164,7 @@ export function SplitsRoute() {
             )}
           </div>
 
-          <p className="text-xs text-slate-500 dark:text-slate-400">
+          <p className="text-xs text-fg-muted">
             {drawn ? (
               <>
                 Training is normals only, assignment is per sample so no two views of one
@@ -216,15 +226,14 @@ function Fraction({
   onChange: (value: number) => void;
 }) {
   return (
-    <Field label={`${label} (${value.toFixed(2)})`}>
-      <input
-        type="range"
+    <Field as="group" label={label} annotation={value.toFixed(2)}>
+      <Slider
         min={0}
         max={1}
         step={0.05}
         value={value}
         aria-label={label}
-        onChange={(event) => onChange(Number(event.target.value))}
+        onValueChange={onChange}
       />
     </Field>
   );
@@ -235,7 +244,7 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
     <Panel
       title={split.name}
       actions={
-        <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
+        <span className="font-mono text-xs text-fg-muted">
           {/* An imported split has no seed that means anything — what reproduces it is
               the manifest that asserted the partition. */}
           {split.strategy === "imported"
@@ -244,42 +253,53 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
         </span>
       }
     >
-      <table className="w-full text-left text-sm">
-        <thead className="text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
-          <tr>
-            <th className="pb-2">Subset</th>
-            <th className="pb-2">Total</th>
-            <th className="pb-2">Normal</th>
-            <th className="pb-2">Defect</th>
-            <th className="pb-2">Unlabeled</th>
-            <th className="pb-2" />
-          </tr>
-        </thead>
-        <tbody>
-          {split.composition.map((row) => (
-            <tr key={row.subset} className="border-t border-slate-100 dark:border-slate-800">
-              <td className="py-1.5">
-                <Badge tone={row.subset === "train" ? "info" : "neutral"}>{row.subset}</Badge>
-              </td>
-              <td className="py-1.5 font-mono text-xs">{row.total}</td>
-              <td className="py-1.5 font-mono text-xs">{row.normal}</td>
-              <td className="py-1.5 font-mono text-xs">
-                {/* A defect here would teach the model that defects are normal. */}
-                {row.subset === "train" && row.defect === 0 ? "0 ✓" : row.defect}
-              </td>
-              <td className="py-1.5 font-mono text-xs">{row.unlabeled}</td>
-              <td className="py-1.5 text-right">
-                <Link
-                  to={`/datasets/${datasetId}`}
-                  className="text-xs text-slate-500 hover:underline dark:text-slate-400"
-                >
-                  browse
-                </Link>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      <Table
+        caption={`Composition of ${split.name}`}
+        rows={split.composition}
+        rowKey={(row) => row.subset}
+        columns={compositionColumns(datasetId)}
+      />
     </Panel>
   );
+}
+
+type CompositionRow = SplitDetail["composition"][number];
+
+function compositionColumns(datasetId: number): Column<CompositionRow>[] {
+  return [
+    {
+      key: "subset",
+      header: "Subset",
+      cell: (row) => (
+        <Badge tone={row.subset === "train" ? "info" : "neutral"}>{row.subset}</Badge>
+      ),
+    },
+    { key: "total", header: "Total", numeric: true, cell: (row) => row.total },
+    { key: "normal", header: "Normal", numeric: true, cell: (row) => row.normal },
+    {
+      key: "defect",
+      header: "Defect",
+      numeric: true,
+      // A defect here would teach the model that defects are normal.
+      cell: (row) =>
+        row.subset === "train" && row.defect === 0 ? (
+          <span className="text-normal">0 ✓</span>
+        ) : (
+          row.defect
+        ),
+    },
+    { key: "unlabeled", header: "Unlabeled", numeric: true, cell: (row) => row.unlabeled },
+    {
+      key: "browse",
+      header: "",
+      cell: () => (
+        <Link
+          to={`/datasets/${datasetId}`}
+          className="text-xs text-fg-muted transition-colors hover:text-signal"
+        >
+          browse
+        </Link>
+      ),
+    },
+  ];
 }

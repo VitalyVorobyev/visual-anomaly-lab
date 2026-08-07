@@ -16,7 +16,7 @@ import { useState } from "react";
 import type { JobSummary } from "../../api/client";
 import { LineChart } from "../../components/charts/LineChart";
 import type { Series } from "../../hooks/useJob";
-import { Empty, Panel } from "../../components/ui";
+import { Empty, Panel, Switch } from "../../components/ui";
 
 /** Anything not obviously a loss goes on its own linear chart — a rate, a count. */
 function isLoss(name: string): boolean {
@@ -77,15 +77,11 @@ export function TrainingTab({
         <Panel
           title="Losses"
           actions={
-            <label className="flex items-center gap-2 text-xs text-slate-500">
-              <input
-                type="checkbox"
-                aria-label="Logarithmic loss axis"
-                checked={logScale}
-                onChange={(event) => setLogScale(event.target.checked)}
-              />
-              log axis
-            </label>
+            <Switch
+              checked={logScale}
+              onCheckedChange={setLogScale}
+              label={<span className="text-xs text-fg-muted">log axis</span>}
+            />
           }
         >
           <LineChart
@@ -124,7 +120,7 @@ export function TrainingTab({
           <dl className="grid gap-4 sm:grid-cols-3">
             {scalars.map((entry) => (
               <div key={entry.name} className="flex flex-col">
-                <dt className="text-xs text-slate-500 dark:text-slate-400">{entry.name}</dt>
+                <dt className="text-xs text-fg-muted">{entry.name}</dt>
                 <dd className="font-mono text-sm">{formatScalar(entry.points[0]?.value)}</dd>
               </div>
             ))}
@@ -133,7 +129,7 @@ export function TrainingTab({
       )}
 
       {truncated.length > 0 && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-fg-muted">
           {/* A silent truncation would read as "this is all there was". */}
           Downsampled for drawing:{" "}
           {truncated
@@ -144,7 +140,7 @@ export function TrainingTab({
       )}
 
       {followingJobId === undefined && (
-        <p className="text-xs text-slate-500 dark:text-slate-400">
+        <p className="text-xs text-fg-muted">
           Showing the most recent training run. Pick another from the Runs list on Overview.
         </p>
       )}

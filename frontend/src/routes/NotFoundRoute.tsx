@@ -10,15 +10,16 @@ export function NotFoundRoute() {
   const { pathname } = useLocation();
 
   return (
-    <section className="space-y-2">
-      <h2 className="text-lg font-semibold text-slate-900 dark:text-slate-100">
-        No such screen
-      </h2>
-      <p className="text-sm text-slate-600 dark:text-slate-400">
-        Nothing is routed at <code className="font-mono">{pathname}</code>.
+    <section className="flex flex-col items-start gap-2">
+      <h1 className="text-xl font-semibold tracking-tight text-fg">No such screen</h1>
+      <p className="text-sm text-fg-muted">
+        Nothing is routed at <code className="font-mono text-fg">{pathname}</code>.
       </p>
-      <Link className="text-sm text-blue-600 underline dark:text-blue-400" to="/">
-        Back to health
+      <Link
+        className="text-sm text-signal underline underline-offset-2"
+        to="/"
+      >
+        Go to datasets
       </Link>
     </section>
   );

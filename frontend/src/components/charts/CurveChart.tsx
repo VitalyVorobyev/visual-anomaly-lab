@@ -53,7 +53,7 @@ export function CurveChart({ curve, kind, label, area, areaLabel, absent }: Curv
             <span className="font-mono">
               {areaLabel ?? (kind === "roc" ? "AUC" : "AP")}{" "}
               {/* A metric that could not be computed renders as a dash, never as 0.000. */}
-              {area === null ? <span className="text-slate-400">—</span> : area.toFixed(4)}
+              {area === null ? <span className="text-fg-subtle">—</span> : area.toFixed(4)}
             </span>
           )}
           {dropped && <span>{dropped}</span>}

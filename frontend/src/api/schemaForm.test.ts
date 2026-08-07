@@ -5,6 +5,8 @@ import {
   initialValues,
   jsonErrors,
   missingRequired,
+  outOfRange,
+  overrideCount,
   toOptions,
   type OptionsSchema,
 } from "./schemaForm";
@@ -209,5 +211,190 @@ describe("an adapter with no options at all", () => {
 
     expect(none).toEqual([]);
     expect(toOptions(none, {})).toEqual({});
+  });
+});
+
+/**
+ * A closed set has to render as a closed set.
+ *
+ * These are the exact shapes from `EfficientAdConfig` and `PreprocessingConfig`, and every
+ * one of them used to reach the wrong control: `Literal` became a free text box, because
+ * `type: "string"` was tested before `enum`; `StrEnum` became a JSON textarea, because
+ * `$ref` was not in the type at all and nothing resolved `$defs`.
+ */
+const ENUM_SCHEMA: OptionsSchema = {
+  $defs: {
+    ColorMode: { enum: ["rgb", "grayscale"], title: "ColorMode", type: "string" },
+    Resample: {
+      description: "Named rather than numeric, so a stored config still reads as a decision.",
+      enum: ["nearest", "bilinear", "bicubic", "lanczos"],
+      title: "Resample",
+      type: "string",
+    },
+    Window: { properties: { size: { type: "integer" } }, title: "Window", type: "object" },
+  },
+  properties: {
+    model_size: {
+      default: "small",
+      description: "PDN capacity.",
+      enum: ["small", "medium"],
+      title: "Model Size",
+      type: "string",
+    },
+    color: { $ref: "#/$defs/ColorMode", default: "rgb", description: "Colour to feed the model." },
+    resample: { $ref: "#/$defs/Resample", default: "bilinear" },
+    fallback_mode: {
+      anyOf: [{ $ref: "#/$defs/ColorMode" }, { type: "null" }],
+      default: null,
+      title: "Fallback Mode",
+    },
+    window: { $ref: "#/$defs/Window", default: null },
+    missing: { $ref: "#/$defs/NotThere", default: null },
+    level: { default: 2, enum: [1, 2, 3], title: "Level", type: "integer" },
+  },
+};
+
+const enumFields = describeFields(ENUM_SCHEMA);
+const enumField = (name: string) => enumFields.find((entry) => entry.name === name)!;
+
+describe("a closed set of values", () => {
+  it("reads `enum` before `type`, so a Literal is not a text box", () => {
+    // The whole bug in one assertion: `Literal["small","medium"]` carries both, and
+    // `type: "string"` used to win.
+    expect(enumField("model_size").kind).toBe("choice-inline");
+    expect(enumField("model_size").options).toEqual([
+      { value: "small", label: "Small" },
+      { value: "medium", label: "Medium" },
+    ]);
+  });
+
+  it("follows a $ref into $defs, so a StrEnum is not a JSON textarea", () => {
+    expect(enumField("color").kind).toBe("choice-inline");
+    expect(enumField("color").options.map((option) => option.value)).toEqual([
+      "rgb",
+      "grayscale",
+    ]);
+  });
+
+  it("shows a few options at once and puts many behind a picker", () => {
+    expect(enumField("color").kind).toBe("choice-inline");
+    expect(enumField("resample").kind).toBe("choice");
+  });
+
+  it("resolves a $ref hidden inside the `X | None` encoding", () => {
+    expect(enumField("fallback_mode").kind).toBe("choice-inline");
+  });
+
+  it("labels the field, not the enum class it points at", () => {
+    // Dereferencing pulls in `title: "ColorMode"`; using it would label the control with
+    // the name of a Python type the operator has never heard of.
+    expect(enumField("color").label).toBe("Color");
+    expect(enumField("resample").label).toBe("Resample");
+  });
+
+  it("prefers the field's own description to the enum type's docstring", () => {
+    expect(enumField("color").description).toBe("Colour to feed the model.");
+    // `resample` states nothing itself, so the type's docstring is better than nothing.
+    expect(enumField("resample").description).toMatch(/Named rather than numeric/);
+  });
+
+  it("carries the default through the $ref, since pydantic writes it as a sibling", () => {
+    expect(enumField("color").fallback).toBe("rgb");
+    expect(enumField("resample").fallback).toBe("bilinear");
+  });
+
+  it("still falls back to a JSON textarea for a $ref that is not a closed set", () => {
+    // The escape hatch has to survive: an operator can express what the model accepts even
+    // where the form has nothing prettier to offer.
+    expect(enumField("window").kind).toBe("json");
+  });
+
+  it("falls back rather than throwing when a $ref points at nothing", () => {
+    expect(enumField("missing").kind).toBe("json");
+  });
+});
+
+describe("sending a choice", () => {
+  it("sends nothing for a choice nobody touched", () => {
+    // The segment matching the default is highlighted, but highlighting is not choosing:
+    // the default stays defined in Python alone.
+    const options = toOptions(enumFields, initialValues(enumFields));
+
+    expect(options).not.toHaveProperty("model_size");
+    expect(options).not.toHaveProperty("color");
+  });
+
+  it("sends the value once it is chosen", () => {
+    const options = toOptions(enumFields, {
+      ...initialValues(enumFields),
+      model_size: "medium",
+    });
+
+    expect(options["model_size"]).toBe("medium");
+  });
+
+  it("sends a numeric enum as a number, not as the string the control handed back", () => {
+    const options = toOptions(enumFields, { ...initialValues(enumFields), level: "3" });
+
+    expect(options["level"]).toBe(3);
+  });
+});
+
+/**
+ * The bounds were in the schema the whole time. Dropping them meant an out-of-range value
+ * was reported as a 422 from the backend, half a screen away from the field that caused it.
+ */
+const BOUNDED_SCHEMA: OptionsSchema = {
+  properties: {
+    max_steps: { type: "integer", default: 4000, minimum: 10, maximum: 200000 },
+    learning_rate: { type: "number", default: 0.0001, exclusiveMinimum: 0, maximum: 1 },
+    seed: { type: "integer", default: 0 },
+  },
+};
+
+const bounded = describeFields(BOUNDED_SCHEMA);
+const boundedField = (name: string) => bounded.find((entry) => entry.name === name)!;
+
+describe("numeric bounds", () => {
+  it("carries the schema's own limits onto the control", () => {
+    expect(boundedField("max_steps").min).toBe(10);
+    expect(boundedField("max_steps").max).toBe(200000);
+  });
+
+  it("steps an integer by one and frees a float entirely", () => {
+    // A number input steps by 1 unless told otherwise, which marks a learning rate of
+    // 0.0001 invalid and refuses to submit the form.
+    expect(boundedField("max_steps").step).toBe(1);
+    expect(boundedField("learning_rate").step).toBe("any");
+  });
+
+  it("states an exclusive bound as exclusive, which min/max cannot", () => {
+    expect(boundedField("learning_rate").range).toBe("> 0, ≤ 1");
+    expect(boundedField("max_steps").range).toBe("≥ 10, ≤ 200000");
+    expect(boundedField("seed").range).toBeNull();
+  });
+
+  it("names a value outside the range, so the button can block on it", () => {
+    const values = { ...initialValues(bounded), max_steps: "9" };
+
+    expect(outOfRange(bounded, values)).toEqual(["Max steps"]);
+  });
+
+  it("says nothing about an untouched field or one inside the range", () => {
+    expect(outOfRange(bounded, initialValues(bounded))).toEqual([]);
+    expect(outOfRange(bounded, { ...initialValues(bounded), max_steps: "4000" })).toEqual([]);
+  });
+});
+
+describe("overrideCount", () => {
+  it("counts nothing when the form is untouched, whatever the defaults are", () => {
+    // Including the booleans, which start at their default and are always sent.
+    expect(overrideCount(fields, initialValues(fields))).toBe(0);
+  });
+
+  it("counts each field the operator actually changed", () => {
+    const values = { ...initialValues(fields), csv_path: "a.csv", defect_type_from_dir: false };
+
+    expect(overrideCount(fields, values)).toBe(2);
   });
 });

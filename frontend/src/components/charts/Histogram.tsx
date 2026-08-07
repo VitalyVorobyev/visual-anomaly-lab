@@ -10,15 +10,15 @@
  * looking at — would be an artefact of the binning.
  */
 
-import { Frame, areaFor } from "./Frame";
+import { DEFECT_COLOUR, Frame, NORMAL_COLOUR, areaFor } from "./Frame";
 import { extent, histogram, linearScale } from "./scale";
 
 // The histogram is always given a whole panel, never a column of a grid.
 const plotArea = areaFor("wide");
 
-/** Emerald for normal, red for defect — the same language `ui.tsx` uses for tone. */
-const NORMAL_FILL = "#10b981";
-const DEFECT_FILL = "#ef4444";
+// Green for normal, red for defect — the verdict pair, defined once in `Frame`.
+const NORMAL_FILL = NORMAL_COLOUR;
+const DEFECT_FILL = DEFECT_COLOUR;
 
 export interface HistogramProps {
   normal: number[];

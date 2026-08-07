@@ -71,8 +71,9 @@ describe("WarningsPanel", () => {
       />,
     );
 
-    const checkbox = screen.getByRole("checkbox") as HTMLInputElement;
-    expect(checkbox.checked).toBe(false);
+    // Queried through the role rather than the tag: the control is a styled button that
+    // carries `role="checkbox"`, so its state is in `aria-checked` and not in `.checked`.
+    const checkbox = screen.getByRole("checkbox", { checked: false });
     checkbox.click();
 
     expect(onAcknowledge).toHaveBeenCalledWith(true);

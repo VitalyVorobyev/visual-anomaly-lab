@@ -12,7 +12,7 @@
  */
 
 import type { ManifestWarning } from "../api/client";
-import { Badge, Panel } from "./ui";
+import { Badge, Checkbox, Panel } from "./ui";
 import type { Tone } from "./ui";
 
 const WARNING_TONE: Record<string, Tone> = {
@@ -43,7 +43,7 @@ export function WarningsPanel({
   if (warnings.length === 0) {
     return (
       <Panel title="Warnings">
-        <p className="text-sm text-slate-500 dark:text-slate-400">
+        <p className="text-sm text-fg-muted">
           None. Every sample has the same number of images, every file was readable, and no
           two files have identical content.
         </p>
@@ -61,7 +61,7 @@ export function WarningsPanel({
             </div>
             <p className="text-sm">{warning.message}</p>
             {warning.paths.length > 0 && (
-              <ul className="max-h-32 overflow-y-auto rounded bg-slate-50 p-2 font-mono text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+              <ul className="max-h-32 overflow-y-auto rounded bg-raised p-2 font-mono text-xs text-fg-muted ">
                 {warning.paths.map((path: string) => (
                   <li key={path} className="truncate">
                     {path}
@@ -73,14 +73,13 @@ export function WarningsPanel({
         ))}
       </ul>
 
-      <label className="mt-4 flex items-center gap-2 text-sm">
-        <input
-          type="checkbox"
+      <div className="mt-4 border-t border-line pt-4">
+        <Checkbox
           checked={acknowledged}
-          onChange={(event) => onAcknowledge(event.target.checked)}
+          onCheckedChange={onAcknowledge}
+          label="I have read these and want to import anyway"
         />
-        I have read these and want to import anyway
-      </label>
+      </div>
     </Panel>
   );
 }

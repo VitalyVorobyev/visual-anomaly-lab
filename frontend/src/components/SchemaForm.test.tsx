@@ -42,18 +42,18 @@ describe("the generated options form", () => {
     renderSchema(ADAPTER_SCHEMA);
 
     expect(screen.getByLabelText("Normal dirs")).toBeTruthy();
-    expect(screen.getByText(/1 more, already set to a working default/)).toBeTruthy();
+    expect(screen.getByText("Advanced")).toBeTruthy();
   });
 
-  it("opens the disclosure when every option already has a default", () => {
-    // Otherwise a model's configuration panel is an empty box with a closed disclosure
-    // in it, which reads as a dead end rather than as "there is nothing you must decide".
+  it("shows every option outright when none of them has to be decided", () => {
+    // The alternative is a box containing nothing but a closed disclosure, which reads as
+    // a dead end rather than as "there is nothing here you must decide". A disclosure you
+    // always have to open is a disclosure that should not exist.
     renderSchema(MODEL_SCHEMA);
 
-    const disclosure = document.querySelector("details");
-    expect(disclosure?.open).toBe(true);
-    expect(screen.getByText(/2 options, every one already set to a working default/)).toBeTruthy();
+    expect(document.querySelector("details")).toBeNull();
     expect(screen.getByLabelText("Smoothing sigma")).toBeTruthy();
+    expect(screen.getByLabelText("Score percentile")).toBeTruthy();
   });
 
   it("says so plainly when there is nothing to configure at all", () => {
