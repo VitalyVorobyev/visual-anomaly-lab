@@ -111,6 +111,8 @@ it for the scan and the pre-warm; M3 adds train and infer by writing one handler
 
 ## M3 — Universal vertical slice on EfficientAD
 
+**Status: complete (2026-08-07).** The loop closes: import a directory tree or a public benchmark, browse and label it, adopt or draw a split, train a method, score it, and read image- and pixel-level metrics with a working overlay. One exit criterion carries a recorded caveat rather than a clean pass — the EfficientAD image-level number sits below the published figure, with the gap broken down into what was measured, what was ruled out, and what was left untested by decision.
+
 **Goal.** Deliver all six capabilities the brief requires from the vertical slice — import, display, create experiment, train/run a method, show scores and maps, persist and reopen results — on a **dataset-agnostic** method, measured against public benchmarks whose published numbers we can check ourselves against (**ADR-0015**). When this milestone closes, the application is *complete in shape*; everything afterwards is a new plugin or a new view.
 
 The milestone was re-aimed after M2. It previously put `classical_circular` first, which would have made the first end-to-end proof of the architecture a proof that it works for one dataset. The infrastructure in scope was always method-agnostic; only the first method changed.
