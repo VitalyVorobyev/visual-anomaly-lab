@@ -85,8 +85,13 @@ files = ["src", "tests"]
 # EfficientAD wrapper touches. The wrapper is confined to one module and imports these
 # lazily inside functions, so the untyped surface is small and visible rather than
 # spread through the codebase.
+#
+# `torch` itself is listed for a different reason: it lives behind the optional `dl`
+# extra, so the environment CI type-checks in does not have it installed at all. Without
+# this, mypy fails on the two lazy `import torch` statements on any checkout that did not
+# opt into the extra — which is every checkout that follows the documented default.
 [[tool.mypy.overrides]]
-module = ["anomalib.*", "torchvision.*"]
+module = ["anomalib.*", "torch", "torch.*", "torchvision.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
 
