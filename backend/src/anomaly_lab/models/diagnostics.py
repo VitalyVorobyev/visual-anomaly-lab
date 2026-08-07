@@ -232,17 +232,36 @@ class DiagnosticWriter:
     def flush(self) -> DiagnosticIndex:
         """Write the index. Called once, by the job handler, after the model returns.
 
-        A model that crashed halfway has written its arrays but no index, which reads
-        correctly as "this run produced no usable diagnostics" rather than as a partial
-        set the UI would try to render.
+        **Merged with what is already there, not replaced.** An experiment's diagnostics
+        come from two runs — `fit` records the architecture and what the teacher sees,
+        `predict` records the per-image error maps — and each writes this file when it
+        ends. Replacing it made the inference run silently erase the training run's
+        entries: the arrays stayed on disk, unreferenced, and the architecture view had
+        nothing to draw. Identity is `(key, image_id)`, so re-running inference replaces
+        its own entries and leaves training's alone.
+
+        A model that crashed halfway has written its arrays but no index entry for them,
+        which reads correctly as "that run produced no usable diagnostics".
         """
+        if not self._enabled:
+            return DiagnosticIndex(
+                entries=list(self._entries),
+                image_budget=self._image_budget,
+                truncated_images=len(self._dropped_images),
+            )
+
+        superseded = {(entry.key, entry.image_id) for entry in self._entries}
+        kept = [
+            entry
+            for entry in load_index(self._root).entries
+            if (entry.key, entry.image_id) not in superseded
+        ]
         index = DiagnosticIndex(
-            entries=list(self._entries),
+            entries=[*kept, *self._entries],
             image_budget=self._image_budget,
             truncated_images=len(self._dropped_images),
         )
-        if not self._enabled:
-            return index
+
         self._root.mkdir(parents=True, exist_ok=True)
         path = self._root / INDEX_FILENAME
         path.write_text(index.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")

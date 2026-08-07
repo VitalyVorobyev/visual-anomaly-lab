@@ -423,3 +423,51 @@ def test_the_display_range_is_run_wide_not_per_image(tmp_path: Path) -> None:
     span = infer_ctx.display_range()
     assert span is not None
     assert span[1] > span[0]
+
+
+def test_a_later_run_does_not_erase_an_earlier_run_s_diagnostics(tmp_path: Path) -> None:
+    """An experiment's diagnostics come from two runs, and both write this file.
+
+    `fit` records the architecture; `predict` records the per-image error maps. Replacing
+    the index rather than merging it made inference silently erase training's entries —
+    the arrays stayed on disk, unreferenced, and the architecture view had nothing to draw.
+    """
+    root = tmp_path / "diag"
+
+    training = DiagnosticWriter(root)
+    training.emit("architecture", "Arch", DiagnosticKind.GRAPH, {"nodes": []})
+    training.emit("teacher_magnitude", "T", DiagnosticKind.MAP, np.zeros((2, 2), np.float32))
+    training.flush()
+
+    inference = DiagnosticWriter(root)
+    inference.emit("map_st", "ST", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=1)
+    merged = inference.flush()
+
+    expected = {"architecture", "teacher_magnitude", "map_st"}
+    assert {entry.key for entry in merged.entries} == expected
+    assert {entry.key for entry in load_index(root).entries} == expected
+
+
+def test_re_running_replaces_its_own_entries_rather_than_duplicating_them(tmp_path: Path) -> None:
+    root = tmp_path / "diag"
+    index = None
+    for _ in range(3):
+        writer = DiagnosticWriter(root)
+        writer.emit("m", "M", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=7)
+        index = writer.flush()
+
+    assert index is not None
+    assert len(index.entries) == 1
+
+
+def test_a_map_with_a_stray_channel_axis_is_squeezed_not_stored(tmp_path: Path) -> None:
+    """Torch hands back `(1, H, W)`; a stored 3-D map fails much later, in evaluation."""
+    _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=16, height=16))
+    path = infer_ctx.write_map(1, np.zeros((1, 16, 16), dtype=np.float32))
+    assert np.load(path).shape == (16, 16)
+
+
+def test_a_genuinely_wrong_map_shape_is_reported_at_the_plugin(tmp_path: Path) -> None:
+    _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=16, height=16))
+    with pytest.raises(ValueError, match="must be 2-D"):
+        infer_ctx.write_map(1, np.zeros((3, 16, 16), dtype=np.float32))

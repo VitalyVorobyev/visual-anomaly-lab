@@ -225,9 +225,23 @@ class InferContext(ModelContext):
         each one against its own min and max would make a clean part look as alarming as
         a defective one. The high end is each map's 99.9th percentile rather than its
         maximum, so a single hot pixel cannot black out every other map in the run.
+
+        An anomaly map is **2-D**, and that is enforced here rather than trusted. Torch
+        models hand back `(1, H, W)` or `(1, 1, H, W)` depending on how many leading
+        dimensions the caller happened to index away, and a stored map with a stray axis
+        is not rejected by anything until the evaluation layer tries to resample it —
+        several minutes of inference later, with an error naming a dtype rather than the
+        plugin that produced it. Singleton axes are dropped; anything else is a bug in
+        the plugin and is reported as one, immediately.
         """
         path = self.map_path(image_id)
-        values = np.ascontiguousarray(array, dtype=np.float32)
+        values = np.ascontiguousarray(np.squeeze(array), dtype=np.float32)
+        if values.ndim != 2:
+            msg = (
+                f"an anomaly map must be 2-D; image {image_id} produced an array of "
+                f"shape {np.shape(array)}, which is not a 2-D map with singleton axes"
+            )
+            raise ValueError(msg)
         np.save(path, values)
         self._map_extremes.append((float(values.min()), float(np.percentile(values, 99.9))))
         return path

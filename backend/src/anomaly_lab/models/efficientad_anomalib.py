@@ -540,7 +540,9 @@ class EfficientAdAnomalibModel(AnomalyModel):
                 # things about what went wrong.
                 map_st, map_stae = model.get_maps(image, normalize=True)
 
-            anomaly_map = output.anomaly_map[0].detach().cpu().numpy().astype(np.float32)
+            # `(B, 1, H, W)` from anomalib; indexing the batch away still leaves the
+            # channel axis, so squeeze rather than assume.
+            anomaly_map = output.anomaly_map[0].squeeze().detach().cpu().numpy().astype(np.float32)
             score = float(output.pred_score[0].detach().cpu())
             map_path = ctx.write_map(record.image_id, anomaly_map)
             elapsed_ms = (time.perf_counter() - started) * 1000.0
