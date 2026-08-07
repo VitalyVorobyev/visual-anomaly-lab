@@ -1,0 +1,314 @@
+/**
+ * The threshold slider, the confusion matrix and the classified rows.
+ *
+ * M3's results panel, moved, with two M4 additions that read the *same* server-classified
+ * rows: the score histogram with the threshold drawn on it, and the per-defect-type
+ * breakdown. Neither reapplies the threshold rule — the server has already tagged every
+ * row with its outcome, and holding that rule in TypeScript as well as Python would let
+ * the two drift (§12).
+ */
+
+import { useEffect, useState } from "react";
+import { Link } from "react-router";
+
+import type { SampleVerdict, Subset } from "../../api/client";
+import { StackedBars } from "../../components/charts/BarChart";
+import { ScoreHistogram } from "../../components/charts/Histogram";
+import { Tabs } from "../../components/Tabs";
+import { Badge, Empty, ErrorBox, Panel } from "../../components/ui";
+import type { Tone } from "../../components/ui";
+import { useResults, useThreshold } from "../../hooks/useExperiments";
+
+export const OUTCOME_TONE: Record<string, Tone> = {
+  tp: "normal",
+  tn: "normal",
+  fp: "warning",
+  fn: "defect",
+  unlabeled: "unlabeled",
+};
+
+export const OUTCOME_LABEL: Record<string, string> = {
+  tp: "true positive",
+  tn: "true negative",
+  fp: "false positive",
+  fn: "false negative",
+  unlabeled: "unlabeled",
+};
+
+export function Results({
+  experimentId,
+  subsets,
+  subset,
+  onSubset,
+  charts = false,
+}: {
+  experimentId: number;
+  subsets: Subset[];
+  subset: Subset;
+  onSubset: (subset: Subset) => void;
+  /** The benchmark tab wants the distribution charts; the overview does not. */
+  charts?: boolean;
+}) {
+  const results = useResults(experimentId, subset);
+  const [threshold, setThreshold] = useState<number | null>(null);
+
+  // The suggested threshold is the starting position, and it moves when the subset does —
+  // but an operator's own drag must survive a re-render, so it is only adopted when the
+  // slider has never been touched for this subset.
+  useEffect(() => setThreshold(null), [subset]);
+  const active = threshold ?? results.data?.suggested_threshold ?? 0;
+  const report = useThreshold(experimentId, subset, active);
+
+  const span = (results.data?.score_max ?? 1) - (results.data?.score_min ?? 0);
+  const step = span > 0 ? span / 500 : 0.001;
+
+  return (
+    <Panel
+      title="Results"
+      actions={
+        <select
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm dark:border-slate-600 dark:bg-slate-800"
+          aria-label="Subset"
+          value={subset}
+          onChange={(event) => onSubset(event.target.value as Subset)}
+        >
+          {subsets.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+        </select>
+      }
+    >
+      {results.error && <ErrorBox>{results.error.message}</ErrorBox>}
+      {results.data && results.data.samples.length === 0 && (
+        <Empty>Nothing scored in this subset.</Empty>
+      )}
+
+      {results.data && results.data.samples.length > 0 && (
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-1">
+            <div className="flex items-center gap-3">
+              <label className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+                Threshold
+              </label>
+              <input
+                type="range"
+                aria-label="Threshold"
+                className="flex-1"
+                min={results.data.score_min}
+                max={results.data.score_max}
+                step={step}
+                value={active}
+                onChange={(event) => setThreshold(Number(event.target.value))}
+              />
+              <span className="w-24 text-right font-mono text-sm">{active.toFixed(4)}</span>
+            </div>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Opens at {results.data.suggested_threshold.toFixed(4)} —{" "}
+              {results.data.threshold_rationale}.
+            </p>
+          </div>
+
+          {report.data && (
+            <>
+              {charts && <Distributions samples={report.data.samples} threshold={active} />}
+              <Confusion report={report.data} />
+              {charts && <DefectTypes samples={report.data.samples} />}
+              <VerdictTable experimentId={experimentId} samples={report.data.samples} />
+            </>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+/**
+ * Where the two classes actually sit, with the threshold on top.
+ *
+ * The confusion matrix says how many were wrong; this says why — two distributions that
+ * barely separate, or one long normal tail crossing the line.
+ */
+function Distributions({
+  samples,
+  threshold,
+}: {
+  samples: SampleVerdict[];
+  threshold: number;
+}) {
+  const normal = samples.filter((s) => s.label === "normal").map((s) => s.score);
+  const defect = samples.filter((s) => s.label === "defect").map((s) => s.score);
+
+  if (normal.length === 0 && defect.length === 0) return null;
+
+  return (
+    <ScoreHistogram
+      label="Score distribution by class"
+      normal={normal}
+      defect={defect}
+      threshold={threshold}
+    />
+  );
+}
+
+/**
+ * Caught and missed, per defect type.
+ *
+ * The type is whatever an adapter recorded in the sample's notes — `Nick`, `Scratch`, a
+ * VisA label. It is grouped rather than parsed: this layer has no vocabulary of defect
+ * types and should not acquire one.
+ */
+function DefectTypes({ samples }: { samples: SampleVerdict[] }) {
+  const byType = new Map<string, { caught: number; missed: number }>();
+  for (const sample of samples) {
+    if (sample.label !== "defect") continue;
+    const key = sample.notes?.trim() || "unrecorded";
+    const row = byType.get(key) ?? { caught: 0, missed: 0 };
+    if (sample.outcome === "tp") row.caught += 1;
+    else row.missed += 1;
+    byType.set(key, row);
+  }
+
+  // One bucket called "unrecorded" is a breakdown of nothing — the adapter recorded no
+  // types, and the confusion matrix above already says the same thing.
+  if (byType.size === 0 || (byType.size === 1 && byType.has("unrecorded"))) return null;
+
+  const rows = [...byType.entries()]
+    .sort((left, right) => left[0].localeCompare(right[0]))
+    .map(([label, counts]) => ({
+      label,
+      segments: [
+        { name: "caught", value: counts.caught, colour: "#10b981" },
+        { name: "missed", value: counts.missed, colour: "#ef4444" },
+      ],
+    }));
+
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="text-xs font-medium tracking-wide text-slate-500 uppercase">
+        By defect type, at this threshold
+      </h3>
+      <StackedBars rows={rows} label="Defects caught and missed by type" />
+    </div>
+  );
+}
+
+export function Confusion({
+  report,
+}: {
+  report: {
+    confusion: {
+      true_positive: number;
+      false_positive: number;
+      true_negative: number;
+      false_negative: number;
+    };
+    precision: number | null;
+    recall: number | null;
+    f1: number | null;
+  };
+}) {
+  const { confusion } = report;
+  return (
+    <div className="flex flex-wrap items-center gap-6">
+      <table className="text-sm">
+        <thead>
+          <tr className="text-xs text-slate-500">
+            <th className="px-2" />
+            <th className="px-2 font-medium">called defect</th>
+            <th className="px-2 font-medium">called normal</th>
+          </tr>
+        </thead>
+        <tbody className="font-mono">
+          <tr>
+            <th className="px-2 text-xs font-medium text-slate-500">is defect</th>
+            <td className="px-2 text-emerald-700 dark:text-emerald-300">
+              {confusion.true_positive}
+            </td>
+            <td className="px-2 text-red-700 dark:text-red-300">{confusion.false_negative}</td>
+          </tr>
+          <tr>
+            <th className="px-2 text-xs font-medium text-slate-500">is normal</th>
+            <td className="px-2 text-amber-700 dark:text-amber-300">{confusion.false_positive}</td>
+            <td className="px-2 text-emerald-700 dark:text-emerald-300">
+              {confusion.true_negative}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      <dl className="flex gap-4 text-sm">
+        {(
+          [
+            ["precision", report.precision],
+            ["recall", report.recall],
+            ["F1", report.f1],
+          ] as const
+        ).map(([label, value]) => (
+          <div key={label} className="flex flex-col">
+            <dt className="text-xs text-slate-500">{label}</dt>
+            <dd className="font-mono">
+              {value === null ? <span className="text-slate-400">—</span> : value.toFixed(3)}
+            </dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function VerdictTable({
+  experimentId,
+  samples,
+}: {
+  experimentId: number;
+  samples: SampleVerdict[];
+}) {
+  const [filter, setFilter] = useState<string>("all");
+  // Already classified by the server, at the threshold currently in force. The rule "a
+  // score at or above the threshold is a defect" therefore exists in exactly one place.
+  const classified = samples;
+  const shown = filter === "all" ? classified : classified.filter((s) => s.outcome === filter);
+
+  const keys = ["all", "tp", "fp", "tn", "fn", "unlabeled"];
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Tabs
+        label="Outcome filter"
+        active={filter}
+        onSelect={setFilter}
+        items={keys.map((key) => {
+          const count =
+            key === "all" ? classified.length : classified.filter((s) => s.outcome === key).length;
+          return {
+            id: key,
+            label: key === "all" ? "all" : (OUTCOME_LABEL[key] ?? key),
+            count,
+            disabled: count === 0 && key !== "all",
+          };
+        })}
+      />
+
+      <ul className="max-h-96 divide-y divide-slate-200 overflow-y-auto text-sm dark:divide-slate-700">
+        {shown.map((sample) => (
+          <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
+            <Link
+              to={`/experiments/${experimentId}/samples/${sample.sample_id}`}
+              className="font-mono text-xs hover:underline"
+            >
+              {sample.group_key}/{sample.external_id}
+            </Link>
+            <Badge tone={sample.label === "defect" ? "defect" : "normal"}>{sample.label}</Badge>
+            <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
+              {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
+            </Badge>
+            {sample.notes && <span className="text-xs text-slate-500">{sample.notes}</span>}
+            <span className="ml-auto font-mono text-xs">{sample.score.toFixed(4)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}

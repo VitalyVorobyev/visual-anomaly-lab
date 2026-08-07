@@ -73,6 +73,21 @@ class DiagnosticScope(StrEnum):
     """One per image — the per-branch error maps."""
 
 
+class DisplayRange(BaseModel):
+    """The value span one diagnostic key is drawn over, across a whole run.
+
+    Same shape as the `range.json` an inference job writes beside its anomaly maps, and
+    for the same reason: every emission of one key has to be colormapped on a single
+    scale or two images cannot be compared by eye. Normalizing each array to its own
+    extremes makes a clean part look exactly as alarming as a defective one.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    low: float
+    high: float
+
+
 class DiagnosticEntry(BaseModel):
     """One row of the index. Self-describing on purpose."""
 
@@ -100,6 +115,14 @@ class DiagnosticIndex(BaseModel):
 
     version: int = INDEX_VERSION
     entries: list[DiagnosticEntry] = Field(default_factory=list)
+    ranges: dict[str, DisplayRange] = Field(
+        default_factory=dict,
+        description=(
+            "Run-wide value span per colormapped key, so every emission of one key is "
+            "drawn on the same scale. Absent for keys rendered without a colormap, and "
+            "absent entirely from an index written before ranges were recorded."
+        ),
+    )
     image_budget: int | None = Field(
         default=None,
         description="How many images were allowed per-image diagnostics, if capped.",
@@ -134,6 +157,7 @@ class DiagnosticWriter:
         self._enabled = enabled
         self._image_budget = image_budget
         self._entries: list[DiagnosticEntry] = []
+        self._ranges: dict[str, DisplayRange] = {}
         self._kept_images: set[int] = set()
         self._dropped_images: set[int] = set()
 
@@ -210,6 +234,7 @@ class DiagnosticWriter:
 
         array = np.ascontiguousarray(payload, dtype=np.float32)
         _check_rank(key, kind, array)
+        self._widen_range(key, kind, array)
 
         relative = f"{key}.npy" if image_id is None else f"image-{image_id}/{key}.npy"
         target = self._root / relative
@@ -229,6 +254,30 @@ class DiagnosticWriter:
             )
         )
 
+    def _widen_range(self, key: str, kind: DiagnosticKind, array: np.ndarray) -> None:
+        """Grow this key's run-wide display range to include one more emission.
+
+        Only the colormapped kinds. An `image` payload is `(H, W, 3)` in `[0, 1]` and is
+        rendered as-is, so a range for it would be recorded, never read, and misleading
+        to anyone who found it.
+
+        The high end is the 99.9th percentile rather than the maximum, the same choice
+        `InferContext.write_map` makes: one hot pixel in one image would otherwise flatten
+        every other emission of the key to black.
+        """
+        if kind not in {DiagnosticKind.MAP, DiagnosticKind.GRID}:
+            return
+        low = float(array.min())
+        high = float(np.percentile(array, 99.9))
+        current = self._ranges.get(key)
+        if current is None:
+            self._ranges[key] = DisplayRange(low=low, high=high)
+            return
+        self._ranges[key] = DisplayRange(
+            low=min(current.low, low),
+            high=max(current.high, high),
+        )
+
     def flush(self) -> DiagnosticIndex:
         """Write the index. Called once, by the job handler, after the model returns.
 
@@ -246,18 +295,25 @@ class DiagnosticWriter:
         if not self._enabled:
             return DiagnosticIndex(
                 entries=list(self._entries),
+                ranges=dict(self._ranges),
                 image_budget=self._image_budget,
                 truncated_images=len(self._dropped_images),
             )
 
+        existing = load_index(self._root)
         superseded = {(entry.key, entry.image_id) for entry in self._entries}
         kept = [
-            entry
-            for entry in load_index(self._root).entries
-            if (entry.key, entry.image_id) not in superseded
+            entry for entry in existing.entries if (entry.key, entry.image_id) not in superseded
         ]
+        # Ranges merge by the same rule, one level coarser: a key belongs to whichever run
+        # emitted it, so this run's keys replace outright and the other run's are carried
+        # forward. Recomputing a union across both would widen `predict`'s per-image error
+        # maps to include `fit`'s teacher magnitudes, which are a different quantity.
+        ranges = {key: value for key, value in existing.ranges.items() if key not in self._ranges}
+        ranges.update(self._ranges)
         index = DiagnosticIndex(
             entries=[*kept, *self._entries],
+            ranges=ranges,
             image_budget=self._image_budget,
             truncated_images=len(self._dropped_images),
         )

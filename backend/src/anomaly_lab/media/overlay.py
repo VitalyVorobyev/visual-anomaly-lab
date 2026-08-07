@@ -76,6 +76,7 @@ def render_anomaly_map(
     *,
     value_range: tuple[float, float] | None = None,
     size: tuple[int, int] | None = None,
+    alpha_follows_score: bool = True,
 ) -> bytes:
     """Colormap one map to an RGBA PNG whose **alpha follows the score**.
 
@@ -93,6 +94,11 @@ def render_anomaly_map(
 
     The curve is deliberately steeper than linear: a map is mostly low values, and a
     linear ramp veils the whole part in a thin wash before the peak is visible at all.
+
+    `alpha_follows_score=False` returns the same colormap fully opaque. That is for a map
+    shown **on its own** — a diagnostics panel, not an overlay — where score-driven alpha
+    would dissolve the quiet regions into the page background and leave the reader unable
+    to tell "the model found nothing here" from "nothing was rendered here".
     """
     values = np.asarray(array, dtype=np.float32)
     if value_range is None:
@@ -106,9 +112,33 @@ def render_anomaly_map(
 
     rgba = np.empty((*values.shape, 4), dtype=np.uint8)
     rgba[..., :3] = _LUT[indices]
-    rgba[..., 3] = (np.power(normalized, ALPHA_GAMMA) * _UINT8_MAX).astype(np.uint8)
+    if alpha_follows_score:
+        rgba[..., 3] = (np.power(normalized, ALPHA_GAMMA) * _UINT8_MAX).astype(np.uint8)
+    else:
+        rgba[..., 3] = _UINT8_MAX
 
     image = Image.fromarray(rgba, mode="RGBA")
+    if size is not None and image.size != size:
+        image = image.resize(size, Image.Resampling.BILINEAR)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()
+
+
+def render_rgb_image(array: np.ndarray, *, size: tuple[int, int] | None = None) -> bytes:
+    """Render an `(H, W, 3)` float32 array in `[0, 1]` as an opaque PNG.
+
+    No colormap and no range stretch: the `image` diagnostic kind is already a picture —
+    a PCA-to-RGB composite of a teacher's features, say — and the three channels mean
+    something to whoever produced them. Rescaling would be this layer inventing an
+    interpretation. Values outside `[0, 1]` are clipped rather than renormalized, for the
+    same reason.
+    """
+    values = np.clip(np.asarray(array, dtype=np.float32), 0.0, 1.0)
+    rgb = (values * _UINT8_MAX).astype(np.uint8)
+
+    image = Image.fromarray(rgb, mode="RGB")
     if size is not None and image.size != size:
         image = image.resize(size, Image.Resampling.BILINEAR)
 

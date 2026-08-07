@@ -433,7 +433,41 @@ class EfficientAdAnomalibModel(AnomalyModel):
         stream = _BatchStream(
             calibration, ctx.preprocessing, self.config.stats_batch_size, torch_module
         )
-        module.model.quantiles.update(module.map_norm_quantiles(stream))
+        quantiles = module.map_norm_quantiles(stream)
+        module.model.quantiles.update(quantiles)
+        self._emit_normalization(ctx, quantiles, origin=origin, images=len(calibration))
+
+    def _emit_normalization(
+        self,
+        ctx: TrainContext,
+        quantiles: dict[str, Any],
+        *,
+        origin: str,
+        images: int,
+    ) -> None:
+        """Record what the fit above decided, as a table rather than a chart.
+
+        These are four numbers, not a series, so the training charts are the wrong shape
+        for them — but they are the most consequential four numbers the run produces after
+        the weights. The ratio of the two branch weights they imply is what reorders
+        images, and the `origin` row is the difference the M3 measurement put at +0.025
+        sample ROC-AUC. Both belong somewhere a reader will look.
+        """
+        rows = [[name, f"{float(value):.6g}"] for name, value in sorted(quantiles.items())]
+        ctx.emit_diagnostic(
+            "score_normalization",
+            "Score normalization",
+            DiagnosticKind.TABLE,
+            {
+                "columns": ["quantity", "value"],
+                "rows": [*rows, ["fitted on", origin], ["calibration images", str(images)]],
+            },
+            description=(
+                "The map-normalization quantiles, and what they were fitted on. The two "
+                "branch weights derive from different quantile pairs, so their ratio — "
+                "and therefore the ranking — depends on this fit."
+            ),
+        )
 
     # ---------------------------------------------------------------- diagnostics
 

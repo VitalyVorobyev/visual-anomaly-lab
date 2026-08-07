@@ -15,9 +15,17 @@ export function imageUrl(imageId: number, tier: ImageTier): string {
   return `${apiBaseUrl}/api/images/${imageId}/${tier}`;
 }
 
-/** One experiment's anomaly map for an image, colormapped and sized to the source. */
-export function anomalyMapUrl(imageId: number, experimentId: number): string {
-  return `${apiBaseUrl}/api/images/${imageId}/anomaly-map?experiment_id=${experimentId}`;
+/**
+ * One experiment's anomaly map for an image, colormapped and sized to the source.
+ *
+ * `alpha` is the overlay decision: opacity follows the score, so the source image shows
+ * through wherever the model found nothing. Pass `false` for a standalone panel — there
+ * the same map is the whole picture, and a clean image would otherwise render blank.
+ */
+export function anomalyMapUrl(imageId: number, experimentId: number, alpha = true): string {
+  const query = new URLSearchParams({ experiment_id: String(experimentId) });
+  if (!alpha) query.set("alpha", "false");
+  return `${apiBaseUrl}/api/images/${imageId}/anomaly-map?${query.toString()}`;
 }
 
 /** The ground-truth outline, transparent everywhere else, ready to stack on the source. */

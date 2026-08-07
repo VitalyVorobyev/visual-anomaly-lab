@@ -87,7 +87,8 @@ remains here is a circle-fit front end onto a component that already exists and 
 - [x] On-demand threshold endpoint returning the confusion matrix *and* the classified rows, so the threshold rule lives in one language (M)
 - [x] Ranked lists: most-anomalous and most-normal samples with scores (S)
 - [x] Timing statistics: per-sample inference time, mean/median/p95, recorded in the MetricSet (S)
-- [ ] ROC and PR *curve* endpoints for the M4 benchmark charts — the arrays exist, nothing serves them yet (S)
+- [x] ROC and PR *curve* endpoints for the M4 benchmark charts (S). `roc_curve` was dead code and the PR arrays were local to `average_precision`; both now come from one cut-point helper, so a chart cannot disagree with the scalar drawn beside it. A one-class subset returns `None` rather than a chance diagonal.
+- [ ] **Give `TrainContext` labelled validation data**, so a method can report val AUROC per epoch (M) — **ADR-0007**, **ADR-0011**. M4 wanted the chart and could not have it: `val` is filtered to normals and carries no labels, so there is one class and no AUROC. This is a plugin-interface decision, not a chart.
 
 ## E8 — Experiment UI (M3) — done
 
@@ -104,6 +105,22 @@ remains here is a circle-fit front end onto a component that already exists and 
 - [x] Preprocessing config bridge — see E5 (M)
 - [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M) — **M7**
 - [ ] Revisit the training loop against anomalib's Lightning path when their datamodule stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
+
+## E13 — Workbench UI (M4) — done
+
+*Every view is written once against the diagnostics index and renders by `kind`, so
+`efficientad_custom` inherits all of them in M6 (**ADR-0018**). The three backend items
+were gaps in M3's contract that only a consumer could reveal.*
+
+- [x] Diagnostic payload route: `(key, image_id)` resolved **through the index**, never by the path it carries, with `map` / `image` / `grid` rendered and the inline kinds refused (M) — **ADR-0019**
+- [x] Run-wide display range per diagnostic key, recorded by the writer at a 99.9th-percentile high end and merged the way entries merge (S) — **ADR-0019**
+- [x] `GET /api/jobs/{id}/metrics`: named scalar series parsed back out of the job log, downsampled with the drop reported (S) — **ADR-0020**
+- [x] Hand-rolled SVG chart primitives — scales and ticks as a pure, tested module; line, curve, histogram and stacked-bar components (M)
+- [x] Render-by-kind diagnostics panel + architecture graph laid out from the recorded edges; an unknown kind renders as a named placeholder rather than a crash (M)
+- [x] Experiment screen as tabs — Overview, Training, Benchmark, Architecture, Inspector — with the active tab in the URL and each gated on what the run recorded, never on which method recorded it (M)
+- [x] Live training charts on the existing socket, snapshot-then-subscribe with the console's freeze rule (S)
+- [x] Per-image diagnostic panes on the sample screen, beside the combined map they decompose (S)
+- [x] Score-normalization emitted as a `table` diagnostic, carrying the quantiles and what they were fitted on (S)
 
 ## E10 — Comparison UI (M5)
 

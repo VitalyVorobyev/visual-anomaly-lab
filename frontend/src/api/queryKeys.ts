@@ -39,6 +39,7 @@ export const queryKeys = {
 
   jobs: () => ["jobs"] as const,
   job: (jobId: number) => ["jobs", jobId] as const,
+  jobMetrics: (jobId: number) => ["jobs", jobId, "metrics"] as const,
 
   modelTypes: () => ["experiments", "model-types"] as const,
   experiments: (datasetId?: number) => ["experiments", "list", datasetId ?? null] as const,
@@ -50,4 +51,6 @@ export const queryKeys = {
   sampleImages: (experimentId: number, sampleId: number) =>
     ["experiments", experimentId, "sample-images", sampleId] as const,
   diagnostics: (experimentId: number) => ["experiments", experimentId, "diagnostics"] as const,
+  curves: (experimentId: number, subset?: Subset) =>
+    ["experiments", experimentId, "curves", subset ?? null] as const,
 } as const;

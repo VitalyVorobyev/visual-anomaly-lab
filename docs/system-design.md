@@ -489,6 +489,13 @@ inline, and a `diagnostics.json` index describes everything written. `kind` is o
 through here: they are already `metric` events in the job protocol, and a second channel for the same data
 would be the wrong kind of completeness. Full rationale and costs in ADR-0018.
 
+Arrays are read back through `GET /api/experiments/{id}/diagnostics/payload?key=&image_id=&frame=`, which
+renders one PNG. The client names a `(key, image_id)` pair and the route resolves it **through the index**,
+never through the `path` the index carries — so, exactly as in §11, there is no request that can name a file.
+Colormapped kinds are stretched over a **run-wide range the writer recorded**, so every image's
+student-teacher error is drawn on one scale; the `graph` and `table` kinds are refused here because their
+payload is already inline in the index (**ADR-0019**).
+
 ### Contract: scores are per-image
 
 > **Models emit per-image scores. Cross-channel aggregation belongs to the evaluation layer (§8).**
@@ -569,6 +576,19 @@ WebSockets drop — on sleep, on network stack changes, on reload. The client ru
 subscribe**: `GET /api/jobs/{id}` for current status, progress and recent log tail, *then* open the WebSocket
 for the live stream. This makes reconnection, first load and late-joining a running job all the same code
 path, with no missed-event reconciliation logic.
+
+### Scalar series, after the fact
+
+`metric` events are streamed and tee'd, and stored in no column. That is enough for a live chart and not
+enough for one that survives a reload: `log_tail` is 200 raw lines of a stream that also carries progress
+frames and library chatter, which for a 20 000-step training run is its final seconds.
+
+`GET /api/jobs/{id}/metrics` therefore **parses the job's own log file** and returns the named series it
+finds, downsampled to a drawable number of points with the drop reported. No table, no migration, and no
+second event channel — the log is already the durable copy of the stream. The client takes this snapshot
+when it opens the socket and appends live frames to it, under the same freeze rule the console follows: the
+snapshot cannot be re-read live, because every event invalidates it and it comes back already containing the
+points the socket just delivered (**ADR-0020**).
 
 ### Import jobs
 
@@ -883,9 +903,11 @@ API surface as follows.
 | **Sample viewer (grouped)** | One part, all its channels side by side, channel count driven by data. Label editing (normal / defect / unlabeled) with keyboard shortcuts for fast passes over unlabeled data. Full-resolution zoom. | `GET /api/datasets/{id}/samples/{sid}`, `PATCH …/label`, `GET /api/images/{id}/preview`, `…/full` |
 | **Split management** | Create a seeded, stratified split; per-subset counts by label; splits are immutable once created. | `POST /api/splits`, `GET /api/splits?dataset_id=` |
 | **Experiment creation** | Pick dataset + split + model; the configuration form is **generated from the model's JSON Schema** (§5), so new hyperparameters appear with no frontend change. Capability flags drive the UI (a `dataset_specific` model shows a warning; a model without anomaly maps hides overlay options). | `GET /api/experiments/model-types`, `POST /api/experiments` |
-| **Progress & logs** | Live job progress bar, streaming log console, metric sparklines, cancel button. Snapshot-then-subscribe on mount and on reconnect (§6). | `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`, `POST /api/jobs/{id}/cancel` |
+| **Progress & logs** | Live job progress bar, streaming log console, cancel button. Snapshot-then-subscribe on mount and on reconnect (§6). | `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`, `POST /api/jobs/{id}/cancel` |
+| **Training charts** (M4) | Per-branch loss curves and learning rate, live and after the fact; a series reported once is printed as a value rather than plotted as one dot. Survives a reload mid-run because the history is re-read from the job's log (**ADR-0020**). | `GET /api/jobs/{id}/metrics`, `WS /ws/jobs/{id}` |
+| **Benchmark charts** (M4) | ROC and PR curves at sample and image level, score histogram by class with the threshold drawn on it, confusion matrix, per-defect-type breakdown, timing. Every curve integrates to a number the metrics table already shows. | `GET /api/experiments/{id}/curves?subset=`, `GET /api/experiments/{id}/results`, `…/threshold` |
 | **Results** | Per-sample scores, ranked; **threshold slider** recomputing the confusion matrix live; **TP / FP / TN / FN filter**; **anomaly-map overlay with an opacity slider** (CSS-composited, instant) and the ground-truth outline where a mask exists; timing summary. | `GET /api/experiments/{id}/results?subset=`, `GET /api/experiments/{id}/threshold?value=`, `GET /api/experiments/{id}/samples/{sid}/images`, `GET /api/images/{id}/anomaly-map?experiment_id=`, `GET /api/images/{id}/mask` |
-| **Diagnostics** (M4) | Whatever the method recorded about itself, rendered by `kind` and never by method name (ADR-0018). | `GET /api/experiments/{id}/diagnostics` |
+| **Diagnostics** (M4) | Whatever the method recorded about itself, rendered by `kind` and never by method name (ADR-0018). Run-scoped entries split into an *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries render on the sample page beside the combined anomaly map, which is what makes a two-branch method legible. | `GET /api/experiments/{id}/diagnostics`, `…/diagnostics/payload?key=` |
 | **Experiment comparison** (M5) | Several experiments side by side under one protocol: sample / image / pixel ROC-AUC, ROC curves overlaid, timing, config diff, and a shared-sample view showing where methods disagree. | *not yet built* |
 
 Three cross-cutting UI rules follow from the design above:

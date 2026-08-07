@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import type {
+  CurveSet,
   ExperimentDetail,
   ExperimentSummary,
   DiagnosticIndex,
@@ -188,6 +189,29 @@ export function useDiagnostics(experimentId: number | undefined) {
           params: { path: { experiment_id: experimentId as number } },
         }),
         "the diagnostics index",
+      ),
+    enabled: experimentId !== undefined,
+  });
+}
+
+/**
+ * The ROC and PR arrays behind one subset's headline numbers.
+ *
+ * Recomputed per request from the stored scores, like the threshold report — nothing here
+ * is persisted, so a curve can never disagree with the metric it is drawn beside.
+ */
+export function useCurves(experimentId: number | undefined, subset: Subset | undefined) {
+  return useQuery<CurveSet>({
+    queryKey: queryKeys.curves(experimentId ?? -1, subset),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/curves", {
+          params: {
+            path: { experiment_id: experimentId as number },
+            query: subset === undefined ? {} : { subset },
+          },
+        }),
+        "the curves",
       ),
     enabled: experimentId !== undefined,
   });

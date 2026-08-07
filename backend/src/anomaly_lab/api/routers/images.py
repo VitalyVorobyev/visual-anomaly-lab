@@ -90,6 +90,13 @@ def read_anomaly_map(
         default=True,
         description="Resample the map to the source image's pixel grid so it overlays exactly.",
     ),
+    alpha: bool = Query(
+        default=True,
+        description=(
+            "Scale opacity with the score, for laying over the source image. Set false "
+            "for a standalone panel, where a low-scoring map would otherwise be invisible."
+        ),
+    ),
 ) -> Response:
     """Render a stored float32 map as a PNG (ADR-0007).
 
@@ -97,6 +104,12 @@ def read_anomaly_map(
     range file the inference job wrote. Normalizing each map to its own extremes would
     make a clean part look as alarming as a defective one, which is precisely the
     comparison the overlay exists to support.
+
+    `alpha` is the *overlay* decision, and it is wrong outside an overlay. Laid over a
+    photograph, score-driven alpha is what keeps the quiet regions from being tinted; in
+    a diagnostics panel beside an opaque per-branch map, it makes a clean image look
+    blank and puts the two panes on visibly different scales — which defeats the
+    comparison the panel exists for.
     """
     image, settings = _load_image(request, image_id)
     with connection(settings.db_path) as conn:
@@ -122,11 +135,12 @@ def read_anomaly_map(
         array,
         value_range=read_display_range(maps_dir),
         size=(image.width, image.height) if native else None,
+        alpha_follows_score=alpha,
     )
     return Response(
         content=payload,
         media_type="image/png",
-        headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}"'),
+        headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}-{int(alpha)}"'),
     )
 
 
