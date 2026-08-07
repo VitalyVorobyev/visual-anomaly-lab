@@ -61,13 +61,15 @@ means adding a module and a registry entry — nothing else in the application c
 
 | Registry key | What it is | Scope |
 | --- | --- | --- |
-| `classical_circular` | Geometry-aware classical baseline tailored to the showcase dataset: circle fit → polar unwrap → orientation alignment → robust per-channel reference comparison (median/MAD z-map). Fast, CPU-only, interpretable. | **Showcase-dataset-specific** (circular parts) |
+| `pixel_reference` | Dataset-agnostic floor baseline: per-pixel median + MAD over the training normals → z-map → smoothing → high-percentile score. numpy and Pillow only, trains in seconds, gives every deep result something to beat. | Dataset-agnostic |
 | `efficientad_anomalib` | EfficientAD via Intel's [anomalib](https://github.com/open-edge-platform/anomalib) | Dataset-agnostic |
-| `patchcore_anomalib` | PatchCore via anomalib | Dataset-agnostic |
 | `efficientad_custom` | From-scratch EfficientAD reimplementation, for direct comparison against the library version | Dataset-agnostic |
+| `patchcore_anomalib` | PatchCore via anomalib | Dataset-agnostic |
+| `classical_circular` | Geometry-aware classical baseline tailored to the showcase dataset: circle fit → polar unwrap → orientation alignment → robust per-channel reference comparison. Deferred to a later, optional milestone (ADR-0015). | **Showcase-dataset-specific** (circular parts) |
 
 The classical baseline is the *only* component allowed to assume anything about the showcase dataset's
-geometry. Everything else must work on a dataset it has never seen.
+geometry. Everything else must work on a dataset it has never seen — which is why the vertical slice is
+proved on a dataset-agnostic method against public benchmarks, and not on the classical one.
 
 ## Architecture at a glance
 
@@ -104,7 +106,31 @@ The first dataset is private: multi-illumination photographs of a manufactured c
 **98 normal + 91 defect logical samples**. Each sample is captured under several illumination channels
 (bright-field / dark-field / dome) — but one group has only two, a small irregularity with a large design
 consequence: **channel count is data, not schema**, and no component may hard-code it. The dataset carries
-no pixel masks, so evaluation is image-level, with sample-level ROC-AUC as the headline metric.
+no pixel masks, so evaluation of *this* dataset is image-level, with sample-level ROC-AUC as the headline
+metric. Pixel-level metrics come from the public datasets below, which do ship masks.
+
+## Reference datasets
+
+Methods are developed and validated against public benchmarks, not only against the private tree. That is
+what keeps the tool universal: a number computed here can be compared against a number someone else
+published, on the same data and — through the `csv_table` adapter — on the same official split.
+
+**These datasets are not committed.** `/datasets/` is gitignored: they are large, freely available, and
+adding gigabytes to a source repository to duplicate a public download buys nothing.
+`scripts/check-repo-safety.sh` fails if anything under `datasets/` is ever staged. Download them yourself
+and point the import screen at the directory.
+
+| Dataset | What it is | Adapter | Licence |
+| --- | --- | --- | --- |
+| [**VisA**](https://github.com/amazon-science/spot-diff) (Visual Anomaly), Zou et al. | 12 object classes, ~1000 normal + 100 anomalous images each, **with pixel-level ground-truth masks** and official one-class split tables in `split_csv/1cls.csv`. | `csv_table` | CC BY 4.0 (licence file ships with the download) |
+| [**GKN Blade Surface Defect Dataset**](https://doi.org/10.17632/3bh998k78g.1), Qianyu Zhou, University of Connecticut, 22 May 2023 | 203 good, 48 nick, 149 scratch photographs of blade surfaces. No masks. | `folder_classes` | CC BY 4.0, DOI [10.17632/3bh998k78g.1](https://doi.org/10.17632/3bh998k78g.1) |
+
+Both are used for training and as the comparison baseline. To import one, point the import screen at its
+root directory and fill in the adapter options — for GKN, `normal_dirs = Data_GKN/Good` and
+`defect_dirs = Data_GKN/Nick, Data_GKN/Scratch`; for one VisA class,
+`csv_path = split_csv/1cls.csv` with `filter_column = object` and `filter_value = candle`. Then create a
+split with the **`imported`** strategy to adopt the published partition rather than drawing your own,
+which is what makes the resulting figure comparable to the paper's.
 
 ## Documentation
 

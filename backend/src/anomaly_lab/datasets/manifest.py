@@ -22,7 +22,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field
 
-from anomaly_lab.domain.entities import Label
+from anomaly_lab.domain.entities import Label, Subset
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 # Bump when a change to these models is not backwards compatible. Readers check it before
@@ -50,6 +50,18 @@ class WarningCode(StrEnum):
 
     EMPTY_FILE = "empty_file"
     """Skipped: zero bytes."""
+
+    AMBIGUOUS_SAMPLE_ID = "ambiguous_sample_id"
+    """Two files in one group resolved to the same sample identity and were merged."""
+
+    UNMATCHED_PATH = "unmatched_path"
+    """A file matched none of the configured directories and imported as unlabelled."""
+
+    CONFLICTING_DIRECTORIES = "conflicting_directories"
+    """A file matched more than one label's directory patterns. The first list won."""
+
+    MISSING_MASK = "missing_mask"
+    """A mask was expected for this image and the file is not there."""
 
 
 class ManifestWarning(BaseModel):
@@ -86,6 +98,13 @@ class ManifestImage(BaseModel):
     height: int
     bit_depth: int
     file_size: int
+    mask_path: str | None = Field(
+        default=None,
+        description=(
+            "Pixel-level ground truth for this image, referenced in place like the image. "
+            "`null` for the datasets that have none, which is most of them."
+        ),
+    )
 
 
 class ManifestSample(BaseModel):
@@ -94,6 +113,23 @@ class ManifestSample(BaseModel):
     group_key: str
     external_id: str
     label: Label = Label.UNLABELED
+    subset: Subset | None = Field(
+        default=None,
+        description=(
+            "The subset this sample belongs to according to the source dataset. Only "
+            "adapters that read a published split fill this in; it is what a split with "
+            "the `imported` strategy is built from, so that a benchmark can be run under "
+            "the same partition the published numbers used."
+        ),
+    )
+    notes: str | None = Field(
+        default=None,
+        description=(
+            "Free text the adapter read from the source, such as a defect type. Carried "
+            "onto the sample so a breakdown by defect type is possible without a schema "
+            "that enumerates defect types."
+        ),
+    )
     images: list[ManifestImage] = Field(default_factory=list)
 
 
@@ -107,6 +143,8 @@ class ManifestStats(BaseModel):
     files_skipped: int = 0
     samples: int = 0
     images: int = 0
+    masks: int = 0
+    """Images that came with pixel-level ground truth. Zero for most datasets."""
 
 
 class Manifest(BaseModel):
@@ -131,3 +169,18 @@ class Manifest(BaseModel):
         for sample in self.samples:
             counts[sample.label] += 1
         return counts
+
+    def subset_counts(self) -> dict[Subset, int]:
+        """How the source dataset partitioned these samples, if it said at all.
+
+        Samples with no subset are absent from the total rather than bucketed somewhere,
+        so a partially annotated manifest reads as partial instead of as balanced.
+        """
+        counts = dict.fromkeys(Subset, 0)
+        for sample in self.samples:
+            if sample.subset is not None:
+                counts[sample.subset] += 1
+        return counts
+
+    def has_imported_split(self) -> bool:
+        return any(sample.subset is not None for sample in self.samples)

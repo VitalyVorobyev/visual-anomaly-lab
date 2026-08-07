@@ -13,10 +13,19 @@
  */
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../api/client";
+import {
+  describeFields,
+  initialValues,
+  jsonErrors,
+  missingRequired,
+  toOptions,
+  type OptionsSchema,
+  type RawValues,
+} from "../api/schemaForm";
 import type {
   AdapterInfo,
   ChannelMapping,
@@ -29,6 +38,7 @@ import { queryKeys } from "../api/queryKeys";
 import { hasDirectoryPicker, pickDirectory } from "../api/shell";
 import { Badge, Button, CountRun, Empty, ErrorBox, Field, Panel, inputClasses } from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
+import { SchemaForm } from "../components/SchemaForm";
 import { WarningsPanel, commitBlocked } from "../components/WarningsPanel";
 import { isTerminal, useJob } from "../hooks/useJob";
 
@@ -78,13 +88,33 @@ export function ImportRoute() {
 function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
   const [rootPath, setRootPath] = useState("");
   const [datasetName, setDatasetName] = useState("");
-  const [adapter, setAdapter] = useState("channel_folders");
-  const [exclude, setExclude] = useState("");
+  const [adapter, setAdapter] = useState("folder_classes");
+  const [options, setOptions] = useState<RawValues>({});
 
   const adapters = useQuery<AdapterInfo[]>({
     queryKey: queryKeys.adapters(),
     queryFn: async () => unwrap(await api.GET("/api/import/adapters"), "the adapter list"),
   });
+
+  const chosen = adapters.data?.find((entry) => entry.name === adapter);
+  // Recomputed from the chosen adapter's schema, so switching adapters swaps the whole
+  // form rather than leaving one adapter's options attached to another's scan.
+  const fields = useMemo(
+    () => (chosen ? describeFields(chosen.options_schema as OptionsSchema) : []),
+    [chosen],
+  );
+
+  const pickAdapter = (name: string) => {
+    setAdapter(name);
+    const next = adapters.data?.find((entry) => entry.name === name);
+    setOptions(next ? initialValues(describeFields(next.options_schema as OptionsSchema)) : {});
+  };
+
+  // The first render arrives before the adapter list does, so the defaults for the
+  // adapter already selected have to be filled in once it lands.
+  useEffect(() => {
+    if (fields.length > 0 && Object.keys(options).length === 0) setOptions(initialValues(fields));
+  }, [fields, options]);
 
   const scan = useMutation({
     mutationFn: async () =>
@@ -94,12 +124,7 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
             root_path: rootPath.trim(),
             dataset_name: datasetName.trim(),
             adapter,
-            options: {
-              exclude: exclude
-                .split(",")
-                .map((pattern) => pattern.trim())
-                .filter(Boolean),
-            },
+            options: toOptions(fields, options),
           },
         }),
         "a scan job",
@@ -107,8 +132,13 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
     onSuccess: (job) => onStarted(job.id),
   });
 
-  const chosen = adapters.data?.find((entry) => entry.name === adapter);
-  const ready = rootPath.trim() !== "" && datasetName.trim() !== "";
+  const malformed = jsonErrors(fields, options);
+  const missing = missingRequired(fields, options);
+  const ready =
+    rootPath.trim() !== "" &&
+    datasetName.trim() !== "" &&
+    missing.length === 0 &&
+    malformed.length === 0;
 
   return (
     <Panel title="What to scan">
@@ -153,8 +183,9 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
         <Field label="Adapter">
           <select
             className={inputClasses}
+            aria-label="Adapter"
             value={adapter}
-            onChange={(event) => setAdapter(event.target.value)}
+            onChange={(event) => pickAdapter(event.target.value)}
           >
             {(adapters.data ?? []).map((entry) => (
               <option key={entry.name} value={entry.name}>
@@ -167,25 +198,32 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
           <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">{chosen.summary}</p>
         )}
 
-        <Field label="Exclude (comma-separated globs, relative to the root)">
-          <input
-            className={`${inputClasses} font-mono`}
-            placeholder="unsorted/*, scratch/*"
-            value={exclude}
-            onChange={(event) => setExclude(event.target.value)}
-          />
-        </Field>
-        <p className="-mt-2 text-xs text-slate-500 dark:text-slate-400">
-          Scope belongs here rather than in a one-off edit below, so a later re-scan
-          proposes the same thing.
-        </p>
+        <fieldset className="rounded border border-slate-200 p-3 dark:border-slate-700">
+          <legend className="px-1 text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+            {adapter} options
+          </legend>
+          <p className="mb-3 text-xs text-slate-500 dark:text-slate-400">
+            Generated from the adapter's own schema. An empty box keeps the default shown
+            inside it, and everything you set travels in the manifest — so a later re-scan
+            proposes the same thing rather than needing the same corrections again.
+          </p>
+          <SchemaForm fields={fields} values={options} onChange={setOptions} />
+        </fieldset>
 
         {scan.error && <ErrorBox>{scan.error.message}</ErrorBox>}
+        {malformed.length > 0 && (
+          <ErrorBox>{malformed.join(", ")} is not valid JSON.</ErrorBox>
+        )}
 
-        <div>
+        <div className="flex items-center gap-2">
           <Button type="submit" variant="primary" disabled={!ready || scan.isPending}>
             {scan.isPending ? "Starting…" : "Scan"}
           </Button>
+          {missing.length > 0 && (
+            <span className="text-xs text-amber-700 dark:text-amber-300">
+              {missing.join(", ")} {missing.length === 1 ? "is" : "are"} required.
+            </span>
+          )}
         </div>
       </form>
     </Panel>
@@ -276,12 +314,15 @@ function ReviewStep({
   return (
     <div className="flex flex-col gap-4">
       <Panel title="What the scan found">
-        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-4">
+        <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-5">
           <Stat label="Samples" value={current.stats.samples} />
           <Stat label="Images" value={current.stats.images} />
+          <Stat label="Masks" value={current.stats.masks} />
           <Stat label="Excluded" value={current.stats.files_excluded} />
           <Stat label="Skipped" value={current.stats.files_skipped} />
         </dl>
+        <LabelRun samples={current.samples} />
+        <ImportedSplit samples={current.samples} />
         <p className="mt-3 font-mono text-xs break-all text-slate-500 dark:text-slate-400">
           {current.root_path}
         </p>
@@ -318,6 +359,67 @@ function ReviewStep({
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * What the labels came out as — the number an operator is really checking on this screen.
+ *
+ * A dataset that imports entirely unlabelled is the single most common misconfiguration
+ * of a folder- or table-driven adapter, and it is invisible in a sample count.
+ */
+function LabelRun({ samples }: { samples: ManifestSample[] }) {
+  const counts = { normal: 0, defect: 0, unlabeled: 0 };
+  for (const sample of samples) counts[sample.label] += 1;
+
+  return (
+    <div className="mt-3">
+      <CountRun
+        counts={[
+          ["normal", counts.normal, "normal"],
+          ["defect", counts.defect, "defect"],
+          ["unlabeled", counts.unlabeled, "neutral"],
+        ]}
+      />
+    </div>
+  );
+}
+
+/**
+ * The partition the source published, when it published one.
+ *
+ * Shown before commit because adopting it is the difference between a number that can be
+ * compared to the paper's and one that only looks like it can. Absent entirely for the
+ * datasets that ship no split, rather than rendering three zeroes.
+ */
+function ImportedSplit({ samples }: { samples: ManifestSample[] }) {
+  const counts = { train: 0, val: 0, test: 0 };
+  let placed = 0;
+  for (const sample of samples) {
+    if (sample.subset) {
+      counts[sample.subset] += 1;
+      placed += 1;
+    }
+  }
+  if (placed === 0) return null;
+
+  return (
+    <div className="mt-3">
+      <p className="mb-1 text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
+        Published split
+      </p>
+      <CountRun
+        counts={[
+          ["train", counts.train, "neutral"],
+          ["val", counts.val, "neutral"],
+          ["test", counts.test, "neutral"],
+        ]}
+      />
+      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+        Create a split with the <span className="font-mono">imported</span> strategy after
+        committing to use this partition instead of drawing one.
+      </p>
     </div>
   );
 }
@@ -476,6 +578,9 @@ function CommittedStep({
             ["samples updated", result.samples_updated, "neutral"],
             ["images added", result.images_created, "normal"],
             ["images updated", result.images_updated, "neutral"],
+            ...(result.masks > 0
+              ? ([["masks attached", result.masks, "normal"]] as [string, number, "normal"][])
+              : []),
           ]}
         />
 

@@ -84,6 +84,7 @@ class CommitResponse(BaseModel):
     images_created: int
     images_updated: int
     channels: int
+    masks: int = Field(default=0, description="Images that now carry pixel-level ground truth.")
     missing_paths: list[str] = Field(
         default_factory=list,
         description="Recorded images this manifest no longer mentions. Reported, not deleted.",
@@ -173,6 +174,7 @@ def commit(request: Request, body: CommitRequest) -> CommitResponse:
         images_created=result.images_created,
         images_updated=result.images_updated,
         channels=result.channels,
+        masks=result.masks,
         missing_paths=result.missing_paths,
     )
 

@@ -363,12 +363,16 @@ export interface paths {
         get: operations["list_splits_api_splits_get"];
         put?: never;
         /**
-         * Create a seeded, sample-level split
-         * @description Draw a split and store it with everything needed to redraw it.
+         * Create a sample-level split, seeded or imported
+         * @description Draw a split, or adopt a published one, and store what reproduces it.
          *
-         *     Assignment is per sample, so no two views of one part can straddle the boundary;
+         *     A seeded split is per sample, so no two views of one part can straddle the boundary;
          *     training gets normals only; and the draw is stratified by capture group so an
          *     acquisition-batch effect cannot land entirely on one side (ADR-0011).
+         *
+         *     The `imported` strategy instead reads the partition out of the manifest the dataset
+         *     was committed from, because a benchmark's published number is only comparable against
+         *     the benchmark's own partition.
          */
         post: operations["create_split_api_splits_post"];
         delete?: never;
@@ -512,6 +516,12 @@ export interface components {
             images_updated: number;
             /** Channels */
             channels: number;
+            /**
+             * Masks
+             * @description Images that now carry pixel-level ground truth.
+             * @default 0
+             */
+            masks: number;
             /**
              * Missing Paths
              * @description Recorded images this manifest no longer mentions. Reported, not deleted.
@@ -805,6 +815,11 @@ export interface components {
             bit_depth: number;
             /** File Size */
             file_size: number;
+            /**
+             * Mask Path
+             * @description Pixel-level ground truth for this image, referenced in place like the image. `null` for the datasets that have none, which is most of them.
+             */
+            mask_path?: string | null;
         };
         /** ManifestImage */
         "ManifestImage-Output": {
@@ -822,6 +837,11 @@ export interface components {
             bit_depth: number;
             /** File Size */
             file_size: number;
+            /**
+             * Mask Path
+             * @description Pixel-level ground truth for this image, referenced in place like the image. `null` for the datasets that have none, which is most of them.
+             */
+            mask_path: string | null;
         };
         /** ManifestSample */
         "ManifestSample-Input": {
@@ -831,6 +851,13 @@ export interface components {
             external_id: string;
             /** @default unlabeled */
             label: components["schemas"]["Label"];
+            /** @description The subset this sample belongs to according to the source dataset. Only adapters that read a published split fill this in; it is what a split with the `imported` strategy is built from, so that a benchmark can be run under the same partition the published numbers used. */
+            subset?: components["schemas"]["Subset"] | null;
+            /**
+             * Notes
+             * @description Free text the adapter read from the source, such as a defect type. Carried onto the sample so a breakdown by defect type is possible without a schema that enumerates defect types.
+             */
+            notes?: string | null;
             /** Images */
             images?: components["schemas"]["ManifestImage-Input"][];
         };
@@ -842,6 +869,13 @@ export interface components {
             external_id: string;
             /** @default unlabeled */
             label: components["schemas"]["Label"];
+            /** @description The subset this sample belongs to according to the source dataset. Only adapters that read a published split fill this in; it is what a split with the `imported` strategy is built from, so that a benchmark can be run under the same partition the published numbers used. */
+            subset: components["schemas"]["Subset"] | null;
+            /**
+             * Notes
+             * @description Free text the adapter read from the source, such as a defect type. Carried onto the sample so a breakdown by defect type is possible without a schema that enumerates defect types.
+             */
+            notes: string | null;
             /** Images */
             images: components["schemas"]["ManifestImage-Output"][];
         };
@@ -875,6 +909,11 @@ export interface components {
              * @default 0
              */
             images: number;
+            /**
+             * Masks
+             * @default 0
+             */
+            masks: number;
         };
         /**
          * ManifestStats
@@ -906,6 +945,11 @@ export interface components {
              * @default 0
              */
             images: number;
+            /**
+             * Masks
+             * @default 0
+             */
+            masks: number;
         };
         /** ManifestWarning */
         "ManifestWarning-Input": {
@@ -1025,6 +1069,11 @@ export interface components {
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
+            /**
+             * Manifest Id
+             * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
+             */
+            manifest_id?: string | null;
         };
         /**
          * SplitParams
@@ -1056,12 +1105,17 @@ export interface components {
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
+            /**
+             * Manifest Id
+             * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
+             */
+            manifest_id: string | null;
         };
         /**
          * SplitStrategy
          * @enum {string}
          */
-        SplitStrategy: "normal_only_train";
+        SplitStrategy: "normal_only_train" | "imported";
         /**
          * Subset
          * @enum {string}
@@ -1105,7 +1159,7 @@ export interface components {
          * @description Why the operator is being asked to look at something.
          * @enum {string}
          */
-        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file";
+        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file" | "ambiguous_sample_id" | "unmatched_path" | "conflicting_directories" | "missing_mask";
     };
     responses: never;
     parameters: never;

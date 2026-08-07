@@ -151,6 +151,33 @@ class Image(BaseModel):
     imported_at: str
 
 
+class MaskKind(StrEnum):
+    """What a mask asserts. Only ground truth exists today; predictions are artifacts."""
+
+    GROUND_TRUTH = "ground_truth"
+
+
+class Mask(BaseModel):
+    """Pixel-level ground truth for one image, referenced in place like the image itself.
+
+    A mask belongs to an `Image` rather than a `Sample` because a multi-view sample can be
+    annotated in one view and not another, and because the mask has to align with a
+    specific image's pixel grid to mean anything.
+
+    There is no `sha256` here, unlike `Image`. The column does not exist in schema v1 and
+    the schema is frozen (ADR-0004), so `verify` can check that a mask file is still
+    *there* but not that it is still the same file. That limit is stated rather than
+    papered over; lifting it is a migration, not a patch.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    image_id: int
+    path: str
+    kind: MaskKind = MaskKind.GROUND_TRUTH
+
+
 class Split(BaseModel):
     """A named, seeded partition of a dataset's samples. Immutable once created."""
 

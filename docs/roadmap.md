@@ -1,8 +1,12 @@
 # Roadmap
 
-**visual-anomaly-lab** is a local desktop workbench for training, evaluating and comparing visual anomaly-detection methods. The long-term goal is a *universal* anomaly-detection explorer for arbitrary image datasets; the showcase dataset, images of a manufactured circular part, is the first reference dataset — the initial focus, not the final scope — and only the classical baseline is showcase-dataset-specific (circular parts) (**ADR-0010**). The loop: import a dataset, browse grouped multi-view samples, train and compare methods under one evaluation protocol, and inspect anomaly-map overlays. This roadmap follows the delivery order the brief asks for — *plan first* (M0: system design, ADRs, repo safety), *then one working vertical slice end-to-end with a single method* (M1 walking skeleton → M2 import and browse → M3 the six vertical-slice capabilities running on `classical_circular`), *then the remaining methods behind the same interface* (M4 EfficientAD, M5 PatchCore, M6 custom EfficientAD), *then the README* (M7). Nothing in M4–M6 is allowed to change the application outside the model plugin boundary (**ADR-0007**); if it does, the slice was not actually vertical.
+**visual-anomaly-lab** is a local desktop workbench for training, evaluating and comparing visual anomaly-detection methods. The goal is a *universal* anomaly-detection explorer for arbitrary image datasets, validated against public benchmarks whose published numbers can be checked against our own (**ADR-0015**). The private showcase dataset, images of a manufactured circular part, is one reference dataset among them, and only the classical baseline is showcase-dataset-specific (**ADR-0010**). The loop: import a dataset, browse grouped multi-view samples, train and compare methods under one evaluation protocol, and inspect anomaly-map overlays.
 
-**Sizing is honest, not aspirational.** This is one developer plus Claude Code on an Apple Silicon Mac, working in evenings and weekends. M0 and M1 are day-scale. **M2 and M3 are the two big ones — budget 1–2 weeks each**; they carry the whole product surface (import, browse, jobs, evaluation, three UI screens) and everything after them is comparatively cheap because it reuses that machinery. M4 is medium with real schedule risk: anomalib on MPS is the one place where an upstream incompatibility could cost days. M5 is medium. M6 is large but isolated — it is a from-scratch paper reimplementation that touches nothing but one plugin. M7 is medium. Milestones are strictly sequential; the backlog ([backlog.md](backlog.md)) is re-triaged at the end of each one.
+This roadmap follows the delivery order the brief asks for — *plan first* (M0: system design, ADRs, repo safety), *then one working vertical slice end-to-end with a single method* (M1 walking skeleton → M2 import and browse → M3 the six vertical-slice capabilities), *then the depth and the remaining methods behind the same interface* (M4 the workbench UI, M5 comparison, M6 custom EfficientAD, M7 PatchCore, M8 the classical baseline), *then the README* (M9). Nothing in M5–M8 is allowed to change the application outside the model plugin boundary (**ADR-0007**); if it does, the slice was not actually vertical.
+
+**The order changed after M2.** M3 originally ran the vertical slice on `classical_circular`, which would have made the first end-to-end proof of the architecture a proof that it works for one dataset. The slice now runs on a dataset-agnostic method against public benchmarks, and the classical baseline moved to an optional M8. **ADR-0015** records why and what it costs.
+
+**Sizing is honest, not aspirational.** This is one developer plus Claude Code on an Apple Silicon Mac, working in evenings and weekends. M0 and M1 are day-scale. **M2 and M3 are the two big ones**; they carry the whole product surface (import, browse, jobs, evaluation, three UI screens) and everything after them is comparatively cheap because it reuses that machinery. M3 carries real schedule risk: anomalib on MPS is the one place where an upstream incompatibility could cost days, which is why the smoke test comes before the wrapper. M4 is large but low-risk frontend work over a contract that already exists. M6 is large but isolated — a from-scratch paper reimplementation that touches nothing but one plugin. Milestones are strictly sequential; the backlog ([backlog.md](backlog.md)) is re-triaged at the end of each one.
 
 ---
 
@@ -105,110 +109,157 @@ it for the scan and the pre-warm; M3 adds train and infer by writing one handler
 
 ---
 
-## M3 — Vertical slice complete (classical baseline)
+## M3 — Universal vertical slice on EfficientAD
 
-**Goal.** Deliver all six capabilities the brief requires from the vertical slice — import, display, create experiment, train/run a method, show scores and maps, persist and reopen results — with `classical_circular` as the one method. When this milestone closes, the application is *complete in shape*; everything afterwards is a new plugin or a new view.
+**Goal.** Deliver all six capabilities the brief requires from the vertical slice — import, display, create experiment, train/run a method, show scores and maps, persist and reopen results — on a **dataset-agnostic** method, measured against public benchmarks whose published numbers we can check ourselves against (**ADR-0015**). When this milestone closes, the application is *complete in shape*; everything afterwards is a new plugin or a new view.
+
+The milestone was re-aimed after M2. It previously put `classical_circular` first, which would have made the first end-to-end proof of the architecture a proof that it works for one dataset. The infrastructure in scope was always method-agnostic; only the first method changed.
 
 **Scope**
 
+- **Import layer for public datasets (done).** `folder_classes` — point at the directories holding defect-free and defective images; one image becomes one sample with no channel, which is also the first thing to exercise the single-view path (**ADR-0016**). `csv_table` — every column name configurable, so a benchmark's own split table is read rather than re-drawn. Masks enter the catalog and `verify` walks them. `SplitStrategy.IMPORTED` materializes a published partition. The adapter-options form is generated from each adapter's JSON Schema, as **ADR-0006** always specified and as nothing previously implemented.
+- **Bulk labelling and sample paging (done).** Label a whole filtered set in one action; walk an open sample's neighbours with the arrow keys, auto-advancing after each label.
 - Model plugin interface (`fit` / `predict` / `save` / `load` / config JSON Schema) and a registry keyed by method name (**ADR-0007**).
-- Job machinery: subprocess workers, JSON-lines event protocol on stdout, FIFO queue, Job table, log files under artifacts, WebSocket fan-out to the UI, cancellation (SIGTERM → grace → SIGKILL), and crash recovery on startup (**ADR-0009**).
-- `classical_circular` implementation (**ADR-0010**): circle detection (Hough seed → radial-ray subpixel edges → robust circle fit, with a median-prior fallback), polar transform, FFT angular-correlation orientation alignment against a bootstrapped reference, per-channel median/MAD reference build, and a predict path producing a z-map → smoothing → inverse-polar warp → percentile-based image score.
-- Experiment screens: create (config form driven by the plugin's JSON Schema), progress + live logs, results.
-- Anomaly-map overlay with an opacity slider, over the selected channel.
-- Evaluation layer, independent of any model (**ADR-0011**): channel→sample score aggregation, sample-level and image-level ROC-AUC, an interactive threshold slider driving a confusion matrix, FP/FN lists, ranked most-normal / most-anomalous lists, per-sample inference timing. **Image-level metrics only** — this dataset has no pixel masks.
-- Experiments persist and reopen with their full config, metrics, results, and logs.
+- `train` and `infer` job handlers — one registry entry and one function each. The queue, protocol, cancellation, log tee-ing and WebSocket fan-out were built in M2 and are kind-agnostic; if either needs a change inside them, that is a finding about the boundary.
+- **The diagnostics contract.** `Capabilities.produces_diagnostics`, and `ctx.emit_diagnostic(key, title, kind, payload)` writing float32 `.npy` maps under `artifacts/exp-<id>/diagnostics/` behind a self-describing `diagnostics.json`. Scalar series reuse the **existing** `metric` job event, which is itself a test of **ADR-0009**. M4's visualization is built once against this and never branches on model name.
+- MPS smoke test **first**, as a standalone script, before any wrapper code (**ADR-0008**). Preprocessing config bridge so every method sees identical inputs.
+- `efficientad_anomalib`: `fit` / `predict` / `save` / `load`, a Lightning callback mapping epochs and per-branch losses onto the job protocol, and diagnostics from forward hooks on the teacher, student and autoencoder. The ImageNette penalty set is an explicit, visible, cancellable download step — not a hidden network call in a tool that claims to be local-only.
+- `pixel_reference`: the dataset-agnostic floor baseline. numpy and Pillow only, trains in seconds, exercises the whole results path before torch is involved.
+- Evaluation layer, independent of any model (**ADR-0011**): channel→sample aggregation, sample- and image-level ROC-AUC, average precision, ranked lists, timing — **plus pixel-level ROC-AUC and PRO** over the samples that have masks. Pixel metrics stream through a fixed-bin score histogram rather than accumulating maps, so memory stays constant in the number of test images.
+- Experiment screens: create (config form from the plugin's JSON Schema), progress + live logs, results with a threshold slider, confusion matrix and TP/FP/TN/FN lists, and a sample viewer with an anomaly-map overlay and ground-truth mask contours.
 
 **Exit criteria**
 
-- [ ] All six vertical-slice bullets from the brief work end-to-end with `classical_circular`, driven entirely from the UI, on the real dataset.
-- [ ] Sample-level ROC-AUC is reported on the test split, and the threshold slider recomputes the confusion matrix and FP/FN lists without retraining.
-- [ ] Anomaly maps display as overlays at adjustable opacity and are spatially aligned with the source image (the inverse-polar warp is verified, not assumed).
-- [ ] Force-quitting the app mid-training leaves an orphan-free system, and the interrupted Job is marked `failed` with its log preserved on the next startup — not left `running` forever.
-- [ ] Cancelling a running job from the UI actually stops the worker within the grace period.
+- [x] A whole filtered set of samples is labelled in **one action**, and an open sample pages to its neighbours with the arrow keys, auto-advancing after each label.
+- [x] `git check-ignore` matches `datasets/…` and does **not** match the backend datasets package; `scripts/check-repo-safety.sh` exits 0 with a `datasets/` rule in place.
+- [x] GKN imports through `folder_classes` as 203 normal + 197 defect single-image samples, with `Nick` / `Scratch` recorded as the defect type.
+- [x] One VisA class imports through `csv_table` with its **official** train/test split (900 train normal, 100 test normal, 100 test anomaly) and its 100 ground-truth masks attached, and `verify` reports no drift on either.
+- [x] The import screen's options form is generated from the adapter's schema, and a required option blocks the scan with the field named.
+- [ ] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime) on that split.
+- [ ] Image-level and **pixel-level** ROC-AUC are both reported, and the image-level number is in the neighbourhood of the published VisA figure — a gap is acceptable, an unexplained gap is not.
+- [ ] `pixel_reference` runs on the same split through the identical interface and the same results screen, giving the deep result a floor to beat.
+- [ ] Adding both methods required **no** change to the queue, protocol, cancellation or fan-out — or the change is recorded as a finding.
+- [ ] Anomaly maps overlay in spatial alignment with the source image, with ground-truth contours where masks exist.
+- [ ] Force-quitting the app mid-training leaves an orphan-free system, and the interrupted Job is marked `failed` with its log preserved on the next startup.
 - [ ] Closing and reopening the app restores the experiment list; any past experiment reopens with identical numbers.
 
-**Size:** **1–2 weeks — the other big milestone**, and the highest-value one. The job machinery and the results screen are each multi-day; the classical algorithm needs a parameter sweep on `set1` before its numbers mean anything.
+**Size:** **2–3 weeks — the big milestone.** The EfficientAD integration carries the schedule risk; the import layer and labelling workflow landed first and are usable on their own.
 
 ---
 
-## M4 — EfficientAD via anomalib
+## M4 — The researcher's workbench UI
 
-**Goal.** Prove the plugin interface is real by adding a deep method that shares none of the classical method's implementation — and confirm anomalib actually trains on this Mac's MPS backend.
+**Goal.** Make the method *legible*, not just runnable. Everything here is built on M3's diagnostics contract, so it renders whatever a model declares and never branches on model name.
 
 **Scope**
 
-- Add the anomalib dependency and run an MPS smoke test **first**, before writing wrapper code (**ADR-0008**).
-- `efficientad_anomalib` wrapper: `fit` / `predict` / `save` / `load`, epoch and step progress mapped onto the existing Job event protocol, checkpoints written into the experiment's artifact directory.
-- Preprocessing config bridge: resize/normalization decided by our config, not hidden inside anomalib defaults, so methods are compared on the same inputs.
-- Method selection in the existing experiment-create screen — with **no changes** to the jobs, evaluation, or results layers.
+- **Model architecture view** — interactive PDN teacher / student / autoencoder diagram with real tensor shapes and parameter counts, generated from a dry forward pass rather than hand-drawn, so it cannot go stale.
+- **Teacher inspector** — pick a sample and see the input, the teacher's feature maps as both a PCA-to-RGB composite and a per-channel small-multiples grid, and a feature-magnitude heatmap.
+- **Training charts** — per-branch loss curves (`loss_st` / `loss_ae` / `loss_stae`), learning rate, quantile-normalization parameters, and val AUROC per epoch where a val subset exists. Fed by the `metric` events already streaming over the WebSocket.
+- **Benchmark charts** — score histograms by class with the threshold drawn on them, ROC and PR curves, confusion matrix, per-defect-type breakdown (from the `notes` an adapter recorded), timing summary.
+- **Diagnostic overlays** — student–teacher error and autoencoder–student error side by side against the combined map and the ground-truth mask.
+
+**Charting: hand-rolled SVG primitives** in `frontend/src/components/charts/`, not a charting library. The chart types needed are few and simple, the frontend is deliberately on current React / TypeScript / Tailwind, and adding a library that lags those versions would mean either downgrading the project or isolating a laggard — a cost that outweighs five straightforward chart components.
 
 **Exit criteria**
 
-- [ ] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime), on the same split used in M3.
-- [ ] It produces anomaly maps and image scores through the identical `ModelPlugin` interface, rendered by the same results screen.
-- [ ] Classical vs EfficientAD numbers are visible side by side (even if only as two experiment result pages — the comparison view lands in M5).
-- [ ] Any MPS incompatibility that had to be worked around is recorded in an ADR amendment, not just in a commit message.
+- [ ] A researcher can see what the teacher produces on a chosen sample, without reading any code.
+- [ ] Training is watchable live: per-branch losses update as the run progresses, and the charts survive a page reload mid-run.
+- [ ] The architecture view's shapes and parameter counts are read from the model, and a change to the model's configuration is visible in the diagram without any edit here.
+- [ ] Every visualization is driven by the diagnostics contract, so `efficientad_custom` gets all of them for free in M6.
 
-**Size:** medium — but this is the milestone most likely to slip. If an anomalib op has no MPS kernel, the fallback path (per-op CPU fallback, pinned versions, or CPU-only training with documented runtime) costs days rather than hours. The smoke test exists to find that out on day one instead of day four.
+**Size:** large, but low-risk and pausable — it is frontend work against a contract that already exists.
 
 ---
 
-## M5 — PatchCore + comparison UI
+## M5 — Comparison UI
 
-**Goal.** Add the third method and build the view that makes the whole workbench worth having: several methods, one split, one evaluation protocol, compared directly.
+**Goal.** Several methods, one split, one evaluation protocol, compared directly. This is what makes the workbench worth having.
 
 **Scope**
 
-- `patchcore_anomalib` wrapper, with explicit attention to memory: 1280×1024 inputs and a coreset memory bank need a sized, documented configuration rather than library defaults.
-- Experiment comparison view: multi-experiment metric table (ROC-AUC, confusion at a chosen threshold, timing) and an overlay A/B view showing two methods' anomaly maps on the same sample.
+- Multi-experiment metric table: sample / image / pixel ROC-AUC, PRO, confusion at a chosen threshold, timing.
+- A/B overlay showing two methods' anomaly maps on the same sample, to see where they disagree.
 - TP / FP / TN / FN filtering polish across the results and comparison screens.
 
 **Exit criteria**
 
-- [ ] `classical_circular`, `efficientad_anomalib` and `patchcore_anomalib` are comparable side by side on the same split under the same evaluation protocol, with identical preprocessing.
-- [ ] PatchCore trains and infers without exhausting memory on the full training set at native resolution, and its memory-bank configuration is documented.
-- [ ] Any sample can be opened in A/B overlay to see where two methods disagree.
-- [ ] Every requirement in the brief's UI list is now implemented.
+- [ ] `pixel_reference` and `efficientad_anomalib` are comparable side by side on the same split under the same evaluation protocol, with identical preprocessing.
+- [ ] Any sample can be opened in A/B overlay.
+- [ ] Every requirement in the brief's UI list is implemented.
 
-**Size:** medium. The wrapper reuses M4's integration path; the comparison view is a focused piece of frontend work.
+**Size:** medium — a focused piece of frontend work over an evaluation layer that already produces the numbers.
 
 ---
 
 ## M6 — Custom EfficientAD
 
-**Goal.** Reimplement EfficientAD from the paper (arXiv:2303.14535) in PyTorch, behind the same interface, so the anomalib version and the from-scratch version can be compared directly — the research payoff of having built the workbench.
+**Goal.** Reimplement EfficientAD from the paper (arXiv:2303.14535) in PyTorch, behind the same interface, with the anomalib version's number as its yardstick — the research payoff of having built the workbench.
 
 **Scope**
 
 - PDN student/teacher architecture and distillation loss; the autoencoder branch; quantile-based score normalization; an MPS training loop.
-- Registered as `efficientad_custom` behind the unchanged plugin interface (**ADR-0007**).
-- Direct comparison against `efficientad_anomalib` on the same split in the M5 comparison view.
+- Registered as `efficientad_custom` behind the unchanged plugin interface (**ADR-0007**), emitting the same diagnostics as the wrapper so M4's views work on it unchanged.
 
 **Exit criteria**
 
 - [ ] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface.
 - [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained (a gap is an acceptable outcome; an unexplained gap is not).
-- [ ] No application code outside the plugin needed modification to add it — if it did, that is a finding about the interface and gets an ADR.
+- [ ] Every M4 visualization works on it with no new code — if any needed a special case, that is a finding about the diagnostics contract and gets an ADR.
 
-**Size:** large, but **isolated and low-risk to the rest of the system**. It is a self-contained research task that can be paused and resumed without blocking anything. Split it into subtasks (backbone → distillation → autoencoder branch → normalization → training loop) when it is actually scheduled.
+**Size:** large, but **isolated and low-risk to the rest of the system**. Split it into subtasks (backbone → distillation → autoencoder branch → normalization → training loop) when it is actually scheduled.
 
 ---
 
-## M7 — Polish + README
+## M7 — PatchCore
+
+**Goal.** A third method, and the first one whose resource profile is genuinely awkward.
+
+**Scope**
+
+- `patchcore_anomalib` wrapper, with explicit attention to memory: a coreset memory bank over a full training set at native resolution needs a sized, documented configuration rather than library defaults.
+
+**Exit criteria**
+
+- [ ] PatchCore trains and infers without exhausting memory, and its memory-bank configuration is documented.
+- [ ] It appears in the comparison view alongside the others with no changes outside the plugin.
+
+**Size:** small-to-medium — the wrapper reuses M3's integration path.
+
+---
+
+## M8 — `classical_circular` (optional)
+
+**Goal.** The showcase-specific baseline, if it is still wanted once the universal tool exists.
+
+**Scope**
+
+- Circle detection (Hough seed → radial-ray subpixel edges → robust circle fit, with a median-prior fallback), polar transform, FFT angular-correlation orientation alignment against a bootstrapped reference, per-channel median/MAD reference build, and a predict path producing a z-map → smoothing → inverse-polar warp → percentile score (**ADR-0010**).
+- Built as a circle-fit front-end onto `pixel_reference`, which is already the geometry-free core of the same algorithm.
+
+**Exit criteria**
+
+- [ ] It runs on the showcase dataset through the identical interface, and its inverse-polar warp is verified rather than assumed.
+- [ ] It is the *only* component that assumes anything about the dataset's geometry.
+
+**Size:** medium. Deferring an optional milestone in a spare-time project is close to cancelling it, and **ADR-0015** says so outright.
+
+---
+
+## M9 — Polish + README
 
 **Goal.** Make the project reproducible by someone who is not the author (including the author six months later), and bring the documentation back in line with what was actually built.
 
 **Scope**
 
-- Full README: setup from a fresh machine, dataset conventions and directory layout, architecture overview, and a **"how to add a new anomaly-detection method"** guide walking through the plugin interface with a working example.
+- Full README: setup from a fresh machine, how to obtain and import each reference dataset, architecture overview, and a **"how to add a new anomaly-detection method"** guide walking through the plugin interface with a working example.
 - UX polish pass: loading and empty states, error surfaces, keyboard navigation, consistent layout across screens — it should read as an engineering tool, not a debug panel.
 - Documentation refresh: `system-design.md` and the ADRs updated where implementation diverged from the decision (with amendments, not silent edits).
 - Backlog re-triage: drop what no longer matters, promote what the work revealed.
 
 **Exit criteria**
 
-- [ ] Following the README alone on a fresh machine (plus a private dataset) reaches full M3 functionality — import, browse, train `classical_circular`, view results — with no undocumented steps.
+- [ ] Following the README alone on a fresh machine reaches full M3 functionality on a **public** dataset — download, import, train, view results — with no undocumented steps and no private data required.
 - [ ] The "add a new method" guide has been followed end-to-end at least once (M6 counts if it was written first and used as the recipe).
 - [ ] Documentation matches reality: no ADR describes a decision that was silently reversed.
 - [ ] Backlog re-triaged and the "Later / ideas" list refreshed.

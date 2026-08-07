@@ -24,6 +24,8 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0012](0012-frontend-stack-and-generated-api-client.md) | Frontend stack and a generated API client | Accepted |
 | [0013](0013-import-rescan-and-commit-semantics.md) | Import re-scan and commit semantics | Accepted |
 | [0014](0014-shell-capabilities-are-injected-not-imported.md) | Shell capabilities are injected, not imported | Accepted |
+| [0015](0015-public-reference-datasets-and-a-dataset-agnostic-first-method.md) | Public reference datasets, and a dataset-agnostic method first | Accepted |
+| [0016](0016-adapters-for-public-datasets-masks-and-imported-splits.md) | Adapters for public datasets, masks in the catalog, imported splits | Accepted |
 
 ## Conventions
 

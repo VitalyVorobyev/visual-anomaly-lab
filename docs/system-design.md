@@ -35,8 +35,8 @@ The brief's scope constraints are binding. The system deliberately does **not** 
 - cloud deployment or remote compute — everything runs on the local machine,
 - distributed or multi-node training,
 - real-time camera acquisition,
-- complex annotation tooling (no polygon/brush mask editor; the `Mask` schema exists but is unused until
-  masks are supplied externally).
+- complex annotation tooling — no polygon or brush mask editor. Masks are *imported* alongside the images
+  that have them (§5) and never drawn here.
 
 The guiding principle is **a small, understandable architecture over premature scalability**. There is one
 user, one machine, one job at a time.
@@ -319,13 +319,28 @@ Dimensions, bit depth and `sha256` are captured at import: the hash makes import
 identities, which is what allows caching by `image_id` (§9) and lets `verify` detect drift or deletion.
 
 **`Mask`** — `id`, `image_id`, `path`, `kind`.
-Pixel-level ground truth. The table exists from the first migration but is **unused today** — the reference
-dataset has no masks, so only image-level metrics are computable (§8). Defining it now keeps the schema stable
-when masks appear and prevents pixel-level metrics from being designed in as an afterthought.
+Pixel-level ground truth, referenced in place like the image it annotates. The table existed unused from the
+first migration until public datasets that ship masks were adopted (ADR-0015); defining it early is what let
+them be imported with no schema change (ADR-0016). Identity is `(image_id, kind)`, so a re-import repoints a
+mask rather than accumulating a second one; a mask the manifest no longer mentions is left alone, for the same
+reason a missing image is reported rather than deleted.
+
+There is deliberately **no `sha256` column**, and the consequence is stated rather than papered over: `verify`
+can check that a mask file is still *there* and not that it is still the same file. Its report counts masks
+apart from images so a clean result never implies a check that was not made. Lifting this is a migration, not
+a patch (ADR-0004).
 
 **`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `params`, `created_at`.
 A named partition of a dataset's samples. `strategy`, `seed` and `params` record how it was produced so it
 can be regenerated exactly — a seed alone reproduces nothing without the fractions it was drawn under. Splits are immutable once created; changing a split means creating a new one.
+
+Two strategies exist. **`normal_only_train`** draws one: seeded, stratified by capture group, normals only in
+training. **`imported`** adopts the partition the source dataset published, read from the manifest the dataset
+was committed from and recorded in `params.manifest_id` — no seed, no fractions, no stratification, because
+the point is to reproduce someone else's split exactly so that a number computed here is comparable to the one
+they published (ADR-0016). Samples the manifest does not place are left *out* of the split rather than swept
+into `test`: a benchmark's protocol decides what belongs in its test set, and adding samples it never scored
+would change the denominator of every metric.
 
 **`SplitAssignment`** — `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`.
 Primary key `(split_id, sample_id)`. **Sample-level by construction** — there is no image-level assignment
@@ -606,10 +621,39 @@ re-importing the same tree can be diffed against it.
 
 ### Proving the abstraction
 
-A second adapter, `flat_folder` (one image = one sample, no channels, label from a top-level `good`/`bad`
-folder or none at all), will be implemented to demonstrate that the domain model handles single-view datasets
-with `channel_id = NULL` and that nothing downstream assumes grouping. Standard public benchmarks fit this
-adapter, which makes it useful as well as diagnostic.
+Two further adapters ship, and between them they cover the public benchmarks (ADR-0016). Both produce **one
+image per sample with `channel_id = NULL`**, which is what finally demonstrated that the domain model handles
+single-view datasets and that nothing downstream assumes grouping — a claim the design made from the start and
+nothing exercised until then.
+
+- **`folder_classes`** — the simple contract: name the directories holding defect-free images
+  (`normal_dirs`) and defective ones (`defect_dirs`), as globs relative to the root, each covering the subtree
+  beneath it. Optional `mask_dir` / `mask_pattern` templates locate ground truth, including in a sibling
+  directory. The matched directory's name is recorded on the sample, so a per-defect-type breakdown needs no
+  schema that enumerates defect types. Nothing is guessed: a file in a directory no option names imports
+  unlabelled **and is reported**.
+- **`csv_table`** — reads a table the dataset ships. Every column name is an option, as are the values meaning
+  normal, defective, and each subset. `filter_column` / `filter_value` turn one table covering a benchmark
+  family into one dataset per class, which is the one-class protocol those benchmarks are scored under. Set
+  `channel_column` and rows sharing a sample identity become one multi-channel sample — the same adapter,
+  no special case, because channel count is data.
+
+`csv_table` also carries the source's **published partition** through into the manifest, which is what
+`SplitStrategy.IMPORTED` materializes (§8). Note that an official one-class protocol generally has train and
+test and **no `val` subset at all**, so an empty validation set is ordinary rather than a broken split.
+
+### The options form
+
+An adapter's options model is a pydantic model, and its **JSON Schema drives the import form**: control type
+follows the schema node's type, descriptions become help text, and defaults become placeholders rather than
+pre-filled values — so an untouched control sends nothing and the backend's default stays the only definition
+of it. A field whose default is *empty* is shown; a field that already has a working answer is folded behind a
+disclosure, which is what keeps "where are the good images" from being the tenth question on the screen.
+
+This was specified from the beginning and **built late**: until then the import screen hardcoded a single
+option and relied on Python defaults for the rest, which was survivable only while one adapter existed whose
+defaults fitted the one dataset on hand. `csv_table` has a required option, and nothing in the UI could supply
+it. ADR-0016 records the gap.
 
 ---
 
@@ -653,8 +697,15 @@ them for any threshold, computed in milliseconds from a few hundred stored float
 threshold would be storing a derived function of data already in the database — and would make the UI's
 threshold slider feel like a database write instead of an instant filter.
 
-**Pixel-level metrics are not implemented**, because no masks exist for the current data. The `Mask` table and
-the float32 `.npy` maps mean they can be added without schema change or re-inference (§4, §5).
+**Pixel-level metrics** (pixel ROC-AUC and PRO) are computed over the samples that have masks, and simply do
+not appear for the datasets that have none — which is most of them, including the showcase tree. They needed
+no schema change and no re-inference, exactly as the `Mask` table and the float32 `.npy` maps were meant to
+allow (§4, §5).
+
+One implementation note that is a design constraint rather than a detail: a hundred test images at 1.5 MPix in
+float32 is ~600 MB if the maps are accumulated to compute a curve. The pixel ROC is therefore built from a
+fixed-bin score histogram per class, streamed image by image, so memory stays constant in the number of test
+images rather than growing with it.
 
 ### Rankings
 

@@ -9,10 +9,14 @@ comparing them under one evaluation protocol.
 ## Steering: the goal is universal
 
 - The target is a **universal anomaly-detection explorer for arbitrary image datasets**. The private
-  showcase dataset under `privatedata/` is the first reference dataset, not the scope.
+  showcase dataset under `privatedata/` is one reference dataset, not the scope.
 - **Only** the `classical_circular` plugin may assume anything about the showcase dataset's geometry. Domain
   model, import layer, DL methods (`efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom`),
   evaluation layer, and UI must stay dataset-agnostic.
+- **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
+  secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
+  current two. `check-repo-safety.sh` fails if anything under `datasets/` is staged. Note the leading
+  slash: an unanchored pattern would also match `backend/src/anomaly_lab/datasets/`, the adapter package.
 - **Channel count is data, never schema.** No constant, enum, column, or UI layout may encode how many
   acquisition channels a dataset has. A 2-channel sample must render and score with no special case.
 
@@ -45,17 +49,22 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **14 accepted ADRs (0001–0014)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **16 accepted ADRs (0001–0016)**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 
 ## Current status and working discipline
 
-- **M0, M1 and M2 are done.** The app imports a directory tree into a catalog of grouped samples, browses
-  them, views one sample across its channels, and creates seeded sample-level splits. The ADR-0009 job
-  machinery was built in M2 (it is needed by the import scan and the thumbnail pre-warm), so M3 adds
-  `train` and `infer` by writing one handler each. **M3 (vertical slice on the classical baseline) is the
-  current milestone.**
+- **M0, M1 and M2 are done, and M3's import layer is done.** The app imports a directory tree — or a public
+  benchmark, through `folder_classes` or `csv_table` — into a catalog of grouped samples with masks and an
+  optional published split; browses and labels them in bulk; views one sample across its channels; and
+  creates splits either seeded or adopted from the source. The ADR-0009 job machinery was built in M2, so
+  M3 adds `train` and `infer` by writing one handler each.
+- **M3 is the current milestone, and it was re-aimed after M2 (ADR-0015):** the vertical slice now runs on
+  **EfficientAD via anomalib** plus a dataset-agnostic `pixel_reference` floor baseline, not on
+  `classical_circular`, which moved to an optional M8. What remains in M3 is the model plugin layer, the
+  two job handlers, the diagnostics contract, the methods themselves, pixel-level evaluation, and the
+  results UI. Check `docs/roadmap.md` — it is current.
 - **Schema v1 is frozen.** It was amended in place through M2, as the rule below allowed; the first real
   import has now landed, so every further change is a new numbered migration (ADR-0004).
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
@@ -69,6 +78,10 @@ comparing them under one evaluation protocol.
 - **`tests/test_showcase_import.py` runs against the private tree only when
   `ANOMALY_LAB_SHOWCASE_ROOT` is set**, and is skipped everywhere else. It contains no path and no
   directory name; keep it that way.
+- **An adapter's JSON Schema drives its import form** — no adapter needs frontend work. Adding an option
+  means adding a pydantic field with a `description`; the form renders it, and a field whose default is
+  empty is shown while one with a working default is folded away. If a new option needs a change in
+  `SchemaForm.tsx`, that is a finding about the schema-to-control mapping, not a place to special-case.
 - **Keep the vertical slice honest (ADR-0007).** Adding or changing a method means adding a module and a
   registry entry. If a change for a new method leaks into the jobs, evaluation, results, or UI layers, the
   plugin boundary is wrong — fix the boundary, not the caller.

@@ -17,6 +17,8 @@ import { queryKeys } from "../api/queryKeys";
 import { Badge, Button, Empty, ErrorBox, Field, Panel, inputClasses } from "../components/ui";
 import { useDataset, useSplits } from "../hooks/useCatalog";
 
+type Strategy = "normal_only_train" | "imported";
+
 export function SplitsRoute() {
   const params = useParams();
   const datasetId = Number(params["datasetId"]);
@@ -27,9 +29,12 @@ export function SplitsRoute() {
 
   const [name, setName] = useState("default");
   const [seed, setSeed] = useState(0);
+  const [strategy, setStrategy] = useState<Strategy>("normal_only_train");
   const [trainFraction, setTrainFraction] = useState(0.6);
   const [valFraction, setValFraction] = useState(0.2);
   const [valDefectFraction, setValDefectFraction] = useState(0.3);
+
+  const drawn = strategy === "normal_only_train";
 
   const create = useMutation({
     mutationFn: async () =>
@@ -40,12 +45,13 @@ export function SplitsRoute() {
             name,
             seed,
             params: {
-              strategy: "normal_only_train",
+              strategy,
               train_normal_fraction: trainFraction,
               val_normal_fraction: valFraction,
               val_defect_fraction: valDefectFraction,
-              // Assigned rather than left out: unlabelled samples are excluded from every
-              // metric later, but they have to be scored to appear in the ranked lists.
+              // Assigned rather than left out: unlabelled samples are excluded from
+              // every metric later, but they have to be scored to appear in the
+              // ranked lists.
               unlabeled_subset: "test",
             },
           },
@@ -87,36 +93,64 @@ export function SplitsRoute() {
                 onChange={(event) => setName(event.target.value)}
               />
             </Field>
-            <Field label="Seed">
-              <input
-                className={`${inputClasses} font-mono`}
-                type="number"
-                value={seed}
-                onChange={(event) => setSeed(Number(event.target.value))}
-              />
+            <Field label="Strategy">
+              <select
+                className={inputClasses}
+                aria-label="Strategy"
+                value={strategy}
+                onChange={(event) => setStrategy(event.target.value as Strategy)}
+              >
+                <option value="normal_only_train">normal_only_train — draw one</option>
+                <option value="imported">imported — adopt the published one</option>
+              </select>
             </Field>
-            <Fraction
-              label="Normals used for training"
-              value={trainFraction}
-              onChange={setTrainFraction}
-            />
-            <Fraction
-              label="Normals held out for validation"
-              value={valFraction}
-              onChange={setValFraction}
-            />
-            <Fraction
-              label="Defects in validation"
-              value={valDefectFraction}
-              onChange={setValDefectFraction}
-            />
+            {drawn && (
+              <>
+                <Field label="Seed">
+                  <input
+                    className={`${inputClasses} font-mono`}
+                    type="number"
+                    value={seed}
+                    onChange={(event) => setSeed(Number(event.target.value))}
+                  />
+                </Field>
+                <Fraction
+                  label="Normals used for training"
+                  value={trainFraction}
+                  onChange={setTrainFraction}
+                />
+                <Fraction
+                  label="Normals held out for validation"
+                  value={valFraction}
+                  onChange={setValFraction}
+                />
+                <Fraction
+                  label="Defects in validation"
+                  value={valDefectFraction}
+                  onChange={setValDefectFraction}
+                />
+              </>
+            )}
           </div>
 
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            Training is normals only, assignment is per sample so no two views of one part
-            can straddle the boundary, and the draw is stratified by capture group. The
-            seed and these fractions are stored with the split, because a seed alone
-            reproduces nothing.
+            {drawn ? (
+              <>
+                Training is normals only, assignment is per sample so no two views of one
+                part can straddle the boundary, and the draw is stratified by capture
+                group. The seed and these fractions are stored with the split, because a
+                seed alone reproduces nothing.
+              </>
+            ) : (
+              <>
+                Takes the partition the source dataset published, read from the manifest
+                this dataset was imported from. There is no seed and there are no
+                fractions — the point is to reproduce someone else's split exactly, so that
+                a number computed here is comparable to the one they published. Official
+                one-class protocols usually have no validation subset at all, and an empty
+                one is expected rather than a fault.
+              </>
+            )}
           </p>
 
           {create.error && <ErrorBox>{create.error.message}</ErrorBox>}
@@ -168,7 +202,11 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
       title={split.name}
       actions={
         <span className="font-mono text-xs text-slate-500 dark:text-slate-400">
-          seed {split.seed} · {split.strategy}
+          {/* An imported split has no seed that means anything — what reproduces it is
+              the manifest that asserted the partition. */}
+          {split.strategy === "imported"
+            ? `${split.strategy} · ${split.params.manifest_id ?? "no manifest"}`
+            : `seed ${split.seed} · ${split.strategy}`}
         </span>
       }
     >

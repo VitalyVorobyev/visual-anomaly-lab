@@ -24,6 +24,9 @@ from tests.conftest import write_image
 
 TERMINAL_WAIT_SECONDS = 60.0
 
+# What the fixture tree below calls its three illuminations.
+FIXTURE_CHANNELS = ["bright", "dark", "dome"]
+
 
 @pytest.fixture
 def tree(tmp_path: Path) -> Path:
@@ -56,9 +59,16 @@ def _await_job(client: TestClient, job_id: int) -> dict[str, Any]:
 
 
 def _scan(client: TestClient, root: Path, **body: Any) -> dict[str, Any]:
+    """Scan the fixture tree, supplying the vocabulary its channel directories use.
+
+    The adapter ships none: naming a dataset's channels is the operator's job, not an
+    assumption baked into the application (ADR-0005). A caller that scans a channelled
+    tree therefore has to say so, and that includes this helper.
+    """
+    options = {"channels": FIXTURE_CHANNELS, **body.pop("options", {})}
     response = client.post(
         "/api/import/scan",
-        json={"root_path": str(root), "dataset_name": "fixture", **body},
+        json={"root_path": str(root), "dataset_name": "fixture", "options": options, **body},
     )
     assert response.status_code == 200, response.text
     return _await_job(client, response.json()["id"])

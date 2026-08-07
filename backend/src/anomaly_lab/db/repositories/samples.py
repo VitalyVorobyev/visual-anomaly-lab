@@ -127,21 +127,27 @@ def upsert_sample(
     group_key: str,
     external_id: str,
     label: Label,
+    notes: str | None = None,
 ) -> tuple[Sample, bool]:
     """Insert or update a sample by its natural key. Returns `(sample, created)`.
 
     A label the operator set by hand is never overwritten by an imported guess: if
     `label_source` is already `manual`, the incoming label is ignored. This is what makes
     re-importing a corrected dataset safe (ADR-0013).
+
+    `notes` follows the same instinct one step further: an import writes them when it has
+    something to say and **never clears them**, because `None` from an adapter means "this
+    scan read no defect type", not "there is no defect type". Deleting on absence would
+    make an import with the wrong options destructive.
     """
     existing = find_sample(conn, dataset_id, group_key=group_key, external_id=external_id)
     if existing is None:
         cursor = conn.execute(
             """
-            INSERT INTO sample (dataset_id, group_key, external_id, label, label_source)
-                 VALUES (?, ?, ?, ?, ?)
+            INSERT INTO sample (dataset_id, group_key, external_id, label, label_source, notes)
+                 VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (dataset_id, group_key, external_id, label.value, LabelSource.IMPORT.value),
+            (dataset_id, group_key, external_id, label.value, LabelSource.IMPORT.value, notes),
         )
         created = get_sample(conn, int(cursor.lastrowid or 0))
         if created is None:  # pragma: no cover - the insert above just succeeded
@@ -149,11 +155,15 @@ def upsert_sample(
             raise RuntimeError(msg)
         return created, True
 
+    changed = False
     if existing.label_source is not LabelSource.MANUAL and existing.label is not label:
-        conn.execute(
-            "UPDATE sample SET label = ? WHERE id = ?",
-            (label.value, existing.id),
-        )
+        conn.execute("UPDATE sample SET label = ? WHERE id = ?", (label.value, existing.id))
+        changed = True
+    if notes is not None and notes != existing.notes:
+        conn.execute("UPDATE sample SET notes = ? WHERE id = ?", (notes, existing.id))
+        changed = True
+
+    if changed:
         refreshed = get_sample(conn, existing.id)
         if refreshed is not None:
             return refreshed, False

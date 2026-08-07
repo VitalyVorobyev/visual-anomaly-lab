@@ -16,6 +16,13 @@ Unlabelled samples are assigned to a subset (`test` by default) rather than left
 They are excluded from every metric, but they must be *scored* for the ranked
 most-anomalous list to include them, which is what turns the model into a labelling aid
 for unlabelled data (§8).
+
+The `imported` strategy is the deliberate exception to all of the above. When a benchmark
+publishes both its numbers and the partition behind them, drawing our own would produce a
+figure that resembles theirs without being comparable to it, so `plan_imported_split`
+reproduces the source's partition verbatim — including a partition with no `val` subset at
+all, which the official one-class protocols generally are. Everything downstream therefore
+has to treat an empty `val` as ordinary rather than as a broken split.
 """
 
 from __future__ import annotations
@@ -27,6 +34,7 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
 
+from anomaly_lab.datasets.manifest import Manifest
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import Label, Sample, Subset
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -34,6 +42,8 @@ from anomaly_lab.schemas import API_MODEL_CONFIG
 
 class SplitStrategy(StrEnum):
     NORMAL_ONLY_TRAIN = "normal_only_train"
+    IMPORTED = "imported"
+    """Take the partition the source dataset published, rather than drawing one."""
 
 
 class SplitPlanError(Exception):
@@ -72,8 +82,22 @@ class SplitParams(BaseModel):
         ),
     )
 
+    manifest_id: str | None = Field(
+        default=None,
+        description=(
+            "Which import proposal an `imported` split was materialized from. Recorded so "
+            "the partition stays traceable to the file that asserted it; ignored by every "
+            "other strategy."
+        ),
+    )
+
     @model_validator(mode="after")
     def _normals_must_add_up(self) -> SplitParams:
+        # The fractions are meaningless for `imported`, where the source dataset already
+        # decided. They keep their defaults rather than being rejected, so that the stored
+        # params of an imported split do not read as if ratios were applied.
+        if self.strategy is SplitStrategy.IMPORTED:
+            return self
         if self.train_normal_fraction + self.val_normal_fraction > 1.0:
             msg = "train_normal_fraction + val_normal_fraction cannot exceed 1.0"
             raise ValueError(msg)
@@ -137,6 +161,55 @@ def plan_split(
             "the split would have an empty training set: this dataset has no normal "
             "samples, or the training fraction rounds to zero in every capture group"
         )
+        raise SplitPlanError(msg)
+
+    return assignments
+
+
+def plan_imported_split(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    manifest: Manifest,
+) -> dict[int, Subset]:
+    """Materialize the partition a source dataset published, as recorded in its manifest.
+
+    No seed, no fractions, no stratification: the point is to reproduce someone else's
+    partition exactly, so that a number computed here is comparable to the number they
+    published. Drawing our own would produce a figure that looks like theirs and is not.
+
+    Samples the manifest does not place are **left out of the split** rather than swept
+    into `test`. A benchmark's protocol says what belongs in its test set; adding samples
+    it never scored would change the denominator of every metric.
+    """
+    if not manifest.has_imported_split():
+        msg = (
+            "this dataset was imported without split information, so there is no "
+            "published partition to materialize. Use a seeded strategy, or re-import "
+            "with an adapter that reads the source's split column."
+        )
+        raise SplitPlanError(msg)
+
+    published = {
+        (sample.group_key, sample.external_id): sample.subset
+        for sample in manifest.samples
+        if sample.subset is not None
+    }
+
+    assignments: dict[int, Subset] = {}
+    for sample in samples_repo.list_samples(conn, dataset_id, limit=_ALL, offset=0):
+        subset = published.get((sample.group_key, sample.external_id))
+        if subset is not None:
+            assignments[sample.id] = subset
+
+    if not assignments:
+        msg = (
+            f"the manifest places {len(published)} samples, none of which are in dataset "
+            f"{dataset_id}. It is probably a manifest for a different dataset."
+        )
+        raise SplitPlanError(msg)
+
+    if not any(subset is Subset.TRAIN for subset in assignments.values()):
+        msg = "the published partition has no training samples"
         raise SplitPlanError(msg)
 
     return assignments
