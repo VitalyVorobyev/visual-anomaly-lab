@@ -56,18 +56,26 @@ _TOKEN_SEPARATORS = re.compile(r"[\s_\-.]+")
 class ChannelFoldersOptions(BaseModel):
     """Everything the adapter knows about a layout, as data.
 
-    Defaults describe a common multi-illumination acquisition setup; none of them are
-    assumptions the rest of the application makes. A dataset with different vocabulary
-    is imported by editing these, not by changing code.
+    `channels` is **empty by default, deliberately**. Shipping a vocabulary would make one
+    acquisition setup's illumination names part of the application, and the rule is that
+    channel count and channel naming are data (ADR-0005). An operator says what their
+    channels are called; the adapter does the matching.
+
+    The label vocabularies do keep defaults, and that is a different case: `good` and
+    `defect` are not one dataset's private words, they are what the English-language
+    convention for a labelled folder looks like across every public dataset. They are
+    still options, so a tree using other words is imported by editing them.
     """
 
     model_config = ConfigDict(frozen=True)
 
     channels: list[str] = Field(
-        default=["bright", "dark", "dome"],
+        default_factory=list,
         description=(
             "Canonical channel names. A directory or token that begins with one of these, "
-            "once lower-cased and stripped of punctuation, is read as that channel."
+            "once lower-cased and stripped of punctuation, is read as that channel. Leave "
+            "empty for a single-view dataset: with no vocabulary nothing is read as a "
+            "channel, so every image becomes its own sample."
         ),
     )
     channel_aliases: dict[str, str] = Field(
@@ -410,6 +418,23 @@ class _ScanBuilder:
     def _warnings(self, samples: list[ManifestSample]) -> list[ManifestWarning]:
         warnings: list[ManifestWarning] = []
         channels = self._ordered_channels()
+
+        # No vocabulary is a legitimate single-view import, and also the shape of the
+        # mistake where someone points this adapter at a multi-view tree and configures
+        # nothing. The review screen cannot tell the two apart, so it says what happened
+        # and lets the operator decide (ADR-0006).
+        if not self._options.channels and samples:
+            warnings.append(
+                ManifestWarning(
+                    code=WarningCode.UNKNOWN_CHANNEL_NAME,
+                    message=(
+                        f"No channel names were configured, so all {len(samples)} samples "
+                        "import as single images with no channel. If this tree has "
+                        "several views per part, name them in `channels` and scan again; "
+                        "if it does not, `folder_classes` is the simpler adapter for it."
+                    ),
+                )
+            )
 
         if samples and channels:
             counts = Counter(len(sample.images) for sample in samples)

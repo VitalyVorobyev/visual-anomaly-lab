@@ -66,6 +66,7 @@ def run_scan_job(context: JobContext) -> dict[str, Any]:
         "manifest_id": manifest_id,
         "samples": manifest.stats.samples,
         "images": manifest.stats.images,
+        "masks": manifest.stats.masks,
         "channels": len(manifest.channels),
         "warnings": len(manifest.warnings),
         "files_excluded": manifest.stats.files_excluded,

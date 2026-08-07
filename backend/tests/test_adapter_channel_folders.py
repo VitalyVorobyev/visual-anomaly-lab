@@ -27,10 +27,16 @@ from anomaly_lab.datasets.manifest import Manifest, WarningCode
 from anomaly_lab.domain.entities import Label
 from tests.conftest import write_image
 
-DEFAULTS = ChannelFoldersOptions()
+# The adapter ships no channel vocabulary: what a dataset's channels are called is data,
+# not something the application gets to assume (ADR-0005). These tests exercise the
+# matcher, so they bring the vocabulary the fixture trees are built with.
+FIXTURE_CHANNELS = ["bright", "dark", "dome"]
+
+DEFAULTS = ChannelFoldersOptions(channels=FIXTURE_CHANNELS)
 
 
 def _scan(root: Path, **overrides: object) -> Manifest:
+    overrides.setdefault("channels", FIXTURE_CHANNELS)
     options = ChannelFoldersOptions(**overrides)  # type: ignore[arg-type]
     return ChannelFoldersAdapter.scan(root, options, dataset_name="fixture")
 

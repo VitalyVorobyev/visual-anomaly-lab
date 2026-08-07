@@ -29,6 +29,12 @@ from anomaly_lab.domain.entities import Label
 SHOWCASE_ROOT_ENV = "ANOMALY_LAB_SHOWCASE_ROOT"
 SHOWCASE_EXCLUDE_ENV = "ANOMALY_LAB_SHOWCASE_EXCLUDE"
 
+# The tree's three illumination modes. These live here rather than as an adapter default:
+# a channel vocabulary is one acquisition setup's property, and baking one into the
+# application would make "channel naming is data" a slogan instead of a rule. A test that
+# scans a specific tree is exactly where knowledge of that tree belongs.
+SHOWCASE_CHANNELS = ["bright", "dark", "dome"]
+
 # The labelled corpus, which is what experiments are run on.
 EXPECTED_NORMAL = 98
 EXPECTED_DEFECT = 91
@@ -61,7 +67,11 @@ def _root() -> Path:
 @pytest.fixture(scope="module")
 def manifest() -> Manifest:
     """One scan for the whole module — it reads several gigabytes."""
-    return ChannelFoldersAdapter.scan(_root(), ChannelFoldersOptions(), dataset_name="showcase")
+    return ChannelFoldersAdapter.scan(
+        _root(),
+        ChannelFoldersOptions(channels=SHOWCASE_CHANNELS),
+        dataset_name="showcase",
+    )
 
 
 def test_the_tree_groups_into_the_expected_samples(manifest: Manifest) -> None:
@@ -129,7 +139,10 @@ def test_the_labelled_corpus_is_selected_by_an_exclude_option_alone() -> None:
 
     narrowed = ChannelFoldersAdapter.scan(
         _root(),
-        ChannelFoldersOptions(exclude=[part.strip() for part in configured.split(",")]),
+        ChannelFoldersOptions(
+            channels=SHOWCASE_CHANNELS,
+            exclude=[part.strip() for part in configured.split(",")],
+        ),
         dataset_name="showcase",
     )
     counts = narrowed.label_counts()

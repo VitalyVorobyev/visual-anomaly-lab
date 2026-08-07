@@ -73,7 +73,19 @@ export interface paths {
         delete?: never;
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Label many samples at once
+         * @description Label a selection, or everything matching a filter, in one request.
+         *
+         *     Labelling one sample at a time is fine for correcting a handful and hopeless for a
+         *     directory that is entirely one class — which is the common case on import, and the
+         *     reason this exists. Like the single-sample route it marks every row it touches
+         *     `manual`, so a re-import of the same tree cannot undo the work (ADR-0013).
+         *
+         *     The filter form is resolved server-side from the grid's own `_where` clause, so the
+         *     set that gets labelled is provably the set whose count the UI displayed.
+         */
+        patch: operations["update_labels_api_datasets__dataset_id__samples_patch"];
         trace?: never;
     };
     "/api/datasets/{dataset_id}/samples/{sample_id}": {
@@ -101,6 +113,220 @@ export interface paths {
          *     of the same tree (ADR-0013).
          */
         patch: operations["update_label_api_datasets__dataset_id__samples__sample_id__patch"];
+        trace?: never;
+    };
+    "/api/experiments/model-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Every registered method, with its configuration schema
+         * @description The method picker's whole data source.
+         *
+         *     Each entry carries the JSON Schema of the method's own config model, so the form is
+         *     generated rather than written. A method whose optional dependencies are missing is
+         *     listed with `availability.available = false` and the reason, rather than hidden —
+         *     "why can't I pick EfficientAD" should be answerable from the screen.
+         */
+        get: operations["list_model_types_api_experiments_model_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Experiments, newest first */
+        get: operations["list_experiments_api_experiments_get"];
+        put?: never;
+        /**
+         * Create an experiment with its configuration frozen
+         * @description Validate a configuration against its method's schema and record it.
+         *
+         *     Validation happens here rather than at job time so a typo is a 422 on the create
+         *     screen instead of a failed job discovered ten minutes later.
+         */
+        post: operations["create_experiment_api_experiments_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One experiment, with its metrics and job history */
+        get: operations["get_experiment_api_experiments__experiment_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an experiment and its artifacts
+         * @description Remove the rows, then the directory — in that order, and never the other way.
+         *
+         *     The filesystem cannot join a database transaction, so the deletion that can be rolled
+         *     back goes first. A leftover directory is inert; a row pointing at deleted artifacts
+         *     is a broken screen.
+         */
+        delete: operations["delete_experiment_api_experiments__experiment_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/train": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a training job */
+        post: operations["start_train_api_experiments__experiment_id__train_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/infer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue an inference and evaluation job */
+        post: operations["start_infer_api_experiments__experiment_id__infer_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/reevaluate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Recompute metrics from stored scores
+         * @description Re-read the results without re-running inference.
+         *
+         *     Cheap because nothing about evaluation depends on a model (ADR-0011), and useful
+         *     because it is how a changed aggregation mode is applied to a finished experiment.
+         */
+        post: operations["reevaluate_api_experiments__experiment_id__reevaluate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/results": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Ranked samples for one subset */
+        get: operations["get_results_api_experiments__experiment_id__results_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/threshold": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Confusion matrix at one threshold
+         * @description Recomputed on every slider move, from persisted scores. Nothing is written.
+         *
+         *     Returns the classified rows alongside the counts so the client never has to apply the
+         *     threshold rule itself — see `ThresholdReport` for why that matters.
+         */
+        get: operations["get_threshold_api_experiments__experiment_id__threshold_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/samples/{sample_id}/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Per-image scores of a sample
+         * @description What the result viewer needs to draw one part across its channels.
+         */
+        get: operations["get_sample_images_api_experiments__experiment_id__samples__sample_id__images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/diagnostics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What this run recorded about itself
+         * @description The self-describing index a model wrote (ADR-0018).
+         *
+         *     Returned verbatim. The UI renders by `kind` and never by method name, which is what
+         *     makes a future method's diagnostics work here with no change.
+         */
+        get: operations["get_diagnostics_api_experiments__experiment_id__diagnostics_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/health": {
@@ -137,6 +363,54 @@ export interface paths {
          * @description Start a pre-warm job so the first browse of a dataset is not the slowest one.
          */
         post: operations["start_prewarm_api_images_prewarm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/anomaly-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One experiment's anomaly map for an image, colormapped
+         * @description Render a stored float32 map as a PNG (ADR-0007).
+         *
+         *     Every map of one experiment is stretched over the **same** range, read from the
+         *     range file the inference job wrote. Normalizing each map to its own extremes would
+         *     make a clean part look as alarming as a defective one, which is precisely the
+         *     comparison the overlay exists to support.
+         */
+        get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/mask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Ground-truth mask outline for an image
+         * @description The ground-truth outline as a transparent PNG, ready to lay over the source.
+         *
+         *     An outline rather than a filled region: filling the mask hides the pixels the reader
+         *     is trying to compare the model's map against.
+         */
+        get: operations["read_mask_api_images__image_id__mask_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -351,12 +625,16 @@ export interface paths {
         get: operations["list_splits_api_splits_get"];
         put?: never;
         /**
-         * Create a seeded, sample-level split
-         * @description Draw a split and store it with everything needed to redraw it.
+         * Create a sample-level split, seeded or imported
+         * @description Draw a split, or adopt a published one, and store what reproduces it.
          *
-         *     Assignment is per sample, so no two views of one part can straddle the boundary;
+         *     A seeded split is per sample, so no two views of one part can straddle the boundary;
          *     training gets normals only; and the draw is stratified by capture group so an
          *     acquisition-batch effect cannot land entirely on one side (ADR-0011).
+         *
+         *     The `imported` strategy instead reads the partition out of the manifest the dataset
+         *     was committed from, because a benchmark's published number is only comparable against
+         *     the benchmark's own partition.
          */
         post: operations["create_split_api_splits_post"];
         delete?: never;
@@ -402,6 +680,96 @@ export interface components {
             options_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * Availability
+         * @description Whether this method can run here, and if not, what is missing.
+         *
+         *     The deep methods live behind an optional dependency group, so a checkout that never
+         *     installed torch should show them greyed out with the reason, rather than offering
+         *     them and failing minutes later inside a worker.
+         */
+        Availability: {
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /**
+         * BulkLabelFilter
+         * @description The browser's filters, as a request body rather than a query string.
+         */
+        BulkLabelFilter: {
+            label?: components["schemas"]["Label"] | null;
+            /** Channel Id */
+            channel_id?: number | null;
+            /** Split Id */
+            split_id?: number | null;
+            /** @description Only meaningful together with `split_id`. */
+            subset?: components["schemas"]["Subset"] | null;
+        };
+        /**
+         * BulkLabelRequest
+         * @description Label a selection, or everything matching a filter.
+         *
+         *     The two ways of naming the target are deliberately exclusive. A selection is what the
+         *     grid's checkboxes produce; a filter is what "label everything I am currently looking
+         *     at" means, and it is evaluated *server-side* from the same clause the grid pages with,
+         *     so it cannot label a different set than the one whose count was shown.
+         */
+        BulkLabelRequest: {
+            label: components["schemas"]["Label"];
+            /**
+             * Sample Ids
+             * @description An explicit selection. Ids outside this dataset are ignored.
+             */
+            sample_ids?: number[] | null;
+            /** @description Every sample matching these filters. An empty object means the whole dataset. */
+            filters?: components["schemas"]["BulkLabelFilter"] | null;
+        };
+        /** BulkLabelResult */
+        BulkLabelResult: {
+            /** Updated */
+            updated: number;
+        };
+        /**
+         * Capabilities
+         * @description What a method can do, declared rather than inferred.
+         *
+         *     The UI and the job layer branch on these flags. They never branch on a registry key —
+         *     the moment they do, adding a method stops being a file plus an entry.
+         */
+        Capabilities: {
+            /**
+             * Requires Training
+             * @default true
+             */
+            requires_training: boolean;
+            /**
+             * Produces Anomaly Map
+             * @default true
+             */
+            produces_anomaly_map: boolean;
+            /**
+             * Produces Diagnostics
+             * @default false
+             */
+            produces_diagnostics: boolean;
+            /**
+             * Channel Aware
+             * @default false
+             */
+            channel_aware: boolean;
+            /**
+             * Dataset Specific
+             * @default false
+             */
+            dataset_specific: boolean;
+            /** @default cpu */
+            preferred_device: components["schemas"]["Device"];
         };
         /**
          * Channel
@@ -464,10 +832,64 @@ export interface components {
             /** Channels */
             channels: number;
             /**
+             * Masks
+             * @description Images that now carry pixel-level ground truth.
+             * @default 0
+             */
+            masks: number;
+            /**
              * Missing Paths
              * @description Recorded images this manifest no longer mentions. Reported, not deleted.
              */
             missing_paths: string[];
+        };
+        /** ConfusionCounts */
+        ConfusionCounts: {
+            /**
+             * True Positive
+             * @default 0
+             */
+            true_positive: number;
+            /**
+             * False Positive
+             * @default 0
+             */
+            false_positive: number;
+            /**
+             * True Negative
+             * @default 0
+             */
+            true_negative: number;
+            /**
+             * False Negative
+             * @default 0
+             */
+            false_negative: number;
+        };
+        /** CreateExperimentRequest */
+        CreateExperimentRequest: {
+            /** Name */
+            name: string;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Split Id */
+            split_id: number;
+            /** Model Type */
+            model_type: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+            /** Preprocessing */
+            preprocessing?: {
+                [key: string]: unknown;
+            };
+            /** Evaluation */
+            evaluation?: {
+                [key: string]: unknown;
+            };
+            /** Notes */
+            notes?: string | null;
         };
         /** CreateSplitRequest */
         CreateSplitRequest: {
@@ -540,6 +962,159 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /**
+         * Device
+         * @enum {string}
+         */
+        Device: "cpu" | "mps" | "cuda";
+        /**
+         * DiagnosticEntry
+         * @description One row of the index. Self-describing on purpose.
+         */
+        DiagnosticEntry: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            kind: components["schemas"]["DiagnosticKind"];
+            scope: components["schemas"]["DiagnosticScope"];
+            /** Image Id */
+            image_id: number | null;
+            /**
+             * Path
+             * @description Array payload, relative to the diagnostics directory.
+             */
+            path: string | null;
+            /**
+             * Payload
+             * @description Inline JSON payload for the graph and table kinds.
+             */
+            payload: {
+                [key: string]: unknown;
+            } | null;
+            /** Shape */
+            shape: number[] | null;
+            /** Description */
+            description: string | null;
+        };
+        /** DiagnosticIndex */
+        DiagnosticIndex: {
+            /**
+             * Version
+             * @default 1
+             */
+            version: number;
+            /** Entries */
+            entries: components["schemas"]["DiagnosticEntry"][];
+            /**
+             * Image Budget
+             * @description How many images were allowed per-image diagnostics, if capped.
+             */
+            image_budget: number | null;
+            /**
+             * Truncated Images
+             * @description Images whose diagnostics were dropped because the budget ran out.
+             * @default 0
+             */
+            truncated_images: number;
+        };
+        /**
+         * DiagnosticKind
+         * @description How a payload should be read. The UI's renderer switch is over exactly this.
+         * @enum {string}
+         */
+        DiagnosticKind: "map" | "image" | "grid" | "graph" | "table";
+        /**
+         * DiagnosticScope
+         * @description What a diagnostic is *about*, which decides where the UI can offer it.
+         * @enum {string}
+         */
+        DiagnosticScope: "model" | "image";
+        /** ExperimentDetail */
+        ExperimentDetail: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Split Id */
+            split_id: number;
+            /** Model Type */
+            model_type: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /** Created At */
+            created_at: string;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Headline Roc Auc
+             * @description Sample-level ROC-AUC on test, or on the best subset scored so far.
+             */
+            headline_roc_auc: number | null;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Preprocessing */
+            preprocessing: {
+                [key: string]: unknown;
+            };
+            /** Evaluation */
+            evaluation: {
+                [key: string]: unknown;
+            };
+            /** Artifact Dir */
+            artifact_dir: string;
+            /** Dataset Name */
+            dataset_name: string | null;
+            /** Split Name */
+            split_name: string | null;
+            /** Metrics */
+            metrics: components["schemas"]["MetricSummary"][];
+            /** Scored Subsets */
+            scored_subsets: components["schemas"]["Subset"][];
+            /** Jobs */
+            jobs: components["schemas"]["JobSummary"][];
+            /**
+             * Produces Anomaly Map
+             * @default true
+             */
+            produces_anomaly_map: boolean;
+            /**
+             * Produces Diagnostics
+             * @default false
+             */
+            produces_diagnostics: boolean;
+        };
+        /**
+         * ExperimentStatus
+         * @enum {string}
+         */
+        ExperimentStatus: "draft" | "training" | "trained" | "failed";
+        /** ExperimentSummary */
+        ExperimentSummary: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Split Id */
+            split_id: number;
+            /** Model Type */
+            model_type: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /** Created At */
+            created_at: string;
+            /** Notes */
+            notes: string | null;
+            /**
+             * Headline Roc Auc
+             * @description Sample-level ROC-AUC on test, or on the best subset scored so far.
+             */
+            headline_roc_auc: number | null;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -565,6 +1140,30 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+        };
+        /**
+         * ImageScore
+         * @description One image of one sample, as the result viewer draws it.
+         */
+        ImageScore: {
+            /** Image Id */
+            image_id: number;
+            /** Channel */
+            channel: string | null;
+            /** Score */
+            score: number;
+            /** Inference Ms */
+            inference_ms: number;
+            /**
+             * Has Map
+             * @default false
+             */
+            has_map: boolean;
+            /**
+             * Has Mask
+             * @default false
+             */
+            has_mask: boolean;
         };
         /**
          * ImageSummary
@@ -597,6 +1196,28 @@ export interface components {
          * @enum {string}
          */
         ImageTier: "thumb" | "preview" | "full";
+        /** InferParams */
+        InferParams: {
+            /** Experiment Id */
+            experiment_id: number;
+            /**
+             * Subsets
+             * @description Which subsets to score. Train is excluded by default because scoring the images a model was fitted on costs the most time and tells you the least.
+             */
+            subsets?: components["schemas"]["Subset"][];
+            /**
+             * Diagnostics
+             * @description Record per-image diagnostics for the first few images.
+             * @default true
+             */
+            diagnostics: boolean;
+            /**
+             * Diagnostic Images
+             * @description How many images keep per-image diagnostics. Each costs a few float32 maps on disk, so the whole test set is rarely worth it.
+             * @default 12
+             */
+            diagnostic_images: number;
+        };
         /**
          * JobDetail
          * @description A job plus everything needed to render its screen before the socket opens.
@@ -756,6 +1377,11 @@ export interface components {
             bit_depth: number;
             /** File Size */
             file_size: number;
+            /**
+             * Mask Path
+             * @description Pixel-level ground truth for this image, referenced in place like the image. `null` for the datasets that have none, which is most of them.
+             */
+            mask_path?: string | null;
         };
         /** ManifestImage */
         "ManifestImage-Output": {
@@ -773,6 +1399,11 @@ export interface components {
             bit_depth: number;
             /** File Size */
             file_size: number;
+            /**
+             * Mask Path
+             * @description Pixel-level ground truth for this image, referenced in place like the image. `null` for the datasets that have none, which is most of them.
+             */
+            mask_path: string | null;
         };
         /** ManifestSample */
         "ManifestSample-Input": {
@@ -782,6 +1413,13 @@ export interface components {
             external_id: string;
             /** @default unlabeled */
             label: components["schemas"]["Label"];
+            /** @description The subset this sample belongs to according to the source dataset. Only adapters that read a published split fill this in; it is what a split with the `imported` strategy is built from, so that a benchmark can be run under the same partition the published numbers used. */
+            subset?: components["schemas"]["Subset"] | null;
+            /**
+             * Notes
+             * @description Free text the adapter read from the source, such as a defect type. Carried onto the sample so a breakdown by defect type is possible without a schema that enumerates defect types.
+             */
+            notes?: string | null;
             /** Images */
             images?: components["schemas"]["ManifestImage-Input"][];
         };
@@ -793,6 +1431,13 @@ export interface components {
             external_id: string;
             /** @default unlabeled */
             label: components["schemas"]["Label"];
+            /** @description The subset this sample belongs to according to the source dataset. Only adapters that read a published split fill this in; it is what a split with the `imported` strategy is built from, so that a benchmark can be run under the same partition the published numbers used. */
+            subset: components["schemas"]["Subset"] | null;
+            /**
+             * Notes
+             * @description Free text the adapter read from the source, such as a defect type. Carried onto the sample so a breakdown by defect type is possible without a schema that enumerates defect types.
+             */
+            notes: string | null;
             /** Images */
             images: components["schemas"]["ManifestImage-Output"][];
         };
@@ -826,6 +1471,11 @@ export interface components {
              * @default 0
              */
             images: number;
+            /**
+             * Masks
+             * @default 0
+             */
+            masks: number;
         };
         /**
          * ManifestStats
@@ -857,6 +1507,11 @@ export interface components {
              * @default 0
              */
             images: number;
+            /**
+             * Masks
+             * @default 0
+             */
+            masks: number;
         };
         /** ManifestWarning */
         "ManifestWarning-Input": {
@@ -874,6 +1529,56 @@ export interface components {
             /** Paths */
             paths: string[];
         };
+        /**
+         * MethodCatalog
+         * @description Everything the create screen needs, in one round trip.
+         */
+        MethodCatalog: {
+            /** Methods */
+            methods: components["schemas"]["ModelDescription"][];
+            /**
+             * Preprocessing Schema
+             * @description JSON Schema for the preprocessing every method is made to share.
+             */
+            preprocessing_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Evaluation Schema
+             * @description JSON Schema for how the stored scores are read back.
+             */
+            evaluation_schema: {
+                [key: string]: unknown;
+            };
+        };
+        /** MetricSummary */
+        MetricSummary: {
+            subset: components["schemas"]["Subset"];
+            /** Metrics */
+            metrics: {
+                [key: string]: unknown;
+            };
+            /** Computed At */
+            computed_at: string;
+        };
+        /**
+         * ModelDescription
+         * @description What the method picker needs, without importing the method's dependencies.
+         */
+        ModelDescription: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            capabilities: components["schemas"]["Capabilities"];
+            availability: components["schemas"]["Availability"];
+            /** Config Schema */
+            config_schema: {
+                [key: string]: unknown;
+            };
+        };
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -883,6 +1588,31 @@ export interface components {
              * @description Which tiers to render. Defaults to every cacheable tier.
              */
             tiers?: components["schemas"]["ImageTier"][] | null;
+        };
+        /**
+         * ResultsPage
+         * @description Ranked samples for one subset, with a starting threshold and its rationale.
+         */
+        ResultsPage: {
+            /** Experiment Id */
+            experiment_id: number;
+            subset: components["schemas"]["Subset"] | null;
+            /** Suggested Threshold */
+            suggested_threshold: number;
+            /** Threshold Rationale */
+            threshold_rationale: string;
+            /**
+             * Score Min
+             * @default 0
+             */
+            score_min: number;
+            /**
+             * Score Max
+             * @default 0
+             */
+            score_max: number;
+            /** Samples */
+            samples: components["schemas"]["SampleVerdict"][];
         };
         /** SamplePage */
         SamplePage: {
@@ -911,6 +1641,30 @@ export interface components {
             notes: string | null;
             /** Images */
             images: components["schemas"]["ImageSummary"][];
+        };
+        /**
+         * SampleVerdict
+         * @description One sample as the results grid shows it at the current threshold.
+         */
+        SampleVerdict: {
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            label: components["schemas"]["Label"];
+            /** Notes */
+            notes: string | null;
+            /** Score */
+            score: number;
+            /** Predicted Defect */
+            predicted_defect: boolean;
+            /**
+             * Outcome
+             * @description tp, fp, tn, fn — or 'unlabeled' for a ranked-only row.
+             */
+            outcome: string;
         };
         /** ScanRequest */
         ScanRequest: {
@@ -976,6 +1730,17 @@ export interface components {
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
+            /**
+             * Holdout From Train
+             * @description For `imported` only: move this share of the published *training* normals to `val`. The official one-class protocols publish no validation subset, but methods that calibrate on held-out normals need one. Taking it out of train leaves the published test set untouched, so the reported number stays comparable; 0 reproduces the source's partition exactly.
+             * @default 0
+             */
+            holdout_from_train: number;
+            /**
+             * Manifest Id
+             * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
+             */
+            manifest_id?: string | null;
         };
         /**
          * SplitParams
@@ -1007,12 +1772,23 @@ export interface components {
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
+            /**
+             * Holdout From Train
+             * @description For `imported` only: move this share of the published *training* normals to `val`. The official one-class protocols publish no validation subset, but methods that calibrate on held-out normals need one. Taking it out of train leaves the published test set untouched, so the reported number stays comparable; 0 reproduces the source's partition exactly.
+             * @default 0
+             */
+            holdout_from_train: number;
+            /**
+             * Manifest Id
+             * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
+             */
+            manifest_id: string | null;
         };
         /**
          * SplitStrategy
          * @enum {string}
          */
-        SplitStrategy: "normal_only_train";
+        SplitStrategy: "normal_only_train" | "imported";
         /**
          * Subset
          * @enum {string}
@@ -1032,6 +1808,49 @@ export interface components {
             defect: number;
             /** Unlabeled */
             unlabeled: number;
+        };
+        /**
+         * ThresholdReport
+         * @description Everything that changes when the slider moves — counts *and* the classified rows.
+         *
+         *     Both together, in one response, on purpose. The alternative is a client that receives
+         *     counts and re-derives each row's outcome for itself, which means the rule "a score at
+         *     or above the threshold is a defect" would exist twice, in two languages, free to
+         *     drift. One request per slider tick is cheaper than that class of bug.
+         */
+        ThresholdReport: {
+            /** Threshold */
+            threshold: number;
+            confusion: components["schemas"]["ConfusionCounts"];
+            /** Precision */
+            precision: number | null;
+            /** Recall */
+            recall: number | null;
+            /** F1 */
+            f1: number | null;
+            /** Accuracy */
+            accuracy: number | null;
+            /**
+             * Unlabeled
+             * @default 0
+             */
+            unlabeled: number;
+            /** Samples */
+            samples: components["schemas"]["SampleVerdict"][];
+        };
+        /**
+         * TrainParams
+         * @description What a train job is given. `experiment_id` carries everything else.
+         */
+        TrainParams: {
+            /** Experiment Id */
+            experiment_id: number;
+            /**
+             * Diagnostics
+             * @description Record what the model shows about itself. Costs disk, not accuracy.
+             * @default true
+             */
+            diagnostics: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -1056,7 +1875,7 @@ export interface components {
          * @description Why the operator is being asked to look at something.
          * @enum {string}
          */
-        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file";
+        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file" | "ambiguous_sample_id" | "unmatched_path" | "conflicting_directories" | "missing_mask";
     };
     responses: never;
     parameters: never;
@@ -1186,6 +2005,41 @@ export interface operations {
             };
         };
     };
+    update_labels_api_datasets__dataset_id__samples_patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkLabelRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkLabelResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_sample_api_datasets__dataset_id__samples__sample_id__get: {
         parameters: {
             query?: never;
@@ -1254,6 +2108,387 @@ export interface operations {
             };
         };
     };
+    list_model_types_api_experiments_model_types_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MethodCatalog"];
+                };
+            };
+        };
+    };
+    list_experiments_api_experiments_get: {
+        parameters: {
+            query?: {
+                dataset_id?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_experiment_api_experiments_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreateExperimentRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_experiment_api_experiments__experiment_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExperimentDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_experiment_api_experiments__experiment_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: boolean;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_train_api_experiments__experiment_id__train_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["TrainParams"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_infer_api_experiments__experiment_id__infer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["InferParams"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reevaluate_api_experiments__experiment_id__reevaluate_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MetricSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_results_api_experiments__experiment_id__results_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResultsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_threshold_api_experiments__experiment_id__threshold_get: {
+        parameters: {
+            query: {
+                /** @description Scores at or above this are predicted defective. */
+                value: number;
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ThresholdReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_images_api_experiments__experiment_id__samples__sample_id__images_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageScore"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_diagnostics_api_experiments__experiment_id__diagnostics_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnosticIndex"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_health_api_health_get: {
         parameters: {
             query?: never;
@@ -1294,6 +2529,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_anomaly_map_api_images__image_id__anomaly_map_get: {
+        parameters: {
+            query: {
+                /** @description Which experiment's map to render. */
+                experiment_id: number;
+                /** @description Resample the map to the source image's pixel grid so it overlays exactly. */
+                native?: boolean;
+            };
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_mask_api_images__image_id__mask_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

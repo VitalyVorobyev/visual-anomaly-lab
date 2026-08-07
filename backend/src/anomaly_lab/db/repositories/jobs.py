@@ -77,6 +77,20 @@ def list_jobs(
     return [_to_job(row) for row in rows]
 
 
+def list_jobs_for_experiment(
+    conn: sqlite3.Connection,
+    experiment_id: int,
+    *,
+    limit: int = 50,
+) -> list[Job]:
+    """An experiment's jobs, newest first — its history of training and scoring runs."""
+    rows = conn.execute(
+        "SELECT * FROM job WHERE experiment_id = ? ORDER BY id DESC LIMIT ?",
+        (experiment_id, limit),
+    ).fetchall()
+    return [_to_job(row) for row in rows]
+
+
 def next_queued_job(conn: sqlite3.Connection) -> Job | None:
     """The oldest queued job. FIFO, one at a time, no priority lane (ADR-0009)."""
     row = conn.execute("SELECT * FROM job WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()

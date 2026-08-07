@@ -1,0 +1,591 @@
+"""The vertical slice, end to end: create, train, score, evaluate, read.
+
+Everything here runs on `pixel_reference`, which needs neither torch nor a network and
+trains in milliseconds on 16x16 fixtures. That is exactly why it exists — the whole
+results path is provable without the optional deep-learning group installed.
+
+The fixtures are synthetic PNGs generated in code (ADR-0001): a smooth gradient with a
+little noise for normals, and the same gradient with a bright square stamped in for
+defects, plus matching ground-truth masks so the pixel metrics have something to measure.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+from collections.abc import Iterator
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+
+from anomaly_lab.config import Settings
+from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import experiments as experiments_repo
+from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import masks as masks_repo
+from anomaly_lab.db.repositories import samples as samples_repo
+from anomaly_lab.db.repositories import splits as splits_repo
+from anomaly_lab.domain.entities import JobKind, Label, Subset
+from anomaly_lab.experiments.infer import run_infer_job
+from anomaly_lab.experiments.train import run_train_job
+from anomaly_lab.jobs.context import JobContext
+
+SIZE = 16
+TRAIN_NORMALS = 8
+TEST_NORMALS = 3
+TEST_DEFECTS = 3
+
+
+def _gradient(seed: int) -> np.ndarray:
+    generator = np.random.default_rng(seed)
+    base = np.linspace(40, 200, SIZE * SIZE).reshape(SIZE, SIZE)
+    return np.clip(base + generator.normal(0, 3, size=(SIZE, SIZE)), 0, 255)
+
+
+def _write_normal(path: Path, seed: int) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(_gradient(seed).astype(np.uint8), mode="L").convert("RGB").save(path)
+
+
+def _write_defect(path: Path, mask_path: Path, seed: int) -> None:
+    array = _gradient(seed)
+    array[5:10, 5:10] = 255
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(array.astype(np.uint8), mode="L").convert("RGB").save(path)
+
+    mask = np.zeros((SIZE, SIZE), dtype=np.uint8)
+    mask[5:10, 5:10] = 255
+    mask_path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(mask, mode="L").save(mask_path)
+
+
+@dataclass(frozen=True)
+class Fixture:
+    dataset_id: int
+    split_id: int
+    defect_image_ids: list[int]
+    normal_image_ids: list[int]
+
+
+def _seed(conn: sqlite3.Connection, root: Path) -> Fixture:
+    """A dataset of single-image samples with an explicit train/test split and masks."""
+    dataset = datasets_repo.create_dataset(conn, name="synthetic", root_path=str(root))
+    assignments: dict[int, Subset] = {}
+    defect_image_ids: list[int] = []
+    normal_image_ids: list[int] = []
+
+    def add(external_id: str, path: Path, label: Label, subset: Subset) -> int:
+        sample, _ = samples_repo.upsert_sample(
+            conn, dataset.id, group_key="all", external_id=external_id, label=label
+        )
+        image, _ = images_repo.upsert_image(
+            conn,
+            sample.id,
+            channel_id=None,
+            path=str(path),
+            width=SIZE,
+            height=SIZE,
+            bit_depth=24,
+            file_size=path.stat().st_size,
+            sha256=f"sha-{external_id}",
+        )
+        assignments[sample.id] = subset
+        return image.id
+
+    for index in range(TRAIN_NORMALS):
+        path = root / "train" / f"n{index}.png"
+        _write_normal(path, index)
+        add(f"train-{index}", path, Label.NORMAL, Subset.TRAIN)
+
+    for index in range(TEST_NORMALS):
+        path = root / "test" / f"n{index}.png"
+        _write_normal(path, 500 + index)
+        normal_image_ids.append(add(f"test-n{index}", path, Label.NORMAL, Subset.TEST))
+
+    for index in range(TEST_DEFECTS):
+        path = root / "test" / f"d{index}.png"
+        mask_path = root / "masks" / f"d{index}.png"
+        _write_defect(path, mask_path, 900 + index)
+        image_id = add(f"test-d{index}", path, Label.DEFECT, Subset.TEST)
+        masks_repo.upsert_mask(conn, image_id, path=str(mask_path))
+        defect_image_ids.append(image_id)
+
+    split = splits_repo.create_split(
+        conn,
+        dataset.id,
+        name="official",
+        strategy="imported",
+        seed=0,
+        params={"strategy": "imported"},
+        assignments=assignments,
+    )
+    return Fixture(
+        dataset_id=dataset.id,
+        split_id=split.id,
+        defect_image_ids=defect_image_ids,
+        normal_image_ids=normal_image_ids,
+    )
+
+
+@pytest.fixture
+def seeded(client: TestClient, settings: Settings, tmp_path: Path) -> Iterator[Fixture]:
+    root = tmp_path / "source"
+    with connection(settings.db_path) as conn:
+        yield _seed(conn, root)
+
+
+def _create(client: TestClient, seeded: Fixture, **overrides: Any) -> dict[str, Any]:
+    body: dict[str, Any] = {
+        "name": "baseline",
+        "dataset_id": seeded.dataset_id,
+        "split_id": seeded.split_id,
+        "model_type": "pixel_reference",
+        "config": {"smoothing_sigma": 1.0},
+        "preprocessing": {"width": SIZE, "height": SIZE},
+        "evaluation": {},
+    }
+    body.update(overrides)
+    response = client.post("/api/experiments", json=body)
+    assert response.status_code == 200, response.text
+    payload: dict[str, Any] = response.json()
+    return payload
+
+
+def _run(settings: Settings, kind: JobKind, params: dict[str, Any]) -> dict[str, Any]:
+    """Run a handler in-process. The subprocess path is covered in `test_job_queue`."""
+    handler = run_train_job if kind is JobKind.TRAIN else run_infer_job
+    return handler(JobContext(job_id=1, kind=kind, params=params, settings=settings))
+
+
+@pytest.fixture
+def scored(client: TestClient, settings: Settings, seeded: Fixture) -> dict[str, Any]:
+    """A fully trained and scored experiment — the state most tests here start from."""
+    experiment = _create(client, seeded)
+    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+    _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["test"]})
+    return experiment
+
+
+# ----------------------------------------------------------------- the catalog
+
+
+def test_the_method_catalog_carries_schemas_rather_than_field_lists(client: TestClient) -> None:
+    """The claim ADR-0007 makes: the form is generated, so adding a field costs no UI."""
+    payload = client.get("/api/experiments/model-types").json()
+
+    keys = {method["key"] for method in payload["methods"]}
+    assert "pixel_reference" in keys
+    assert payload["preprocessing_schema"]["properties"]["width"]["default"] == 256
+    assert "aggregation" in payload["evaluation_schema"]["properties"]
+
+    baseline = next(m for m in payload["methods"] if m["key"] == "pixel_reference")
+    assert baseline["config_schema"]["properties"]["smoothing_sigma"]["description"]
+    assert baseline["capabilities"]["produces_anomaly_map"] is True
+    assert baseline["availability"]["available"] is True
+
+
+def test_every_method_option_carries_a_description(client: TestClient) -> None:
+    """A generated form with no help text is a worse form than a hand-written one."""
+    payload = client.get("/api/experiments/model-types").json()
+    for method in payload["methods"]:
+        for name, field in method["config_schema"]["properties"].items():
+            assert field.get("description"), f"{method['key']}.{name} has no description"
+
+
+# ----------------------------------------------------------------- creation
+
+
+def test_creating_an_experiment_freezes_its_configuration(
+    client: TestClient, seeded: Fixture
+) -> None:
+    created = _create(client, seeded)
+    assert created["status"] == "draft"
+    assert created["config"]["smoothing_sigma"] == 1.0
+    # Defaults the caller never mentioned are resolved and stored, so the record is
+    # complete rather than partial.
+    assert created["config"]["score_percentile"] == 99.5
+    assert created["preprocessing"]["color"] == "rgb"
+    assert created["artifact_dir"].endswith(f"exp-{created['id']}")
+
+
+def test_an_invalid_configuration_is_refused_at_creation_not_at_job_time(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """A typo should be a 422 on the form, not a failed job discovered ten minutes later."""
+    response = client.post(
+        "/api/experiments",
+        json={
+            "name": "bad",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "model_type": "pixel_reference",
+            "config": {"score_percentile": 900},
+        },
+    )
+    assert response.status_code == 422
+    assert "score_percentile" in response.text
+
+
+def test_an_unknown_method_is_refused_by_name(client: TestClient, seeded: Fixture) -> None:
+    response = client.post(
+        "/api/experiments",
+        json={
+            "name": "bad",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "model_type": "not_a_method",
+        },
+    )
+    assert response.status_code == 422
+    assert "pixel_reference" in response.text
+
+
+def test_a_split_from_another_dataset_is_refused(client: TestClient, seeded: Fixture) -> None:
+    other = client.post(
+        "/api/experiments",
+        json={
+            "name": "mismatched",
+            "dataset_id": seeded.dataset_id + 999,
+            "split_id": seeded.split_id,
+            "model_type": "pixel_reference",
+        },
+    )
+    assert other.status_code == 404
+
+
+# ----------------------------------------------------------------- training
+
+
+def test_training_reports_what_it_learned_from(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    experiment = _create(client, seeded)
+    result = _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+
+    assert result["train_images"] == TRAIN_NORMALS
+    assert result["excluded_images"] == 0
+    assert result["device"] == "cpu"
+    assert result["diagnostics"] > 0
+
+    detail = client.get(f"/api/experiments/{experiment['id']}").json()
+    assert detail["status"] == "trained"
+
+
+def test_training_uses_normals_only_and_says_so(
+    client: TestClient, settings: Settings, seeded: Fixture, migrated_db: sqlite3.Connection
+) -> None:
+    """A defect in the training set teaches the model that defects are normal."""
+    with connection(settings.db_path) as conn:
+        sample = samples_repo.find_sample(
+            conn, seeded.dataset_id, group_key="all", external_id="train-0"
+        )
+        assert sample is not None
+        samples_repo.set_label(conn, sample.id, Label.DEFECT)
+
+    experiment = _create(client, seeded)
+    result = _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+
+    assert result["train_images"] == TRAIN_NORMALS - 1
+    assert result["excluded_images"] == 1
+
+
+def test_inference_before_training_refuses_rather_than_scoring_noise(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    experiment = _create(client, seeded)
+    with pytest.raises(Exception, match="not trained"):
+        _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["test"]})
+
+
+def test_a_subset_with_no_samples_says_which_one(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """VisA's official protocol has no val subset; the message has to name that case."""
+    experiment = _create(client, seeded)
+    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+    with pytest.raises(Exception, match="val"):
+        _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["val"]})
+
+
+# ----------------------------------------------------------------- results
+
+
+def test_metrics_are_computed_and_stored_per_subset(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+    by_subset = {entry["subset"]: entry["metrics"] for entry in detail["metrics"]}
+
+    assert set(by_subset) == {"test"}
+    test = by_subset["test"]
+    assert test["sample_roc_auc"] == pytest.approx(1.0)
+    assert test["image_roc_auc"] == pytest.approx(1.0)
+    assert test["samples"] == {
+        "total": TEST_NORMALS + TEST_DEFECTS,
+        "normal": TEST_NORMALS,
+        "defect": TEST_DEFECTS,
+        "unlabeled": 0,
+    }
+    assert test["aggregation"] == "max"
+    assert test["timing"]["mean_ms"] > 0
+    assert detail["headline_roc_auc"] == pytest.approx(1.0)
+
+
+def test_pixel_metrics_appear_because_this_dataset_has_masks(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """The capability ADR-0011 said might never exist, now that a dataset supplies masks."""
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+    pixel = next(e for e in detail["metrics"] if e["subset"] == "test")["metrics"]["pixel"]
+
+    assert pixel["pixel_roc_auc"] is not None
+    assert pixel["au_pro"] is not None
+    assert pixel["mask_regions"] == TEST_DEFECTS
+    # Normal images are folded in with an all-zero mask, which is the protocol published
+    # numbers are computed under.
+    assert pixel["mask_images"] == TEST_NORMALS + TEST_DEFECTS
+    assert pixel["skipped_unannotated_defects"] == 0
+
+
+def test_ranked_results_come_back_most_anomalous_first(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    page = client.get(f"/api/experiments/{scored['id']}/results?subset=test").json()
+
+    scores = [sample["score"] for sample in page["samples"]]
+    assert scores == sorted(scores, reverse=True)
+    assert page["samples"][0]["label"] == "defect"
+    assert page["threshold_rationale"]
+    assert page["score_max"] >= page["score_min"]
+
+
+def test_the_threshold_endpoint_recomputes_without_writing(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    page = client.get(f"/api/experiments/{scored['id']}/results?subset=test").json()
+    suggested = page["suggested_threshold"]
+
+    report = client.get(
+        f"/api/experiments/{scored['id']}/threshold",
+        params={"value": suggested, "subset": "test"},
+    ).json()
+    assert report["confusion"]["true_positive"] == TEST_DEFECTS
+    assert report["confusion"]["false_positive"] == 0
+    assert report["recall"] == pytest.approx(1.0)
+
+    # A threshold below every score calls everything defective.
+    everything = client.get(
+        f"/api/experiments/{scored['id']}/threshold",
+        params={"value": page["score_min"] - 1.0, "subset": "test"},
+    ).json()
+    assert everything["confusion"]["false_positive"] == TEST_NORMALS
+    assert everything["confusion"]["true_negative"] == 0
+
+
+def test_reevaluating_changes_the_reading_without_re_running_inference(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """The seam that makes aggregation a re-read: `mean` instead of `max`, no re-scoring."""
+    experiment = _create(client, seeded, evaluation={"aggregation": "mean"})
+    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+    _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["test"]})
+
+    metrics = client.post(f"/api/experiments/{experiment['id']}/reevaluate").json()
+    assert metrics[0]["metrics"]["aggregation"] == "mean"
+
+
+def test_per_image_scores_are_available_for_the_viewer(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    with connection(settings.db_path) as conn:
+        image = images_repo.get_image(conn, seeded.defect_image_ids[0])
+    assert image is not None
+
+    rows = client.get(f"/api/experiments/{scored['id']}/samples/{image.sample_id}/images").json()
+    assert len(rows) == 1
+    assert rows[0]["has_map"] is True
+    assert rows[0]["has_mask"] is True
+    assert rows[0]["inference_ms"] > 0
+
+
+# ----------------------------------------------------------------- rendering
+
+
+def test_an_anomaly_map_renders_at_the_source_resolution(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture
+) -> None:
+    """Alignment is the whole point of the overlay; a mismatched size cannot align."""
+    image_id = seeded.defect_image_ids[0]
+    response = client.get(
+        f"/api/images/{image_id}/anomaly-map", params={"experiment_id": scored["id"]}
+    )
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/png"
+
+    import io
+
+    rendered = Image.open(io.BytesIO(response.content))
+    assert rendered.size == (SIZE, SIZE)
+
+
+def test_the_map_is_transparent_where_the_model_found_nothing(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture
+) -> None:
+    """An opaque colormap over a photograph tints the whole frame.
+
+    The regions where the model found nothing would then look as processed as the region
+    where it found something, which is the opposite of what an overlay is for. So alpha
+    follows the score: low means see-through, and the source image stays readable.
+    """
+    import io
+
+    response = client.get(
+        f"/api/images/{seeded.defect_image_ids[0]}/anomaly-map",
+        params={"experiment_id": scored["id"]},
+    )
+    rendered = Image.open(io.BytesIO(response.content))
+    assert rendered.mode == "RGBA"
+
+    alpha = np.asarray(rendered)[:, :, 3]
+    assert int(alpha.min()) == 0, "the quietest pixel must be fully transparent"
+    assert int(alpha.max()) > 200, "the loudest pixel must be close to opaque"
+    # A map is mostly quiet; if the median pixel were opaque the overlay would be a veil.
+    assert int(np.median(alpha)) < 128
+
+
+def test_a_ground_truth_mask_renders_as_a_transparent_outline(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture
+) -> None:
+    import io
+
+    response = client.get(f"/api/images/{seeded.defect_image_ids[0]}/mask")
+    assert response.status_code == 200
+
+    rendered = Image.open(io.BytesIO(response.content))
+    assert rendered.mode == "RGBA"
+    alpha = np.asarray(rendered)[:, :, 3]
+    # An outline, not a fill: some pixels opaque, most transparent.
+    assert 0 < int((alpha > 0).sum()) < SIZE * SIZE // 2
+
+
+def test_an_image_with_no_mask_says_so_rather_than_returning_an_empty_one(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture
+) -> None:
+    assert client.get(f"/api/images/{seeded.normal_image_ids[0]}/mask").status_code == 404
+
+
+def test_asking_for_a_map_from_an_experiment_that_has_none_is_a_404(
+    client: TestClient, seeded: Fixture
+) -> None:
+    experiment = _create(client, seeded)
+    response = client.get(
+        f"/api/images/{seeded.defect_image_ids[0]}/anomaly-map",
+        params={"experiment_id": experiment["id"]},
+    )
+    assert response.status_code == 404
+
+
+# ----------------------------------------------------------------- diagnostics
+
+
+def test_diagnostics_are_self_describing_and_never_keyed_by_method_name(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """The property M4's visualization depends on (ADR-0018)."""
+    index = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
+
+    kinds = {entry["kind"] for entry in index["entries"]}
+    assert kinds <= {"map", "image", "grid", "graph", "table"}
+    assert any(entry["scope"] == "image" for entry in index["entries"])
+    for entry in index["entries"]:
+        assert entry["title"]
+        assert entry.get("path") or entry.get("payload") is not None
+
+
+# ----------------------------------------------------------------- lifecycle
+
+
+def test_reopening_an_experiment_returns_identical_numbers(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """Nothing is recomputed on read, so 'identical' is structural rather than lucky."""
+    first = client.get(f"/api/experiments/{scored['id']}").json()
+    second = client.get(f"/api/experiments/{scored['id']}").json()
+    assert first["metrics"] == second["metrics"]
+
+
+def test_the_experiment_list_shows_the_headline_number(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    listed = client.get("/api/experiments").json()
+    entry = next(item for item in listed if item["id"] == scored["id"])
+    assert entry["headline_roc_auc"] == pytest.approx(1.0)
+
+
+def test_deleting_an_experiment_removes_its_artifacts_too(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    artifact_dir = Path(client.get(f"/api/experiments/{scored['id']}").json()["artifact_dir"])
+    assert artifact_dir.is_dir()
+
+    assert client.delete(f"/api/experiments/{scored['id']}").json() == {"deleted": True}
+    assert client.get(f"/api/experiments/{scored['id']}").status_code == 404
+    assert not artifact_dir.exists()
+
+
+def test_the_queue_carries_a_train_job_with_no_change_to_itself(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """ADR-0009's claim, tested through the real subprocess path.
+
+    A `train` job is enqueued exactly like an import job, runs in its own worker, and
+    reaches a terminal state — with no branch anywhere in the queue for what kind it is.
+    """
+    import time
+
+    experiment = _create(client, seeded)
+    queued = client.post(f"/api/experiments/{experiment['id']}/train").json()
+    assert queued["kind"] == "train"
+    assert queued["experiment_id"] == experiment["id"]
+
+    deadline = time.monotonic() + 60.0
+    payload: dict[str, Any] = {}
+    while time.monotonic() < deadline:
+        payload = client.get(f"/api/jobs/{queued['id']}").json()
+        if payload["status"] in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.05)
+
+    assert payload["status"] == "succeeded", payload.get("error")
+    assert payload["result"]["train_images"] == TRAIN_NORMALS
+    assert client.get(f"/api/experiments/{experiment['id']}").json()["status"] == "trained"
+
+
+def test_an_experiment_left_mid_training_is_reconciled_at_startup(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """The sibling of the stale-job reconciliation, and needed for the same reason.
+
+    A crash or a force-quit leaves the row reading `training`, which on screen is
+    indistinguishable from a run that is genuinely in progress. Only one job runs at a
+    time, so at startup nothing is — and anything still `training` is the record of a
+    run that died.
+    """
+    from fastapi.testclient import TestClient as Client
+
+    from anomaly_lab.api.app import create_app
+    from anomaly_lab.domain.entities import ExperimentStatus
+
+    experiment = _create(client, seeded)
+    with connection(settings.db_path) as conn:
+        experiments_repo.set_status(conn, experiment["id"], ExperimentStatus.TRAINING)
+
+    with Client(create_app(settings)) as restarted:
+        reopened = restarted.get(f"/api/experiments/{experiment['id']}").json()
+
+    assert reopened["status"] == "failed"

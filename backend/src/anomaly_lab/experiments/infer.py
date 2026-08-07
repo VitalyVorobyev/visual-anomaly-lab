@@ -1,0 +1,183 @@
+"""The `infer` job handler: score a split's images and evaluate the result.
+
+Kept separate from `train` rather than chained onto it, because they fail for different
+reasons and are re-run for different reasons. Re-scoring a trained model after changing
+the preprocessing is nonsense; re-scoring it over a subset it has not seen is routine.
+
+Inference ends by running the evaluation layer, so a finished job means finished results.
+Evaluation is cheap, model-independent, and re-runnable on its own (ADR-0011).
+"""
+
+from __future__ import annotations
+
+import json
+import time
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import experiments as experiments_repo
+from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import results as results_repo
+from anomaly_lab.domain.entities import ExperimentStatus, ImageResult, Subset
+from anomaly_lab.eval.aggregate import build_sample_results
+from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
+from anomaly_lab.experiments.context import (
+    ExperimentJobError,
+    diagnostics_writer,
+    load_experiment,
+    to_records,
+)
+from anomaly_lab.experiments.train import MODEL_SUBDIR
+from anomaly_lab.jobs.context import JobCancelledError, JobContext
+from anomaly_lab.models.base import InferContext, ModelCancelledError
+from anomaly_lab.schemas import API_MODEL_CONFIG
+
+RANGE_FILENAME = "range.json"
+
+
+class InferParams(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    subsets: list[Subset] = Field(
+        default_factory=lambda: [Subset.VAL, Subset.TEST],
+        description=(
+            "Which subsets to score. Train is excluded by default because scoring the "
+            "images a model was fitted on costs the most time and tells you the least."
+        ),
+    )
+    diagnostics: bool = Field(
+        default=True,
+        description="Record per-image diagnostics for the first few images.",
+    )
+    diagnostic_images: int = Field(
+        default=12,
+        ge=0,
+        le=200,
+        description=(
+            "How many images keep per-image diagnostics. Each costs a few float32 maps "
+            "on disk, so the whole test set is rarely worth it."
+        ),
+    )
+
+
+def run_infer_job(ctx: JobContext) -> dict[str, Any]:
+    """Score images with a trained experiment, persist results, and evaluate."""
+    params = InferParams.model_validate(dict(ctx.params))
+
+    with connection(ctx.settings.db_path) as conn:
+        loaded = load_experiment(conn, ctx.settings, params.experiment_id)
+        experiment = loaded.experiment
+        selected = images_repo.list_images_for_split(
+            conn, experiment.split_id, subsets=params.subsets
+        )
+
+    if experiment.status is not ExperimentStatus.TRAINED:
+        capabilities = loaded.model_class.capabilities()
+        if capabilities.requires_training:
+            msg = (
+                f"experiment {experiment.id} is {experiment.status.value}, not trained. "
+                f"{experiment.model_type} needs a train job to run first."
+            )
+            raise ExperimentJobError(msg)
+
+    if not selected:
+        names = ", ".join(subset.value for subset in params.subsets)
+        msg = (
+            f"split {experiment.split_id} has no samples in subset(s) {names}. "
+            "An imported split may legitimately have no val subset — choose test."
+        )
+        raise ExperimentJobError(msg)
+
+    model_dir = loaded.artifact_dir / MODEL_SUBDIR
+    if model_dir.is_dir():
+        loaded.model.load(model_dir)
+    elif loaded.model_class.capabilities().requires_training:
+        msg = f"experiment {experiment.id} has no saved model at {model_dir}"
+        raise ExperimentJobError(msg)
+
+    ctx.log(f"scoring {len(selected)} image(s) on device {loaded.device.device.value}")
+    ctx.log(f"device: {loaded.device.reason}")
+
+    writer = diagnostics_writer(
+        loaded,
+        enabled=params.diagnostics,
+        image_budget=params.diagnostic_images,
+    )
+    infer_ctx = InferContext(
+        artifact_dir=loaded.artifact_dir,
+        cache_dir=loaded.cache_dir,
+        preprocessing=loaded.preprocessing,
+        device=loaded.device.device,
+        reporter=ctx,
+        diagnostics=writer,
+    )
+
+    started = time.perf_counter()
+    try:
+        predictions = loaded.model.predict(to_records(selected), infer_ctx)
+    except ModelCancelledError as exc:
+        raise JobCancelledError from exc
+    elapsed = time.perf_counter() - started
+
+    if len(predictions) != len(selected):
+        msg = (
+            f"{experiment.model_type} returned {len(predictions)} prediction(s) for "
+            f"{len(selected)} image(s); a plugin must return one per input, in order"
+        )
+        raise ExperimentJobError(msg)
+
+    index = writer.flush()
+    if index.truncated_images:
+        ctx.log(
+            f"per-image diagnostics kept for {params.diagnostic_images} image(s); "
+            f"{index.truncated_images} more were scored without them",
+        )
+
+    display_range = infer_ctx.display_range()
+    if display_range is not None:
+        low, high = display_range
+        (loaded.artifact_dir / "maps").mkdir(parents=True, exist_ok=True)
+        (loaded.artifact_dir / "maps" / RANGE_FILENAME).write_text(
+            json.dumps({"low": low, "high": high}, indent=2),
+            encoding="utf-8",
+        )
+
+    image_rows = [
+        ImageResult(
+            experiment_id=experiment.id,
+            image_id=prediction.image_id,
+            score=prediction.score,
+            map_path=str(prediction.anomaly_map) if prediction.anomaly_map else None,
+            inference_ms=prediction.inference_ms,
+        )
+        for prediction in predictions
+    ]
+
+    eval_config = EvalConfig.model_validate(experiment.eval_config)
+    with connection(ctx.settings.db_path) as conn:
+        results_repo.replace_image_results(conn, experiment.id, image_rows)
+        scored = results_repo.list_scored_images(conn, experiment.id)
+        sample_rows = build_sample_results(experiment.id, scored, eval_config.aggregation)
+        results_repo.replace_sample_results(conn, experiment.id, sample_rows)
+
+        ctx.progress(0.95, "computing metrics")
+        metrics = evaluate_and_store(conn, experiment)
+        experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINED)
+
+    headline = {subset.value: found.get("sample_roc_auc") for subset, found in metrics.items()}
+    ctx.log(f"sample ROC-AUC by subset: {headline}")
+    ctx.progress(1.0, "scored and evaluated")
+
+    return {
+        "experiment_id": experiment.id,
+        "images": len(image_rows),
+        "samples": len(sample_rows),
+        "subsets": [subset.value for subset in params.subsets],
+        "maps": sum(1 for row in image_rows if row.map_path),
+        "inference_seconds": elapsed,
+        "metrics": {subset.value: found for subset, found in metrics.items()},
+        "diagnostics": len(index.entries),
+    }

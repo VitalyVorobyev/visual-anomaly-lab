@@ -4,6 +4,13 @@ privatedata/
 *.BMP
 docs/initial-prompt.md
 
+# ── Public reference datasets: too large to commit, freely available ───────
+# Anchored with a leading slash, and it matters: an unanchored `datasets` matches
+# at *any* depth, which silently ignored `backend/src/anomaly_lab/datasets/` —
+# the import-adapter package. New adapters were invisible to git with no error
+# anywhere. See README for how to obtain these datasets and their licences.
+/datasets/
+
 # ── App-managed runtime state (DB, artifacts, thumbnails) ──
 data/
 results/

@@ -14,7 +14,7 @@ from __future__ import annotations
 import sqlite3
 
 from fastapi import APIRouter, HTTPException, Query, Request
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
@@ -98,6 +98,61 @@ class LabelUpdate(BaseModel):
     model_config = API_MODEL_CONFIG
 
     label: Label
+
+
+class BulkLabelFilter(BaseModel):
+    """The browser's filters, as a request body rather than a query string."""
+
+    model_config = API_MODEL_CONFIG
+
+    label: Label | None = None
+    channel_id: int | None = None
+    split_id: int | None = None
+    subset: Subset | None = Field(
+        default=None, description="Only meaningful together with `split_id`."
+    )
+
+    def to_filter(self) -> SampleFilter:
+        return SampleFilter(
+            label=self.label,
+            channel_id=self.channel_id,
+            split_id=self.split_id,
+            subset=self.subset,
+        )
+
+
+class BulkLabelRequest(BaseModel):
+    """Label a selection, or everything matching a filter.
+
+    The two ways of naming the target are deliberately exclusive. A selection is what the
+    grid's checkboxes produce; a filter is what "label everything I am currently looking
+    at" means, and it is evaluated *server-side* from the same clause the grid pages with,
+    so it cannot label a different set than the one whose count was shown.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    label: Label
+    sample_ids: list[int] | None = Field(
+        default=None, description="An explicit selection. Ids outside this dataset are ignored."
+    )
+    filters: BulkLabelFilter | None = Field(
+        default=None,
+        description="Every sample matching these filters. An empty object means the whole dataset.",
+    )
+
+    @model_validator(mode="after")
+    def _exactly_one_target(self) -> BulkLabelRequest:
+        if (self.sample_ids is None) == (self.filters is None):
+            msg = "provide exactly one of `sample_ids` or `filters`"
+            raise ValueError(msg)
+        return self
+
+
+class BulkLabelResult(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    updated: int
 
 
 def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSummary:
@@ -277,3 +332,32 @@ def update_label(
         images = images_repo.list_images_for_sample(conn, sample_id)
 
     return _sample_summary(updated, images, names)
+
+
+@router.patch("/{dataset_id}/samples", summary="Label many samples at once")
+def update_labels(request: Request, dataset_id: int, body: BulkLabelRequest) -> BulkLabelResult:
+    """Label a selection, or everything matching a filter, in one request.
+
+    Labelling one sample at a time is fine for correcting a handful and hopeless for a
+    directory that is entirely one class — which is the common case on import, and the
+    reason this exists. Like the single-sample route it marks every row it touches
+    `manual`, so a re-import of the same tree cannot undo the work (ADR-0013).
+
+    The filter form is resolved server-side from the grid's own `_where` clause, so the
+    set that gets labelled is provably the set whose count the UI displayed.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        _require_dataset(conn, dataset_id)
+        if body.sample_ids is not None:
+            updated = samples_repo.set_labels(conn, dataset_id, body.sample_ids, body.label)
+        elif body.filters is not None:
+            updated = samples_repo.set_labels_matching(
+                conn, dataset_id, body.filters.to_filter(), body.label
+            )
+        else:  # pragma: no cover - the request validator rejects this shape
+            raise HTTPException(
+                status_code=422, detail="provide exactly one of `sample_ids` or `filters`"
+            )
+
+    return BulkLabelResult(updated=updated)

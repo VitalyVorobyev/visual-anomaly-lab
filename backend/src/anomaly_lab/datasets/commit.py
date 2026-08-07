@@ -26,6 +26,7 @@ from anomaly_lab.datasets.manifest import Manifest
 from anomaly_lab.datasets.storage import committed_manifest_id, save_manifest
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import Dataset
 
@@ -44,6 +45,8 @@ class CommitResult:
     images_created: int = 0
     images_updated: int = 0
     channels: int = 0
+    masks: int = 0
+    """Images that now carry pixel-level ground truth."""
     missing_paths: list[str] = field(default_factory=list)
     """Recorded images the manifest no longer mentions. Reported, not removed."""
 
@@ -70,7 +73,7 @@ def commit_manifest(
             for index, name in enumerate(manifest.channels)
         }
 
-        samples_created = samples_updated = images_created = images_updated = 0
+        samples_created = samples_updated = images_created = images_updated = masks = 0
         seen_paths: set[str] = set()
 
         for proposed in manifest.samples:
@@ -80,12 +83,13 @@ def commit_manifest(
                 group_key=proposed.group_key,
                 external_id=proposed.external_id,
                 label=proposed.label,
+                notes=proposed.notes,
             )
             samples_created += int(sample_is_new)
             samples_updated += int(not sample_is_new)
 
             for image in proposed.images:
-                _, image_is_new = images_repo.upsert_image(
+                row, image_is_new = images_repo.upsert_image(
                     conn,
                     sample.id,
                     # An unmapped channel name means no channel, not a new one: the
@@ -102,6 +106,13 @@ def commit_manifest(
                 images_created += int(image_is_new)
                 images_updated += int(not image_is_new)
                 seen_paths.add(image.path)
+
+                # A mask the manifest no longer mentions is left alone, for the same
+                # reason a missing image is reported rather than deleted: a re-scan run
+                # with the mask options forgotten must not silently discard annotations.
+                if image.mask_path is not None:
+                    masks_repo.upsert_mask(conn, row.id, path=image.mask_path)
+                    masks += 1
 
         missing = [
             image.path
@@ -128,6 +139,7 @@ def commit_manifest(
         images_created=images_created,
         images_updated=images_updated,
         channels=len(channel_ids),
+        masks=masks,
         missing_paths=sorted(missing)[:MAX_MISSING_REPORTED],
     )
 

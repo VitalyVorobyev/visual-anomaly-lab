@@ -52,15 +52,25 @@ def save_manifest(settings: Settings, manifest: Manifest, *, manifest_id: str) -
 
 
 def load_manifest(settings: Settings, manifest_id: str) -> Manifest:
-    path = manifest_path(settings, manifest_id)
+    return load_manifest_file(manifest_path(settings, manifest_id), label=repr(manifest_id))
+
+
+def load_manifest_file(path: Path, *, label: str | None = None) -> Manifest:
+    """Read a manifest from a path the application recorded for itself.
+
+    Separate from `load_manifest` because a dataset stores the *path* of the manifest it
+    was committed from, not its id — which is what lets a split be built from the import
+    that produced the dataset, months later, without the id having to be kept anywhere.
+    The id-based entry point stays the only one reachable from a URL.
+    """
     if not path.is_file():
-        msg = f"no manifest {manifest_id!r}"
+        msg = f"no manifest {label or str(path)}"
         raise ManifestNotFoundError(msg)
 
     manifest = Manifest.model_validate_json(path.read_text(encoding="utf-8"))
     if manifest.manifest_version > MANIFEST_VERSION:
         msg = (
-            f"manifest {manifest_id!r} is version {manifest.manifest_version}; "
+            f"manifest {label or str(path)} is version {manifest.manifest_version}; "
             f"this build understands up to {MANIFEST_VERSION}"
         )
         raise UnsupportedManifestVersionError(msg)

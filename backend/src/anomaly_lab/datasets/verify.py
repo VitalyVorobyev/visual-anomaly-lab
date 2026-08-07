@@ -9,6 +9,10 @@ model that suddenly scores differently.
 It **detects drift and never repairs it**. Deciding that a file which changed should be
 re-hashed into the catalog, or that a missing one should be dropped, is the operator's
 call, and the honest failure of an unmounted disk is a report rather than a deletion.
+
+Masks are walked too, but only for presence: schema v1 records no hash for them and the
+schema is frozen (ADR-0004). They are counted apart from the images so that a clean report
+does not quietly claim a check it did not perform.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ from pydantic import BaseModel, ConfigDict
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.jobs.context import JobContext
 from anomaly_lab.media.decode import sha256_of
 
@@ -43,14 +48,19 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
             msg = f"no dataset with id {params.dataset_id}"
             raise LookupError(msg)
         recorded = images_repo.list_images_for_dataset(conn, dataset.id)
+        recorded_masks = masks_repo.list_masks_for_dataset(conn, dataset.id)
 
-    context.log(f"verifying {len(recorded)} images of dataset {dataset.name!r}")
+    context.log(
+        f"verifying {len(recorded)} images and {len(recorded_masks)} masks "
+        f"of dataset {dataset.name!r}"
+    )
 
     missing: list[str] = []
     modified: list[str] = []
     unreadable: list[str] = []
     verified = 0
 
+    total = len(recorded) + len(recorded_masks)
     for index, image in enumerate(recorded):
         context.raise_if_cancelled()
         path = Path(image.path)
@@ -68,10 +78,31 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
                 else:
                     modified.append(image.path)
 
-        if recorded:
-            context.progress((index + 1) / len(recorded), f"{index + 1} of {len(recorded)}")
+        if total:
+            context.progress((index + 1) / total, f"{index + 1} of {total}")
 
-    for label, paths in (("missing", missing), ("modified", modified), ("unreadable", unreadable)):
+    # Masks are checked for presence only. Schema v1 has no `mask.sha256` and the schema
+    # is frozen (ADR-0004), so a mask that was re-exported in place is drift this job
+    # cannot see. Counted separately so the report never implies otherwise.
+    masks_missing: list[str] = []
+    masks_verified = 0
+    for offset, mask in enumerate(recorded_masks):
+        context.raise_if_cancelled()
+        if Path(mask.path).is_file():
+            masks_verified += 1
+        else:
+            masks_missing.append(mask.path)
+
+        if total:
+            position = len(recorded) + offset + 1
+            context.progress(position / total, f"{position} of {total}")
+
+    for label, paths in (
+        ("missing", missing),
+        ("modified", modified),
+        ("unreadable", unreadable),
+        ("missing mask", masks_missing),
+    ):
         if paths:
             context.log(f"{len(paths)} {label} files", level="warning")
 
@@ -85,4 +116,8 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
         "missing_count": len(missing),
         "modified_count": len(modified),
         "unreadable_count": len(unreadable),
+        "masks_checked": len(recorded_masks),
+        "masks_verified": masks_verified,
+        "masks_missing": masks_missing[:MAX_PATHS_REPORTED],
+        "masks_missing_count": len(masks_missing),
     }

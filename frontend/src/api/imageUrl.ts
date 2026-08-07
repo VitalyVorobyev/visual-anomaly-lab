@@ -14,3 +14,13 @@ import type { ImageTier } from "./client";
 export function imageUrl(imageId: number, tier: ImageTier): string {
   return `${apiBaseUrl}/api/images/${imageId}/${tier}`;
 }
+
+/** One experiment's anomaly map for an image, colormapped and sized to the source. */
+export function anomalyMapUrl(imageId: number, experimentId: number): string {
+  return `${apiBaseUrl}/api/images/${imageId}/anomaly-map?experiment_id=${experimentId}`;
+}
+
+/** The ground-truth outline, transparent everywhere else, ready to stack on the source. */
+export function maskUrl(imageId: number): string {
+  return `${apiBaseUrl}/api/images/${imageId}/mask`;
+}

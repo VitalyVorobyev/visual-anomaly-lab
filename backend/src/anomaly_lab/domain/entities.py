@@ -151,6 +151,33 @@ class Image(BaseModel):
     imported_at: str
 
 
+class MaskKind(StrEnum):
+    """What a mask asserts. Only ground truth exists today; predictions are artifacts."""
+
+    GROUND_TRUTH = "ground_truth"
+
+
+class Mask(BaseModel):
+    """Pixel-level ground truth for one image, referenced in place like the image itself.
+
+    A mask belongs to an `Image` rather than a `Sample` because a multi-view sample can be
+    annotated in one view and not another, and because the mask has to align with a
+    specific image's pixel grid to mean anything.
+
+    There is no `sha256` here, unlike `Image`. The column does not exist in schema v1 and
+    the schema is frozen (ADR-0004), so `verify` can check that a mask file is still
+    *there* but not that it is still the same file. That limit is stated rather than
+    papered over; lifting it is a migration, not a patch.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    image_id: int
+    path: str
+    kind: MaskKind = MaskKind.GROUND_TRUTH
+
+
 class Split(BaseModel):
     """A named, seeded partition of a dataset's samples. Immutable once created."""
 
@@ -178,3 +205,88 @@ class SplitAssignment(BaseModel):
     split_id: int
     sample_id: int
     subset: Subset
+
+
+class ExperimentStatus(StrEnum):
+    DRAFT = "draft"
+    TRAINING = "training"
+    TRAINED = "trained"
+    FAILED = "failed"
+
+
+class Aggregation(StrEnum):
+    """How a sample's per-image scores become one number (ADR-0011)."""
+
+    MAX = "max"
+    MEAN = "mean"
+
+
+class Experiment(BaseModel):
+    """One method, on one split, with the configuration frozen at creation.
+
+    The three config columns are kept apart because they answer different questions:
+    `model_config_` is the plugin's own hyperparameters, `preprocessing_config` is what
+    every method is made to see identically, and `eval_config` is how the results are
+    read. Only the last may be reinterpreted without re-running anything.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    name: str
+    dataset_id: int
+    split_id: int
+    model_type: str
+    # `model_config` is taken by pydantic itself, so the field carries a trailing
+    # underscore in Python and its database and wire name through the alias.
+    model_config_: dict[str, Any] = Field(default_factory=dict, alias="model_config")
+    preprocessing_config: dict[str, Any] = Field(default_factory=dict)
+    eval_config: dict[str, Any] = Field(default_factory=dict)
+    status: ExperimentStatus = ExperimentStatus.DRAFT
+    artifact_dir: str
+    created_at: str
+    notes: str | None = None
+
+    @field_validator("model_config_", "preprocessing_config", "eval_config", mode="before")
+    @classmethod
+    def _decode_config_columns(cls, value: object) -> object:
+        return _decode_json_object(value)
+
+
+class ImageResult(BaseModel):
+    """One model's verdict on one image. Higher `score` means more anomalous."""
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    image_id: int
+    score: float
+    map_path: str | None = None
+    inference_ms: float
+
+
+class SampleResult(BaseModel):
+    """The aggregated verdict on one physical part, with the aggregation recorded."""
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    sample_id: int
+    agg_score: float
+    aggregation: Aggregation
+
+
+class MetricSet(BaseModel):
+    """Threshold-independent metrics for one subset of one experiment (ADR-0011)."""
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    subset: Subset
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    computed_at: str
+
+    @field_validator("metrics", mode="before")
+    @classmethod
+    def _decode_metrics(cls, value: object) -> object:
+        return _decode_json_object(value)

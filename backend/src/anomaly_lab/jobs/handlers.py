@@ -36,13 +36,28 @@ def _prewarm() -> JobHandler:
     return run_prewarm_job
 
 
-# `train` and `infer` arrive with the model plugins in M3. The queue, protocol,
-# cancellation and event fan-out are already kind-agnostic, so each will need nothing
-# here but another entry.
+def _train() -> JobHandler:
+    from anomaly_lab.experiments.train import run_train_job
+
+    return run_train_job
+
+
+def _infer() -> JobHandler:
+    from anomaly_lab.experiments.infer import run_infer_job
+
+    return run_infer_job
+
+
+# `train` and `infer` arrived in M3 and cost exactly what was predicted: one entry each
+# and one handler function each. The queue, protocol, cancellation and event fan-out
+# needed no change to carry a method that trains a neural network for minutes on a GPU,
+# which is the claim ADR-0009 made and this is the test of it.
 LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.IMPORT: _import_scan,
     JobKind.VERIFY: _verify,
     JobKind.PREWARM: _prewarm,
+    JobKind.TRAIN: _train,
+    JobKind.INFER: _infer,
 }
 
 

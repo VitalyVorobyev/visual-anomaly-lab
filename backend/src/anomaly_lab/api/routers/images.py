@@ -11,7 +11,10 @@ of fact rather than a hope: a client that has the bytes never needs to ask for t
 
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from pathlib import Path
+
+import numpy as np
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -20,11 +23,15 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import masks as masks_repo
+from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Image, JobKind
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.media.cache import TIERS, ImageTier, ensure_cached, etag_for, render
 from anomaly_lab.media.decode import UnreadableImageError
+from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_mask_contour
 from anomaly_lab.media.prewarm import PrewarmParams
+from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -67,6 +74,92 @@ def start_prewarm(request: Request, body: PrewarmRequest) -> JobSummary:
     )
     queue: JobQueue = request.app.state.job_queue
     return summary_of(queue.enqueue(kind=JobKind.PREWARM, params=params.model_dump(mode="json")))
+
+
+@router.get(
+    "/{image_id}/anomaly-map",
+    summary="One experiment's anomaly map for an image, colormapped",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def read_anomaly_map(
+    request: Request,
+    image_id: int,
+    experiment_id: int = Query(description="Which experiment's map to render."),
+    native: bool = Query(
+        default=True,
+        description="Resample the map to the source image's pixel grid so it overlays exactly.",
+    ),
+) -> Response:
+    """Render a stored float32 map as a PNG (ADR-0007).
+
+    Every map of one experiment is stretched over the **same** range, read from the
+    range file the inference job wrote. Normalizing each map to its own extremes would
+    make a clean part look as alarming as a defective one, which is precisely the
+    comparison the overlay exists to support.
+    """
+    image, settings = _load_image(request, image_id)
+    with connection(settings.db_path) as conn:
+        stored = results_repo.get_image_result(conn, experiment_id, image_id)
+    if stored is None or not stored.map_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"experiment {experiment_id} has no anomaly map for image {image_id}",
+        )
+
+    try:
+        array = np.load(stored.map_path, allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        # The artifact directory is deletable by design, so a missing map is an expected
+        # state rather than corruption — 410, the same answer a missing source file gets.
+        raise HTTPException(
+            status_code=410,
+            detail=f"the anomaly map file for image {image_id} is no longer readable",
+        ) from exc
+
+    maps_dir = settings.experiment_dir(experiment_id) / "maps"
+    payload = render_anomaly_map(
+        array,
+        value_range=read_display_range(maps_dir),
+        size=(image.width, image.height) if native else None,
+    )
+    return Response(
+        content=payload,
+        media_type="image/png",
+        headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}"'),
+    )
+
+
+@router.get(
+    "/{image_id}/mask",
+    summary="Ground-truth mask outline for an image",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def read_mask(request: Request, image_id: int) -> Response:
+    """The ground-truth outline as a transparent PNG, ready to lay over the source.
+
+    An outline rather than a filled region: filling the mask hides the pixels the reader
+    is trying to compare the model's map against.
+    """
+    image, settings = _load_image(request, image_id)
+    with connection(settings.db_path) as conn:
+        masks = masks_repo.list_masks_for_images(conn, [image_id])
+    found = masks.get(image_id) or []
+    if not found:
+        raise HTTPException(status_code=404, detail=f"image {image_id} has no ground-truth mask")
+
+    try:
+        mask = load_mask(Path(found[0].path))
+    except UnreadableImageError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+
+    payload = render_mask_contour(mask, size=(image.width, image.height))
+    return Response(
+        content=payload,
+        media_type="image/png",
+        headers=_headers(f'W/"mask-{image.sha256[:16]}"'),
+    )
 
 
 @router.get(

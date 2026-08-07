@@ -1,9 +1,9 @@
 """The job queue, its fan-out, and the worker subprocess.
 
-The end-to-end case here deliberately runs a job whose kind has no handler. That exercises
-the whole pipeline — spawn, stdout parsing, error propagation, terminal state — without
-needing a handler to exist yet. The success, progress and cancellation paths are covered
-where real handlers land: the import scan and the thumbnail pre-warm.
+The end-to-end case here runs a job that fails inside its handler. That exercises the
+whole pipeline — spawn, stdout parsing, error propagation, terminal state — in one test.
+The success, progress and cancellation paths are covered where the real handlers live:
+the import scan, the thumbnail pre-warm, and the training run.
 """
 
 from __future__ import annotations
@@ -22,8 +22,9 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_migrations
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
+from anomaly_lab.jobs.handlers import supported_kinds
 from anomaly_lab.jobs.protocol import LogEvent, ProgressEvent
-from anomaly_lab.jobs.queue import SUBSCRIBER_BUFFER, JobQueue
+from anomaly_lab.jobs.queue import MAX_LINE_BYTES, SUBSCRIBER_BUFFER, JobQueue, split_output
 
 TERMINAL_WAIT_SECONDS = 30.0
 
@@ -141,22 +142,32 @@ def test_publishing_to_a_job_nobody_watches_is_harmless(settings: Settings) -> N
     asyncio.run(scenario())
 
 
-def test_a_job_with_no_handler_fails_with_its_reason_recorded(client: TestClient) -> None:
+def test_a_failing_handler_reports_its_reason(client: TestClient) -> None:
     """End-to-end: spawn, event stream, parse, persist, terminal state.
 
-    `train` has no handler until M3, which makes it the honest way to prove the pipeline
-    reports a worker's failure rather than hanging or silently claiming success.
+    This used to enqueue `train` precisely *because* it had no handler. It has one now,
+    so the failure is a real one — a train job naming an experiment that does not exist —
+    which tests the same pipeline against a message an operator could actually receive.
     """
-    job = _queue(client).enqueue(kind=JobKind.TRAIN, params={"experiment_id": 1})
+    job = _queue(client).enqueue(kind=JobKind.TRAIN, params={"experiment_id": 12345})
 
     finished = _await_terminal(client, job.id)
     log_tail: list[str] = finished["log_tail"]
 
     assert finished["status"] == "failed"
-    assert "no handler is registered" in finished["error"]
+    assert "no experiment with id 12345" in finished["error"]
     assert finished["finished_at"] is not None
     # The raw stream is on disk whether or not anyone was watching (ADR-0009).
-    assert any("UnknownJobKindError" in line for line in log_tail)
+    assert any("ExperimentJobError" in line for line in log_tail)
+
+
+def test_every_declared_job_kind_has_a_handler() -> None:
+    """The invariant the old test stood in for: no kind is declarable but unrunnable.
+
+    `JobKind` is a closed enum and the schema's CHECK constraint mirrors it, so a kind
+    with no entry in the registry would be enqueueable and then immediately dead.
+    """
+    assert supported_kinds() == frozenset(JobKind)
 
 
 def test_a_running_job_left_by_a_previous_process_is_reconciled(settings: Settings) -> None:
@@ -196,3 +207,75 @@ def test_cancelling_an_already_finished_job_is_a_conflict(client: TestClient) ->
 
     assert response.status_code == 409
     assert "already finished" in response.json()["detail"]
+
+
+# -- output splitting ------------------------------------------------------------
+#
+# These pin a real failure, found by the first job long enough to draw a progress bar.
+# `StreamReader.readline` raises `ValueError` past asyncio's 64 KiB limit, and a tqdm bar
+# is *one line* — its frames are separated by `\r`, never `\n`. Downloading EfficientAD's
+# 1.5 GB penalty set blew the limit, the exception escaped the runner, and the queue
+# wedged: the running job stayed `running` and every later job stayed `queued`, silently.
+
+
+def test_a_progress_bar_becomes_readable_lines_rather_than_one_huge_one() -> None:
+    """`\\r` ends a line. That is how a terminal renders it, and how the log should too."""
+    lines, remainder = split_output(b"10%\r50%\r90%\rdone\n")
+    assert lines == ["10%", "50%", "90%", "done"]
+    assert remainder == b""
+
+
+def test_a_partial_line_is_held_until_it_is_finished() -> None:
+    lines, remainder = split_output(b"first\nsecond-half")
+    assert lines == ["first"]
+    assert remainder == b"second-half"
+
+    lines, remainder = split_output(remainder + b"-arrived\n")
+    assert lines == ["second-half-arrived"]
+    assert remainder == b""
+
+
+def test_crlf_does_not_produce_a_phantom_blank_line_of_content() -> None:
+    lines, _ = split_output(b"a\r\nb\r\n")
+    assert [line for line in lines if line] == ["a", "b"]
+
+
+def test_output_with_no_terminator_at_all_is_flushed_rather_than_buffered() -> None:
+    """The exact shape that broke it: megabytes with no newline anywhere.
+
+    The old reader raised `ValueError` here. Nothing a library prints may be able to stop
+    the queue, so an over-long fragment is emitted rather than accumulated.
+    """
+    flood = b"x" * (MAX_LINE_BYTES * 3)
+    lines, remainder = split_output(flood)
+
+    assert lines != []
+    assert remainder == b""
+    assert sum(len(line) for line in lines) == len(flood)
+
+
+def test_the_tail_of_a_stream_is_not_lost_at_eof() -> None:
+    lines, remainder = split_output(b"no trailing newline", at_eof=True)
+    assert lines == ["no trailing newline"]
+    assert remainder == b""
+
+
+def test_undecodable_bytes_are_replaced_rather_than_raising() -> None:
+    """A native crash message is not guaranteed to be UTF-8, and is exactly what is wanted."""
+    lines, _ = split_output(b"before \xff\xfe after\n")
+    assert lines[0].startswith("before ")
+
+
+def test_a_worker_that_floods_stderr_still_reaches_a_terminal_state(client: TestClient) -> None:
+    """End to end over the real subprocess path, with the output shape that broke it.
+
+    A train job for a missing experiment fails fast; what matters is that the job is
+    finalized and that the queue then runs the *next* job — a wedged runner leaves both
+    of those undone and reports nothing.
+    """
+    queue = _queue(client)
+    first = queue.enqueue(kind=JobKind.TRAIN, params={"experiment_id": 999_999})
+    assert _await_terminal(client, first.id)["status"] == "failed"
+
+    second = queue.enqueue(kind=JobKind.PREWARM, params={"dataset_id": 999_999})
+    assert _await_terminal(client, second.id)["status"] in {"succeeded", "failed"}

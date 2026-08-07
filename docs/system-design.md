@@ -35,8 +35,8 @@ The brief's scope constraints are binding. The system deliberately does **not** 
 - cloud deployment or remote compute — everything runs on the local machine,
 - distributed or multi-node training,
 - real-time camera acquisition,
-- complex annotation tooling (no polygon/brush mask editor; the `Mask` schema exists but is unused until
-  masks are supplied externally).
+- complex annotation tooling — no polygon or brush mask editor. Masks are *imported* alongside the images
+  that have them (§5) and never drawn here.
 
 The guiding principle is **a small, understandable architecture over premature scalability**. There is one
 user, one machine, one job at a time.
@@ -319,13 +319,28 @@ Dimensions, bit depth and `sha256` are captured at import: the hash makes import
 identities, which is what allows caching by `image_id` (§9) and lets `verify` detect drift or deletion.
 
 **`Mask`** — `id`, `image_id`, `path`, `kind`.
-Pixel-level ground truth. The table exists from the first migration but is **unused today** — the reference
-dataset has no masks, so only image-level metrics are computable (§8). Defining it now keeps the schema stable
-when masks appear and prevents pixel-level metrics from being designed in as an afterthought.
+Pixel-level ground truth, referenced in place like the image it annotates. The table existed unused from the
+first migration until public datasets that ship masks were adopted (ADR-0015); defining it early is what let
+them be imported with no schema change (ADR-0016). Identity is `(image_id, kind)`, so a re-import repoints a
+mask rather than accumulating a second one; a mask the manifest no longer mentions is left alone, for the same
+reason a missing image is reported rather than deleted.
+
+There is deliberately **no `sha256` column**, and the consequence is stated rather than papered over: `verify`
+can check that a mask file is still *there* and not that it is still the same file. Its report counts masks
+apart from images so a clean result never implies a check that was not made. Lifting this is a migration, not
+a patch (ADR-0004).
 
 **`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `params`, `created_at`.
 A named partition of a dataset's samples. `strategy`, `seed` and `params` record how it was produced so it
 can be regenerated exactly — a seed alone reproduces nothing without the fractions it was drawn under. Splits are immutable once created; changing a split means creating a new one.
+
+Two strategies exist. **`normal_only_train`** draws one: seeded, stratified by capture group, normals only in
+training. **`imported`** adopts the partition the source dataset published, read from the manifest the dataset
+was committed from and recorded in `params.manifest_id` — no seed, no fractions, no stratification, because
+the point is to reproduce someone else's split exactly so that a number computed here is comparable to the one
+they published (ADR-0016). Samples the manifest does not place are left *out* of the split rather than swept
+into `test`: a benchmark's protocol decides what belongs in its test set, and adding samples it never scored
+would change the denominator of every metric.
 
 **`SplitAssignment`** — `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`.
 Primary key `(split_id, sample_id)`. **Sample-level by construction** — there is no image-level assignment
@@ -375,6 +390,7 @@ only this interface and the registry key.
 class Capabilities(BaseModel):
     requires_training: bool          # PatchCore/EfficientAD yes; a pure-reference method may say no
     produces_anomaly_map: bool       # drives whether the UI offers overlay controls
+    produces_diagnostics: bool       # drives whether the UI offers the inspector views (ADR-0018)
     channel_aware: bool              # model consumes channel metadata internally
     dataset_specific: bool           # True for classical_circular — surfaced as a UI warning
     preferred_device: Literal["cpu", "mps", "cuda"]
@@ -406,13 +422,20 @@ class AnomalyModel(Protocol):
     def load(self, artifact_dir: Path) -> None: ...
 
 
-MODEL_REGISTRY: dict[str, type[AnomalyModel]] = {
-    "classical_circular":    ClassicalCircularModel,
-    "efficientad_anomalib":  EfficientAdAnomalib,
-    "patchcore_anomalib":    PatchCoreAnomalib,
-    # "efficientad_custom":  EfficientAdCustom,   # second implementation, same interface (ADR-0008)
+# The registry is a table of *lazy loaders*, so opening the method picker does not import
+# torch. That only holds while each plugin keeps its heavy imports inside its functions.
+LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
+    "pixel_reference":       lambda: PixelReferenceModel,      # numpy + Pillow, the floor
+    "efficientad_anomalib":  lambda: EfficientAdAnomalibModel,
+    # "efficientad_custom":  M6 — second implementation, same interface (ADR-0008)
+    # "patchcore_anomalib":  M7
+    # "classical_circular":  M8, optional (ADR-0015)
 }
 ```
+
+A method whose optional dependencies are missing reports `availability.available = false` with the
+command that installs them, and is **listed rather than hidden**: "why can't I pick EfficientAD"
+should be answerable from the screen.
 
 ### Schema-driven configuration
 
@@ -424,15 +447,47 @@ without touching the rest of the app" true in practice rather than aspirational.
 
 ### Contexts
 
-`TrainContext` and `InferContext` carry the four things a long-running plugin needs and must not invent for
-itself:
+`TrainContext` and `InferContext` carry everything a long-running plugin needs and must not invent for itself:
 
-- **`artifact_dir`** — the experiment's directory; the only location a model may write to;
-- **`progress(fraction, message)`** — progress callback, forwarded to the job event stream (§6);
-- **`should_cancel()`** — cooperative cancellation check, polled at epoch/batch boundaries;
-- **`log`** — structured logger whose records become `log` events in the job stream.
+- **`artifact_dir`** — the experiment's directory; the only place a model writes its own outputs;
+- **`cache_dir`** — shared, app-managed storage for downloaded assets (pretrained weights, the ImageNette
+  penalty set). Separate from `artifact_dir` because these belong to the *method* and are reused across every
+  experiment that runs it — a copy per run would be absurd;
+- **`preprocessing`** — the resize and colour policy every method is made to share (below);
+- **`progress(fraction, message)`** — forwarded to the job event stream (§6);
+- **`metric(name, value, step)`** — scalar series; becomes a `metric` event, which is what per-epoch losses use;
+- **`should_cancel()` / `raise_if_cancelled()`** — cooperative cancellation, polled at batch boundaries;
+- **`log`** — structured logger whose records become `log` events in the job stream;
+- **`emit_diagnostic(...)`** — the diagnostics contract (below, ADR-0018);
+- `TrainContext.val` — the held-out normals, **empty when the split has no `val` subset**;
+- `InferContext.write_map(image_id, array)` — persists one float32 map and accumulates the run's display range.
 
-Models never touch SQLite, never read application settings, and never write outside `artifact_dir`.
+Everything above is *injected* (ADR-0014). Models never touch SQLite, never read application settings, and
+never write outside `artifact_dir` and `cache_dir` — which is also what makes a plugin unit-testable with a
+`NullReporter` and no job system at all.
+
+### Preprocessing is configuration of the experiment, not of the model
+
+A comparison between two methods only means something if they were shown the same pixels. Left to themselves
+the libraries disagree, and the resulting difference in AUROC would partly measure the resize.
+
+So `PreprocessingConfig` — size, colour mode, resampling filter — is stored on the `Experiment`, handed to the
+plugin in its context, and **every plugin loads its pixels through one function**. A model that decodes an
+image any other way is a bug, not a variation. Aspect ratio is deliberately not preserved: the resize goes
+straight to the configured size, which makes an anomaly map a plain stretch back onto the source image, so an
+overlay aligns without the UI reconstructing letterbox offsets.
+
+### Diagnostics: what a method shows about itself
+
+A model that declares `produces_diagnostics` may call `ctx.emit_diagnostic(key, title, kind, payload)` during
+`fit` or `predict`. Arrays land as float32 `.npy` under `artifacts/exp-<id>/diagnostics/`, JSON payloads land
+inline, and a `diagnostics.json` index describes everything written. `kind` is one of `map`, `image`, `grid`,
+`graph`, `table`.
+
+**The UI renders by `kind` and never by method name.** That is what lets M4's visualizations work unchanged for
+`efficientad_custom` in M6. Scalar series — per-branch losses, learning rate — deliberately do *not* come
+through here: they are already `metric` events in the job protocol, and a second channel for the same data
+would be the wrong kind of completeness. Full rationale and costs in ADR-0018.
 
 ### Contract: scores are per-image
 
@@ -606,10 +661,39 @@ re-importing the same tree can be diffed against it.
 
 ### Proving the abstraction
 
-A second adapter, `flat_folder` (one image = one sample, no channels, label from a top-level `good`/`bad`
-folder or none at all), will be implemented to demonstrate that the domain model handles single-view datasets
-with `channel_id = NULL` and that nothing downstream assumes grouping. Standard public benchmarks fit this
-adapter, which makes it useful as well as diagnostic.
+Two further adapters ship, and between them they cover the public benchmarks (ADR-0016). Both produce **one
+image per sample with `channel_id = NULL`**, which is what finally demonstrated that the domain model handles
+single-view datasets and that nothing downstream assumes grouping — a claim the design made from the start and
+nothing exercised until then.
+
+- **`folder_classes`** — the simple contract: name the directories holding defect-free images
+  (`normal_dirs`) and defective ones (`defect_dirs`), as globs relative to the root, each covering the subtree
+  beneath it. Optional `mask_dir` / `mask_pattern` templates locate ground truth, including in a sibling
+  directory. The matched directory's name is recorded on the sample, so a per-defect-type breakdown needs no
+  schema that enumerates defect types. Nothing is guessed: a file in a directory no option names imports
+  unlabelled **and is reported**.
+- **`csv_table`** — reads a table the dataset ships. Every column name is an option, as are the values meaning
+  normal, defective, and each subset. `filter_column` / `filter_value` turn one table covering a benchmark
+  family into one dataset per class, which is the one-class protocol those benchmarks are scored under. Set
+  `channel_column` and rows sharing a sample identity become one multi-channel sample — the same adapter,
+  no special case, because channel count is data.
+
+`csv_table` also carries the source's **published partition** through into the manifest, which is what
+`SplitStrategy.IMPORTED` materializes (§8). Note that an official one-class protocol generally has train and
+test and **no `val` subset at all**, so an empty validation set is ordinary rather than a broken split.
+
+### The options form
+
+An adapter's options model is a pydantic model, and its **JSON Schema drives the import form**: control type
+follows the schema node's type, descriptions become help text, and defaults become placeholders rather than
+pre-filled values — so an untouched control sends nothing and the backend's default stays the only definition
+of it. A field whose default is *empty* is shown; a field that already has a working answer is folded behind a
+disclosure, which is what keeps "where are the good images" from being the tenth question on the screen.
+
+This was specified from the beginning and **built late**: until then the import screen hardcoded a single
+option and relied on Python defaults for the rest, which was survivable only while one adapter existed whose
+defaults fitted the one dataset on hand. `csv_table` has a required option, and nothing in the UI could supply
+it. ADR-0016 records the gap.
 
 ---
 
@@ -653,8 +737,15 @@ them for any threshold, computed in milliseconds from a few hundred stored float
 threshold would be storing a derived function of data already in the database — and would make the UI's
 threshold slider feel like a database write instead of an instant filter.
 
-**Pixel-level metrics are not implemented**, because no masks exist for the current data. The `Mask` table and
-the float32 `.npy` maps mean they can be added without schema change or re-inference (§4, §5).
+**Pixel-level metrics** (pixel ROC-AUC and PRO) are computed over the samples that have masks, and simply do
+not appear for the datasets that have none — which is most of them, including the showcase tree. They needed
+no schema change and no re-inference, exactly as the `Mask` table and the float32 `.npy` maps were meant to
+allow (§4, §5).
+
+One implementation note that is a design constraint rather than a detail: a hundred test images at 1.5 MPix in
+float32 is ~600 MB if the maps are accumulated to compute a curve. The pixel ROC is therefore built from a
+fixed-bin score histogram per class, streamed image by image, so memory stays constant in the number of test
+images rather than growing with it.
 
 ### Rankings
 
@@ -670,28 +761,44 @@ per experiment and compared across methods. Since methods differ by orders of ma
 CPU for the classical baseline versus GPU-bound deep inference — the accuracy/latency trade-off is a first
 class part of the comparison, not a footnote.
 
-### Split guidance for the reference dataset
+### Splits, and what a missing subset means
 
-Anomaly detection trains on normals only, so the split must reserve enough normals for training while keeping
-both classes available for threshold selection and final reporting. For the current 98 normal / 91 defect
-data:
+Anomaly detection trains on normals only, so a split must reserve enough normals for fitting while keeping both
+classes available for threshold selection and final reporting. Splits are assigned at **sample** level, so a
+part's channels never straddle subsets (§4), and there are two ways to obtain one.
 
-| Subset | Contents | Purpose |
-| --- | --- | --- |
-| `train` | ≈ 60 normal samples | model fitting (normals only) |
-| `val` | held-out normals + a portion of defects | threshold selection, sanity checks |
-| `test` | remaining normals + remaining defects | reported metrics |
+**Drawn here** (`normal_only_train`): seeded and stratified by capture group, so an acquisition-batch effect
+cannot land entirely on one side. The fractions are configurable; a reasonable starting shape is a train subset
+of normals only, a validation subset of held-out normals plus some defects for threshold selection, and the
+remainder as test. What is right depends entirely on how many samples exist, which is why it is a form field
+and not a constant in the code.
 
-Splits are **seeded and stratified by group** so that acquisition-batch effects do not concentrate in one
-subset, and are assigned at **sample** level so a part's channels never straddle subsets (§4). The exact ratios
-are configurable — this table is guidance for the current dataset, not a constant in the code.
+**Adopted from the source** (`imported`, ADR-0016): the partition the benchmark published, read out of the
+manifest the dataset was committed from. A number computed on a partition we drew ourselves is not comparable
+to a paper's number, so for any dataset that ships a split table this is the strategy that makes the
+comparison mean anything.
+
+**A missing `val` subset is normal, not an error.** VisA's official one-class protocol has train and test and
+nothing else, and that is the protocol its published figures are computed under. Every layer therefore has to
+tolerate an empty subset rather than assume three:
+
+- the split machinery leaves samples the manifest does not place *out*, rather than sweeping them into `test`;
+- the training handler passes an empty validation sequence, and logs that it did;
+- a method that calibrates on held-out normals — EfficientAD fits its score-normalization quantiles on them —
+  **falls back visibly**, with a warning naming what it used instead and what that costs;
+- threshold selection has nothing to fit against, so it returns the highest normal score in the subset **and
+  the sentence explaining that choice**, which the results screen prints under the slider. A slider that opens
+  at a fabricated position with no explanation invites the operator to read it as a recommendation.
 
 ---
 
 ## 9. Media and thumbnail cache
 
-Source images are 1280×1024 BMPs of roughly 3.9 MB. Serving those directly to a browser grid would move
-hundreds of megabytes per screen and stall the UI, so the media layer serves **three tiers**:
+Source images are whatever the dataset supplies — the showcase tree holds 1280×1024 BMPs of roughly
+3.9 MB, the public reference datasets hold multi-megapixel JPEGs. Nothing below depends on which:
+resolution and format are per-image data, recorded at import. Serving source files directly to a browser
+grid would move hundreds of megabytes per screen and stall the UI, so the media layer serves
+**three tiers**:
 
 | Tier | Size | Format | Used by |
 | --- | --- | --- | --- |
@@ -724,9 +831,11 @@ casing at any call site.
 
 ## 10. Classical baseline (summary)
 
-`classical_circular` is the non-neural reference method and the vertical slice's first model: it needs no
-training infrastructure, no GPU and no external framework, so it proves the whole import → experiment → job →
-results → evaluation pipeline end to end before any deep model is wired in. In outline (ADR-0010): a **circle
+`classical_circular` is the non-neural reference method. It was originally planned as the vertical slice's
+first model, on the grounds that it needs no training infrastructure, no GPU and no external framework. That
+ordering has been **superseded**: making the *showcase-specific* method the first one contradicted the
+universal goal, so the slice is now proven with a dataset-agnostic method and a dataset-agnostic floor
+baseline, and this method is scheduled later as an optional milestone. In outline (ADR-0010): a **circle
 fit** on the part boundary with a **prior-based fallback** when the fit is poor; the resulting geometry is
 **shared across all channels of a sample**, since the views are near-simultaneous images of the same physical
 object; a **polar transform** about the fitted centre turns rotation into translation; **FFT angular
@@ -775,12 +884,20 @@ API surface as follows.
 | **Split management** | Create a seeded, stratified split; per-subset counts by label; splits are immutable once created. | `POST /api/splits`, `GET /api/splits?dataset_id=` |
 | **Experiment creation** | Pick dataset + split + model; the configuration form is **generated from the model's JSON Schema** (§5), so new hyperparameters appear with no frontend change. Capability flags drive the UI (a `dataset_specific` model shows a warning; a model without anomaly maps hides overlay options). | `GET /api/experiments/model-types`, `POST /api/experiments` |
 | **Progress & logs** | Live job progress bar, streaming log console, metric sparklines, cancel button. Snapshot-then-subscribe on mount and on reconnect (§6). | `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`, `POST /api/jobs/{id}/cancel` |
-| **Results** | Per-sample scores; **anomaly-map overlay with an opacity slider** (CSS-composited, instant); **threshold slider** recomputing the confusion matrix live; **TP / FP / TN / FN filter**; **ranked most-normal / most-anomalous lists** including unlabeled samples; timing summary. | `GET /api/eval/{id}/metrics`, `GET /api/eval/{id}/threshold?value=`, `GET /api/eval/{id}/ranking`, `GET /api/images/{id}/anomaly-map?experiment_id=` |
-| **Experiment comparison** | Several experiments side by side under one protocol: sample-level ROC-AUC, ROC curves overlaid, timing, config diff, and a shared-sample view showing where methods disagree. | `GET /api/eval/compare?experiment_ids=…` |
+| **Results** | Per-sample scores, ranked; **threshold slider** recomputing the confusion matrix live; **TP / FP / TN / FN filter**; **anomaly-map overlay with an opacity slider** (CSS-composited, instant) and the ground-truth outline where a mask exists; timing summary. | `GET /api/experiments/{id}/results?subset=`, `GET /api/experiments/{id}/threshold?value=`, `GET /api/experiments/{id}/samples/{sid}/images`, `GET /api/images/{id}/anomaly-map?experiment_id=`, `GET /api/images/{id}/mask` |
+| **Diagnostics** (M4) | Whatever the method recorded about itself, rendered by `kind` and never by method name (ADR-0018). | `GET /api/experiments/{id}/diagnostics` |
+| **Experiment comparison** (M5) | Several experiments side by side under one protocol: sample / image / pixel ROC-AUC, ROC curves overlaid, timing, config diff, and a shared-sample view showing where methods disagree. | *not yet built* |
 
-Two cross-cutting UI rules follow from the design above:
+Three cross-cutting UI rules follow from the design above:
 
 1. **Nothing in the frontend hard-codes a channel count.** Channel layouts are rendered from the dataset's
    channel dictionary, and a two-channel sample renders correctly with no special case.
-2. **Threshold and opacity are client-side state.** Both are derived from data already fetched (scores, and a
-   rendered map PNG), so both sliders are immediate and neither writes to the database.
+2. **Nothing in the frontend names a method.** The picker, every configuration form and every capability-driven
+   affordance come from `GET /api/experiments/model-types`. Adding a method is a Python module and a registry
+   entry; if it ever needs a line of TypeScript, that is a finding about the boundary (ADR-0007).
+3. **Opacity is client state; the threshold is a server round trip.** Opacity is genuinely a view property —
+   applied in CSS over an already-fetched PNG, instant, no request. The threshold is not: deciding which rows
+   are false positives is the *rule* `score >= threshold`, and holding that rule in TypeScript as well as
+   Python would let the two drift. So the threshold endpoint returns the counts **and the classified rows
+   together**, and the client renders what it is given. It is a read over a few hundred stored floats and
+   writes nothing (ADR-0011).

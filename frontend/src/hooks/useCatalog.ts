@@ -9,6 +9,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import type {
+  BulkLabelRequest,
   DatasetDetail,
   DatasetSummary,
   Label,
@@ -97,6 +98,31 @@ export function useSetLabel(datasetId: number) {
     onSuccess: () => {
       // The dataset key is a prefix of every sample and page key under it, so one
       // invalidation refreshes the grid, the open sample and the label counts together.
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
+    },
+  });
+}
+
+/**
+ * Label many samples at once — a selection, or everything matching the browse filters.
+ *
+ * The filter form deliberately sends the *filters* rather than the ids they resolve to:
+ * the server re-evaluates them against the same clause the grid pages with, so the set
+ * that gets labelled is the set whose count was shown, even though only one page of it
+ * was ever loaded.
+ */
+export function useSetLabels(datasetId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (body: BulkLabelRequest) =>
+      unwrap(
+        await api.PATCH("/api/datasets/{dataset_id}/samples", {
+          params: { path: { dataset_id: datasetId } },
+          body,
+        }),
+        "the number of samples labelled",
+      ),
+    onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
     },
   });

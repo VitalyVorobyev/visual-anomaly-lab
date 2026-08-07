@@ -41,18 +41,20 @@ Throughout: **grouped multi-view samples** (one physical object, many images, on
 overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
 experiment comes back with identical configuration, metrics, results, and logs.
 
-> ### Project status — import and browse
+> ### Project status — the loop closes
 >
-> **M0**–**M2** are complete. The application imports a directory of images into a catalog of grouped
-> samples, browses them in a virtualized thumbnail grid, opens one sample across all of its channels with
-> synchronized zoom and pan, and creates seeded, sample-level train/val/test splits. Import is two-phase —
-> a scan proposes a reviewable manifest, and nothing is written until you commit it — and re-importing the
-> same directory is idempotent. Long operations run as jobs with live progress, streaming logs and working
-> cancellation.
+> **M0**–**M3** are complete: the whole loop above runs. Point the app at a directory or a public
+> benchmark, review the proposed manifest, commit it, adopt the benchmark's own split, train a method,
+> score it, and read image- **and** pixel-level metrics with a working anomaly-map overlay. Experiments
+> persist; reopening one gives back identical numbers.
 >
-> **Training and evaluation start at M3.** The [Methods](#methods) table below describes the designed
-> system, not shipped software. See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and
-> honest sizing.
+> Two methods ship: `pixel_reference`, a dataset-agnostic floor baseline that needs numpy and Pillow and
+> trains in seconds, and `efficientad_anomalib`, which trains on Apple Silicon via MPS. The remaining rows
+> of the [Methods](#methods) table are designed, not shipped.
+>
+> **Next is M4**, which makes the method *legible* — architecture view, teacher inspector, live training
+> charts, benchmark charts, diagnostic overlays — all built on the diagnostics contract M3 established.
+> See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
 
 ## Methods
 
@@ -61,13 +63,15 @@ means adding a module and a registry entry — nothing else in the application c
 
 | Registry key | What it is | Scope |
 | --- | --- | --- |
-| `classical_circular` | Geometry-aware classical baseline tailored to the showcase dataset: circle fit → polar unwrap → orientation alignment → robust per-channel reference comparison (median/MAD z-map). Fast, CPU-only, interpretable. | **Showcase-dataset-specific** (circular parts) |
+| `pixel_reference` | Dataset-agnostic floor baseline: per-pixel median + MAD over the training normals → z-map → smoothing → high-percentile score. numpy and Pillow only, trains in seconds, gives every deep result something to beat. | Dataset-agnostic |
 | `efficientad_anomalib` | EfficientAD via Intel's [anomalib](https://github.com/open-edge-platform/anomalib) | Dataset-agnostic |
-| `patchcore_anomalib` | PatchCore via anomalib | Dataset-agnostic |
 | `efficientad_custom` | From-scratch EfficientAD reimplementation, for direct comparison against the library version | Dataset-agnostic |
+| `patchcore_anomalib` | PatchCore via anomalib | Dataset-agnostic |
+| `classical_circular` | Geometry-aware classical baseline tailored to the showcase dataset: circle fit → polar unwrap → orientation alignment → robust per-channel reference comparison. Deferred to a later, optional milestone (ADR-0015). | **Showcase-dataset-specific** (circular parts) |
 
 The classical baseline is the *only* component allowed to assume anything about the showcase dataset's
-geometry. Everything else must work on a dataset it has never seen.
+geometry. Everything else must work on a dataset it has never seen — which is why the vertical slice is
+proved on a dataset-agnostic method against public benchmarks, and not on the classical one.
 
 ## Architecture at a glance
 
@@ -104,16 +108,40 @@ The first dataset is private: multi-illumination photographs of a manufactured c
 **98 normal + 91 defect logical samples**. Each sample is captured under several illumination channels
 (bright-field / dark-field / dome) — but one group has only two, a small irregularity with a large design
 consequence: **channel count is data, not schema**, and no component may hard-code it. The dataset carries
-no pixel masks, so evaluation is image-level, with sample-level ROC-AUC as the headline metric.
+no pixel masks, so evaluation of *this* dataset is image-level, with sample-level ROC-AUC as the headline
+metric. Pixel-level metrics come from the public datasets below, which do ship masks.
+
+## Reference datasets
+
+Methods are developed and validated against public benchmarks, not only against the private tree. That is
+what keeps the tool universal: a number computed here can be compared against a number someone else
+published, on the same data and — through the `csv_table` adapter — on the same official split.
+
+**These datasets are not committed.** `/datasets/` is gitignored: they are large, freely available, and
+adding gigabytes to a source repository to duplicate a public download buys nothing.
+`scripts/check-repo-safety.sh` fails if anything under `datasets/` is ever staged. Download them yourself
+and point the import screen at the directory.
+
+| Dataset | What it is | Adapter | Licence |
+| --- | --- | --- | --- |
+| [**VisA**](https://github.com/amazon-science/spot-diff) (Visual Anomaly), Zou et al. | 12 object classes, ~1000 normal + 100 anomalous images each, **with pixel-level ground-truth masks** and official one-class split tables in `split_csv/1cls.csv`. | `csv_table` | CC BY 4.0 (licence file ships with the download) |
+| [**GKN Blade Surface Defect Dataset**](https://doi.org/10.17632/3bh998k78g.1), Qianyu Zhou, University of Connecticut, 22 May 2023 | 203 good, 48 nick, 149 scratch photographs of blade surfaces. No masks. | `folder_classes` | CC BY 4.0, DOI [10.17632/3bh998k78g.1](https://doi.org/10.17632/3bh998k78g.1) |
+
+Both are used for training and as the comparison baseline. To import one, point the import screen at its
+root directory and fill in the adapter options — for GKN, `normal_dirs = Data_GKN/Good` and
+`defect_dirs = Data_GKN/Nick, Data_GKN/Scratch`; for one VisA class,
+`csv_path = split_csv/1cls.csv` with `filter_column = object` and `filter_value = candle`. Then create a
+split with the **`imported`** strategy to adopt the published partition rather than drawing your own,
+which is what makes the resulting figure comparable to the paper's.
 
 ## Documentation
 
 | Document | Contents |
 | --- | --- |
 | [`docs/system-design.md`](docs/system-design.md) | Architecture, domain model, canonical terminology, API surface, job and evaluation protocols |
-| [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M7, scope, exit criteria, sizing |
+| [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M9, scope, exit criteria, sizing |
 | [`docs/backlog.md`](docs/backlog.md) | Task-level breakdown by epic |
-| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0014 — what was decided, why, and what it costs |
+| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0018 — what was decided, why, and what it costs |
 
 ## Getting started
 
@@ -168,6 +196,15 @@ uv run --directory backend ruff check .   # lint
 uv run --directory backend mypy           # types, strict
 cd frontend && bun run test && bun run typecheck
 ./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
+```
+
+The deep-learning methods live behind an optional dependency group, so a checkout that only wants the
+baseline never pays for torch. Install it when you want EfficientAD, and check the accelerator before
+trusting it:
+
+```bash
+uv sync --directory backend --extra dl
+./scripts/mps-smoke-test.py               # is MPS actually usable here? (ADR-0008)
 ```
 
 A handful of backend tests assert the exact composition of the private showcase tree. They are skipped
