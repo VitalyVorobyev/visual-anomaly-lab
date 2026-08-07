@@ -158,6 +158,27 @@ seconds while a library drew a progress bar:
   every later job stayed `queued`, with no error anywhere. `_execute` now finalizes its own job on
   failure and kills the worker, and the runner loop survives anything `_execute` can raise.
 
+Three more were found by running the thing and looking at it, rather than by a test:
+
+- **A stored anomaly map with a stray channel axis** was accepted by `write_map` and failed
+  minutes later inside the evaluation layer, with an error naming a dtype rather than the
+  plugin. Maps are squeezed and checked where they are written.
+- **The inference run's diagnostics index erased the training run's**, leaving the
+  architecture graph on disk but unreferenced. The index is merged on `(key, image_id)`.
+- **An experiment left mid-training by a crash stayed `training` for ever.** Jobs were
+  reconciled at startup; experiments were not. On screen, `training` is indistinguishable
+  from a run genuinely in progress.
+
+And two are about how the results read rather than whether they are right:
+
+- **The anomaly-map overlay tinted the whole photograph.** A colormap's low end is still a
+  colour, so at any opacity and under any blend mode the regions where the model found
+  nothing looked as processed as the region where it found something. Alpha now follows the
+  score.
+- **A model's configuration panel was an empty box.** The rule that folds away
+  already-defaulted options is right for an adapter and leaves a model — whose
+  hyperparameters all have defaults — showing nothing at all.
+
 One is about the method:
 
 - **The EfficientAD wrapper does not use Lightning**, as the plan assumed it would.
