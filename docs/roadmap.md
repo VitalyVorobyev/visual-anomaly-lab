@@ -183,6 +183,23 @@ seconds while a library drew a progress bar:
   every later job stayed `queued`, with no error anywhere. `_execute` now finalizes its own job on
   failure and kills the worker, and the runner loop survives anything `_execute` can raise.
 
+One is about the verification itself, and it invalidated a claim made repeatedly before it was
+caught:
+
+- **CI had never run, on any commit, since it was written in M1.** The workflow pinned
+  `astral-sh/setup-uv@v9` — `v9.0.0` is a real release, but that repository publishes floating
+  major tags only through `v7`, so `@v9` resolved to nothing and both uv-dependent jobs died inside
+  "Set up job" before checking anything out. Frontend, Repo safety and Tauri shell passed
+  throughout, which is exactly why it read as a partial failure rather than a dead workflow. With
+  it fixed, the Backend job ran for the first time and immediately failed on something real: CI
+  installs `uv sync --locked` **without** `--extra dl`, so `torch` is absent, and the mypy override
+  beside the two lazy `import torch` statements covered `anomalib` and `torchvision` but not
+  `torch`. It passed locally only because this machine has the extra installed. The lesson is not
+  the tag — it is that "verification is green" was being asserted from local runs while the
+  authoritative one was red. A useful side effect: the torch-free environment now demonstrably runs
+  ruff, format, `mypy --strict` and 339 passed / 6 skipped, so the `dl`-extra boundary that
+  `CLAUDE.md` asserts is measured rather than assumed.
+
 Three more were found by running the thing and looking at it, rather than by a test:
 
 - **A stored anomaly map with a stray channel axis** was accepted by `write_map` and failed
