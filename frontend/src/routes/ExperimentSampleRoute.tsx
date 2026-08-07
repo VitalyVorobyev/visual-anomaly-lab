@@ -7,6 +7,11 @@
  * server colormaps it against the *run's* range so two images are comparable, and the
  * blend happens at view time — so moving the slider is instant and costs no round trip.
  *
+ * The map's PNG carries alpha that already follows the score, so the source image shows
+ * through untouched wherever the model found nothing. An opaque colormap over a
+ * photograph tints the whole frame and makes the quiet regions look as processed as the
+ * loud one — which is the opposite of what an overlay is for.
+ *
  * Alignment comes for free from the preprocessing bridge. Every method resizes straight
  * to the configured size without preserving aspect ratio, so the map is a plain stretch
  * back onto the source and there are no letterbox offsets to reconstruct here.
@@ -130,10 +135,10 @@ function ChannelView({
             src={anomalyMapUrl(image.image_id, experimentId)}
             alt=""
             aria-hidden
-            // `mix-blend-screen` rather than plain alpha: the map's dark end is nearly
-            // black, so a straight blend would grey out the source everywhere the model
-            // found nothing — exactly the regions that should stay readable.
-            className="pointer-events-none absolute inset-0 h-full w-full mix-blend-screen"
+            // Plain alpha compositing. The map arrives as RGBA with its *own* alpha
+            // already following the score, so it is transparent wherever the model found
+            // nothing; this slider scales that, rather than fighting it with a blend mode.
+            className="pointer-events-none absolute inset-0 h-full w-full"
             style={{ opacity }}
           />
         )}

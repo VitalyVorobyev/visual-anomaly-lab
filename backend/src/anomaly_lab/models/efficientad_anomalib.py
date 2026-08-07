@@ -39,6 +39,7 @@ leaves a 40 MB teacher behind; deleting anomalib's cache is a separate act.
 from __future__ import annotations
 
 import contextlib
+import inspect
 import shutil
 import time
 from collections.abc import Iterator, Sequence
@@ -438,7 +439,11 @@ class EfficientAdAnomalibModel(AnomalyModel):
         for name in ("teacher", "student", "ae"):
             branch = getattr(model, name)
             with torch_module.no_grad():
-                output = branch(probe)
+                # The branches do not share a signature: the autoencoder needs the target
+                # size, because its decoder upsamples to it rather than inferring it. The
+                # signature is inspected rather than special-cased by branch name, so a
+                # future branch with its own arguments does not silently break this.
+                output = branch(probe, **_probe_arguments(branch, probe))
             nodes.append(
                 {
                     "id": name,
@@ -604,6 +609,19 @@ def _next_penalty_batch(module: Any) -> Any:
     except StopIteration:
         module.imagenet_iterator = iter(module.imagenet_loader)
         return next(module.imagenet_iterator)[0]
+
+
+def _probe_arguments(branch: Any, probe: Any) -> dict[str, Any]:
+    """Extra keyword arguments a branch needs for a dry forward pass.
+
+    Only `image_size` so far, which the autoencoder requires because its decoder
+    upsamples to an explicit target rather than inferring one.
+    """
+    try:
+        parameters = inspect.signature(branch.forward).parameters
+    except (TypeError, ValueError):  # pragma: no cover - a C-implemented forward
+        return {}
+    return {"image_size": probe.shape[-2:]} if "image_size" in parameters else {}
 
 
 def _penalty_set_is_extracted(penalty_dir: Path) -> bool:

@@ -48,6 +48,13 @@ export function SchemaForm({
   const primary = fields.filter((field) => !field.advanced);
   const advanced = fields.filter((field) => field.advanced);
 
+  // Every option has a working default — which is the normal shape of a *model's*
+  // hyperparameters, where an adapter's "which folder holds the good images" has no
+  // sensible default at all. Folding all of them away would leave a box containing
+  // nothing but a disclosure, so they open instead, under a line saying they are
+  // optional. The rule stays the same; only what it does with an empty primary set.
+  const startOpen = primary.length === 0;
+
   return (
     <div className="flex flex-col gap-4">
       {primary.map(render)}
@@ -55,9 +62,14 @@ export function SchemaForm({
       {/* Folded away rather than dropped: every option stays reachable, but "where are
           the good images" should not be the tenth question on the screen. */}
       {advanced.length > 0 && (
-        <details className="rounded border border-slate-200 px-3 py-2 dark:border-slate-700">
+        <details
+          open={startOpen}
+          className="rounded border border-slate-200 px-3 py-2 dark:border-slate-700"
+        >
           <summary className="cursor-pointer text-xs tracking-wide text-slate-500 uppercase dark:text-slate-400">
-            {advanced.length} more, already set to a working default
+            {startOpen
+              ? `${advanced.length} options, every one already set to a working default`
+              : `${advanced.length} more, already set to a working default`}
           </summary>
           <div className="mt-3 flex flex-col gap-4">{advanced.map(render)}</div>
         </details>

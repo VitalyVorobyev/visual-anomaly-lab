@@ -38,6 +38,10 @@ _ANCHORS: list[tuple[float, tuple[int, int, int]]] = [
     (1.00, (252, 255, 164)),
 ]
 
+ALPHA_GAMMA = 2.0
+"""How sharply the overlay's opacity rises with the score. Above 1 the low end fades out
+faster than linear, which keeps a map's large quiet regions from veiling the whole part."""
+
 CONTOUR_RGB = (34, 211, 138)
 """Ground-truth contours are drawn in a green that no colormap entry comes close to."""
 
@@ -73,11 +77,22 @@ def render_anomaly_map(
     value_range: tuple[float, float] | None = None,
     size: tuple[int, int] | None = None,
 ) -> bytes:
-    """Colormap one map to a PNG.
+    """Colormap one map to an RGBA PNG whose **alpha follows the score**.
 
     `value_range` should be the *run's* range, not this image's, so two images from one
     experiment are comparable by eye. Falling back to this image's own extremes makes a
     clean part look exactly as alarming as a defective one, so it is only the last resort.
+
+    The alpha channel is what makes this readable, and it was arrived at by looking at the
+    result. An opaque colormap laid over a photograph — at any opacity, under any blend
+    mode — tints the whole frame, because a map's *low* end is still a colour. The regions
+    where the model found nothing then look as processed as the region where it found
+    something, which is the opposite of what an overlay is for. Scaling alpha with the
+    score instead leaves the source image untouched wherever the score is low, so the
+    overlay marks a place rather than covering the picture.
+
+    The curve is deliberately steeper than linear: a map is mostly low values, and a
+    linear ramp veils the whole part in a thin wash before the peak is visible at all.
     """
     values = np.asarray(array, dtype=np.float32)
     if value_range is None:
@@ -88,7 +103,12 @@ def render_anomaly_map(
 
     normalized = np.clip((values - low) / span, 0.0, 1.0)
     indices = (normalized * (_LUT_SIZE - 1)).astype(np.uint8)
-    image = Image.fromarray(_LUT[indices], mode="RGB")
+
+    rgba = np.empty((*values.shape, 4), dtype=np.uint8)
+    rgba[..., :3] = _LUT[indices]
+    rgba[..., 3] = (np.power(normalized, ALPHA_GAMMA) * _UINT8_MAX).astype(np.uint8)
+
+    image = Image.fromarray(rgba, mode="RGBA")
     if size is not None and image.size != size:
         image = image.resize(size, Image.Resampling.BILINEAR)
 

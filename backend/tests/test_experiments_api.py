@@ -432,6 +432,31 @@ def test_an_anomaly_map_renders_at_the_source_resolution(
     assert rendered.size == (SIZE, SIZE)
 
 
+def test_the_map_is_transparent_where_the_model_found_nothing(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture
+) -> None:
+    """An opaque colormap over a photograph tints the whole frame.
+
+    The regions where the model found nothing would then look as processed as the region
+    where it found something, which is the opposite of what an overlay is for. So alpha
+    follows the score: low means see-through, and the source image stays readable.
+    """
+    import io
+
+    response = client.get(
+        f"/api/images/{seeded.defect_image_ids[0]}/anomaly-map",
+        params={"experiment_id": scored["id"]},
+    )
+    rendered = Image.open(io.BytesIO(response.content))
+    assert rendered.mode == "RGBA"
+
+    alpha = np.asarray(rendered)[:, :, 3]
+    assert int(alpha.min()) == 0, "the quietest pixel must be fully transparent"
+    assert int(alpha.max()) > 200, "the loudest pixel must be close to opaque"
+    # A map is mostly quiet; if the median pixel were opaque the overlay would be a veil.
+    assert int(np.median(alpha)) < 128
+
+
 def test_a_ground_truth_mask_renders_as_a_transparent_outline(
     client: TestClient, scored: dict[str, Any], seeded: Fixture
 ) -> None:
