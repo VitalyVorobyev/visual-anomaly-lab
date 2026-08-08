@@ -62,15 +62,24 @@ fn reveal_path(path: String) -> Result<(), String> {
     let root = data_root();
     let allowed = std::fs::canonicalize(&root).unwrap_or(root);
     if !target.starts_with(&allowed) {
-        return Err(format!("{} is outside the data directory", target.display()));
+        return Err(format!(
+            "{} is outside the data directory",
+            target.display()
+        ));
     }
 
     // `open -R` selects the item in Finder rather than opening it, which is right for both
     // a directory and a checkpoint nothing should double-click.
     #[cfg(target_os = "macos")]
-    let result = std::process::Command::new("open").arg("-R").arg(&target).spawn();
+    let result = std::process::Command::new("open")
+        .arg("-R")
+        .arg(&target)
+        .spawn();
     #[cfg(target_os = "windows")]
-    let result = std::process::Command::new("explorer").arg("/select,").arg(&target).spawn();
+    let result = std::process::Command::new("explorer")
+        .arg("/select,")
+        .arg(&target)
+        .spawn();
     #[cfg(all(unix, not(target_os = "macos")))]
     let result = std::process::Command::new("xdg-open")
         .arg(target.parent().unwrap_or(&target))
