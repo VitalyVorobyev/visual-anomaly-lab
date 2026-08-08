@@ -231,6 +231,43 @@ were enumerated, not the differing ones. "Two independent implementations agree,
 the cause" was sound reasoning that pointed at the data and the protocol, and quietly skipped the one
 other thing both implementations load from the same place.
 
+### The protocol: VisA's own one-class split, and what it took to get it
+
+Every number above this line is on a **generated** 60/20/20 split and may not be compared to a
+published figure. That was not a choice about rigour — the split VisA publishes had simply
+never been imported, and finding out why is the useful part.
+
+`candle` was imported from `candle/image_anno.csv`, which carries the label and the mask path
+and **no subset column**. The importer was configured to read one (`split_column: "split"`)
+and correctly recorded `subset: null` for all 1100 samples, because that file has no such
+column: VisA publishes its partition separately, in `split_csv/1cls.csv`, one table for all
+twelve objects. Nothing failed and nothing warned — the manifest simply came back with no
+published partition, and `plan_imported_split` would have refused it by name if anyone had
+asked for one.
+
+Re-imported from `split_csv/1cls.csv` with `filter_column="object"`, `filter_value="candle"`,
+the composition is the published one:
+
+| Subset | Normal | Defect | |
+|---|---|---|---|
+| `train` | 810 | 0 | the published 900, less the calibration holdout |
+| `val` | 90 | 0 | `holdout_from_train=0.1`, carved from **train** only |
+| `test` | 100 | 100 | **byte-identical to VisA's published test set** |
+
+Three things this establishes, all of which were assumptions until now:
+
+- **Training sees only normal images.** 810 normal, zero defect, zero unlabelled — read off
+  the split assignments rather than trusted from the strategy's name.
+- **The published test set is untouched.** The holdout comes out of `train`, which is the one
+  departure `plan_imported_split` permits and the reason it permits it: EfficientAD calibrates
+  on held-out normals, the one-class protocols publish no `val`, and calibrating on training
+  normals means calibrating on memorized data. Taking the holdout from `test` would have
+  changed the denominator of the figure being reported.
+- **The old dataset row was reused, not duplicated.** The commit matched the existing `candle`
+  dataset by root path, added the 100 masks, and created a second split beside the generated
+  one. Both splits now exist on the same images, so the exploratory rows above stay valid and
+  reproducible rather than being orphaned.
+
 ### A negative result measured on a broken configuration is a measurement of the breakage
 
 The score-aggregation sweep above was run again on the same object with the better teacher,

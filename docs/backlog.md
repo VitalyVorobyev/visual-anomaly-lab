@@ -69,34 +69,30 @@ something the workbench measures rather than something it is handed.
 Inference cost is unchanged by any of this. The source model is training-only; what ships is the
 same 2.7M-parameter PDN.
 
-- [ ] **Validate the PDN against the reference architecture, not just against its shapes** (S). Build
-      nelson1425's `get_pdn_small`/`get_pdn_medium` as a literal `nn.Sequential`, load the published
-      weights into both it and ours, and assert identical output. Loading foreign weights is already
-      guarded by an order-of-appearance remap and a shape check; neither would catch a network that
-      differs in a way the shapes permit.
-- [ ] **The distillation stage** (L, and it splits): a `distill` job kind and one module.
-      `wide_resnet101_2` (`IMAGENET1K_V1`) frozen, `layer2` + `layer3`, patch-aggregated to 384
-      channels at 64×64, MSE into the PDN, Adam 1e-4 / weight decay 1e-5. Writes the PDN weights,
-      the feature-normalization statistics, and the full configuration into the model cache as one
-      described artifact.
-  - [ ] The **feature source behind a protocol** — `features(batch) -> (N, 384, 64, 64)` plus the
-        preprocessing it requires. This is the whole cost of making DINOv2-S a second implementation
-        later instead of a rewrite, and it is nearly free now.
-  - [ ] **Imagenette as the smoke corpus** (already downloaded for the penalty set — 13 394 images),
-        ImageNet-1K as an opt-in path that is never the default.
-  - [ ] Resumable on the same terms as training (**ADR-0025**), because this is the one job here
-        that is genuinely long.
-- [ ] **Consume a distilled teacher from the student stage** (S): `teacher_source` names it, and the
-      load validates architecture, output channels and recorded preprocessing before it is used.
-- [ ] **Audit the baseline on the official protocol** (M): VisA `candle`'s official `1cls` split
-      imported, training confirmed to see only normals, `efficientad_anomalib` run on it, and
-      per-image labels, scores and maps exported. This is the run that may be compared to a published
-      number; nothing measured so far may be.
-- [ ] **Make the aggregation comparison repeatable** (S). Already measured once, and the answer is
-      that it barely matters — `max`, top-k, p95/p99 and the plain mean all land inside 0.71–0.77 on
-      the same maps. Worth having as an auditable artifact rather than a scratchpad script,
-      **not** worth expecting a win from.
-
+- [x] **Validate the PDN against the reference architecture, not just against its shapes** (S).
+      `test_our_pdn_is_the_reference_pdn`, both widths, padding on and off. It also pins the one
+      genuine difference: ours normalizes inside `forward`, the reference in its dataset transform.
+- [x] **The distillation stage** (L): a `distill` job kind and one module. `wide_resnet101_2`
+      (`IMAGENET1K_V1`) frozen, `layer2` + `layer3`, patch-aggregated to 384 channels at 64×64, MSE
+      into the PDN with padding on, Adam 1e-4 / weight decay 1e-5. Writes the weights, the source's
+      feature-normalization statistics and the full configuration as one described artifact.
+  - [x] The **feature source behind a protocol**, so DINOv2-S is a class rather than a rewrite.
+  - [x] **Imagenette as the smoke corpus**, ImageNet-1K opt-in and never a default.
+  - [x] Resumable, checkpointing on a step interval and on cancellation.
+  - [x] The MPS finding: `adaptive_avg_pool1d` is unimplemented for non-divisible lengths, which is
+        two of the three pools here. Bins gathered explicitly, pinned against the library kernel.
+  - [ ] A real Imagenette teacher at 10 000 steps, and a student against it (queued overnight).
+  - [ ] An API route so a distill job can be started from the application rather than the CLI (S).
+- [x] **Consume a distilled teacher from the student stage** (S): `teacher_source: "distilled"` plus
+      `distilled_teacher`, validating recorded `model_size`, `out_channels` and preprocessing first.
+- [x] **Import the official protocol** (S). VisA `candle` from `split_csv/1cls.csv` — 810/90/200 with
+      the published test set byte-identical, training confirmed normal-only from the assignments.
+      The old import read `image_anno.csv`, which has no split column at all.
+- [ ] **Run the protocol sweep on it** (S, queued): `efficientad_anomalib`, then `efficientad_custom`
+      with the teacher pinned to `anomalib` for like-for-like, then with `nelson1425`.
+- [x] **Make the aggregation comparison repeatable** (S). `scripts/audit-run.py` — per-image CSV plus
+      every aggregation recomputed from stored maps, read-only and GPU-free. It overturned its own
+      earlier null result the first time it was pointed at a better run.
 **Two things to be honest about before starting:**
 
 - **An Imagenette-distilled teacher is a pipeline validation, not a competitive teacher.** Imagenette
