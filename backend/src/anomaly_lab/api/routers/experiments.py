@@ -11,7 +11,11 @@ a filter over a few hundred floats and never a database write (ADR-0011).
 
 from __future__ import annotations
 
+import asyncio
+import hashlib
 import sqlite3
+import time
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +28,7 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
+from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -44,17 +49,28 @@ from anomaly_lab.eval.threshold import (
     suggest_threshold,
 )
 from anomaly_lab.experiments.infer import InferParams
-from anomaly_lab.experiments.train import TrainParams
+from anomaly_lab.experiments.train import (
+    MODEL_SUBDIR,
+    TrainingState,
+    TrainParams,
+    read_training_state,
+)
 from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
 from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
+from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.base import ModelDescription, evenly_spaced
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
     DiagnosticIndex,
     DiagnosticKind,
+    DisplayRange,
+    PruneResult,
+    PruneScope,
     load_index,
+    prune,
 )
-from anomaly_lab.models.preprocessing import PreprocessingConfig
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -63,6 +79,13 @@ router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 # A ROC curve has one point per distinct score, so a large test set produces more points
 # than a chart has pixels. Capped, and the cap is reported rather than applied silently.
 CURVE_POINT_LIMIT = 2000
+
+
+class PayloadFormat(StrEnum):
+    """Whether a caller wants the picture or the numbers behind it (ADR-0023)."""
+
+    PNG = "png"
+    RAW = "raw"
 
 
 class MethodCatalog(BaseModel):
@@ -144,6 +167,16 @@ class ExperimentDetail(ExperimentSummary):
     jobs: list[JobSummary] = Field(default_factory=list)
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
+    supports_resume: bool = False
+    """Whether this method can continue a finished run (ADR-0025)."""
+    training_state: TrainingState | None = None
+    """
+    How much training the stored checkpoint has actually had.
+
+    `None` when nothing has trained, or when the method has no notion of a step. Rendered
+    beside the frozen configuration, because `max_steps` there is the **per-run** budget
+    and would otherwise read as the total on a model that has been continued.
+    """
     map_range: MapScale | None = None
     """
     The run-wide display range every one of this run's maps is drawn against (ADR-0019).
@@ -176,6 +209,15 @@ class Curve(BaseModel):
 
     x: list[float] = Field(description="False-positive rate for ROC; recall for PR.")
     y: list[float] = Field(description="True-positive rate for ROC; precision for PR.")
+    t: list[float] = Field(
+        default_factory=list,
+        description=(
+            "The score at each point, so precision and recall can be drawn against the "
+            "threshold rather than only against each other. Empty for ROC: that curve "
+            "carries two synthetic endpoints whose thresholds are infinite, and JSON has "
+            "no way to say so."
+        ),
+    )
     total: int = Field(description="Points before downsampling.")
     dropped: int = Field(default=0, description="Points not returned, so a cap is visible.")
 
@@ -308,11 +350,13 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         capabilities = get_model_class(experiment.model_type).capabilities()
         produces_map = capabilities.produces_anomaly_map
         produces_diagnostics = capabilities.produces_diagnostics
+        supports_resume = capabilities.supports_resume
     except UnknownModelError:
         # A method can be removed from the registry while its experiments remain. The
         # record stays readable; only the capability-driven affordances go away.
         produces_map = False
         produces_diagnostics = False
+        supports_resume = False
 
     return ExperimentDetail(
         **_summary(conn, experiment).model_dump(),
@@ -327,6 +371,10 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         jobs=[summary_of(job) for job in jobs_repo.list_jobs_for_experiment(conn, experiment.id)],
         produces_anomaly_map=produces_map,
         produces_diagnostics=produces_diagnostics,
+        supports_resume=supports_resume,
+        # Read from a JSON sidecar, never from the checkpoint: this process has no torch,
+        # by design, and a `.pt` is unreadable without it.
+        training_state=read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR),
         map_range=_run_map_range(experiment.artifact_dir),
     )
 
@@ -344,6 +392,32 @@ def _load(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
     if experiment is None:
         raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
     return experiment, settings
+
+
+def _refuse_while_a_job_runs(request: Request, settings: Settings) -> None:
+    """409 with the job's name, for the routes that must not race a worker.
+
+    Any running job, not only this experiment's: one machine, one device, one FIFO queue
+    (ADR-0009), and an inference job's `flush()` merges the index with whatever is on
+    disk — so a delete landing between the model returning and the flush would be quietly
+    undone. Refusing while naming what to wait for is the whole difference between "not
+    now" and "that button does nothing sometimes".
+
+    Both halves are needed and neither is redundant. The queue's claim covers the window
+    between the pre-spawn hook finishing and the row being written; the row covers a
+    worker this process did not launch — and is the durable answer, reconciled at startup.
+    """
+    queue: JobQueue = request.app.state.job_queue
+    with connection(settings.db_path) as conn:
+        job = jobs_repo.running_job(conn)
+        if job is None and queue.current_job_id is not None:
+            job = jobs_repo.get_job(conn, queue.current_job_id)
+    if job is None:
+        return
+    raise HTTPException(
+        status_code=409,
+        detail=f"a {job.kind.value} job (id {job.id}) is running; try again when it ends",
+    )
 
 
 @router.get("/model-types", summary="Every registered method, with its configuration schema")
@@ -465,9 +539,16 @@ def delete_experiment(request: Request, experiment_id: int) -> dict[str, bool]:
 def start_train(
     request: Request, experiment_id: int, body: TrainParams | None = None
 ) -> JobSummary:
-    experiment, _ = _load(request, experiment_id)
+    experiment, settings = _load(request, experiment_id)
     params = body or TrainParams(experiment_id=experiment.id)
     params = params.model_copy(update={"experiment_id": experiment.id})
+
+    # Refused here rather than ten minutes later inside a worker. A form that cannot
+    # succeed should fail as a form, which is the same reasoning `create_experiment`
+    # applies to a config that does not validate against its method's schema.
+    if params.additional_steps is not None:
+        _refuse_impossible_resume(experiment, settings)
+
     queue: JobQueue = request.app.state.job_queue
     return summary_of(
         queue.enqueue(
@@ -476,6 +557,85 @@ def start_train(
             experiment_id=experiment.id,
         )
     )
+
+
+def _refuse_impossible_resume(experiment: Experiment, settings: Settings) -> None:
+    """422 when a continuation cannot work, naming which of the three reasons it is."""
+    try:
+        capabilities = get_model_class(experiment.model_type).capabilities()
+    except UnknownModelError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"method {experiment.model_type} is not registered"
+        ) from exc
+
+    if not capabilities.supports_resume:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"method {experiment.model_type} cannot continue a finished run; it has "
+                "no notion of a training step. Train it from scratch instead."
+            ),
+        )
+
+    state = read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR)
+    if state is None:
+        raise HTTPException(
+            status_code=422,
+            detail="this experiment has not been trained yet, so there is nothing to continue",
+        )
+    if not state.resumable:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "this checkpoint was written before optimizer state was saved, so it "
+                "cannot be continued exactly. Train from scratch once, and that run can "
+                "then be continued."
+            ),
+        )
+
+
+def _refuse_impossible_diagnose(
+    request: Request, experiment: Experiment, settings: Settings, image_id: int
+) -> None:
+    """Fail a request that cannot succeed as a *request*, not as a 503 ten seconds later.
+
+    The same reasoning `create_experiment` applies to a config that fails its method's
+    schema. Every check here is cheap and needs no torch, which is the point: the process
+    that would discover them holds an accelerator and costs a model load to start.
+    """
+    _refuse_while_a_job_runs(request, settings)
+
+    try:
+        capabilities = get_model_class(experiment.model_type).capabilities()
+    except UnknownModelError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"method {experiment.model_type} is not registered"
+        ) from exc
+
+    if not capabilities.produces_diagnostics:
+        raise HTTPException(
+            status_code=422,
+            detail=f"method {experiment.model_type} records no diagnostics about an image",
+        )
+    if capabilities.requires_training and experiment.status is not ExperimentStatus.TRAINED:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"experiment {experiment.id} is {experiment.status.value}; train it before "
+                "asking what it saw in an image"
+            ),
+        )
+
+    with connection(settings.db_path) as conn:
+        in_split = images_repo.list_images_for_split(
+            conn, experiment.split_id, subsets=list(Subset)
+        )
+    if not any(image.image_id == image_id for image in in_split):
+        # Not merely "no such image": an image of another dataset exists and is still the
+        # wrong thing to ask this experiment about.
+        raise HTTPException(
+            status_code=404, detail=f"image {image_id} is not in this experiment's split"
+        )
 
 
 @router.post("/{experiment_id}/infer", summary="Queue an inference and evaluation job")
@@ -693,15 +853,23 @@ def _labelled(rows: list[tuple[Label, float]]) -> tuple[np.ndarray, np.ndarray]:
     )
 
 
-def _curve(arrays: tuple[np.ndarray, np.ndarray] | None) -> Curve | None:
-    """Downsample one curve to a drawable number of points, saying what was dropped."""
+def _curve(
+    arrays: tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray] | None,
+) -> Curve | None:
+    """Downsample one curve to a drawable number of points, saying what was dropped.
+
+    A third array, where the curve has one, is the score at each point and rides the
+    **same** `kept` indices — a `t` sampled independently would label the wrong points.
+    """
     if arrays is None:
         return None
-    x, y = arrays
+    x, y = arrays[0], arrays[1]
+    threshold = arrays[2] if len(arrays) == 3 else None
     kept = evenly_spaced(x.size, CURVE_POINT_LIMIT)
     return Curve(
         x=[float(x[index]) for index in kept],
         y=[float(y[index]) for index in kept],
+        t=[] if threshold is None else [float(threshold[index]) for index in kept],
         total=int(x.size),
         dropped=int(x.size) - len(kept),
     )
@@ -762,12 +930,159 @@ def get_diagnostics(request: Request, experiment_id: int) -> DiagnosticIndex:
     return load_index(settings.experiment_dir(experiment.id) / "diagnostics")
 
 
+class DiagnoseRequest(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    image_id: int = Field(description="The image to diagnose. Must belong to this split.")
+
+
+class DiagnoseResponse(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    keys: list[str] = Field(description="The diagnostic keys recorded for this image.")
+    elapsed_ms: float
+    warm: bool = Field(
+        description=(
+            "False when this request had to load the model first, which is what makes it "
+            "take seconds. True once a resident is serving."
+        )
+    )
+
+
+@router.post("/{experiment_id}/diagnose", summary="Record diagnostics for one image, now")
+async def diagnose(request: Request, experiment_id: int, body: DiagnoseRequest) -> DiagnoseResponse:
+    """Ask the method what it saw in one image, outside any job (ADR-0026).
+
+    An inference run records per-image diagnostics for a bounded sample of what it scored,
+    so most images have none. This answers for any image in the split, served from a
+    resident worker that keeps the checkpoint loaded — the first request pays the model
+    load, the rest do not.
+
+    **It does not change this image's score, its map, or any metric.** Those come from a
+    job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+    `on_demand` in the index (ADR-0027).
+
+    Refused with 409 while a job is running: one machine, one device, and a browse request
+    must not queue behind a two-hour train.
+    """
+    experiment, settings = await asyncio.to_thread(_load, request, experiment_id)
+    await asyncio.to_thread(
+        _refuse_impossible_diagnose, request, experiment, settings, body.image_id
+    )
+
+    resident: ResidentWorker = request.app.state.resident
+    started = time.perf_counter()
+    try:
+        keys, warm = await resident.request(experiment.id, body.image_id)
+    except ResidentError as exc:
+        # 503, not 500: the request was well formed and the model exists — the process
+        # that answers it did not survive. The stderr tail is here because the reason is
+        # nearly always a library's, and "the resident stopped" alone is unactionable.
+        detail = str(exc)
+        tail = resident.stderr_tail()
+        raise HTTPException(
+            status_code=503, detail=f"{detail}\n{tail}" if tail else detail
+        ) from exc
+
+    return DiagnoseResponse(
+        keys=keys, elapsed_ms=(time.perf_counter() - started) * 1000.0, warm=warm
+    )
+
+
+@router.delete("/{experiment_id}/diagnostics", summary="Delete diagnostics to reclaim disk")
+async def clear_diagnostics(
+    request: Request,
+    experiment_id: int,
+    scope: PruneScope = Query(
+        default=PruneScope.IMAGE,
+        description=(
+            "`image` drops every per-image entry and keeps the model-scoped ones; "
+            "`on_demand` drops only what was asked for while browsing; `all` drops "
+            "everything this run recorded about itself."
+        ),
+    ),
+) -> PruneResult:
+    """Remove stored diagnostics and report what it reclaimed (ADR-0027).
+
+    **Anomaly maps are never touched.** They live in a sibling directory and each is
+    referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
+    the overlay, `has_map` and the map scale. Reclaiming their space means deleting the
+    experiment.
+
+    Refused with 409 while a job is running, because an inference job's index write merges
+    with what is on disk and would put back exactly what this removed. The resident worker
+    can write the same file, so it is evicted first rather than raced — the delete waits
+    for any request in flight, which is bounded and is the same guarantee the queue gets.
+    """
+    experiment, settings = await asyncio.to_thread(_load, request, experiment_id)
+    await asyncio.to_thread(_refuse_while_a_job_runs, request, settings)
+
+    resident: ResidentWorker = request.app.state.resident
+    await resident.evict()
+
+    root = settings.experiment_dir(experiment.id) / "diagnostics"
+    return await asyncio.to_thread(prune, root, scope=scope)
+
+
+@router.get(
+    "/{experiment_id}/images/{image_id}/source-values",
+    summary="The preprocessed pixels the model actually read",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/octet-stream": {}}},
+        304: {"description": "The client's copy is current."},
+    },
+)
+def read_source_values(request: Request, experiment_id: int, image_id: int) -> Response:
+    """`load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+
+    **The preprocessed array, not the display tier.** A readout taken from the rendered
+    preview would report what the browser is showing — 8-bit, resampled for display — when
+    the question is what the *method* consumed. Every method loads its pixels through this
+    same function, so this is exactly the number that went into the model.
+
+    **Every plane in one response**, with the count in the header. How many there are is a
+    property of the experiment's colour mode, and a client that had to know it in advance
+    would either encode that in the UI or discover it by asking until something 404s.
+
+    Cacheable forever in practice: the source file is immutable and the preprocessing
+    config is frozen at creation, so the ETag over both can never go stale for one
+    experiment. It is one fetch per image, ever.
+    """
+    experiment, settings = _load(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        image = images_repo.get_image(conn, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail=f"no image {image_id}")
+
+    config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
+    digest = hashlib.sha256(f"{image.sha256}|{config.model_dump_json()}".encode()).hexdigest()[:16]
+    etag = f'W/"source-{digest}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=_diagnostic_headers(etag))
+
+    try:
+        array = load_array(Path(image.path), config)
+    except (OSError, ValueError) as exc:
+        # The catalog references files in place, so a source file can disappear between
+        # import and now — the same 410 the image tiers give.
+        raise HTTPException(
+            status_code=410, detail=f"the source file for image {image_id} is no longer readable"
+        ) from exc
+
+    return Response(
+        content=encode_plane(array),
+        media_type="application/octet-stream",
+        headers=_diagnostic_headers(etag),
+    )
+
+
 @router.get(
     "/{experiment_id}/diagnostics/payload",
     summary="One diagnostic array, rendered",
     response_class=Response,
     responses={
-        200: {"content": {"image/png": {}}},
+        200: {"content": {"image/png": {}, "application/octet-stream": {}}},
         304: {"description": "The client's copy is current."},
     },
 )
@@ -780,6 +1095,12 @@ def read_diagnostic_payload(
         description="For a per-image diagnostic. Omit for a run-scoped one.",
     ),
     frame: int = Query(default=0, ge=0, description="Which cell of a `grid` payload."),
+    # Aliased because `format` is a builtin; the wire name is what a caller writes.
+    payload_format: PayloadFormat = Query(
+        default=PayloadFormat.PNG,
+        alias="format",
+        description="`png` to draw it; `raw` for the float32 values behind it (ADR-0023).",
+    ),
 ) -> Response:
     """Render one stored diagnostic array as a PNG.
 
@@ -818,8 +1139,15 @@ def read_diagnostic_payload(
             ),
         )
 
+    # The range is read *before* the validator, because it is part of what decides the
+    # bytes: the same array over a different span is a different picture.
+    recorded = index.ranges.get(key)
+    value_range = None if recorded is None else (recorded.low, recorded.high)
+
     target = root / entry.path
-    etag = _payload_etag(experiment_id, entry, frame, target)
+    etag = _payload_etag(
+        experiment_id, entry, frame, target, value_range=recorded, fmt=payload_format
+    )
     if etag is not None and request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=_diagnostic_headers(etag))
 
@@ -834,8 +1162,30 @@ def read_diagnostic_payload(
             detail=f"the payload for diagnostic {key!r} is no longer readable",
         ) from exc
 
-    recorded = index.ranges.get(key)
-    value_range = None if recorded is None else (recorded.low, recorded.high)
+    if payload_format is PayloadFormat.RAW:
+        # The same `(key, image_id)` resolution, so the per-branch panes inherit the hover
+        # readout with no code written per method — which is what ADR-0018 is for.
+        if entry.kind is DiagnosticKind.IMAGE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"diagnostic {key!r} is of kind image — an (H, W, 3) picture in [0, 1] "
+                    "rather than a field of values, so there is no number to read from it"
+                ),
+            )
+        if entry.kind is DiagnosticKind.GRID and frame >= array.shape[0]:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
+                ),
+            )
+        plane = array[frame] if entry.kind is DiagnosticKind.GRID else array
+        return Response(
+            content=encode_plane(plane),
+            media_type="application/octet-stream",
+            headers={} if etag is None else _diagnostic_headers(etag),
+        )
 
     if entry.kind is DiagnosticKind.IMAGE:
         content = render_rgb_image(array)
@@ -858,7 +1208,13 @@ def read_diagnostic_payload(
 
 
 def _payload_etag(
-    experiment_id: int, entry: DiagnosticEntry, frame: int, target: Path
+    experiment_id: int,
+    entry: DiagnosticEntry,
+    frame: int,
+    target: Path,
+    *,
+    value_range: DisplayRange | None = None,
+    fmt: PayloadFormat = PayloadFormat.PNG,
 ) -> str | None:
     """A validator over what actually decides the bytes.
 
@@ -866,14 +1222,20 @@ def _payload_etag(
     overwrites an image's error maps in place, so the file's size and modification time
     are part of the identity. Without them a browser would keep showing the previous run's
     picture under the current run's caption.
+
+    **The range is part of the identity too**, and used not to be. The same array drawn
+    over a different `(low, high)` is a different picture, so anything that widened a key's
+    range — re-inference, and now a diagnostic computed on demand (ADR-0027) — left every
+    already-fetched PNG cached at the old scale, with nothing on screen to say so.
     """
     try:
         stat = target.stat()
     except OSError:
         return None
+    span = "none" if value_range is None else f"{value_range.low:.9g}:{value_range.high:.9g}"
     return (
-        f'W/"diag-{experiment_id}-{entry.key}-{entry.image_id}-{frame}'
-        f'-{stat.st_size}-{stat.st_mtime_ns}"'
+        f'W/"diag-{experiment_id}-{entry.key}-{entry.image_id}-{frame}-{fmt.value}'
+        f'-{span}-{stat.st_size}-{stat.st_mtime_ns}"'
     )
 
 

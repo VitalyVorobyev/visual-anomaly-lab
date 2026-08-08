@@ -12,13 +12,20 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import type { SampleVerdict, Subset } from "../../api/client";
+import { imageUrl } from "../../api/imageUrl";
 import { StackedBars } from "../../components/charts/BarChart";
 import { DEFECT_COLOUR, NORMAL_COLOUR } from "../../components/charts/Frame";
 import { ScoreHistogram } from "../../components/charts/Histogram";
+import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
 import { Tabs } from "../../components/Tabs";
 import { Badge, Empty, ErrorBox, Panel, Select, Slider } from "../../components/ui";
 import type { Tone } from "../../components/ui";
-import { useResults, useThreshold } from "../../hooks/useExperiments";
+import {
+  useCurves,
+  useResults,
+  useSamplePreviews,
+  useThreshold,
+} from "../../hooks/useExperiments";
 
 export const OUTCOME_TONE: Record<string, Tone> = {
   tp: "normal",
@@ -59,6 +66,9 @@ export function Results({
   useEffect(() => setThreshold(null), [subset]);
   const active = threshold ?? results.data?.suggested_threshold ?? 0;
   const report = useThreshold(experimentId, subset, active);
+  // The same curve the Benchmark tab draws, read here against the threshold axis instead
+  // of against recall. One request, cached across both tabs.
+  const curves = useCurves(experimentId, subset);
 
   const span = (results.data?.score_max ?? 1) - (results.data?.score_min ?? 0);
   const step = span > 0 ? span / 500 : 0.001;
@@ -102,12 +112,25 @@ export function Results({
             </p>
           </div>
 
+          {/* Directly under the slider, sharing its x axis: what every other cut would
+              have produced, so moving the control is a choice rather than a search. */}
+          <ThresholdCurve
+            curve={curves.data?.sample_pr}
+            active={active}
+            suggested={results.data.suggested_threshold}
+            domain={[results.data.score_min, results.data.score_max]}
+          />
+
           {report.data && (
             <>
               {charts && <Distributions samples={report.data.samples} threshold={active} />}
               <Confusion report={report.data} />
               {charts && <DefectTypes samples={report.data.samples} />}
-              <VerdictTable experimentId={experimentId} samples={report.data.samples} />
+              <VerdictTable
+                experimentId={experimentId}
+                subset={subset}
+                samples={report.data.samples}
+              />
             </>
           )}
         </div>
@@ -252,12 +275,28 @@ export function Confusion({
 
 function VerdictTable({
   experimentId,
+  subset,
   samples,
 }: {
   experimentId: number;
+  subset: Subset;
   samples: SampleVerdict[];
 }) {
   const [filter, setFilter] = useState<string>("all");
+  /*
+   * One image standing for each sample, so a row is a picture rather than a path.
+   *
+   * A list of `candle/Data/Images/Anomaly/097` tells a reader nothing they can act on; the
+   * question a results table exists to answer — *what does the model think this looks
+   * like* — needs the thing itself. The previews endpoint already exists for the gallery
+   * and is keyed by sample, so this costs one cached request and no backend change; the
+   * path stays beside the thumbnail, because it is what identifies the sample to anyone
+   * going back to the source tree.
+   */
+  const previews = useSamplePreviews(experimentId, subset);
+  const imageBySample = new Map(
+    (previews.data ?? []).map((preview) => [preview.sample_id, preview.image_id]),
+  );
   // Already classified by the server, at the threshold currently in force. The rule "a
   // score at or above the threshold is a defect" therefore exists in exactly one place.
   const classified = samples;
@@ -283,23 +322,43 @@ function VerdictTable({
         })}
       />
 
-      <ul className="max-h-96 divide-y divide-line overflow-y-auto text-sm ">
-        {shown.map((sample) => (
-          <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
-            <Link
-              to={`/experiments/${experimentId}/samples/${sample.sample_id}`}
-              className="font-mono text-xs hover:underline"
-            >
-              {sample.group_key}/{sample.external_id}
-            </Link>
-            <Badge tone={sample.label === "defect" ? "defect" : "normal"}>{sample.label}</Badge>
-            <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
-              {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
-            </Badge>
-            {sample.notes && <span className="text-xs text-fg-muted">{sample.notes}</span>}
-            <span className="ml-auto font-mono text-xs">{sample.score.toFixed(4)}</span>
-          </li>
-        ))}
+      <ul className="max-h-[32rem] divide-y divide-line overflow-y-auto text-sm">
+        {shown.map((sample) => {
+          const path = `${sample.group_key}/${sample.external_id}`;
+          const imageId = imageBySample.get(sample.sample_id);
+          return (
+            <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
+              {/* A fixed width so the badges line up into columns down the list. Ragged
+                  columns turn "scan for the false positives" into reading every row. */}
+              <Link
+                to={`/experiments/${experimentId}/samples/${sample.sample_id}`}
+                className="flex w-72 shrink-0 items-center gap-2.5 hover:underline"
+                title={path}
+              >
+                {/* A fixed box whatever the source aspect ratio, so the rows stay a list
+                    rather than a ragged column. `object-cover` crops; the sample page is
+                    one click away for the whole picture. */}
+                <span className="size-14 shrink-0 overflow-hidden rounded border border-line bg-raised">
+                  {imageId !== undefined && (
+                    <img
+                      src={imageUrl(imageId, "thumb")}
+                      alt=""
+                      loading="lazy"
+                      className="size-full object-cover"
+                    />
+                  )}
+                </span>
+                <span className="truncate font-mono text-[0.6875rem] text-fg-muted">{path}</span>
+              </Link>
+              <Badge tone={sample.label === "defect" ? "defect" : "normal"}>{sample.label}</Badge>
+              <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
+                {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
+              </Badge>
+              {sample.notes && <span className="text-xs text-fg-muted">{sample.notes}</span>}
+              <span className="ml-auto shrink-0 font-mono text-xs">{sample.score.toFixed(4)}</span>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );

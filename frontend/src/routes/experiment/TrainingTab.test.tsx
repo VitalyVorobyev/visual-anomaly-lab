@@ -3,9 +3,14 @@ import { describe, expect, it } from "vitest";
 
 import type { JobSummary } from "../../api/client";
 import type { Series } from "../../hooks/useJob";
+import type { TrainingConsole } from "./TrainingTab";
 import { TrainingTab } from "./TrainingTab";
 
 const trainJob = { id: 1, kind: "train", status: "succeeded" } as JobSummary;
+
+/* The tab takes the console as data rather than fetching it, so these render with no
+   query client and no socket. That property is the reason it is a prop. */
+const noConsole: TrainingConsole = { jobId: undefined, job: undefined, lines: [], error: null };
 
 function series(name: string, points: { step: number; value: number }[]): Series {
   return { name, points, total: points.length, dropped: 0 };
@@ -17,6 +22,7 @@ describe("TrainingTab", () => {
       <TrainingTab
         jobs={[trainJob]}
         followingJobId={undefined}
+        console={noConsole}
         series={[
           series("loss_st", [
             { step: 0, value: 1 },
@@ -44,6 +50,7 @@ describe("TrainingTab", () => {
       <TrainingTab
         jobs={[trainJob]}
         followingJobId={undefined}
+        console={noConsole}
         series={[series("reference_images", [{ step: 0, value: 128 }])]}
       />,
     );
@@ -55,12 +62,14 @@ describe("TrainingTab", () => {
   });
 
   it("says a run recorded nothing rather than drawing an empty frame", () => {
-    render(<TrainingTab jobs={[trainJob]} followingJobId={undefined} series={[]} />);
+    render(
+      <TrainingTab jobs={[trainJob]} followingJobId={undefined} series={[]} console={noConsole} />,
+    );
     expect(screen.getByText(/recorded no scalar series/)).toBeTruthy();
   });
 
   it("says nothing has trained when nothing has", () => {
-    render(<TrainingTab jobs={[]} followingJobId={undefined} series={[]} />);
+    render(<TrainingTab jobs={[]} followingJobId={undefined} series={[]} console={noConsole} />);
     expect(screen.getByText("Nothing has trained yet.")).toBeTruthy();
   });
 
@@ -69,6 +78,7 @@ describe("TrainingTab", () => {
       <TrainingTab
         jobs={[trainJob]}
         followingJobId={undefined}
+        console={noConsole}
         series={[
           {
             name: "loss_st",

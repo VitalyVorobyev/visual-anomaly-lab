@@ -15,12 +15,15 @@ import { api, unwrap } from "../api/client";
 import type {
   ArtifactListing,
   CurveSet,
+  DiagnoseResponse,
   ExperimentDetail,
   ExperimentSummary,
   DiagnosticIndex,
   ImageScore,
   MethodCatalog,
   MetricSummary,
+  PruneResult,
+  PruneScope,
   ResultsPage,
   SamplePreview,
   Subset,
@@ -95,12 +98,27 @@ export function useCreateExperiment() {
 export function useStartRun(experimentId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ kind, subsets }: { kind: "train" | "infer"; subsets?: Subset[] }) => {
+    mutationFn: async ({
+      kind,
+      subsets,
+      additionalSteps,
+    }: {
+      kind: "train" | "infer";
+      subsets?: Subset[];
+      /** Continue the stored model instead of retraining it (ADR-0025). */
+      additionalSteps?: number;
+    }) => {
       const result =
         kind === "train"
           ? await api.POST("/api/experiments/{experiment_id}/train", {
               params: { path: { experiment_id: experimentId } },
-              body: { experiment_id: experimentId, diagnostics: true },
+              body: {
+                experiment_id: experimentId,
+                diagnostics: true,
+                // Omitted entirely for a fresh run: an empty control means unset, and the
+                // default lives in Python alone.
+                ...(additionalSteps === undefined ? {} : { additional_steps: additionalSteps }),
+              },
             })
           : await api.POST("/api/experiments/{experiment_id}/infer", {
               params: { path: { experiment_id: experimentId } },
@@ -277,6 +295,32 @@ export function useReevaluate(experimentId: number) {
   });
 }
 
+/**
+ * Cancel a running job.
+ *
+ * Lifted out of `JobProgress` so the run bar can offer the same action without the console
+ * being on screen — the reason the bar exists is that starting and stopping a run should
+ * not depend on which tab you are looking at.
+ */
+export function useCancelJob(experimentId?: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (jobId: number) => {
+      const { error } = await api.POST("/api/jobs/{job_id}/cancel", {
+        params: { path: { job_id: jobId } },
+      });
+      if (error !== undefined) throw new Error("The job could not be cancelled.");
+      return jobId;
+    },
+    onSuccess: (jobId) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
+      if (experimentId !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+      }
+    },
+  });
+}
+
 export function useDeleteExperiment() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -288,6 +332,50 @@ export function useDeleteExperiment() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["experiments"] });
+    },
+  });
+}
+
+/**
+ * Ask the method what it saw in one image, now (ADR-0026).
+ *
+ * Deliberately without an optimistic update: the honest thing on screen while this runs is
+ * "the first request loads the model", not a pane that will appear. The whole index is
+ * refetched on success because an on-demand emission can widen a key's display range
+ * (ADR-0027), which changes how every *other* pane of that key is drawn.
+ */
+export function useDiagnoseImage(experimentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<DiagnoseResponse, Error, number>({
+    mutationFn: async (imageId: number) =>
+      unwrap(
+        await api.POST("/api/experiments/{experiment_id}/diagnose", {
+          params: { path: { experiment_id: experimentId } },
+          body: { image_id: imageId },
+        }),
+        "the diagnostics for this image",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnostics(experimentId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(experimentId) });
+    },
+  });
+}
+
+/** Delete stored diagnostics to reclaim disk, and report what that freed (ADR-0027). */
+export function useClearDiagnostics(experimentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<PruneResult, Error, PruneScope>({
+    mutationFn: async (scope: PruneScope) =>
+      unwrap(
+        await api.DELETE("/api/experiments/{experiment_id}/diagnostics", {
+          params: { path: { experiment_id: experimentId }, query: { scope } },
+        }),
+        "what the clear reclaimed",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnostics(experimentId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(experimentId) });
     },
   });
 }

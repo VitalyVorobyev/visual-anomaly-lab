@@ -10,6 +10,11 @@ docs/initial-prompt.md
 # the import-adapter package. New adapters were invisible to git with no error
 # anywhere. See README for how to obtain these datasets and their licences.
 /datasets/
+# The anchoring leaves one real gap, found the hard way: anomalib resolves its penalty
+# set against a *relative* `datasets/imagenette`, so a module built without an explicit
+# `imagenet_dir` drops 1.2 GB into whatever the working directory happens to be. The bug
+# that did that is fixed; this is the guard, because the next one will not announce itself.
+/backend/datasets/
 
 # ── App-managed runtime state (DB, artifacts, thumbnails) ──
 data/

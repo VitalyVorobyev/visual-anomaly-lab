@@ -12,11 +12,20 @@
  * sample and after a reload — the same argument that put the experiment's active tab in
  * the URL. They cost three characters each and make the view linkable.
  *
+ * The active tab rides along for the same reason the layers do, and it fixes a specific
+ * bug: the gallery's tile link, the sample page's "← Results" link and its prev/next were
+ * all built from `writeResultsState`, which knew nothing about tabs — so every one of them
+ * dropped `tab=samples` and landed the reader on Overview. Making the tab part of this
+ * state fixes all three at once, and any future link built the same way is correct by
+ * construction rather than by remembering.
+ *
  * Every value is validated on the way in, so a hand-edited URL cannot put an outcome the
  * server never emits into a filter, or an out-of-range cut into a render request.
  */
 
 import type { Subset } from "./client";
+import type { TabId } from "./experimentTabs";
+import { parseTab } from "./experimentTabs";
 
 /** The verdict buckets the server tags rows with. `all` is the absence of a filter. */
 export const OUTCOMES = ["tp", "fp", "tn", "fn", "unlabeled"] as const;
@@ -30,6 +39,12 @@ export const MISTAKE_OUTCOMES: readonly Outcome[] = ["fp", "fn"];
 export type SortOrder = "score-desc" | "score-asc";
 
 export interface ResultsState {
+  /**
+   * The experiment view this state belongs to, so a link built from it comes back to the
+   * tab it left. Not a filter and not a display preference — a piece of *where you were*,
+   * which is exactly what the round trip to a sample and back was losing.
+   */
+  tab: TabId;
   subset: Subset | undefined;
   /** `undefined` means every outcome. */
   outcome: Outcome | undefined;
@@ -76,6 +91,7 @@ export interface ResultsState {
 export const DEFAULT_CUT = 0.3;
 
 export const EMPTY_RESULTS: ResultsState = {
+  tab: "overview",
   subset: undefined,
   outcome: undefined,
   mistakesOnly: false,
@@ -89,6 +105,7 @@ export const EMPTY_RESULTS: ResultsState = {
 
 export function readResultsState(params: URLSearchParams): ResultsState {
   return {
+    tab: parseTab(params.get("tab")),
     subset: readOneOf(params.get("subset"), SUBSETS),
     outcome: readOneOf(params.get("outcome"), OUTCOMES),
     mistakesOnly: params.get("outcome") === "mistakes",
@@ -104,6 +121,7 @@ export function readResultsState(params: URLSearchParams): ResultsState {
 /** Only non-default values are written, so an untouched view has a clean URL. */
 export function writeResultsState(state: ResultsState): URLSearchParams {
   const params = new URLSearchParams();
+  if (state.tab !== EMPTY_RESULTS.tab) params.set("tab", state.tab);
   if (state.subset !== undefined) params.set("subset", state.subset);
   if (state.mistakesOnly) params.set("outcome", "mistakes");
   else if (state.outcome !== undefined) params.set("outcome", state.outcome);

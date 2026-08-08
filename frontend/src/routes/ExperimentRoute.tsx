@@ -5,10 +5,14 @@
  * putting import on the job system in M2 was precisely so that training would need no
  * second progress mechanism, and this screen is where that pays.
  *
- * M4 turned this into a set of tabs. The Overview is M3's screen intact; Training,
- * Benchmark, Architecture and Inspector are the workbench. **The last three are driven
- * entirely by the diagnostics index and the evaluation layer, never by `model_type`** —
- * which is what makes `efficientad_custom` inherit all of them in M6 (ADR-0018).
+ * M4 turned this into a set of tabs; M4.7 decided what belongs on which. Overview is what
+ * the experiment *achieved* — headline numbers, results at a threshold, the metric tables,
+ * and the frozen configuration behind them. The run controls are a bar above the tabs, so
+ * a run can be started and watched from wherever the reader is standing. Runs, logs and
+ * files are their own tab, because a job log is diagnostic material rather than a finding.
+ * Training, Benchmark, Architecture and Inspector are the workbench, and **the last two are
+ * driven entirely by the diagnostics index, never by `model_type`** — which is what makes
+ * `efficientad_custom` inherit both in M6 (ADR-0018).
  *
  * The active tab lives in the URL rather than in component state, following
  * `api/browseState.ts`: reloading during a long run puts you back on the chart you were
@@ -18,36 +22,25 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 
-import type { Subset } from "./../api/client";
+import type { MetricSummary, Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
+import type { TabId } from "../api/experimentTabs";
+import { parseTab } from "../api/experimentTabs";
 import type { ResultsState } from "../api/resultsState";
 import { readResultsState, writeResultsState } from "../api/resultsState";
 import { Tabs } from "../components/Tabs";
 import { Badge, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows } from "../components/ui";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment } from "../hooks/useExperiments";
-import { ArtifactsPanel } from "./experiment/ArtifactsPanel";
 import { BenchmarkTab } from "./experiment/BenchmarkTab";
 import { GalleryTab } from "./experiment/GalleryTab";
+import { JobsFilesTab } from "./experiment/JobsFilesTab";
+import { RunBar } from "./experiment/RunBar";
 import { useVerdicts } from "./experiment/useVerdicts";
 import { ArchitectureTab, InspectorTab, PICTURE_KINDS, STRUCTURE_KINDS } from "./experiment/DiagnosticsTabs";
-import { Configuration, Console, Metrics, Runs } from "./experiment/OverviewTab";
+import { Configuration, Headline, Metrics } from "./experiment/OverviewTab";
 import { Results } from "./experiment/ResultsPanel";
 import { TrainingTab } from "./experiment/TrainingTab";
-
-const TAB_IDS = [
-  "overview",
-  "samples",
-  "training",
-  "benchmark",
-  "architecture",
-  "inspector",
-] as const;
-type TabId = (typeof TAB_IDS)[number];
-
-function parseTab(raw: string | null): TabId {
-  return TAB_IDS.includes(raw as TabId) ? (raw as TabId) : "overview";
-}
 
 /* A disabled tab used to give no reason at all, which reads as broken rather than as
    not-yet. Each says what would fill it. */
@@ -106,14 +99,12 @@ export function ExperimentRoute() {
     setParams(updated, { replace: true });
   };
 
-  // The results view's own state — subset, filter, layers — lives in the same query string
-  // so the gallery hands it to the sample page and gets it back on the way out.
+  // The results view's own state — tab, subset, filter, layers — lives in the same query
+  // string so the gallery hands it to the sample page and gets it back on the way out.
+  // The tab is part of that state now, so nothing here has to re-attach it by hand.
   const results = readResultsState(params);
   const updateResults = (next: Partial<ResultsState>) => {
-    const updated = writeResultsState({ ...results, ...next });
-    const tabParam = params.get("tab");
-    if (tabParam !== null) updated.set("tab", tabParam);
-    setParams(updated, { replace: true });
+    setParams(writeResultsState({ ...results, ...next }), { replace: true });
   };
   const verdicts = useVerdicts(experimentId, results);
 
@@ -149,6 +140,17 @@ export function ExperimentRoute() {
             ]}
           />
         }
+      />
+
+      {/* Above the tabs, so a run can be started from anywhere and its progress is visible
+          without leaving whatever is being read. */}
+      <RunBar
+        experimentId={experimentId}
+        detail={detail}
+        jobs={detail.jobs}
+        hasTrained={hasTrained}
+        onFollow={setFollowingJobId}
+        onViewLog={() => selectTab("training")}
       />
 
       {/* A tab appears when there is something in it. Gated on what the run recorded, never
@@ -190,25 +192,27 @@ export function ExperimentRoute() {
             disabled: !hasPictures,
             title: hasPictures ? undefined : NO_PICTURES,
           },
+          { id: "jobs", label: "Jobs & files" },
         ]}
       />
 
+      {/* Achievement first, then the record of how it was obtained. The configuration is
+          what makes a number reproducible, which is a reason to keep it on this screen and
+          a reason for it not to be the first thing on it. */}
       {tab === "overview" && (
         <>
-          <Runs
-            experimentId={experimentId}
-            jobs={detail.jobs}
-            onFollow={setFollowingJobId}
-            followingJobId={followingJobId}
-          />
-
-          {followingJobId !== undefined && (
-            <Console jobId={followingJobId} experimentId={experimentId} />
+          {hasScores ? (
+            <OverviewResults
+              experimentId={experimentId}
+              subsets={detail.scored_subsets}
+              metrics={detail.metrics}
+            />
+          ) : (
+            <Empty>
+              Nothing has been scored yet. Train, then run &lsquo;Score &amp; evaluate&rsquo;
+              from the bar above.
+            </Empty>
           )}
-
-          <Configuration detail={detail} />
-
-          <ArtifactsPanel experimentId={experimentId} />
 
           {detail.metrics.length > 0 && (
             <Metrics
@@ -218,7 +222,7 @@ export function ExperimentRoute() {
             />
           )}
 
-          {hasScores && <OverviewResults experimentId={experimentId} subsets={detail.scored_subsets} />}
+          <Configuration detail={detail} />
         </>
       )}
 
@@ -237,6 +241,12 @@ export function ExperimentRoute() {
           jobs={detail.jobs}
           series={charted.series}
           followingJobId={followingJobId}
+          console={{
+            jobId: chartedJobId,
+            job: charted.job,
+            lines: charted.lines,
+            error: charted.error,
+          }}
         />
       )}
 
@@ -255,25 +265,44 @@ export function ExperimentRoute() {
       {tab === "inspector" && (
         <InspectorTab experimentId={experimentId} index={diagnostics.data} />
       )}
+
+      {tab === "jobs" && (
+        <JobsFilesTab
+          experimentId={experimentId}
+          jobs={detail.jobs}
+          followingJobId={followingJobId}
+          onFollow={setFollowingJobId}
+        />
+      )}
     </div>
   );
 }
 
-/** The results panel without the distribution charts — those live on Benchmark. */
+/**
+ * The headline numbers and the results panel, sharing one subset.
+ *
+ * They must: a headline reading `test` above a results table showing `val` is two answers
+ * to one question. The distribution charts stay off — those are the Benchmark tab.
+ */
 function OverviewResults({
   experimentId,
   subsets,
+  metrics,
 }: {
   experimentId: number;
   subsets: Subset[];
+  metrics: MetricSummary[];
 }) {
   const [subset, setSubset] = useState<Subset>(subsets[subsets.length - 1] ?? "test");
   return (
-    <Results
-      experimentId={experimentId}
-      subsets={subsets}
-      subset={subset}
-      onSubset={setSubset}
-    />
+    <>
+      <Headline metrics={metrics} subset={subset} />
+      <Results
+        experimentId={experimentId}
+        subsets={subsets}
+        subset={subset}
+        onSubset={setSubset}
+      />
+    </>
   );
 }

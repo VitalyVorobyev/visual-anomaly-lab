@@ -99,7 +99,7 @@ describe("LineChart", () => {
 });
 
 describe("CurveChart", () => {
-  const curve = { x: [0, 0.5, 1], y: [0, 0.8, 1], total: 3, dropped: 0 };
+  const curve = { x: [0, 0.5, 1], y: [0, 0.8, 1], t: [], total: 3, dropped: 0 };
 
   it("draws the curve and its chance diagonal", () => {
     const { container } = render(<CurveChart curve={curve} kind="roc" label="ROC" area={0.9} />);
@@ -122,7 +122,7 @@ describe("CurveChart", () => {
   it("says when it downsampled rather than implying it drew everything", () => {
     render(
       <CurveChart
-        curve={{ x: [0, 1], y: [0, 1], total: 5000, dropped: 4998 }}
+        curve={{ x: [0, 1], y: [0, 1], t: [], total: 5000, dropped: 4998 }}
         kind="roc"
         label="ROC"
       />,

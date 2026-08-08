@@ -32,6 +32,7 @@ from anomaly_lab.db.migrate import apply_migrations_to
 from anomaly_lab.db.repositories.experiments import fail_stale_training_experiments
 from anomaly_lab.db.repositories.jobs import fail_stale_running_jobs
 from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.jobs.resident import ResidentWorker
 
 logger = logging.getLogger(__name__)
 
@@ -73,10 +74,14 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # Started after reconciliation, so the runner never sees a row the previous process
     # left behind, and stopped before the process exits, so no worker outlives us.
     queue: JobQueue = app.state.job_queue
+    resident: ResidentWorker = app.state.resident
     await queue.start()
     try:
         yield
     finally:
+        # The resident first: it is the process the queue's own teardown knows nothing
+        # about, and leaving one behind is the orphan ADR-0026 is careful about.
+        await resident.stop()
         await queue.stop()
 
 
@@ -92,7 +97,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings
     app.state.version = __version__
     app.state.started_at = datetime.now(UTC)
-    app.state.job_queue = JobQueue(settings)
+    # Wired here and nowhere else. The queue must not import the resident and the resident
+    # must not import the queue's manager; the composition root points at both, which is
+    # the same discipline ADR-0014 applies to shell capabilities. The hook is what makes a
+    # resident and a job worker unable to coexist (ADR-0026).
+    app.state.resident = ResidentWorker(settings)
+    app.state.job_queue = JobQueue(settings, before_spawn=app.state.resident.evict)
 
     if settings.dev_cors:
         app.add_middleware(

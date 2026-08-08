@@ -9,9 +9,18 @@
  * Layout follows the recorded edges rather than assuming a chain: nodes are placed in
  * dependency order and anything unreferenced is appended, so a model whose branches fan
  * out instead of stacking draws correctly without a special case here.
+ *
+ * **Two views over one payload.** The cards are the branches and how they are wired — the
+ * only connections anyone measured, since forward hooks see modules and not the functional
+ * operations between them. Below them, when the payload carries a hierarchy, is every
+ * module the pass actually reached (ADR-0024). A payload with no hierarchy — an index
+ * written before M4.7, or a method that records only its branches — draws the cards alone,
+ * exactly as it did.
  */
 
 import { Badge, Empty } from "../ui";
+import { ModuleTree, hasHierarchy, parameterCount, shape } from "./ModuleTree";
+import type { ModuleNode } from "./ModuleTree";
 
 interface GraphNode {
   id: string;
@@ -58,26 +67,19 @@ function ordered(nodes: GraphNode[], edges: GraphEdge[]): GraphNode[] {
   return result;
 }
 
-function shape(dimensions: number[] | undefined): string {
-  return dimensions && dimensions.length > 0 ? `(${dimensions.join(", ")})` : "—";
-}
-
-function parameterCount(value: number | undefined): string {
-  if (typeof value !== "number") return "—";
-  if (value >= 1e6) return `${(value / 1e6).toFixed(2)} M`;
-  if (value >= 1e3) return `${(value / 1e3).toFixed(1)} k`;
-  return String(value);
-}
-
 export function ArchitectureGraph({ payload }: { payload: Record<string, unknown> }) {
-  const nodes = Array.isArray(payload.nodes) ? (payload.nodes as GraphNode[]) : [];
+  const nodes = Array.isArray(payload.nodes) ? (payload.nodes as ModuleNode[]) : [];
   const edges = Array.isArray(payload.edges) ? (payload.edges as GraphEdge[]) : [];
 
   if (nodes.length === 0) {
     return <Empty>This run recorded a graph with no nodes in it.</Empty>;
   }
 
-  const laid = ordered(nodes, edges);
+  const tree = hasHierarchy(nodes);
+  // The cards are the top of the tree: the branches, and the edges between them. With no
+  // hierarchy every node is a card, which is what M4 drew and what an older index still is.
+  const cards = tree ? nodes.filter((node) => (node.depth ?? 0) === 0) : nodes;
+  const laid = ordered(cards, edges);
   const labelFor = (source: string, target: string) =>
     edges.find((edge) => edge.source === source && edge.target === target)?.label;
 
@@ -128,6 +130,23 @@ export function ArchitectureGraph({ payload }: { payload: Record<string, unknown
         <p className="font-mono text-xs text-fg-muted">
           {parameterCount(total)} parameters in total
         </p>
+      )}
+
+      {tree && (
+        <>
+          <p className="text-xs text-fg-muted">
+            {/* Said up front rather than after someone asks why their `cat` is missing. */}
+            Every module the forward pass reached, with the shapes it produced. Operations
+            written directly into a <span className="font-mono">forward</span> — an
+            activation, a concatenation — are not modules and so are not here; the arrows
+            above are the only connections that were measured.
+          </p>
+          <ModuleTree
+            nodes={nodes}
+            truncated={typeof payload.truncated_nodes === "number" ? payload.truncated_nodes : 0}
+            maxNodes={typeof payload.max_nodes === "number" ? payload.max_nodes : undefined}
+          />
+        </>
       )}
     </div>
   );

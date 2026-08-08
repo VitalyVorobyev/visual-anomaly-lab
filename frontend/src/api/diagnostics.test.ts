@@ -8,8 +8,11 @@ import {
   gridFrameCount,
   imageScoped,
   isArrayKind,
+  isOnDemand,
   modelScoped,
   ofKinds,
+  missingNote,
+  onDemandNote,
 } from "./diagnostics";
 
 function entry(overrides: Partial<DiagnosticEntry> = {}): DiagnosticEntry {
@@ -137,5 +140,73 @@ describe("budgetNote", () => {
     );
     expect(note).toContain("88");
     expect(note).toContain("12");
+  });
+});
+
+
+describe("origin", () => {
+  const sample = index({
+    image_budget: 64,
+    truncated_images: 200,
+    entries: [
+      entry({ scope: "image", image_id: 1, origin: "run" }),
+      entry({ scope: "image", image_id: 2, origin: "run" }),
+      entry({ scope: "image", image_id: 90, origin: "on_demand" }),
+      entry({ scope: "image", image_id: 91, origin: "on_demand" }),
+    ],
+  });
+
+  it("counts only the run's own images against the run's budget", () => {
+    // The failure this prevents is arithmetic that reads as a broken cap: browse enough
+    // images and an unfiltered count climbs past the budget it claims to be under.
+    expect(budgetNote(sample)).toContain("recorded for 2 image(s)");
+    expect(budgetNote(sample)).toContain("budget of 64");
+  });
+
+  it("reports what was asked for as its own fact", () => {
+    expect(onDemandNote(sample)).toContain("2 image(s) diagnosed on demand");
+    expect(onDemandNote(index())).toBeNull();
+  });
+
+  it("narrows the image list to one producer, and to both by default", () => {
+    expect(diagnosedImageIds(sample, "run")).toEqual([1, 2]);
+    expect(diagnosedImageIds(sample, "on_demand")).toEqual([90, 91]);
+    expect(diagnosedImageIds(sample)).toEqual([1, 2, 90, 91]);
+  });
+
+  it("treats an entry written before origins existed as the run's", () => {
+    // Additive, so the index version did not move; a missing origin has to read as `run`
+    // or an old index would badge every pane as something somebody asked for.
+    expect(isOnDemand(entry({ scope: "image", image_id: 3, origin: "run" }))).toBe(false);
+    expect(isOnDemand(entry({ scope: "image", image_id: 3, origin: "on_demand" }))).toBe(true);
+  });
+});
+
+
+describe("missingNote", () => {
+  it("prefers the budget, which is the most specific explanation available", () => {
+    const withBudget = index({
+      image_budget: 64,
+      truncated_images: 300,
+      entries: [entry({ scope: "image", image_id: 1, origin: "run" })],
+    });
+    expect(missingNote(withBudget)).toContain("budget of 64");
+  });
+
+  it("says the run sampled other images when there is no budget recorded", () => {
+    // The case seen in the running application: the last flush was a training run, so the
+    // index carries no budget, and the panel claimed the method records nothing — beside a
+    // button offering to record something.
+    const noBudget = index({
+      entries: [
+        entry({ scope: "image", image_id: 1, origin: "run" }),
+        entry({ scope: "image", image_id: 2, origin: "run" }),
+      ],
+    });
+    expect(missingNote(noBudget)).toContain("2 other image(s)");
+  });
+
+  it("falls back to the method only when nothing image-scoped exists at all", () => {
+    expect(missingNote(index())).toContain("ctx.emit_diagnostic");
   });
 });

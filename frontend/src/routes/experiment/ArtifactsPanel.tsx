@@ -12,12 +12,26 @@
  */
 
 import { useState } from "react";
-import { FolderOpen } from "lucide-react";
+import type { ReactNode } from "react";
+import { FolderOpen, Trash2 } from "lucide-react";
 
 import type { ArtifactGroup } from "../../api/client";
+import { onDemandNote } from "../../api/diagnostics";
 import { hasRevealPath, revealPath } from "../../api/shell";
-import { Button, Disclosure, Empty, Panel, SkeletonRows } from "../../components/ui";
-import { useArtifacts } from "../../hooks/useExperiments";
+import {
+  Button,
+  ConfirmDialog,
+  Disclosure,
+  Empty,
+  Panel,
+  SkeletonRows,
+  Tooltip,
+} from "../../components/ui";
+import {
+  useArtifacts,
+  useClearDiagnostics,
+  useDiagnostics,
+} from "../../hooks/useExperiments";
 
 export function ArtifactsPanel({ experimentId }: { experimentId: number }) {
   const artifacts = useArtifacts(experimentId);
@@ -73,6 +87,11 @@ export function ArtifactsPanel({ experimentId }: { experimentId: number }) {
                 key={group.name}
                 group={group}
                 onReveal={canReveal ? () => reveal(group.path) : undefined}
+                action={
+                  group.name === "diagnostics" ? (
+                    <ClearDiagnostics experimentId={experimentId} />
+                  ) : undefined
+                }
               />
             ))}
           </ul>
@@ -85,9 +104,11 @@ export function ArtifactsPanel({ experimentId }: { experimentId: number }) {
 function GroupRow({
   group,
   onReveal,
+  action,
 }: {
   group: ArtifactGroup;
   onReveal: (() => void) | undefined;
+  action?: ReactNode;
 }) {
   const summary = (
     <span className="flex flex-1 items-baseline gap-2">
@@ -119,12 +140,73 @@ function GroupRow({
       ) : (
         <span className="flex flex-1 items-baseline gap-2 py-1 text-xs">{summary}</span>
       )}
+      {action}
       {onReveal && (
         <Button variant="ghost" onClick={onReveal} aria-label={`Reveal ${group.title}`}>
           <FolderOpen className="size-4" />
         </Button>
       )}
     </li>
+  );
+}
+
+/**
+ * Reclaim the disk per-image diagnostics cost (ADR-0027).
+ *
+ * The default scope keeps the model-scoped entries, and the confirmation says so: the
+ * architecture tree and the score-normalization table are kilobytes, and losing them here
+ * would read as the Architecture tab breaking rather than as a disk clear working.
+ *
+ * It reports what it actually freed rather than claiming success, because the number is
+ * the reason somebody pressed it.
+ */
+function ClearDiagnostics({ experimentId }: { experimentId: number }) {
+  const clear = useClearDiagnostics(experimentId);
+  const diagnostics = useDiagnostics(experimentId);
+  const [asking, setAsking] = useState(false);
+  const [freed, setFreed] = useState<string | null>(null);
+
+  // Counted separately from the run's own sample, because they are a different fact: the
+  // run's count is explained by its budget, these are questions somebody asked (ADR-0027).
+  const asked = onDemandNote(diagnostics.data);
+
+  return (
+    <>
+      {asked !== null && <span className="text-[11px] text-fg-subtle">{asked}</span>}
+      {freed !== null && <span className="text-[11px] text-fg-muted">{freed}</span>}
+      {clear.error && <span className="max-w-xs text-[11px] text-warn">{clear.error.message}</span>}
+
+      <Tooltip content="Anomaly maps are not touched: each one is referenced by a scored image, so deleting them would break the overlay.">
+        <Button
+          variant="ghost"
+          onClick={() => setAsking(true)}
+          disabled={clear.isPending}
+          aria-label="Clear per-image diagnostics"
+        >
+          <Trash2 className="size-4" />
+        </Button>
+      </Tooltip>
+
+      <ConfirmDialog
+        open={asking}
+        onOpenChange={setAsking}
+        title="Clear per-image diagnostics?"
+        confirmLabel="Clear"
+        destructive
+        loading={clear.isPending}
+        description={
+          "Every per-image pane goes, including any image you diagnosed on demand. " +
+          "The architecture view and the other run-wide diagnostics stay, and the " +
+          "anomaly maps are untouched. A future inference run records them again."
+        }
+        onConfirm={() => {
+          setFreed(null);
+          clear.mutate("image", {
+            onSuccess: (result) => setFreed(`${formatBytes(result.bytes_reclaimed)} freed`),
+          });
+        }}
+      />
+    </>
   );
 }
 

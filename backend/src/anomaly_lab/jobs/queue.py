@@ -22,7 +22,7 @@ import os
 import signal
 import sys
 import time
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -81,12 +81,22 @@ MAX_LINE_BYTES = 16 * 1024
 class JobQueue:
     """Owns the worker child process and the fan-out of its events."""
 
-    def __init__(self, settings: Settings) -> None:
+    def __init__(
+        self,
+        settings: Settings,
+        *,
+        before_spawn: Callable[[], Awaitable[None]] | None = None,
+    ) -> None:
         self._settings = settings
+        # Awaited immediately before every worker starts. One hook, injected — the queue
+        # must not import the resident worker, or the dependency that keeps ADR-0014's
+        # boundary straight would point the wrong way. `app.py` points at both (ADR-0026).
+        self._before_spawn = before_spawn
         self._wake = asyncio.Event()
         self._runner: asyncio.Task[None] | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
         self._subscribers: dict[int, set[asyncio.Queue[str]]] = {}
+        self._claimed_id: int | None = None
         self._current_id: int | None = None
         self._current_process: asyncio.subprocess.Process | None = None
         self._cancelled: set[int] = set()
@@ -157,6 +167,23 @@ class JobQueue:
             asyncio.run_coroutine_threadsafe(self._terminate(job_id), loop)
         return True
 
+    @property
+    def current_job_id(self) -> int | None:
+        """The job this queue is executing right now, or `None`.
+
+        Read by the routes that must refuse while a worker holds the device. Deliberately
+        `_claimed_id` and not `_current_id`: the latter is set only once a process exists,
+        which leaves a window between "the pre-spawn hook has finished" and "the worker is
+        recorded" in which a request would see an idle queue and start a resident against
+        a worker that was already launching. That window is short and would fail as an
+        out-of-memory error in the training job, which is the least debuggable form
+        available (ADR-0026).
+
+        A snapshot, not a lock. What actually keeps the two from coexisting is
+        `before_spawn`, which the runner awaits.
+        """
+        return self._claimed_id
+
     def subscribe(self, job_id: int) -> asyncio.Queue[str]:
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_BUFFER)
         self._subscribers.setdefault(job_id, set()).add(queue)
@@ -219,6 +246,15 @@ class JobQueue:
             return jobs_repo.next_queued_job(conn)
 
     async def _execute(self, job: Job) -> None:
+        # Claimed for the whole of execution, including the pre-spawn hook and the spawn
+        # itself. See `current_job_id`.
+        self._claimed_id = job.id
+        try:
+            await self._execute_claimed(job)
+        finally:
+            self._claimed_id = None
+
+    async def _execute_claimed(self, job: Job) -> None:
         # Cancelled between being picked up and being started: never spawn at all,
         # rather than starting work only to report it as cancelled afterwards.
         if job.id in self._cancelled:
@@ -229,6 +265,25 @@ class JobQueue:
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         state = _JobRunState()
+
+        # Before the spawn, not after: the point is that nothing else holds the
+        # accelerator when this worker starts. Awaiting it can delay a job by up to one
+        # in-flight diagnostic request, and that delay *is* the guarantee (ADR-0026).
+        try:
+            if self._before_spawn is not None:
+                await self._before_spawn()
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # The job fails; it is not started anyway. "Freeing the device did not work,
+            # so we began training on top of whatever was holding it" is precisely the
+            # state the hook exists to prevent. Failing it here rather than letting the
+            # exception escape also keeps the row out of an endless queued-retry loop.
+            logger.exception("the pre-spawn hook failed for job %d", job.id)
+            state.error = f"the device could not be freed before starting: {exc}"
+            await asyncio.to_thread(self._finish, job, 1, state)
+            return
+
         try:
             process = await self._spawn(job)
         except OSError as exc:
@@ -271,7 +326,7 @@ class JobQueue:
         finally:
             self._current_id = None
             self._current_process = None
-            _release_transport(process)
+            release_transport(process)
 
         await asyncio.to_thread(self._finish, job, returncode, state)
 
@@ -498,8 +553,11 @@ async def _iter_lines(stream: asyncio.StreamReader) -> AsyncIterator[str]:
             return
 
 
-def _release_transport(process: asyncio.subprocess.Process) -> None:
+def release_transport(process: asyncio.subprocess.Process) -> None:
     """Close the exited child's transport while its loop is still running.
+
+    Public because the resident worker (ADR-0026) manages a child process too and needs
+    exactly this. Two copies of a workaround for an asyncio finalizer is one copy too many.
 
     `asyncio` has no public API for this, and its finalizer runs whenever the garbage
     collector gets around to it — which, for a long-lived server, can be after the loop

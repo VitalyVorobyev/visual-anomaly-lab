@@ -12,7 +12,7 @@
  */
 
 import { apiBaseUrl } from "./client";
-import type { DiagnosticEntry, DiagnosticIndex } from "./client";
+import type { DiagnosticEntry, DiagnosticIndex, DiagnosticOrigin } from "./client";
 
 /** Kinds whose payload is an array behind the payload route, rather than inline JSON. */
 const ARRAY_KINDS = new Set(["map", "image", "grid"]);
@@ -56,13 +56,30 @@ export function imageScoped(
   );
 }
 
-/** Every image the run recorded anything about, in ascending order. */
-export function diagnosedImageIds(index: DiagnosticIndex | undefined): number[] {
+/**
+ * Every image the index holds anything about, in ascending order.
+ *
+ * `origin` narrows it to one producer. The distinction is load-bearing rather than
+ * cosmetic: the run's images are a *sample* whose size the budget explains, and the
+ * on-demand ones are questions somebody asked (ADR-0027). Counting them together produces
+ * a number larger than the stated budget, which reads as a cap that does not work.
+ */
+export function diagnosedImageIds(
+  index: DiagnosticIndex | undefined,
+  origin?: DiagnosticOrigin,
+): number[] {
   const ids = new Set<number>();
   for (const entry of index?.entries ?? []) {
-    if (entry.scope === "image" && typeof entry.image_id === "number") ids.add(entry.image_id);
+    if (entry.scope !== "image" || typeof entry.image_id !== "number") continue;
+    if (origin !== undefined && entry.origin !== origin) continue;
+    ids.add(entry.image_id);
   }
   return [...ids].sort((left, right) => left - right);
+}
+
+/** Whether this entry is an answer to a question, rather than part of a run's sample. */
+export function isOnDemand(entry: DiagnosticEntry): boolean {
+  return entry.origin === "on_demand";
 }
 
 /** Narrow a set of entries to the kinds a view can draw. */
@@ -88,10 +105,45 @@ export function budgetNote(index: DiagnosticIndex | undefined): string | null {
   if (!index) return null;
   const budget = index.image_budget;
   if (budget === null || budget === undefined) return null;
-  const kept = diagnosedImageIds(index).length;
+  // Run-origin only. `image_budget` and `truncated_images` describe a run, so counting an
+  // image somebody diagnosed afterwards against them would report a sample the run never
+  // took — and, once a few images have been asked about, a count above the stated cap.
+  const kept = diagnosedImageIds(index, "run").length;
   if (index.truncated_images === 0) return null;
   return (
     `Per-image diagnostics were recorded for ${kept} image(s); ` +
     `${index.truncated_images} more were dropped at the run's budget of ${budget}.`
+  );
+}
+
+/** How many images were diagnosed after the fact, or `null` when none were. */
+export function onDemandNote(index: DiagnosticIndex | undefined): string | null {
+  const asked = diagnosedImageIds(index, "on_demand").length;
+  if (asked === 0) return null;
+  return `${asked} image(s) diagnosed on demand, kept until you clear them.`;
+}
+
+/**
+ * Why *this* image has no panes — the best explanation the index supports.
+ *
+ * Three genuinely different facts, and the panel used to say only the last one. Beside a
+ * button offering to record diagnostics, "this method records nothing" is not merely
+ * imprecise, it contradicts what is on screen: the common case is a run that recorded
+ * plenty, for other images.
+ */
+export function missingNote(index: DiagnosticIndex | undefined): string {
+  const budget = budgetNote(index);
+  if (budget !== null) return budget;
+
+  const elsewhere = diagnosedImageIds(index).length;
+  if (elsewhere > 0) {
+    return (
+      `This run recorded per-image diagnostics for ${elsewhere} other image(s), ` +
+      "chosen across the run rather than by what you opened."
+    );
+  }
+  return (
+    "This run recorded no per-image diagnostics. A method reports them by calling " +
+    "ctx.emit_diagnostic during predict."
   );
 }

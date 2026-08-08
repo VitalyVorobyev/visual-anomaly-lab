@@ -30,6 +30,7 @@ the detail is in the git history and the ADRs.
 | E13 | M4 | The diagnostic payload route, run-wide display ranges, `GET /jobs/{id}/metrics`, the SVG chart primitives, render-by-kind panels, the experiment tabs, live training charts |
 | E14 | M4.5 | The token layer, light/dark themes, the primitive set, the schema→control mapping fixed so every pydantic shape reaches the right control |
 | E15 | M4.6 | Query invalidation on a finished run, the Samples gallery with outcome filters, the sample page rebuilt around its canvas, the anomaly segmentation overlay, the artifact listing and *Reveal in Finder*, the diagnostics budget spread across the run |
+| E16 | M4.7 | Overview rebuilt around results, the Jobs & files tab and the run bar, threshold curves and verdict thumbnails, tab-preserving sample navigation, the value readout, the layer-level architecture tree, resumable training, and on-demand diagnostics from a resident worker |
 
 ---
 
@@ -90,9 +91,8 @@ Not scheduled. Revisit at each re-triage; promote when there is a concrete reaso
 - **`mask.sha256`, as a numbered migration.** `verify` can check a mask file is still there, not that it is still the same file, so a mask re-exported in place silently changes a pixel metric. Worth doing before pixel numbers are relied on (ADR-0016, ADR-0017).
 - **Warn when an imported split's train subset contains defects.** The `imported` strategy trusts the source completely, which is the point, but a bad benchmark file produces a bad experiment quietly. The training handler excludes them and logs it; the split screen says nothing.
 - **Show the pixel-metric protocol on the results screen.** "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.
-- **Warm-start training from a finished run.** Continue 4 000 → 8 000 steps rather than starting over. The loop is hand-owned so it is tractable, but exact resume needs optimizer, LR-schedule, step and RNG state in the checkpoint, and `max_steps` becoming a total — an **ADR-0007** change, and it collides with "an experiment's config is frozen at creation".
-- **Layer-level architecture view.** The `graph` payload carries three branch nodes; per-layer shapes and parameter counts would come from forward hooks in a shared helper, so any torch method inherits it.
-- **A warm inference worker.** Measured: ~4.8 s of process spawn and torch import before the first image, then ~46 ms per image. On-demand "explain this image" wants the model resident, which cuts against ADR-0009's subprocess-per-job isolation and needs its own record. M7's resource profile may force the conversation anyway.
+- **Type-check under the `dl` extra too.** The `backend-dl` CI job runs the gated tests but not mypy, so torch's real types are never followed. It is a different check from the torch-free one and could surface a pile of findings at once, which is why it was not bundled into the fix that created the job.
+- **Warn when the diagnostics directory gets large.** The clear button reports what it freed, but nothing says when there is something to free; on-demand entries are deliberately uncapped (ADR-0027) and the artifact listing's byte count is the only signal.
 - Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate a sample score by scale alone.
 - Per-image inference batching for the deep methods — one image per forward pass today, which is simple and leaves throughput on the table.
 - Uninformed Students ([papers.md](papers.md) #4) as a fourth method.

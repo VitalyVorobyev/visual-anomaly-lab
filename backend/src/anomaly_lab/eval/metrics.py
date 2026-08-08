@@ -56,11 +56,20 @@ def roc_auc(labels: np.ndarray, scores: np.ndarray) -> float | None:
     return (rank_sum - positives * (positives + 1) / 2.0) / (positives * negatives)
 
 
-def _cut_points(labels: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """`(true_positives, predicted)` at one cut per distinct score, descending.
+def _cut_points(
+    labels: np.ndarray, scores: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`(true_positives, predicted, threshold)` at one cut per distinct score, descending.
 
     Cutting per distinct score rather than per row is what keeps every curve here
     independent of the sort's arbitrary tie order, the same concern as in `roc_auc`.
+
+    The third array is the score *at* each cut, and it is what makes a curve readable
+    against the threshold slider rather than only against its own other axis. The cut is
+    taken at the **last** index carrying a score, so every row at or above that score is
+    on the predicted-defect side — the same rule `eval.threshold.classify` applies with
+    `score >= threshold`. That correspondence is the whole value of returning it, and it
+    is pinned by a test.
     """
     order = np.argsort(-scores, kind="mergesort")
     sorted_labels = labels[order]
@@ -69,11 +78,13 @@ def _cut_points(labels: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.
     # One cut point per distinct score, at the last index carrying that score.
     distinct = np.nonzero(np.diff(sorted_scores))[0]
     cuts = np.r_[distinct, sorted_labels.size - 1]
-    return np.cumsum(sorted_labels)[cuts], cuts + 1
+    return np.cumsum(sorted_labels)[cuts], cuts + 1, sorted_scores[cuts]
 
 
-def pr_curve(labels: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.ndarray] | None:
-    """`(recall, precision)` at every distinct score, or `None` for a one-class input.
+def pr_curve(
+    labels: np.ndarray, scores: np.ndarray
+) -> tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+    """`(recall, precision, threshold)` per distinct score, or `None` for one class.
 
     The arrays `average_precision` has always computed, returned rather than discarded so
     the chart and the scalar come from one implementation and cannot disagree.
@@ -84,8 +95,8 @@ def pr_curve(labels: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.nda
     if positives == 0 or labels.size == positives:
         return None
 
-    true_positives, predicted = _cut_points(labels, scores)
-    return true_positives / positives, true_positives / predicted
+    true_positives, predicted, threshold = _cut_points(labels, scores)
+    return true_positives / positives, true_positives / predicted, threshold
 
 
 def average_precision(labels: np.ndarray, scores: np.ndarray) -> float | None:
@@ -93,7 +104,7 @@ def average_precision(labels: np.ndarray, scores: np.ndarray) -> float | None:
     curve = pr_curve(labels, scores)
     if curve is None:
         return None
-    recall, precision = curve
+    recall, precision, _ = curve
     previous_recall = np.r_[0.0, recall[:-1]]
     return float(np.sum((recall - previous_recall) * precision))
 
@@ -112,7 +123,7 @@ def roc_curve(labels: np.ndarray, scores: np.ndarray) -> tuple[np.ndarray, np.nd
     if positives == 0 or negatives == 0:
         return None
 
-    true_positives, predicted = _cut_points(labels, scores)
+    true_positives, predicted, _ = _cut_points(labels, scores)
     false_positives = predicted - true_positives
     return (
         np.r_[0.0, false_positives / negatives, 1.0],

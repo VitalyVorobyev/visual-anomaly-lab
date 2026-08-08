@@ -13,8 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterator
-from dataclasses import dataclass
+import struct
 from pathlib import Path
 from typing import Any
 
@@ -25,152 +24,15 @@ from PIL import Image
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.db.repositories import samples as samples_repo
-from anomaly_lab.db.repositories import splits as splits_repo
-from anomaly_lab.domain.entities import JobKind, Label, Subset
-from anomaly_lab.experiments.infer import run_infer_job
-from anomaly_lab.experiments.train import run_train_job
-from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.domain.entities import JobKind, Label
 
-SIZE = 16
-TRAIN_NORMALS = 8
-TEST_NORMALS = 3
-TEST_DEFECTS = 3
-
-
-def _gradient(seed: int) -> np.ndarray:
-    generator = np.random.default_rng(seed)
-    base = np.linspace(40, 200, SIZE * SIZE).reshape(SIZE, SIZE)
-    return np.clip(base + generator.normal(0, 3, size=(SIZE, SIZE)), 0, 255)
-
-
-def _write_normal(path: Path, seed: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(_gradient(seed).astype(np.uint8), mode="L").convert("RGB").save(path)
-
-
-def _write_defect(path: Path, mask_path: Path, seed: int) -> None:
-    array = _gradient(seed)
-    array[5:10, 5:10] = 255
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(array.astype(np.uint8), mode="L").convert("RGB").save(path)
-
-    mask = np.zeros((SIZE, SIZE), dtype=np.uint8)
-    mask[5:10, 5:10] = 255
-    mask_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(mask, mode="L").save(mask_path)
-
-
-@dataclass(frozen=True)
-class Fixture:
-    dataset_id: int
-    split_id: int
-    defect_image_ids: list[int]
-    normal_image_ids: list[int]
-
-
-def _seed(conn: sqlite3.Connection, root: Path) -> Fixture:
-    """A dataset of single-image samples with an explicit train/test split and masks."""
-    dataset = datasets_repo.create_dataset(conn, name="synthetic", root_path=str(root))
-    assignments: dict[int, Subset] = {}
-    defect_image_ids: list[int] = []
-    normal_image_ids: list[int] = []
-
-    def add(external_id: str, path: Path, label: Label, subset: Subset) -> int:
-        sample, _ = samples_repo.upsert_sample(
-            conn, dataset.id, group_key="all", external_id=external_id, label=label
-        )
-        image, _ = images_repo.upsert_image(
-            conn,
-            sample.id,
-            channel_id=None,
-            path=str(path),
-            width=SIZE,
-            height=SIZE,
-            bit_depth=24,
-            file_size=path.stat().st_size,
-            sha256=f"sha-{external_id}",
-        )
-        assignments[sample.id] = subset
-        return image.id
-
-    for index in range(TRAIN_NORMALS):
-        path = root / "train" / f"n{index}.png"
-        _write_normal(path, index)
-        add(f"train-{index}", path, Label.NORMAL, Subset.TRAIN)
-
-    for index in range(TEST_NORMALS):
-        path = root / "test" / f"n{index}.png"
-        _write_normal(path, 500 + index)
-        normal_image_ids.append(add(f"test-n{index}", path, Label.NORMAL, Subset.TEST))
-
-    for index in range(TEST_DEFECTS):
-        path = root / "test" / f"d{index}.png"
-        mask_path = root / "masks" / f"d{index}.png"
-        _write_defect(path, mask_path, 900 + index)
-        image_id = add(f"test-d{index}", path, Label.DEFECT, Subset.TEST)
-        masks_repo.upsert_mask(conn, image_id, path=str(mask_path))
-        defect_image_ids.append(image_id)
-
-    split = splits_repo.create_split(
-        conn,
-        dataset.id,
-        name="official",
-        strategy="imported",
-        seed=0,
-        params={"strategy": "imported"},
-        assignments=assignments,
-    )
-    return Fixture(
-        dataset_id=dataset.id,
-        split_id=split.id,
-        defect_image_ids=defect_image_ids,
-        normal_image_ids=normal_image_ids,
-    )
-
-
-@pytest.fixture
-def seeded(client: TestClient, settings: Settings, tmp_path: Path) -> Iterator[Fixture]:
-    root = tmp_path / "source"
-    with connection(settings.db_path) as conn:
-        yield _seed(conn, root)
-
-
-def _create(client: TestClient, seeded: Fixture, **overrides: Any) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "name": "baseline",
-        "dataset_id": seeded.dataset_id,
-        "split_id": seeded.split_id,
-        "model_type": "pixel_reference",
-        "config": {"smoothing_sigma": 1.0},
-        "preprocessing": {"width": SIZE, "height": SIZE},
-        "evaluation": {},
-    }
-    body.update(overrides)
-    response = client.post("/api/experiments", json=body)
-    assert response.status_code == 200, response.text
-    payload: dict[str, Any] = response.json()
-    return payload
-
-
-def _run(settings: Settings, kind: JobKind, params: dict[str, Any]) -> dict[str, Any]:
-    """Run a handler in-process. The subprocess path is covered in `test_job_queue`."""
-    handler = run_train_job if kind is JobKind.TRAIN else run_infer_job
-    return handler(JobContext(job_id=1, kind=kind, params=params, settings=settings))
-
-
-@pytest.fixture
-def scored(client: TestClient, settings: Settings, seeded: Fixture) -> dict[str, Any]:
-    """A fully trained and scored experiment — the state most tests here start from."""
-    experiment = _create(client, seeded)
-    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
-    _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["test"]})
-    return experiment
-
+from .conftest import FIXTURE_SIZE as SIZE
+from .conftest import TEST_DEFECTS, TEST_NORMALS, TRAIN_NORMALS, Fixture
+from .conftest import create_experiment as _create
+from .conftest import run_handler as _run
 
 # ----------------------------------------------------------------- the catalog
 
@@ -512,6 +374,22 @@ def test_curves_are_served_for_the_benchmark_charts(
     assert (roc["x"][-1], roc["y"][-1]) == (1.0, 1.0)
 
 
+def test_only_the_pr_curve_carries_thresholds(client: TestClient, scored: dict[str, Any]) -> None:
+    """PR is drawn against the slider; ROC's synthetic endpoints have no finite score."""
+    payload = client.get(
+        f"/api/experiments/{scored['id']}/curves", params={"subset": "test"}
+    ).json()
+
+    for key in ("sample_pr", "image_pr"):
+        curve = payload[key]
+        assert len(curve["t"]) == len(curve["x"]), key
+        # Descending, because the curve walks the score downwards one cut at a time.
+        assert curve["t"] == sorted(curve["t"], reverse=True), key
+
+    for key in ("sample_roc", "image_roc"):
+        assert payload[key]["t"] == [], key
+
+
 def test_a_curve_agrees_with_the_metric_it_is_drawn_beside(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
@@ -670,6 +548,115 @@ def test_a_grid_frame_beyond_the_payload_is_a_404_naming_the_count(
     assert "3 frame(s)" in missing.text
 
 
+def _plane(payload: bytes) -> tuple[np.ndarray, int]:
+    """The header the frontend decodes (ADR-0023), returning `(H, W, C)`."""
+    assert payload[:4] == b"VAM1"
+    width, height, stride, channels, _ = struct.unpack("<IIIII", payload[4:24])
+    values = np.frombuffer(payload[24:], dtype="<f4")
+    assert values.size == width * height * channels
+    return np.moveaxis(values.reshape(channels, height, width), 0, -1), stride
+
+
+def test_an_anomaly_map_serves_its_own_numbers_for_a_readout(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """A rendered map cannot be read back: the colormap clips and quantizes (ADR-0023)."""
+    image_id = seeded.defect_image_ids[0]
+    response = client.get(
+        f"/api/images/{image_id}/anomaly-map/values",
+        params={"experiment_id": scored["id"]},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    plane, stride = _plane(response.content)
+    assert stride == 1
+    assert plane.shape == (SIZE, SIZE, 1)
+
+    # These are the very floats the metrics were computed from, so the readout has to fall
+    # inside the range the viewer prints beside the picture.
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+    assert detail["map_range"]["low"] <= float(plane.min())
+
+
+def test_a_diagnostic_serves_raw_values_through_the_same_addressing(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """Which is why the per-branch panes inherit the readout with no per-method code."""
+    entry = next(
+        item for item in _array_entries(client, scored["id"]) if item["kind"] in {"map", "grid"}
+    )
+    query: dict[str, Any] = {"key": entry["key"], "format": "raw"}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+
+    response = client.get(f"/api/experiments/{scored['id']}/diagnostics/payload", params=query)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    plane, _ = _plane(response.content)
+    assert plane.shape[-1] == 1
+
+
+def test_the_preprocessed_source_is_served_rather_than_the_display_tier(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """The number the *method* read, at the experiment's own size and colour mode.
+
+    Every colour plane arrives in one response with the count in the header, so a client
+    never has to know how many there are — which would be channel count as schema.
+    """
+    image_id = seeded.defect_image_ids[0]
+    response = client.get(f"/api/experiments/{scored['id']}/images/{image_id}/source-values")
+
+    assert response.status_code == 200
+    plane, _ = _plane(response.content)
+    assert plane.shape[:2] == (SIZE, SIZE)
+    assert plane.shape[-1] >= 1
+    # `load_array` normalizes to [0, 1]; an 8-bit display tier would not.
+    assert float(plane.min()) >= 0.0
+    assert float(plane.max()) <= 1.0
+    # The fixture stamps a 255 square into the defect, so the peak is saturated.
+    assert float(plane.max()) == pytest.approx(1.0)
+
+
+def test_source_values_revalidate_on_the_frozen_preprocessing(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """Immutable in practice — the file is fixed and the config is frozen at creation."""
+    url = f"/api/experiments/{scored['id']}/images/{seeded.defect_image_ids[0]}/source-values"
+    first = client.get(url)
+    again = client.get(url, headers={"if-none-match": first.headers["etag"]})
+    assert again.status_code == 304
+
+
+def test_the_payload_validator_covers_the_scale_it_was_drawn_on(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """The same array over a different span is a different picture.
+
+    The validator hashed size and mtime only, so widening a key's range — re-inference, and
+    now an on-demand diagnostic — left every already-fetched PNG cached at the old scale
+    with nothing on screen to say so.
+    """
+    entry = next(item for item in _array_entries(client, scored["id"]) if item["kind"] == "map")
+    query: dict[str, Any] = {"key": entry["key"]}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+
+    url = f"/api/experiments/{scored['id']}/diagnostics/payload"
+    before = client.get(url, params=query).headers["etag"]
+
+    root = settings.experiment_dir(scored["id"]) / "diagnostics"
+    index = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))
+    index["ranges"][entry["key"]] = {"low": -99.0, "high": 99.0}
+    (root / "diagnostics.json").write_text(json.dumps(index), encoding="utf-8")
+
+    after = client.get(url, params=query)
+    assert after.headers["etag"] != before
+    # And the stale validator no longer wins a 304.
+    assert client.get(url, params=query, headers={"if-none-match": before}).status_code == 200
+
+
 def test_a_payload_revalidates_rather_than_being_cached_forever(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
@@ -783,3 +770,106 @@ def test_an_experiment_left_mid_training_is_reconciled_at_startup(
         reopened = restarted.get(f"/api/experiments/{experiment['id']}").json()
 
     assert reopened["status"] == "failed"
+
+
+# ------------------------------------------------------- continuing a run (ADR-0025)
+
+
+def test_continuing_a_method_without_steps_is_refused_as_a_form(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """422, not a job that fails minutes later inside a worker.
+
+    `pixel_reference` builds a median over the training set; it is either fitted or not,
+    and there is no step to continue. The message says that rather than "invalid".
+    """
+    response = client.post(
+        f"/api/experiments/{scored['id']}/train",
+        json={"experiment_id": scored["id"], "additional_steps": 500},
+    )
+
+    assert response.status_code == 422
+    assert "no notion of a training step" in response.text
+
+
+def test_a_method_without_resume_reports_so_and_carries_no_training_state(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """`training_state` is absent rather than zero: a fabricated step count reads as fact."""
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+
+    assert detail["supports_resume"] is False
+    assert detail["training_state"] is None
+
+
+def test_training_without_additional_steps_is_unaffected(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """The ordinary path must not have acquired a precondition."""
+    response = client.post(
+        f"/api/experiments/{scored['id']}/train", json={"experiment_id": scored["id"]}
+    )
+    assert response.status_code == 200
+
+
+def test_additional_steps_stays_optional_on_the_wire(client: TestClient) -> None:
+    """`default_factory`, not `= None`.
+
+    A literal default emits `"default": null` into the schema and `openapi-typescript`
+    then makes the property **required** — the trap that silently pinned a value for two
+    milestones. The schema must therefore carry no default for this field at all.
+    """
+    schema = client.get("/openapi.json").json()
+    train_params = schema["components"]["schemas"]["TrainParams"]
+
+    assert "additional_steps" not in train_params.get("required", [])
+    assert "default" not in train_params["properties"]["additional_steps"]
+
+
+# ------------------------------------------------------- clearing diagnostics
+
+
+def test_clearing_images_keeps_the_run_scoped_entries(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """What the Architecture and Inspector tabs draw must survive a routine disk clear."""
+    before = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
+    assert any(entry["scope"] == "image" for entry in before["entries"])
+    assert any(entry["scope"] == "model" for entry in before["entries"])
+
+    response = client.delete(f"/api/experiments/{scored['id']}/diagnostics")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["removed_entries"] > 0
+    assert result["bytes_reclaimed"] > 0
+
+    after = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
+    assert not any(entry["scope"] == "image" for entry in after["entries"])
+    assert any(entry["scope"] == "model" for entry in after["entries"])
+
+
+def test_clearing_diagnostics_leaves_the_anomaly_maps_alone(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """Deleting a map orphans an `ImageResult` row and breaks the overlay silently."""
+    maps = settings.experiment_dir(scored["id"]) / "maps"
+    before = sorted(path.name for path in maps.iterdir())
+    assert before
+
+    client.delete(f"/api/experiments/{scored['id']}/diagnostics", params={"scope": "all"})
+
+    assert sorted(path.name for path in maps.iterdir()) == before
+    overlay = client.get(f"/api/experiments/{scored['id']}/results", params={"subset": "test"})
+    assert overlay.status_code == 200
+
+
+def test_clearing_an_experiment_that_recorded_nothing_is_not_an_error(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """The button exists before the first run does."""
+    experiment = _create(client, seeded)
+
+    response = client.delete(f"/api/experiments/{experiment['id']}/diagnostics")
+
+    assert response.status_code == 200
+    assert response.json()["removed_entries"] == 0

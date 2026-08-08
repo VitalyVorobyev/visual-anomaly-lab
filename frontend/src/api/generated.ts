@@ -410,6 +410,85 @@ export interface paths {
         get: operations["get_diagnostics_api_experiments__experiment_id__diagnostics_get"];
         put?: never;
         post?: never;
+        /**
+         * Delete diagnostics to reclaim disk
+         * @description Remove stored diagnostics and report what it reclaimed (ADR-0027).
+         *
+         *     **Anomaly maps are never touched.** They live in a sibling directory and each is
+         *     referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
+         *     the overlay, `has_map` and the map scale. Reclaiming their space means deleting the
+         *     experiment.
+         *
+         *     Refused with 409 while a job is running, because an inference job's index write merges
+         *     with what is on disk and would put back exactly what this removed. The resident worker
+         *     can write the same file, so it is evicted first rather than raced — the delete waits
+         *     for any request in flight, which is bounded and is the same guarantee the queue gets.
+         */
+        delete: operations["clear_diagnostics_api_experiments__experiment_id__diagnostics_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/diagnose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record diagnostics for one image, now
+         * @description Ask the method what it saw in one image, outside any job (ADR-0026).
+         *
+         *     An inference run records per-image diagnostics for a bounded sample of what it scored,
+         *     so most images have none. This answers for any image in the split, served from a
+         *     resident worker that keeps the checkpoint loaded — the first request pays the model
+         *     load, the rest do not.
+         *
+         *     **It does not change this image's score, its map, or any metric.** Those come from a
+         *     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+         *     `on_demand` in the index (ADR-0027).
+         *
+         *     Refused with 409 while a job is running: one machine, one device, and a browse request
+         *     must not queue behind a two-hour train.
+         */
+        post: operations["diagnose_api_experiments__experiment_id__diagnose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/images/{image_id}/source-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The preprocessed pixels the model actually read
+         * @description `load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+         *
+         *     **The preprocessed array, not the display tier.** A readout taken from the rendered
+         *     preview would report what the browser is showing — 8-bit, resampled for display — when
+         *     the question is what the *method* consumed. Every method loads its pixels through this
+         *     same function, so this is exactly the number that went into the model.
+         *
+         *     **Every plane in one response**, with the count in the header. How many there are is a
+         *     property of the experiment's colour mode, and a client that had to know it in advance
+         *     would either encode that in the UI or discover it by asking until something 404s.
+         *
+         *     Cacheable forever in practice: the source file is immutable and the preprocessing
+         *     config is frozen at creation, so the ETag over both can never go stale for one
+         *     experiment. It is one fetch per image, ever.
+         */
+        get: operations["read_source_values_api_experiments__experiment_id__images__image_id__source_values_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -518,6 +597,30 @@ export interface paths {
          *     cannot read a response header, and this endpoint exists to be an `img src`.
          */
         get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/anomaly-map/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The anomaly map's own numbers, for a readout under the cursor
+         * @description The stored map as a float32 plane (ADR-0023).
+         *
+         *     Resolved through `image_result` exactly as the PNG above is, so this inherits the same
+         *     property: no request can name a file. It exists to be **read**, never drawn — the
+         *     colormap and the run-wide display range stay on this side, in one language.
+         */
+        get: operations["read_anomaly_map_values_api_images__image_id__anomaly_map_values_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -967,6 +1070,11 @@ export interface components {
              * @default false
              */
             dataset_specific: boolean;
+            /**
+             * Supports Resume
+             * @default false
+             */
+            supports_resume: boolean;
             /** @default cpu */
             preferred_device: components["schemas"]["Device"];
         };
@@ -1120,6 +1228,11 @@ export interface components {
              */
             y: number[];
             /**
+             * T
+             * @description The score at each point, so precision and recall can be drawn against the threshold rather than only against each other. Empty for ROC: that curve carries two synthetic endpoints whose thresholds are infinite, and JSON has no way to say so.
+             */
+            t: number[];
+            /**
              * Total
              * @description Points before downsampling.
              */
@@ -1210,6 +1323,29 @@ export interface components {
          * @enum {string}
          */
         Device: "cpu" | "mps" | "cuda";
+        /** DiagnoseRequest */
+        DiagnoseRequest: {
+            /**
+             * Image Id
+             * @description The image to diagnose. Must belong to this split.
+             */
+            image_id: number;
+        };
+        /** DiagnoseResponse */
+        DiagnoseResponse: {
+            /**
+             * Keys
+             * @description The diagnostic keys recorded for this image.
+             */
+            keys: string[];
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /**
+             * Warm
+             * @description False when this request had to load the model first, which is what makes it take seconds. True once a resident is serving.
+             */
+            warm: boolean;
+        };
         /**
          * DiagnosticEntry
          * @description One row of the index. Self-describing on purpose.
@@ -1221,6 +1357,8 @@ export interface components {
             title: string;
             kind: components["schemas"]["DiagnosticKind"];
             scope: components["schemas"]["DiagnosticScope"];
+            /** @default run */
+            origin: components["schemas"]["DiagnosticOrigin"];
             /** Image Id */
             image_id: number | null;
             /**
@@ -1274,6 +1412,18 @@ export interface components {
          * @enum {string}
          */
         DiagnosticKind: "map" | "image" | "grid" | "graph" | "table";
+        /**
+         * DiagnosticOrigin
+         * @description Whether an entry came from a run, or from someone asking about one image.
+         *
+         *     Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made for
+         *     `ranges`. It exists because the two have genuinely different lifetimes and different
+         *     supersession rules: a run's per-image entries are a *sample* of that run and replace
+         *     each other wholesale, while an on-demand entry is a question somebody asked and must
+         *     not be swept away by the next run of inference, nor sweep one away (ADR-0027).
+         * @enum {string}
+         */
+        DiagnosticOrigin: "run" | "on_demand";
         /**
          * DiagnosticScope
          * @description What a diagnostic is *about*, which decides where the UI can offer it.
@@ -1351,6 +1501,12 @@ export interface components {
              * @default false
              */
             produces_diagnostics: boolean;
+            /**
+             * Supports Resume
+             * @default false
+             */
+            supports_resume: boolean;
+            training_state: components["schemas"]["TrainingState"] | null;
             map_range: components["schemas"]["MapScale"] | null;
         };
         /**
@@ -1406,6 +1562,8 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+            /** @description The resident inference worker, when one is live. */
+            resident?: components["schemas"]["ResidentHealth"] | null;
         };
         /**
          * ImageScore
@@ -1921,6 +2079,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * PayloadFormat
+         * @description Whether a caller wants the picture or the numbers behind it (ADR-0023).
+         * @enum {string}
+         */
+        PayloadFormat: "png" | "raw";
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -1930,6 +2094,51 @@ export interface components {
              * @description Which tiers to render. Defaults to every cacheable tier.
              */
             tiers?: components["schemas"]["ImageTier"][] | null;
+        };
+        /**
+         * PruneResult
+         * @description What a clear actually reclaimed. Reported, never assumed.
+         */
+        PruneResult: {
+            /** Removed Entries */
+            removed_entries: number;
+            /** Removed Files */
+            removed_files: number;
+            /** Bytes Reclaimed */
+            bytes_reclaimed: number;
+            /** Remaining Bytes */
+            remaining_bytes: number;
+        };
+        /**
+         * PruneScope
+         * @description How much of a run's diagnostics to delete (ADR-0027).
+         * @enum {string}
+         */
+        PruneScope: "image" | "on_demand" | "all";
+        /**
+         * ResidentHealth
+         * @description The one long-lived compute process nothing else would show (ADR-0026).
+         *
+         *     A resident inference worker holds a loaded checkpoint — and on this machine, the MPS
+         *     device — between browse requests. Without this block the only evidence it exists is a
+         *     second Python process in Activity Monitor, which is the wrong place to discover that
+         *     something is holding your accelerator.
+         */
+        ResidentHealth: {
+            /** Experiment Id */
+            experiment_id: number;
+            /**
+             * Generation
+             * @description Checkpoint fingerprint; a retrain changes it.
+             */
+            generation: string;
+            /**
+             * Evicted In Seconds
+             * @description Until the idle timeout takes it down.
+             */
+            evicted_in_seconds: number;
+            /** Requests Served */
+            requests_served: number;
         };
         /**
          * ResultsPage
@@ -2223,6 +2432,54 @@ export interface components {
              * @default true
              */
             diagnostics: boolean;
+            /**
+             * Additional Steps
+             * @description Continue the existing model for this many further steps instead of training from scratch. Only for a method that declares `supports_resume`.
+             */
+            additional_steps?: number | null;
+        };
+        /**
+         * TrainingState
+         * @description How much training an experiment's stored model has actually had.
+         *
+         *     Written beside the checkpoint as JSON, and read by the API, because a `.pt` cannot be
+         *     opened in a process that has no torch — which the API process deliberately does not.
+         *     Without this the configuration panel shows `max_steps: 4000` beside an 8000-step
+         *     model, which is a lie in the one record that is supposed to make a run reproducible.
+         */
+        TrainingState: {
+            /**
+             * Format
+             * @default 1
+             */
+            format: number;
+            /** Completed Steps */
+            completed_steps: number;
+            /**
+             * Runs
+             * @default 1
+             */
+            runs: number;
+            /**
+             * Last Run Steps
+             * @default 0
+             */
+            last_run_steps: number;
+            /**
+             * Model Type
+             * @default
+             */
+            model_type: string;
+            /**
+             * Written At
+             * @default
+             */
+            written_at: string;
+            /**
+             * Resumable
+             * @default true
+             */
+            resumable: boolean;
         };
         /** ValidationError */
         ValidationError: {
@@ -2958,6 +3215,114 @@ export interface operations {
             };
         };
     };
+    clear_diagnostics_api_experiments__experiment_id__diagnostics_delete: {
+        parameters: {
+            query?: {
+                /** @description `image` drops every per-image entry and keeps the model-scoped ones; `on_demand` drops only what was asked for while browsing; `all` drops everything this run recorded about itself. */
+                scope?: components["schemas"]["PruneScope"];
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PruneResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnose_api_experiments__experiment_id__diagnose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnoseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnoseResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_source_values_api_experiments__experiment_id__images__image_id__source_values_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description The client's copy is current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_diagnostic_payload_api_experiments__experiment_id__diagnostics_payload_get: {
         parameters: {
             query: {
@@ -2967,6 +3332,8 @@ export interface operations {
                 image_id?: number | null;
                 /** @description Which cell of a `grid` payload. */
                 frame?: number;
+                /** @description `png` to draw it; `raw` for the float32 values behind it (ADR-0023). */
+                format?: components["schemas"]["PayloadFormat"];
             };
             header?: never;
             path: {
@@ -2983,6 +3350,7 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description The client's copy is current. */
@@ -3085,6 +3453,39 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_anomaly_map_values_api_images__image_id__anomaly_map_values_get: {
+        parameters: {
+            query: {
+                experiment_id: number;
+            };
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */
