@@ -321,10 +321,22 @@ run in the table above:
 |---|---|---|---|---|
 | 4 000 | 0.886 | 0.981 | 0.916 | 26.5 |
 | 8 000 | 0.916 | 0.989 | 0.936 | 26.6 |
-| 16 000 | **0.943** | **0.992** | **0.944** | 25.5 |
-| 30 000 | | | | |
-| 50 000 | | | | |
-| 70 000 | | | | |
+| 16 000 | 0.943 | 0.992 | **0.944** | 25.5 |
+| **30 000** | **0.955** | **0.994** | 0.943 | 26.4 |
+| 50 000 | | | | *not run* |
+| 70 000 | | | | *not run* |
+
+**The two metric families stop at different times.** AU-PRO plateaued at 16 000 — 0.944 then
+0.943, flat inside any reasonable noise — and pixel ROC-AUC is saturated at 0.994. Sample
+ROC-AUC is still climbing, but by less each leg: +0.030, +0.027, +0.012. That is the shape of
+a quantity approaching a limit rather than one that has reached it, so a 70 000 resume has a
+real chance of another 0.01–0.02 on the image score and essentially none on localisation.
+`extend.py` forks a finished run and continues it, so that is one command whenever it is
+worth the hour.
+
+**Localisation converges before ranking, and that is the same asymmetry the peak-in-mask
+diagnostic found.** Getting the defect region hot is the easier half; making sure nothing else
+in a *normal* image is hotter is what the remaining budget buys.
 
 **The two curves do not converge, they diverge.** At every budget measured the better teacher
 is ahead by more than the anomalib-teacher curve gains over its whole span: 16 000 steps with

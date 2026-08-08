@@ -358,8 +358,10 @@ forgotten**, each because it is machine time rather than design:
 - **A real distilled teacher.** The stage runs end to end; phase 1 is 10 000 steps on Imagenette,
   and the phase-2 corpus is an open choice — ImageNet-1K needs an account and more disk than this
   machine has free.
-- **The curve past 30 000.** `extend.py` forks a finished run and continues it, so 70 000 is one
-  command rather than a restart.
+- **The curve past 30 000.** It ended at 0.955 sample ROC-AUC and 0.994 pixel, with AU-PRO
+  plateaued at 16 000 and the per-leg sample gain shrinking (+0.030, +0.027, +0.012) — a
+  quantity approaching a limit rather than one that has reached it. `extend.py` forks a
+  finished run, so 70 000 is one command rather than a restart.
 
 **New runs no longer use the anomalib teacher.** It stays a value of `teacher_source` only so the
 five experiments recorded against it remain loadable. ADR-0029 still makes the wrapper the baseline
