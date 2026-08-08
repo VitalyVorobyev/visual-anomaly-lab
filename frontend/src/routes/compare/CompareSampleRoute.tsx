@@ -141,7 +141,7 @@ export function CompareSampleRoute() {
               value={state.cut}
               onValueChange={(cut) => update({ cut })}
               readout={
-                <span className="inline-block w-20 text-right font-mono text-xs">
+                <span className="inline-block w-28 whitespace-nowrap text-right font-mono text-xs">
                   {/* A fraction, not a value: the number this resolves to is different in
                       every pane, and each pane prints its own below. */}
                   {(state.cut * 100).toFixed(0)}% of range

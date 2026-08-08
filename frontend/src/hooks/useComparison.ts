@@ -15,6 +15,7 @@ import type {
   CurveSet,
   ImageScore,
   OperatingPoint,
+  SplitDetail,
   Subset,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -102,4 +103,31 @@ export function useSampleImageSets(ids: number[], sampleId: number | undefined) 
       enabled: sampleId !== undefined,
     })),
   });
+}
+
+/**
+ * Split names for a set of datasets, so the picker groups by a name rather than an id.
+ *
+ * `useQueries` for the same reason as above: the dataset set follows the experiment list
+ * and cannot be known when the component is written. Keyed identically to `useSplits`, so
+ * the split screen and this share one cache entry per dataset.
+ */
+export function useSplitNames(datasetIds: number[]): Map<number, string> {
+  const results = useQueries({
+    queries: datasetIds.map((datasetId) => ({
+      queryKey: queryKeys.splits(datasetId),
+      queryFn: async (): Promise<SplitDetail[]> =>
+        unwrap(
+          await api.GET("/api/splits", { params: { query: { dataset_id: datasetId } } }),
+          "the split list",
+        ),
+      staleTime: Infinity,
+    })),
+  });
+
+  const names = new Map<number, string>();
+  for (const result of results) {
+    for (const split of result.data ?? []) names.set(split.id, split.name);
+  }
+  return names;
 }

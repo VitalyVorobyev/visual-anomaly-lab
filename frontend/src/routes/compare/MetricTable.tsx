@@ -19,6 +19,7 @@ import {
   comparisonRows,
   detectionRows,
   formatScore,
+  groupingNote,
   pixelRows,
   timingRows,
 } from "../../api/metrics";
@@ -33,6 +34,14 @@ export function MetricTable({ runs }: { runs: ComparedRun[] }) {
     { title: "Timing", rows: comparisonRows(metrics.map(timingRows)) },
   ].filter((section) => section.rows.length > 0);
 
+  /* Stated rather than left as a gap. On a dataset of single-image samples the image-level
+     rows are the sample-level rows redrawn, so they are dropped — and a reader who knows
+     they exist would otherwise wonder which run failed to report them. Only when it holds
+     for every run: one grouped run in the selection is a reason to show both levels. */
+  const ungrouped = metrics.every((entry) => groupingNote(entry) !== null)
+    ? groupingNote(metrics[0] ?? {})
+    : null;
+
   return (
     <Panel title="Threshold-independent">
       <p className="mb-3 text-xs text-fg-muted">
@@ -45,6 +54,7 @@ export function MetricTable({ runs }: { runs: ComparedRun[] }) {
           <SectionRows key={section.title} title={section.title} rows={section.rows} />
         ))}
       </Grid>
+      {ungrouped !== null && <p className="mt-3 text-xs text-fg-subtle">{ungrouped}</p>}
     </Panel>
   );
 }
@@ -145,7 +155,9 @@ function Grid({
           <tr className="border-b border-line align-bottom">
             <th className="py-2 pr-4 text-xs font-medium text-fg-muted">Metric</th>
             {runs.map((run) => (
-              <th key={run.id} className="min-w-32 px-3 py-2">
+              // Right-aligned to match the cells beneath it. Left-aligned, a wide table
+              // puts a run's name a column's width away from its own numbers.
+              <th key={run.id} className="min-w-32 px-3 py-2 text-right">
                 <span className="block truncate text-sm font-semibold text-fg">{run.name}</span>
                 <span className="block font-mono text-[11px] text-fg-subtle">
                   {run.model_type}

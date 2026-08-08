@@ -102,7 +102,7 @@ export function AgreementTable({
                     </span>
                   </th>
                 ))}
-                <th className="w-8" />
+                <th className="w-14" />
               </tr>
             </thead>
             <tbody>
@@ -159,7 +159,7 @@ function Row({
           </div>
         </td>
       ))}
-      <td className="py-1.5 text-right">
+      <td className="py-1.5 pl-2 text-right">
         <Link
           to={`/compare/samples/${row.sample_id}?${writeCompareState(state).toString()}`}
           className="text-xs text-signal underline-offset-2 hover:underline"

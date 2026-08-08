@@ -51,7 +51,7 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **27 records (0001–0027); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **28 records (0001–0028); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 - `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
@@ -61,16 +61,21 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M4.7 are done.** The loop closes, its output is reachable, and it can be iterated in: import a
-  directory tree or a public benchmark, browse and label it, split it, train, score, and read image-
-  and pixel-level metrics — then browse every scored sample, filter to the model's mistakes, read the
-  values under the cursor, ask the method about any image, continue training for more steps, and see
-  the real module hierarchy. Two methods ship: `pixel_reference` (numpy + Pillow, the floor) and
-  `efficientad_anomalib` (MPS).
-- **M5 — the comparison UI — is next**, and it is the milestone that makes the workbench worth
-  having: several methods, one split, one evaluation protocol, compared directly. Read
-  `docs/roadmap.md` before starting work; the completed milestones there are summaries that keep only
-  what still constrains new work.
+- **M0–M5 are done.** The loop closes, its output is reachable, it can be iterated in, and **two
+  methods can now be read against each other**: import a directory tree or a public benchmark, browse
+  and label it, split it, train, score, read image- and pixel-level metrics, browse every scored
+  sample and filter to the model's mistakes, ask the method about any image, continue training — then
+  put N runs of one split side by side, find the samples they disagree on, and open one of them with
+  every method's map in its own pane. Two methods ship: `pixel_reference` (numpy + Pillow, the floor)
+  and `efficientad_anomalib` (MPS).
+- **Nothing is compared in score units (ADR-0028).** A score has no meaning outside its own run —
+  `pixel_reference` operates around 14 and `efficientad_anomalib` around 0.065 on the same data.
+  Threshold-independent metrics compare directly; anything threshold-dependent is resolved **per run
+  by one shared rule** whose name and resolved value are printed on screen, and a cut carried between
+  runs is a *fraction of each range*, never a value. A single slider over a comparison would be
+  wrong in a way that looks exactly like being right.
+- **M6 — the custom EfficientAD — is next.** Read `docs/roadmap.md` before starting work; the
+  completed milestones there are summaries that keep only what still constrains new work.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
   `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare

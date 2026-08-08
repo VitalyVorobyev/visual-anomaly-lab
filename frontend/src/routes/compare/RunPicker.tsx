@@ -14,6 +14,7 @@
 import type { ExperimentSummary } from "../../api/client";
 import { MAX_RUNS, refusalReason } from "../../api/compareState";
 import { Badge, Checkbox, Empty, SkeletonRows, cn } from "../../components/ui";
+import { useSplitNames } from "../../hooks/useComparison";
 import { useDatasets } from "../../hooks/useCatalog";
 import { useExperiments } from "../../hooks/useExperiments";
 
@@ -26,9 +27,11 @@ export function RunPicker({
 }) {
   const experiments = useExperiments();
   const datasets = useDatasets();
+  const rows = experiments.data ?? [];
+  // Before the early returns: the hook count may not depend on whether the list arrived.
+  const splitNames = useSplitNames([...new Set(rows.map((row) => row.dataset_id))]);
 
   if (experiments.isPending) return <SkeletonRows rows={4} />;
-  const rows = experiments.data ?? [];
   if (rows.length === 0) {
     return <Empty>No experiments yet. Train one first, then two of them can be compared.</Empty>;
   }
@@ -48,7 +51,7 @@ export function RunPicker({
           <h3 className="text-xs font-semibold text-fg-muted">
             {names.get(group.datasetId) ?? `dataset ${group.datasetId}`}
             <span className="ml-2 font-mono text-[11px] text-fg-subtle">
-              split {group.splitId}
+              {splitNames.get(group.splitId) ?? `split ${group.splitId}`}
             </span>
           </h3>
           {group.runs.map((run) => (

@@ -31,6 +31,7 @@ the detail is in the git history and the ADRs.
 | E14 | M4.5 | The token layer, light/dark themes, the primitive set, the schema→control mapping fixed so every pydantic shape reaches the right control |
 | E15 | M4.6 | Query invalidation on a finished run, the Samples gallery with outcome filters, the sample page rebuilt around its canvas, the anomaly segmentation overlay, the artifact listing and *Reveal in Finder*, the diagnostics budget spread across the run |
 | E16 | M4.7 | Overview rebuilt around results, the Jobs & files tab and the run bar, threshold curves and verdict thumbnails, tab-preserving sample navigation, the value readout, the layer-level architecture tree, resumable training, and on-demand diagnostics from a resident worker |
+| E10 | M5 | `GET /api/compare` and the operating-point rules, the run picker guarded to one split, the two metric tables split by threshold dependence, overlaid curves, the preprocessing-first config diff, the disagreement table, and the N-way sample map view |
 
 ---
 
@@ -44,20 +45,6 @@ the detail is in the git history and the ADRs.
 
 - [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M)
 - [ ] Revisit the training loop against anomalib's Lightning path if their module stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
-
-### E10 — Comparison UI (M5)
-
-Sized `M` when it was one line; it is more than that now, and should be split before it is started.
-
-- [ ] N-way metric table: sample / image / pixel ROC-AUC, AU-PRO, AP, confusion at a shared threshold, timing (M)
-- [ ] Overlaid ROC and PR curves across the selected experiments (S)
-- [ ] Config diff, calling out **preprocessing** differences loudly — comparability under identical preprocessing is the milestone's first exit criterion (S)
-- [ ] A/B anomaly-map view on one sample, each map on its own recorded run-wide range with that range printed (M) — **ADR-0028** settles the question **ADR-0019** left open: nothing is compared in score units, and what transfers across runs is the *fraction* of each range, never the value
-- [ ] Guard the selection to one dataset and one split; warn rather than block on differing preprocessing (S)
-
-*Build it N-way and capability-driven, never two-way and method-named: M7 requires a third method to
-appear here with no change outside the plugin. Do not pull training curves for several runs at once —
-**ADR-0020** flags that as a known cliff.*
 
 ### E11 — Custom EfficientAD (M6)
 
@@ -93,6 +80,8 @@ Not scheduled. Revisit at each re-triage; promote when there is a concrete reaso
 - **Show the pixel-metric protocol on the results screen.** "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.
 - **Type-check under the `dl` extra too.** The `backend-dl` CI job runs the gated tests but not mypy, so torch's real types are never followed. It is a different check from the torch-free one and could surface a pile of findings at once, which is why it was not bundled into the fix that created the job.
 - **Warn when the diagnostics directory gets large.** The clear button reports what it freed, but nothing says when there is something to free; on-demand entries are deliberately uncapped (ADR-0027) and the artifact listing's byte count is the only signal.
+- **Make the F1-optimal threshold a sorted sweep.** `suggest_threshold` evaluates a full confusion matrix per candidate score, so it is quadratic; the comparison screen pays it once per run. Fine on a few hundred samples and not on a few thousand. It must stay **one** implementation — the comparison deliberately shares the results screen's (ADR-0028), so this is a change to that function, never a second copy.
+- **A cross-dataset leaderboard.** A comparison is refused across datasets and splits because the numbers are not commensurable, which is right for a table of confusion matrices and wrong for the question "how does this method do across the benchmarks". That is a different screen with a different guard, not a loosening of this one.
 - Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate a sample score by scale alone.
 - Per-image inference batching for the deep methods — one image per forward pass today, which is simple and leaves throughput on the table.
 - Uninformed Students ([papers.md](papers.md) #4) as a fourth method.
