@@ -139,6 +139,49 @@ Also note the baseline at 4000 steps sits **below the numpy floor** on this spli
 claim about 4000 steps on a generated split, and it is the clearest possible argument for running
 the step-budget curve before anything else.
 
+### The step-budget curve — one trajectory, read at six points
+
+**Why one run and not five.** Five independent runs at 4000 / 8000 / 16000 / 30000 / 50000 / 70000
+cost 178 000 steps to answer a question that 70 000 answers, because every shorter run re-walks
+ground the longer one already covered. Training resumes (ADR-0025), so it does not have to. The chain
+forks the seed-0 checkpoint already measured at 4000 steps, so **the curve's first point is a number
+that was already in this file** rather than a new one that has to be trusted.
+
+`candle`, generated split, seed 0 — the exploratory protocol above, not ADR-0029's. One dataset and
+one seed on purpose: this measures *where the metric stops moving*, and that question does not need
+a second object to answer.
+
+| Steps | Sample ROC-AUC | Pixel ROC-AUC | AU-PRO | ms/image | Wall clock |
+|---|---|---|---|---|---|
+| 4 000 | 0.751 | 0.900 | 0.560 | 25.8 | — (inherited) |
+| 8 000 | 0.715 | 0.904 | 0.573 | 26.0 | 9.3 min |
+| 16 000 | | | | | |
+| 30 000 | | | | | |
+| 50 000 | | | | | |
+| 70 000 | | | | | |
+
+**What the schedule does along this chain, stated rather than hidden.** `fit_more` rebuilds the
+`StepLR` against the *new* total, so each leg anneals over its own last 5% and returns to base rate
+at the next resume. A point on this curve is therefore "a run of length N that annealed at the end",
+which is the right thing to compare — but the legs *before* it also annealed briefly, where a single
+N-step run would have held 1e-4 through its first 95%. The perturbation is small and it is the price
+of not paying for 178 000 steps.
+
+**The first leg found a bug that would have made the whole curve a measurement of itself.**
+`StepLR.get_lr` is multiplicative on the param group's *current* rate, and `Adam.load_state_dict`
+restores the rate the previous leg ended on — which is always the decayed one. So every continuation
+started a tenfold low and dropped again at its own boundary: **1e-5 instead of 1e-4 on the first
+resume, and 1e-9 by the fifth.** Both EfficientAD plugins had it, with a comment in each claiming the
+opposite. Caught by reading the learning-rate metric sixty seconds into leg one, fixed by computing
+the rate from the schedule's closed form at the resume point, and pinned by two tests. Every row
+above except the inherited 4 000 was produced after the fix; the 4 000 run was a fresh `fit` and
+never touched the resume path.
+
+Worth stating plainly: **the resume feature has been quietly wrong since it was written**, and
+nothing in the application would have shown it. The loss curve continues, the step counter is
+correct, the run finishes. It took a measurement that depended on the learning rate being right to
+make it visible — which is the argument for this file existing.
+
 ### The diagnostics contract, checked on these runs rather than on a fixture
 
 M6's third exit criterion is that every M4 view works on the new method with no new code. The
@@ -170,4 +213,4 @@ behaviour, so measuring one is a single changed number and nothing else.
 | `score_reduction` | The mean of the hottest `score_top_k` pixels beats a single maximum. | `amax` over 65 536 pixels is one pixel's opinion, and `pixel_reference` already reduces by a percentile for that reason. Sign genuinely unknown: a *percentile* would be wrong here — the 99.5th is the top 328 pixels, an 18 × 18 region, and many VisA defects are smaller than that — which is why the alternative offered is a small top-k rather than a quantile. |
 | `student_teacher_weight` | The fixed 0.5 / 0.5 branch blend is not optimal. | Report as an **oracle upper bound only**. It cannot be tuned on normals alone, and tuning it on the test set is cheating (ADR-0029 rules it out as a shipped default). Its value is as a ceiling on what a better calibration could recover. |
 | `pretrained_teacher` | The published ImageNet-distilled teacher is worth its download. | The distillation mechanism works against any fixed nonlinear feature extractor — a random teacher separates a synthetic defect perfectly in the test suite. A negative result here would make the method fully offline, so it is worth asking even though the expected answer is "yes, keep it". |
-| `max_steps` | More steps is the largest single move available. | 4000 against the paper's 70000. Nearly free to measure because training resumes: one run gives 4000 → 8000 → 16000 by continuing it, and the curve calibrates how much every other change is worth. **Run this first.** |
+| `max_steps` | More steps is the largest single move available. | 4000 against the paper's 70000, where both implementations sit *below* the numpy floor. **Being measured now** — one trajectory to 70 000, read at six points; see the step-budget curve above. Until it lands, no other hypothesis is worth running: the seed spread at 4000 (0.041) is larger than every effect being chased (0.01–0.03), so nothing measured at that budget could reach evidence. |
