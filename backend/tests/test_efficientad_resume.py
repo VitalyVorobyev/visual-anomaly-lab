@@ -1,7 +1,7 @@
 """Continuing a finished run, and whether it is actually the same run (ADR-0025).
 
-`dl`-gated: CI installs without `--extra dl`, so this skips there and runs locally under
-`uv sync --extra dl`.
+`dl`-gated: CI's main backend job installs without `--extra dl`, so this skips there. It
+runs in the separate `backend-dl` job, and locally under `uv sync --extra dl`.
 
 The centrepiece is `test_the_checkpoint_loses_nothing`. "Exact resume" is a claim, and a
 claim that nothing measures is a claim that quietly stops being true — the whole reason

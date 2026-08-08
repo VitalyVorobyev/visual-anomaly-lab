@@ -46,8 +46,41 @@ jobs:
       - name: Types
         run: uv run --directory backend mypy
 
+      # Deliberately *without* `--extra dl`. This job is what measures the torch-free
+      # boundary rather than asserting it: `pixel_reference`, the evaluation layer and
+      # every test but the EfficientAD ones must pass with no torch installed. The
+      # `dl`-gated files skip here and run in `backend-dl` below.
       - name: Tests
         run: uv run --directory backend pytest
+
+  # The other half of that boundary. ADR-0025 records, as an accepted cost, that the
+  # `dl`-gated tests were "the only check on the exactness claim" and were run nowhere but
+  # the author's machine — so a checkout that never installs the extra would not notice
+  # them breaking. This is that gap closed.
+  #
+  # Affordable only because the two expensive downloads are already avoided: the resume
+  # tests monkeypatch the 1.5 GB ImageNette penalty set away, and the introspection tests
+  # build anomalib's PDN directly. What is left is the install (cached) and the 40 MB
+  # pretrained teacher.
+  backend-dl:
+    name: Backend (dl extra)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - name: Install with the dl extra
+        run: uv sync --directory backend --locked --extra dl
+
+      # Named explicitly rather than run as the whole suite: everything else is already
+      # covered above, and this job exists for the files that cannot run there. It runs on
+      # CPU — the MPS path stays local-only, and no assertion here depends on the device.
+      - name: The dl-gated tests
+        run: uv run --directory backend pytest tests/test_efficientad_resume.py tests/test_efficientad_introspect.py
 
   frontend:
     name: Frontend
