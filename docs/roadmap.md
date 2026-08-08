@@ -293,8 +293,22 @@ it has been tested by a method the interface was not designed around.
   `ParameterDict`s as parameters. They are fitted statistics; ours are buffers. A correctness
   decision that turns out to be visible in the Architecture tab.
 
-**Left to do:** the protocol sweep on VisA's official split (`pcb1`, `capsules`), then the hypotheses
-in [measurements-efficientad.md](measurements-efficientad.md) in order.
+- **4000 steps is not a budget at which a model can be judged.** Both implementations sit *below* the
+  numpy floor there (0.727 and 0.764 against 0.790) where the paper reports 0.975 at 70 000, and the
+  seed spread (0.041) is larger than every effect the remaining hypotheses chase (0.01–0.03). The
+  head-to-head is fair *at budget 4000* and says nothing about the converged ranking. **A
+  step-budget curve to 70 000 therefore runs before any other hypothesis**, as one resumed trajectory
+  read at six points rather than five separate runs.
+- **Resume had been silently wrong since it was written, in both plugins.** `StepLR.get_lr`
+  multiplies the param group's *current* rate and `Adam.load_state_dict` restores the decayed one, so
+  every continuation started a tenfold low and dropped again — 1e-5 instead of 1e-4 on the first
+  resume, 1e-9 by the fifth. Nothing in the application would have shown it: the loss curve
+  continues, the step counter is right, the run finishes. It took a measurement that *depended* on
+  the learning rate being correct to make it visible, sixty seconds into the first leg.
+
+**Left to do:** the step-budget curve, then the hypotheses in
+[measurements-efficientad.md](measurements-efficientad.md) at whatever budget the curve says is
+honest, then the protocol sweep on VisA's official split (`pcb1`, `capsules`).
 
 ---
 
