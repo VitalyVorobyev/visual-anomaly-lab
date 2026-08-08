@@ -306,7 +306,28 @@ it has been tested by a method the interface was not designed around.
   continues, the step counter is right, the run finishes. It took a measurement that *depended* on
   the learning rate being correct to make it visible, sixty seconds into the first leg.
 
-**Left to do:** the step-budget curve, then the hypotheses in
+- **The curve answered its question at 30 000 and the answer was large.** Sample ROC-AUC 0.723 →
+  0.835 and AU-PRO 0.680 → 0.833 between 16 000 and 30 000 steps, on one trajectory where seed noise
+  cannot explain it. The 4000-step rows above are not weak measurements of this method, they are
+  measurements of an unconverged one — including the comparison against the numpy floor, which
+  EfficientAD now clears on both metrics.
+- **The failure at low budget is diagnosable, and the diagnostic is worth keeping.** The map's
+  maximum lands inside the ground-truth defect on 16% of defect images at 4000 steps and 24% at
+  16 000, with the mean maximum *outside* the mask exceeding the one inside it. That single number
+  explains why pixel metrics climb while sample ROC-AUC sits flat — an image score is a maximum, so
+  it is decided by whatever is hottest, defect or not — and it moves earlier than sample ROC-AUC
+  does. Reduction, border artifacts, branch weighting and calibration source were each swept and
+  each ruled out first, at a cost of no GPU time, against stored maps.
+- **The pretrained teacher is not a public constant, and treating it as one was an unexamined
+  assumption.** anomalib's teacher and the one bundled with nelson1425/EfficientAD — the
+  reproduction reporting the paper's numbers — have identical architecture and shapes and differ
+  tensor by tensor by up to 1.4. "Two independent implementations agree, so it is not the code" was
+  sound and also incomplete: the teacher is the *other* thing both share. It is now `teacher_source`,
+  a field of the experiment, with both layouts loadable — anomalib names its layers, nelson1425 keys
+  by position in an `nn.Sequential`.
+
+**Left to do:** the teacher comparison at fixed budget, then the curve resumed from 30 000 with
+whichever teacher wins, then the hypotheses in
 [measurements-efficientad.md](measurements-efficientad.md) at whatever budget the curve says is
 honest, then the protocol sweep on VisA's official split (`pcb1`, `capsules`).
 

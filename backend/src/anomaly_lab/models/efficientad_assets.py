@@ -15,9 +15,19 @@ download be a retry rather than a puzzle: the wrapper has to detect and clean up
 half-extracted tree, because the thing it calls decides whether to download by asking
 whether a *directory* exists.
 
-The URLs and checksums are anomalib's own published ones. That is deliberate: these are
-the assets the paper's authors released and the reference uses, so fetching different bytes
-would make every comparison partly a measurement of a different teacher.
+**There is more than one published teacher, and they are different networks.** The teacher
+is not a fixed public constant the way the penalty set is: it is the output of somebody's
+distillation run against a WideResNet on ImageNet, and two people who each did that
+honestly ship different weights. Measured here: anomalib's `pretrained_teacher_small.pth`
+and nelson1425/EfficientAD's `teacher_small.pth` have identical architecture and shapes,
+and differ tensor by tensor by up to 1.4 in absolute value — they are not the same file
+under two names. Which one is loaded is therefore a property of the *experiment*, chosen by
+`teacher_source`, and the URLs for both live here. The reproduction repository is
+Apache-2.0 and its weights are fetched at run time rather than vendored.
+
+Every URL is checksummed, and the reproduction repository's is pinned to a commit rather
+than to `main`, so "the asset changed upstream" is a checksum failure that names the file
+instead of a silent change of teacher between two runs that read as comparable.
 
 **Torch-free**, like everything else the plugin can keep out of its import path — numpy,
 Pillow and the standard library. Downloading is the one thing in `src/` that touches the
@@ -40,7 +50,7 @@ import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from PIL import Image
@@ -48,7 +58,14 @@ from PIL import Image
 from anomaly_lab.media import decode
 
 TEACHER_SUBDIR = "efficientad-teacher"
+NELSON_TEACHER_SUBDIR = "efficientad-teacher-nelson1425"
 PENALTY_SUBDIR = "imagenette"
+
+TeacherSource = Literal["anomalib", "nelson1425"]
+"""Which published distillation of the teacher to load. See the module docstring."""
+
+_NELSON_COMMIT = "a44786ccddd3697b54903394ee1361f38e65de16"
+"""The last commit to touch `models/` in nelson1425/EfficientAD, pinned deliberately."""
 
 GRAYSCALE_PROBABILITY = 0.3
 """The paper's colour-drop rate on penalty images, so the penalty is not a colour statistic."""
@@ -83,6 +100,31 @@ TEACHER = Asset(
     subdir=TEACHER_SUBDIR,
     purpose="the pretrained EfficientAD teacher (40 MB, first run only)",
 )
+
+NELSON_TEACHERS: dict[str, Asset] = {
+    size: Asset(
+        name=f"teacher_{size}.pth",
+        url=(
+            f"https://raw.githubusercontent.com/nelson1425/EfficientAD/"
+            f"{_NELSON_COMMIT}/models/teacher_{size}.pth"
+        ),
+        sha256=digest,
+        subdir=NELSON_TEACHER_SUBDIR,
+        purpose=(
+            f"the nelson1425/EfficientAD reproduction's {size} teacher "
+            f"({megabytes} MB, first run only)"
+        ),
+    )
+    for size, digest, megabytes in (
+        ("small", "b98a6a139087a0d743783ee59f367f0284af6003eb1a5fed0ce92bd9c0acd337", 10),
+        ("medium", "a66e1513cbc252e7907531ef4536155e338a48e8edf3a5e6a66498f661414b9c", 31),
+    )
+}
+"""The teachers from the reproduction that reports the paper's numbers.
+
+Single `.pth` files rather than a bundle, so these are fetched directly instead of through
+`ensure_asset`'s extract path.
+"""
 
 PENALTY = Asset(
     name="imagenette2.tgz",
@@ -197,8 +239,54 @@ def ensure_asset(asset: Asset, cache_dir: Path, *, allow_downloads: bool, report
     return target
 
 
-def teacher_weights(cache_dir: Path, size: str, *, allow_downloads: bool, reporter: Any) -> Path:
-    """The published teacher checkpoint for one model size."""
+def ensure_file(asset: Asset, cache_dir: Path, *, allow_downloads: bool, reporter: Any) -> Path:
+    """One downloaded file, fetched once. The bare-file twin of `ensure_asset`.
+
+    Kept separate rather than folded in behind a flag: the two differ in what "already
+    here" means — a directory that was extracted versus a file that was verified — and a
+    single function would have to be read twice to tell which branch applies.
+    """
+    target = cache_dir / asset.subdir / asset.name
+    if target.is_file():
+        return target
+
+    if not allow_downloads:
+        msg = (
+            f"EfficientAD needs {asset.purpose} at {target}, and allow_downloads is off. "
+            f"Fetch {asset.url} and put it there, or turn allow_downloads back on."
+        )
+        raise AssetError(msg)
+
+    reporter.progress(0.01, f"fetching {asset.purpose}")
+    _download(asset, target, reporter)
+    reporter.log(f"{asset.purpose} is ready at {target}")
+    return target
+
+
+def teacher_weights(
+    cache_dir: Path,
+    size: str,
+    *,
+    source: TeacherSource = "anomalib",
+    allow_downloads: bool,
+    reporter: Any,
+) -> Path:
+    """The published teacher checkpoint for one model size, from one published source.
+
+    The two sources are different networks, not two copies of one — see the module
+    docstring. They land in different subdirectories so both can be cached at once and a
+    run can be repeated against either without a refetch.
+    """
+    if source == "nelson1425":
+        asset = NELSON_TEACHERS.get(size)
+        if asset is None:
+            msg = (
+                f"nelson1425/EfficientAD publishes no {size} teacher; it ships small and "
+                f"medium. Use teacher_source='anomalib' for this size."
+            )
+            raise AssetError(msg)
+        return ensure_file(asset, cache_dir, allow_downloads=allow_downloads, reporter=reporter)
+
     root = ensure_asset(TEACHER, cache_dir, allow_downloads=allow_downloads, reporter=reporter)
     candidates = sorted(root.rglob(f"pretrained_teacher_{size}.pth"))
     if not candidates:

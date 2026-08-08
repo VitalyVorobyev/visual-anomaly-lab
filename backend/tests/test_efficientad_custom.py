@@ -23,7 +23,7 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pytest
@@ -566,6 +566,70 @@ def test_a_continuation_past_the_new_drop_point_stays_decayed() -> None:
     assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-5)
 
 
+@pytest.mark.parametrize("size", ["small", "medium"])
+def test_a_sequential_teacher_checkpoint_loads_in_the_published_order(
+    size: Literal["small", "medium"],
+) -> None:
+    """nelson1425 keys its teacher by position in an `nn.Sequential`; we key by name.
+
+    The remap is by order of appearance, and this is the test that says so: a file keyed
+    `0`, `3`, `6`, `8` — the gaps being ReLUs and pools — has to land on `conv1` … `conv4`
+    *in that order*. Getting it wrong produces a network that loads without complaint and
+    describes patches with the layers shuffled, which no downstream assertion would catch.
+    """
+    from anomaly_lab.models.efficientad_nets import PatchDescriptionNetwork, load_pdn_weights
+
+    source = PatchDescriptionNetwork(out_channels=384, size=size)
+    named = source.state_dict()
+    convolutions = source.convolutions
+
+    # The reference's layout: sparse integer indices, ascending, with gaps.
+    sequential = {}
+    for index in range(1, convolutions + 1):
+        position = 3 * (index - 1)
+        sequential[f"{position}.weight"] = named[f"conv{index}.weight"]
+        sequential[f"{position}.bias"] = named[f"conv{index}.bias"]
+
+    target = PatchDescriptionNetwork(out_channels=384, size=size)
+    load_pdn_weights(target, sequential)
+
+    for key, tensor in named.items():
+        assert torch.equal(target.state_dict()[key], tensor), key
+
+    probe = torch.rand(1, 3, SIZE, SIZE)
+    with torch.no_grad():
+        assert torch.equal(target(probe), source(probe))
+
+
+def test_a_named_teacher_checkpoint_still_loads_unchanged() -> None:
+    """anomalib's layout must keep working — it is the default and the shared baseline."""
+    from anomaly_lab.models.efficientad_nets import PatchDescriptionNetwork, load_pdn_weights
+
+    source = PatchDescriptionNetwork(out_channels=384, size="small")
+    target = PatchDescriptionNetwork(out_channels=384, size="small")
+    load_pdn_weights(target, source.state_dict())
+
+    probe = torch.rand(1, 3, SIZE, SIZE)
+    with torch.no_grad():
+        assert torch.equal(target(probe), source(probe))
+
+
+def test_a_teacher_checkpoint_for_the_other_size_is_refused_by_name() -> None:
+    """A medium file in a small network must fail here, not deep inside a convolution."""
+    from anomaly_lab.models.efficientad_nets import PatchDescriptionNetwork, load_pdn_weights
+
+    medium = PatchDescriptionNetwork(out_channels=384, size="medium")
+    sequential = {}
+    for index in range(1, medium.convolutions + 1):
+        position = 3 * (index - 1)
+        sequential[f"{position}.weight"] = medium.state_dict()[f"conv{index}.weight"]
+        sequential[f"{position}.bias"] = medium.state_dict()[f"conv{index}.bias"]
+
+    small = PatchDescriptionNetwork(out_channels=384, size="small")
+    with pytest.raises(ValueError, match="not a checkpoint for this model size"):
+        load_pdn_weights(small, sequential)
+
+
 def test_a_continuation_at_a_different_input_size_is_refused(saved: Saved, tmp_path: Path) -> None:
     """The normalization was fitted at one resolution and does not transfer to another.
 
@@ -577,6 +641,35 @@ def test_a_continuation_at_a_different_input_size_is_refused(saved: Saved, tmp_p
     bigger, _ = _contexts(tmp_path / "bigger", width=320, height=320)
     with pytest.raises(RuntimeError, match="does not transfer"):
         restored.fit_more(saved.records, bigger, additional_steps=5)
+
+
+def test_a_continuation_against_a_different_teacher_is_refused(
+    saved: Saved, tmp_path: Path
+) -> None:
+    """A student cannot change teacher mid-training, and the failure would be silent.
+
+    `fit_more` reloads the teacher from *configuration* and does not refit the teacher
+    channel statistics — those were fitted in `fit`, against whichever teacher was loaded
+    then. Continuing under a different one gives a student that spent every previous step
+    imitating another network, new teacher weights, and the old teacher's normalization.
+    It trains, the loss looks plausible, and every number afterwards is wrong.
+
+    Exercised through the random teacher, whose identity carries its seed, so this needs no
+    download and covers the same guard the two published sources go through.
+    """
+    restored = EfficientAdCustomModel(_config(max_steps=10, seed=8))
+    restored.load(saved.artifacts)
+    train_ctx, _ = _contexts(tmp_path / "other-teacher")
+    with pytest.raises(RuntimeError, match="cannot change teacher"):
+        restored.fit_more(saved.records, train_ctx, additional_steps=5)
+
+
+def test_the_teacher_a_student_was_distilled_against_is_recorded(saved: Saved) -> None:
+    """The guard above can only work if the checkpoint says what the teacher was."""
+    stored = torch.load(
+        saved.artifacts / "efficientad_custom.pt", map_location="cpu", weights_only=False
+    )
+    assert stored["teacher"] == "random:7"
 
 
 def test_an_unknown_checkpoint_format_is_refused_by_name(saved: Saved, tmp_path: Path) -> None:

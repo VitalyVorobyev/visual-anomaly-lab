@@ -21,11 +21,15 @@ import pytest
 from PIL import Image
 
 from anomaly_lab.models.efficientad_assets import (
+    NELSON_TEACHER_SUBDIR,
+    NELSON_TEACHERS,
     PENALTY_SUBDIR,
+    TEACHER_SUBDIR,
     Asset,
     AssetError,
     PenaltyStream,
     ensure_asset,
+    ensure_file,
     load_penalty_array,
     penalty_images,
     teacher_weights,
@@ -167,6 +171,54 @@ def test_a_teacher_bundle_missing_the_size_is_refused_by_name(tmp_path: Path) ->
     (cache / "efficientad-teacher").mkdir(parents=True)
     with pytest.raises(AssetError, match=r"pretrained_teacher_small\.pth"):
         teacher_weights(cache, "small", allow_downloads=False, reporter=Recorder())
+
+
+def test_the_reproduction_teacher_is_fetched_as_a_bare_file(tmp_path: Path) -> None:
+    """nelson1425 ships a `.pth`, not a bundle, so it takes the `ensure_file` path.
+
+    The whole route over `file://`: refuse with downloads off, then fetch, checksum, and
+    land under a *different* subdirectory from anomalib's — both teachers can be cached at
+    once, because a run may be repeated against either without a refetch.
+    """
+    weights = tmp_path / "teacher_small.pth"
+    weights.write_bytes(b"a different distillation")
+    digest = hashlib.sha256(weights.read_bytes()).hexdigest()
+    asset = Asset(
+        name="teacher_small.pth",
+        url=weights.as_uri(),
+        sha256=digest,
+        subdir=NELSON_TEACHER_SUBDIR,
+        purpose="the reproduction's small teacher",
+    )
+    cache = tmp_path / "cache"
+
+    with pytest.raises(AssetError) as refusal:
+        ensure_file(asset, cache, allow_downloads=False, reporter=Recorder())
+    assert asset.url in str(refusal.value)
+
+    resolved = ensure_file(asset, cache, allow_downloads=True, reporter=Recorder())
+    assert resolved == cache / NELSON_TEACHER_SUBDIR / "teacher_small.pth"
+    assert resolved.read_bytes() == b"a different distillation"
+    assert list(cache.rglob("*.part")) == []
+
+
+def test_a_size_the_reproduction_does_not_publish_is_refused_by_name(tmp_path: Path) -> None:
+    """It ships small and medium. A third size must name the alternative, not 404."""
+    with pytest.raises(AssetError, match="teacher_source='anomalib'"):
+        teacher_weights(
+            tmp_path / "cache",
+            "large",
+            source="nelson1425",
+            allow_downloads=False,
+            reporter=Recorder(),
+        )
+
+
+def test_the_two_teacher_sources_do_not_share_a_cache_directory() -> None:
+    """If they collided, switching source would silently reuse the other one's weights."""
+    assert NELSON_TEACHER_SUBDIR != TEACHER_SUBDIR
+    assert {asset.subdir for asset in NELSON_TEACHERS.values()} == {NELSON_TEACHER_SUBDIR}
+    assert set(NELSON_TEACHERS) == {"small", "medium"}
 
 
 def test_penalty_images_are_found_without_class_directories(tmp_path: Path) -> None:

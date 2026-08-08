@@ -139,6 +139,77 @@ Also note the baseline at 4000 steps sits **below the numpy floor** on this spli
 claim about 4000 steps on a generated split, and it is the clearest possible argument for running
 the step-budget curve before anything else.
 
+### Why the image score is bad while the pixel scores are fine
+
+Asked of the 4000- and 16000-step models directly, from stored maps and ground-truth masks. **The
+map's maximum lands inside the ground-truth defect on 16% of defect images at 4000 steps and 24% at
+16000.** Mean max *outside* the mask exceeds mean max *inside* it — 0.113 against 0.063 at 4000,
+0.166 against 0.133 at 16000. On roughly three quarters of defect images the hottest pixel is not the
+defect, and the image score is a maximum, so ranking is decided by whatever else is hottest. That is
+the whole explanation for pixel metrics climbing while sample ROC-AUC sits flat, and the
+inside/outside ratio moving 0.56 → 0.80 is a better early signal than sample ROC-AUC itself.
+
+Ruled out on the way, each cheaply and each against stored artifacts rather than by argument:
+
+| Suspected | How it was tested | Result |
+|---|---|---|
+| the `max` reduction | swept max, top-16/64/256/1024, p95/p99/p99.9, mean | every variant lands 0.71–0.77; the map's **mean** ranks as well as its max |
+| a border artifact | crop sweep 4 → 48 px | best is +0.018, and the mean map over normals is not elevated at the edge |
+| branch weighting | swept w = 0, .25, .5, .75, 1 | ST alone 0.730, AE alone 0.707, **0.5/0.5 = 0.751 is already the optimum** |
+| quantiles fitted on memorised data | read `score_normalization` | already fitted on 200 held-out normals on this split |
+| the teacher is not the published network | compared checkpoint tensors to the asset | bit-identical, all 8 tensors, max abs difference 0.0 |
+
+Two quantitative facts frame it. Median defect area is **0.16% of the image**; at 1284×1168 resized
+to 256×256 that is a ~10×10 px defect, and the PDN has stride 4 and a 33×33 receptive field, so a
+median defect perturbs a fraction of one receptive field. And at batch size 1, 4000 steps is 6.7
+epochs over 600 training normals where the published runs use 70000 over 900 — about 78.
+
+### The teacher is not one file, and that was an assumption nobody had checked
+
+anomalib's `pretrained_teacher_small.pth` and the teacher bundled with
+[nelson1425/EfficientAD](https://github.com/nelson1425/EfficientAD) — the reproduction reporting
+MVTec AD 99.1 and VisA 98.2 — have identical architecture and identical shapes and **differ tensor by
+tensor by up to 1.4 in absolute value**. They are two distillation runs, not one asset under two
+names.
+
+This matters to every number above it. "Two independent implementations agree at 0.73, so it is not
+the code" was sound, but the teacher is the *other* thing both implementations share, and it had only
+been verified for identity against anomalib's own file — never for quality. `teacher_source` makes it
+a field of the experiment ([the methods handbook](architecture/methods.md)); the default stays
+`anomalib` so every row above remains the run it says it is.
+
+One variable changed, everything else held at experiment 5's configuration — same dataset, same
+generated split, same seed, same 4000 steps, same 256 px RGB:
+
+| Date | Teacher | Steps | Seed | Sample ROC-AUC | Pixel ROC-AUC | AU-PRO | peak-in-mask | ms/image |
+|---|---|---|---|---|---|---|---|---|
+| 2026-08-08 | `anomalib` | 4000 | 0 | 0.751 | 0.900 | 0.560 | 16% | 25.8 |
+| 2026-08-08 | `anomalib` | 30 000 | 0 | 0.835 | 0.935 | 0.833 | — | 29.0 |
+| 2026-08-08 | **`nelson1425`** | 4000 | 0 | **0.886** | **0.981** | **0.916** | **43%** | 26.5 |
+
+**The teacher was worth more than 26 000 training steps.** At 4000 steps the reproduction's teacher
+beats the anomalib teacher's *30 000*-step run on every metric, at the same inference cost. AU-PRO
+moves 0.560 → 0.916, which is the largest single effect measured in this file by a wide margin, and
+peak-in-mask moves 16% → 43% — the model is now most surprised by the defect on nearly three times as
+many images.
+
+Read against the pictures, the change has two halves that a single metric would have merged: the
+response *at* the defect saturates, and the systematic false positive that had been topping the whole
+test set — a corner artifact on a normal image — drops to a dim wash. Both are what a max-reduced
+image score is made of.
+
+Standing caveats, because this is one seed on one object of one generated split. Seeds 1 and 2 are
+running; the wrapper's own three seeds span 0.019 and ours span 0.041, and an effect of 0.135 is far
+outside both, so the direction is not in doubt — the size is. **The default stays `anomalib` until
+the replication lands**, which also keeps every row above describing the run it says it is. Nothing
+here is comparable to a published number: this is still the exploratory split, not ADR-0029's
+protocol.
+
+Worth naming as a process finding rather than a result: this was found because the *shared* inputs
+were enumerated, not the differing ones. "Two independent implementations agree, so the code is not
+the cause" was sound reasoning that pointed at the data and the protocol, and quietly skipped the one
+other thing both implementations load from the same place.
+
 ### The step-budget curve — one trajectory, read at six points
 
 **Why one run and not five.** Five independent runs at 4000 / 8000 / 16000 / 30000 / 50000 / 70000
@@ -155,10 +226,23 @@ a second object to answer.
 |---|---|---|---|---|---|
 | 4 000 | 0.751 | 0.900 | 0.560 | 25.8 | — (inherited) |
 | 8 000 | 0.715 | 0.904 | 0.573 | 26.0 | 9.3 min |
-| 16 000 | | | | | |
-| 30 000 | | | | | |
-| 50 000 | | | | | |
-| 70 000 | | | | | |
+| 16 000 | 0.723 | 0.915 | 0.680 | 27.3 | 19.2 min |
+| **30 000** | **0.835** | **0.935** | **0.833** | 29.0 | 33.6 min |
+| 50 000 | | | | | *paused* |
+| 70 000 | | | | | *paused* |
+
+**4000 steps was not a weak measurement of this method; it was a measurement of a different
+model.** Between 16 000 and 30 000 steps sample ROC-AUC moves 0.723 → 0.835 and AU-PRO moves 0.680 →
+0.833 — a jump far outside the 0.041 seed spread, on a single trajectory where seed noise cannot
+explain it. Every number in this file recorded at 4000 steps describes a model that had not finished
+learning what a normal candle looks like, including the comparison against `pixel_reference`'s floor,
+which EfficientAD now clears on both AU-PRO (0.833 against 0.819) and sample ROC-AUC (0.835 against
+0.790).
+
+The curve is **paused at 30 000, not abandoned.** The teacher below turned out to be a variable
+rather than a constant, and finishing a trajectory that might be distilling against the wrong teacher
+would spend two hours measuring the wrong model. The 30 000-step checkpoint is on disk, so the
+remaining two legs resume rather than restart.
 
 **What the schedule does along this chain, stated rather than hidden.** `fit_more` rebuilds the
 `StepLR` against the *new* total, so each leg anneals over its own last 5% and returns to base rate

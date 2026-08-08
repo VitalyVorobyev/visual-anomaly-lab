@@ -115,6 +115,16 @@ class EfficientAdCustomConfig(BaseModel):
             "distillation mechanism works with any fixed feature extractor."
         ),
     )
+    teacher_source: Literal["anomalib", "nelson1425"] = Field(
+        default="anomalib",
+        description=(
+            "Which published teacher to distil against. These are different networks, not "
+            "two copies of one: same architecture, weights differing tensor by tensor. "
+            "'anomalib' is the release asset the wrapper uses, so it is what makes the two "
+            "implementations comparable. 'nelson1425' is the teacher bundled with the "
+            "reproduction that reports the paper's numbers (MVTec AD 99.1, VisA 98.2)."
+        ),
+    )
     allow_downloads: bool = Field(
         default=True,
         description=(
@@ -217,6 +227,8 @@ class EfficientAdCustomModel(AnomalyModel):
         self._net: Any = None
         self._completed = 0
         self._fitted_size: tuple[int, int] | None = None
+        self._teacher: str | None = None
+        """Which teacher this student was distilled against; None if it predates recording."""
         # Everything below is what a continuation needs (ADR-0025), held on the instance
         # because `save` runs after `fit` returns and has no other way to reach it.
         self._optimizer_state: Any = None
@@ -298,6 +310,17 @@ class EfficientAdCustomModel(AnomalyModel):
         net = EfficientAdNet(size=self.config.model_size)
         return net.to(ctx.device.value)
 
+    def _teacher_identity(self) -> str:
+        """What the teacher was, as one comparable string.
+
+        `pretrained_teacher=False` seeds a random teacher from `seed`, so the seed is part
+        of the identity there and only there — two random teachers from different seeds are
+        as different as two published ones.
+        """
+        if not self.config.pretrained_teacher:
+            return f"random:{self.config.seed}"
+        return f"pretrained:{self.config.teacher_source}"
+
     def _load_teacher(self, net: Any, ctx: TrainContext) -> None:
         """Put the published weights into the teacher, or say that we did not."""
         import torch
@@ -312,16 +335,21 @@ class EfficientAdCustomModel(AnomalyModel):
             return
 
         from anomaly_lab.models.efficientad_assets import teacher_weights
+        from anomaly_lab.models.efficientad_nets import load_pdn_weights
 
+        source = self.config.teacher_source
         path = teacher_weights(
             ctx.cache_dir,
             self.config.model_size,
+            source=source,
             allow_downloads=self.config.allow_downloads,
             reporter=ctx.reporter,
         )
-        net.teacher.load_state_dict(torch.load(path, map_location="cpu", weights_only=True))
+        # Not `load_state_dict` directly: the two sources key their files differently, and
+        # which one this is has to be readable at the call site rather than buried.
+        load_pdn_weights(net.teacher, torch.load(path, map_location="cpu", weights_only=True))
         net.teacher.to(ctx.device.value)
-        ctx.log(f"pretrained teacher loaded from {path}")
+        ctx.log(f"pretrained teacher loaded from {path} (source '{source}')")
 
     def _penalty_stream(self, ctx: TrainContext) -> Any:
         from anomaly_lab.models.efficientad_assets import PenaltyStream, penalty_images
@@ -411,6 +439,30 @@ class EfficientAdCustomModel(AnomalyModel):
                 "normalization does not transfer between input sizes; train from scratch."
             )
             raise RuntimeError(msg)
+
+        # A continuation reloads the teacher from *configuration*, and does not refit the
+        # teacher channel statistics — those were fitted in `fit` against whichever teacher
+        # was loaded then. Continuing under a different one therefore gives a student that
+        # spent every previous step imitating another network, new teacher weights, and the
+        # old teacher's normalization. It would train, the loss would look plausible, and
+        # every number afterwards would be wrong. Distillation is *against* a teacher; the
+        # teacher is not a detail of the run, it is what the run means.
+        wanted = self._teacher_identity()
+        if self._teacher is not None and self._teacher != wanted:
+            msg = (
+                f"this checkpoint was distilled against teacher '{self._teacher}' and the "
+                f"experiment now asks for '{wanted}'. A student cannot change teacher "
+                "mid-training: its weights, and the teacher statistics its maps are "
+                "normalized by, both belong to the old one. Train from scratch."
+            )
+            raise RuntimeError(msg)
+        if self._teacher is None:
+            ctx.log(
+                f"this checkpoint predates teacher recording, so continuing against "
+                f"'{wanted}' is unverified — it is only safe because an experiment's "
+                "configuration is frozen at creation",
+                level="warning",
+            )
 
         self._seed(torch)
         self._restore_random_state(torch, ctx)
@@ -937,6 +989,10 @@ class EfficientAdCustomModel(AnomalyModel):
             "state_dict": self._net.state_dict(),
             "completed_steps": self._completed,
             "fitted_size": list(self._fitted_size) if self._fitted_size else None,
+            # Which teacher this student was distilled against. Recorded because a
+            # continuation reloads the teacher from configuration and does *not* refit the
+            # teacher statistics — see `fit_more`'s refusal.
+            "teacher": self._teacher_identity(),
             "optimizer": self._optimizer_state,
             "scheduler": self._scheduler_state,
             "generator_state": self._generator_state,
@@ -972,6 +1028,8 @@ class EfficientAdCustomModel(AnomalyModel):
         self._completed = int(stored.get("completed_steps", 0))
         size = stored.get("fitted_size")
         self._fitted_size = (int(size[0]), int(size[1])) if size else None
+        recorded = stored.get("teacher")
+        self._teacher = str(recorded) if recorded else None
         self._optimizer_state = stored.get("optimizer")
         self._scheduler_state = stored.get("scheduler")
         self._generator_state = stored.get("generator_state")

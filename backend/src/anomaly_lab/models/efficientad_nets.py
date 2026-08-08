@@ -40,6 +40,7 @@ Two of those pins are different in kind, and the difference matters:
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 from typing import Literal
 
 import torch
@@ -145,6 +146,11 @@ class PatchDescriptionNetwork(nn.Module):
         # linear, every earlier one is followed by ReLU.
         self._pool_after = {1: self.avgpool1, 2: self.avgpool2}
 
+    @property
+    def convolutions(self) -> int:
+        """How many convolutions this width has — what a checkpoint has to match."""
+        return self._convolutions
+
     def forward(self, batch: torch.Tensor) -> torch.Tensor:
         out = imagenet_normalize(batch)
         for index in range(1, self._convolutions + 1):
@@ -156,6 +162,56 @@ class PatchDescriptionNetwork(nn.Module):
             if pool is not None:
                 out = pool(out)
         return out
+
+
+def load_pdn_weights(pdn: PatchDescriptionNetwork, stored: Mapping[str, torch.Tensor]) -> None:
+    """Put a published teacher checkpoint into this PDN, whichever layout it was saved in.
+
+    Two exist in the wild, because the two reference codebases build the same network
+    differently. anomalib names its layers, so its file is keyed `conv1.weight` … and drops
+    straight in — which is why this class names its submodules `conv1` … `convN` at all.
+    nelson1425/EfficientAD builds an `nn.Sequential`, so its file is keyed by *position*
+    within that sequence — `0`, `3`, `6`, `8` for the small network, the gaps being the
+    ReLUs and pools that hold no parameters.
+
+    The positional layout is mapped by **order of appearance**, not by parsing the indices.
+    The indices are an artifact of where the activations happen to sit in someone else's
+    `Sequential`; the order of the convolutions is the architecture. Every shape is checked
+    against this module before anything is loaded, so a file that is not this network is
+    refused by name rather than producing a plausible, wrong teacher.
+    """
+    expected = pdn.state_dict()
+    keys = list(stored)
+    if all(key.startswith("conv") for key in keys):
+        mapped = dict(stored)
+    else:
+        weights = [key for key in keys if key.endswith(".weight")]
+        biases = [key for key in keys if key.endswith(".bias")]
+        if len(weights) != pdn.convolutions or len(biases) != pdn.convolutions:
+            msg = (
+                f"this teacher checkpoint holds {len(weights)} convolutions and "
+                f"{len(biases)} biases, and this PDN has {pdn.convolutions} of each. It is "
+                "not a checkpoint for this model size."
+            )
+            raise ValueError(msg)
+        mapped = {}
+        for index, (weight_key, bias_key) in enumerate(zip(weights, biases, strict=True), start=1):
+            mapped[f"conv{index}.weight"] = stored[weight_key]
+            mapped[f"conv{index}.bias"] = stored[bias_key]
+
+    for name, tensor in mapped.items():
+        want = expected.get(name)
+        if want is None:
+            msg = f"this teacher checkpoint carries {name}, which this PDN does not have"
+            raise ValueError(msg)
+        if tuple(want.shape) != tuple(tensor.shape):
+            msg = (
+                f"this teacher checkpoint has {name} of shape {tuple(tensor.shape)} where "
+                f"this PDN wants {tuple(want.shape)}. It is not a checkpoint for this model "
+                "size."
+            )
+            raise ValueError(msg)
+    pdn.load_state_dict(mapped)
 
 
 class Encoder(nn.Module):

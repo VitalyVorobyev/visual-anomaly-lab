@@ -44,9 +44,9 @@ class AnomalyModel(Protocol):
 # The registry is a table of *lazy loaders*, so opening the method picker does not import
 # torch. That only holds while each plugin keeps its heavy imports inside its functions.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
-    "pixel_reference":       lambda: PixelReferenceModel,      # numpy + Pillow, the floor
-    "efficientad_anomalib":  lambda: EfficientAdAnomalibModel,
-    # "efficientad_custom":  M6 — second implementation, same interface (ADR-0008)
+    "pixel_reference":       _pixel_reference,       # numpy + Pillow, the floor
+    "efficientad_anomalib":  _efficientad_anomalib,  # the wrapper, and the baseline (ADR-0029)
+    "efficientad_custom":    _efficientad_custom,    # ours, same interface (ADR-0008)
     # "patchcore_anomalib":  M7
     # "classical_circular":  M8, optional (ADR-0015)
 }
@@ -95,6 +95,35 @@ plugin in its context, and **every plugin loads its pixels through one function*
 image any other way is a bug, not a variation. Aspect ratio is deliberately not preserved: the resize goes
 straight to the configured size, which makes an anomaly map a plain stretch back onto the source image, so an
 overlay aligns without the UI reconstructing letterbox offsets.
+
+## A downloaded asset can be a hyperparameter
+
+EfficientAD cannot train from a dataset alone: it needs a **pretrained teacher**, distilled from a
+WideResNet on ImageNet. That looks like a fixed public constant, and it was treated as one. It is not.
+
+A teacher is the *output of somebody's distillation run*, and two people who each did that honestly
+ship different weights. Measured: anomalib's `pretrained_teacher_small.pth` and the teacher bundled
+with [nelson1425/EfficientAD](https://github.com/nelson1425/EfficientAD) have identical architecture
+and identical tensor shapes, and differ element by element by up to **1.4 in absolute value**. They
+are two different networks, not one file under two names — and the second is the one whose repository
+reports reproducing the paper (MVTec AD 99.1, VisA 98.2).
+
+So which teacher is loaded is **configuration of the experiment**, `teacher_source`, and both URLs
+live in `efficientad_assets.py` under separate cache subdirectories so a run can be repeated against
+either without a refetch. Two consequences worth stating:
+
+- **The two published files are keyed differently**, because the two reference codebases build the
+  same network differently: anomalib names its layers (`conv1.weight` …) and nelson1425 builds an
+  `nn.Sequential`, so its file is keyed by *position* (`0`, `3`, `6`, `8` — the gaps are ReLUs and
+  pools). `load_pdn_weights` maps the positional layout **by order of appearance**, never by parsing
+  the indices, and validates every shape before loading. A shuffled mapping would load without
+  complaint and produce a plausible, wrong teacher.
+- **The reproduction's URL is pinned to a commit**, not to `main`. An asset that changes upstream
+  must be a checksum failure naming the file, not a silent change of teacher between two runs that
+  read as comparable.
+
+This is the general shape, not a special case: anything downloaded that a number depends on is an
+input to the experiment, and belongs in its configuration where the comparison screen can show it.
 
 ## Diagnostics
 
