@@ -48,8 +48,21 @@ the detail is in the git history and the ADRs.
 
 ### E11 — Custom EfficientAD (M6)
 
-- [ ] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface (L)
-  - split when scheduled: PDN backbone → teacher distillation → student loss → autoencoder branch → quantile normalization → training loop with progress events → comparison run against `efficientad_anomalib`
+- [x] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface (L) — **ADR-0029**
+  - [x] PDN backbone, pinned against the reference at `atol=0` so the published teacher weights load into the network they describe
+  - [x] Teacher statistics, student loss, autoencoder branch, quantile normalization, training loop with progress events
+  - [x] Asset acquisition of our own, so the method needs torch and not anomalib
+  - [x] Resume (**ADR-0025**), including the penalty order the wrapper restarts
+  - [x] A detection test with a real ROC-AUC bar — the thing no EfficientAD in this repo previously had
+  - [ ] The head-to-head against `efficientad_anomalib` on VisA, recorded in `measurements-efficientad.md`
+- [ ] Measure the hypotheses in `measurements-efficientad.md`, in order: the step-budget curve first (nearly free — one run continues into three points), then `calibration_holdout`, then `score_reduction` (S each, mostly unattended compute)
+- [ ] A walkthrough confirming every M4 view renders for `efficientad_custom` with no frontend change; any that needs a special case is a finding about **ADR-0018** and gets its own record (S)
+
+**Found while building it, not scheduled:**
+
+- [ ] Make the autoencoder resolution-agnostic — replace the hard-coded `//64 - 1` upsample ladder and the 8×8 bottleneck, so the 256 px floor goes away (M). The guard refusing smaller inputs is honest but it refuses a configuration the architecture could support, and this crashes the wrapper outright.
+- [ ] Consider the same input-size guard for `efficientad_anomalib`, which fails inside `conv2d` with a message about a padded input size (S).
+- [ ] Batched inference for the deep methods — one image per forward pass today (M).
 
 ### E6 — `classical_circular` (M8, optional)
 

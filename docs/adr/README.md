@@ -17,7 +17,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | Sample owns label and split; channel is data, not schema | Accepted |
 | [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import via pluggable adapters and a reviewable manifest | Accepted |
 | [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Common model plugin interface with capability flags | Accepted |
-| [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — anomalib now, custom EfficientAD later | Accepted |
+| [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — anomalib now, custom EfficientAD later | Accepted (framing extended by [0029](0029-anomalib-is-the-baseline-not-the-specification.md)) |
 | [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Job execution — subprocess per job, single FIFO queue | Accepted |
 | [0010](0010-classical-circular-part-baseline-algorithm.md) | Classical circular-part baseline algorithm | Accepted |
 | [0011](0011-evaluation-protocol-for-grouped-samples.md) | Evaluation protocol for grouped samples | Accepted |
@@ -38,6 +38,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0026](0026-a-resident-inference-worker-beside-the-job-queue.md) | A resident inference worker beside the job queue | Accepted |
 | [0027](0027-on-demand-diagnostics-are-first-class-and-deletable.md) | On-demand diagnostics are first-class in the index, and are deletable | Accepted |
 | [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Comparing runs whose scores are not in the same units | Accepted |
+| [0029](0029-anomalib-is-the-baseline-not-the-specification.md) | `efficientad_custom` is our implementation; anomalib is the baseline it beats or does not | Accepted |
 
 ## Conventions
 
