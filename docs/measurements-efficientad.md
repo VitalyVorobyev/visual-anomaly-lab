@@ -49,10 +49,79 @@ variance discipline above is real.
 
 ## Runs
 
-No rows yet — the head-to-head is the next thing to run. Columns, when they arrive:
+### Exploratory — `candle`, generated split, n=1. **Not the protocol above.**
 
-| Date | Implementation | Object | Steps | Seed | Sample ROC-AUC | Sample AP | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | ms/step | ms/image | Notes |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|
+Run before the protocol sweep, on the `candle` dataset and `normal_only_train` split that were
+already in the workbench, because an `efficientad_anomalib` baseline was already trained on them:
+the comparison cost one training run instead of two. Single seed, and the split is a generated
+60/20/20 rather than VisA's official one-class file — so these rows are **evidence about the
+implementation, not about the method's accuracy**, and nothing here may be compared against a
+published number or against a protocol row below.
+
+| Date | Implementation | Steps | Seed | Test sample ROC-AUC | Test pixel ROC-AUC | AU-PRO | ms/image |
+|---|---|---|---|---|---|---|---|
+| 2026-08-08 | `pixel_reference` (floor) | — | 0 | 0.790 | 0.891 | 0.819 | 7.8 |
+| 2026-08-08 | `efficientad_anomalib` | 4000 | 0 | 0.727 | 0.875 | 0.523 | 48.7 |
+| 2026-08-08 | `efficientad_custom` | 4000 | 0 | **0.751** | **0.900** | **0.560** | **25.8** |
+| 2026-08-08 | `efficientad_anomalib` | **50** | 0 | **0.227** | 0.680 | 0.086 | 45.5 |
+| 2026-08-08 | `efficientad_custom` | **50** | 0 | **0.226** | 0.689 | 0.110 | 25.6 |
+
+At 4000 steps ours is ahead on every metric — sample ROC-AUC +0.024, pixel +0.025, AU-PRO +0.037 —
+and takes **1.9× less time per image**. Seeds 1 and 2 are needed before any of that counts as
+evidence under the rule above, and are in flight; the accuracy gaps are small enough that the seed
+range may well swallow them.
+
+**The speed difference is not noise and does not need seeds.** The wrapper computes the branch maps
+twice per image: once inside `model(image)` for the score and again in `get_maps` for the two
+per-branch diagnostics. Ours computes them once and reduces the combined map separately, which is
+what `reduce_score` exists for. 48.7 → 25.8 ms is that second forward pass through teacher, student
+and autoencoder, and nothing else.
+
+Training cost is the same to within measurement noise: **130 ms/step on MPS** against the 123 the
+wrapper recorded. Nothing here is faster because it does less work per step.
+
+**The two 50-step rows are the most useful thing measured so far.** Both implementations land at
+0.226 / 0.227 — a difference of 0.002 — on the same split, the same preprocessing and the same
+budget, having been written independently. Two things follow.
+
+First, the implementation is right where it can be checked against something: the equivalence tests
+pin the arithmetic given identical weights, and this pins the whole path — statistics fitting,
+training loop, calibration, scoring, evaluation — end to end on real data, which no unit test
+reaches.
+
+Second, **both are inverted at 50 steps**, scoring defects *below* normals, and that is the method
+rather than either implementation. Checked further on our side: each branch inverts on its own
+(`map_st` 0.262, `map_stae` 0.296), and the unnormalized maps invert identically to the normalized
+ones — so the calibration is monotone as designed and is not the cause. The reading that fits is
+that an untrained student's error tracks the teacher's activation magnitude, which tracks local
+texture; candle's defects are locally *less* textured than its normals, so an undertrained model
+measures "how much texture is here" and gets the sign backwards. It is worth knowing that this
+method passes through an actively wrong regime on the way up rather than merely a weak one — a run
+stopped early is not a worse detector, it is an inverted one.
+
+Also note the baseline at 4000 steps sits **below the numpy floor** on this split (0.727 against
+0.790). That is not a claim about EfficientAD, which reports 97.5 on VisA at 70000 steps; it is a
+claim about 4000 steps on a generated split, and it is the clearest possible argument for running
+the step-budget curve before anything else.
+
+### The diagnostics contract, checked on these runs rather than on a fixture
+
+M6's third exit criterion is that every M4 view works on the new method with no new code. The
+automated half is a unit test; this is the same question asked of two real runs on real data, by
+reading their diagnostics indexes:
+
+| | `efficientad_anomalib` (exp 2) | `efficientad_custom` (exp 5) |
+|---|---|---|
+| Keys, kinds and scopes | `architecture` graph/model, `score_normalization` table/model, `teacher_features_pca` image/model, `teacher_features_grid` grid/model, `teacher_magnitude` map/model, `map_student_teacher` map/image, `map_autoencoder` map/image | **identical** |
+| Architecture nodes | 37, all carrying real shapes | 37, all carrying real shapes |
+| Architecture edges | distillation, reconstruction | identical |
+| `total_parameters` | 8 058 628 | 8 057 856 |
+
+The parameter counts differ by exactly **772**, and the difference is a finding rather than a
+discrepancy: 384 + 384 + 4 is the size of anomalib's `mean_std` and `quantiles` `ParameterDict`s.
+Those are fitted *statistics*, not learnable parameters, and counting them inflates the number the
+Architecture tab prints. Ours holds them as buffers, so the count is what the optimizer actually
+touches. A twelve-line decision made for correctness turns out to be visible on screen.
 
 ## Hypotheses, and what would settle them
 
