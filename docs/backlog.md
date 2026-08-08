@@ -52,7 +52,7 @@ Sized `M` when it was one line; it is more than that now, and should be split be
 - [ ] N-way metric table: sample / image / pixel ROC-AUC, AU-PRO, AP, confusion at a shared threshold, timing (M)
 - [ ] Overlaid ROC and PR curves across the selected experiments (S)
 - [ ] Config diff, calling out **preprocessing** differences loudly — comparability under identical preprocessing is the milestone's first exit criterion (S)
-- [ ] A/B anomaly-map view on one sample, each map on its own recorded run-wide range with that range printed (M) — needs an ADR: **ADR-0019** does not say how two runs' scales are shown together, and cross-method score units are not comparable
+- [ ] A/B anomaly-map view on one sample, each map on its own recorded run-wide range with that range printed (M) — **ADR-0028** settles the question **ADR-0019** left open: nothing is compared in score units, and what transfers across runs is the *fraction* of each range, never the value
 - [ ] Guard the selection to one dataset and one split; warn rather than block on differing preprocessing (S)
 
 *Build it N-way and capability-driven, never two-way and method-named: M7 requires a third method to
