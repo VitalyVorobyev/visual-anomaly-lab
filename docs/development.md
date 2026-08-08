@@ -44,13 +44,17 @@ CI fails on a stale file, and the diff *is* the API contract changing:
 
 ## Private source images
 
-The project is developed partly against a private industrial inspection dataset, mounted read-only
-at `privatedata/` and referenced in place. It is never read into the repository, never copied into a
-tracked path, and never leaves the machine.
+The project is developed partly against a private industrial inspection dataset. **It lives outside
+this repository's working tree** and is referenced in place by absolute path (ADR-0022) — so
+`git add -A` cannot reach it, and the commonest catastrophic mistake is unavailable rather than
+guarded against.
 
-Three layers keep it that way, and they are load-bearing rather than decorative:
+Do not create a `privatedata/` directory, and do not symlink one: a symlink puts the data back inside
+the tree, because `git add -A` follows it.
 
-- `.gitignore` excludes `privatedata/` and all `*.bmp` files.
+The remaining guards are defence in depth for the unforeseen, not the primary control:
+
+- `.gitignore` excludes all `*.bmp` files — and `privatedata/`, in case that directory ever returns.
 - `scripts/check-repo-safety.sh` fails if anything private, anything under `datasets/`, or any
   oversized file is staged or tracked. **Run it before every commit and push.**
 - Stage explicit paths. Never `git add -A` or `git add .`.

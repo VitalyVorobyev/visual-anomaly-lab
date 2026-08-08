@@ -9,7 +9,7 @@ comparing them under one evaluation protocol.
 ## Steering: the goal is universal
 
 - The target is a **universal anomaly-detection explorer for arbitrary image datasets**. The private
-  showcase dataset under `privatedata/` is one reference dataset, not the scope.
+  showcase dataset is one reference dataset, not the scope.
 - **Only** the `classical_circular` plugin may assume anything about the showcase dataset's geometry. Domain
   model, import layer, DL methods (`efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom`),
   evaluation layer, and UI must stay dataset-agnostic.
@@ -22,8 +22,10 @@ comparing them under one evaluation protocol.
 
 ## Private data — highest priority
 
-- **Never read, open, copy, move, or commit anything under `privatedata/`.** It is a read-only mount of
-  proprietary images, referenced in place. Do not sample it "just to check the format".
+- **The private showcase images live outside this repository entirely (ADR-0022).** Never read, open,
+  copy, or move them; never create a `privatedata/` directory or a symlink to one, which would put
+  them back inside the tree where `git add -A` can reach them. They are referenced in place by
+  absolute path. Do not sample them "just to check the format".
 - **Never `git add -A` or `git add .`** — stage explicit paths, always.
 - **Run `scripts/check-repo-safety.sh` after staging and before any commit or push.** It must exit 0.
 - Test fixtures are **small synthetic images (PNG)** generated in code or checked in at trivial size.
@@ -49,7 +51,7 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **21 accepted ADRs (0001–0021)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **22 records (0001–0022); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 - `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
