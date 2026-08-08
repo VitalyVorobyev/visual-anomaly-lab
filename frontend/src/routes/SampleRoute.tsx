@@ -11,7 +11,7 @@
  * if they move together.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router";
 
 import {
@@ -22,13 +22,11 @@ import {
 } from "../api/browseState";
 import type { ImageSummary, Label } from "../api/client";
 import { imageUrl } from "../api/imageUrl";
+import { FULL_TIER_ZOOM, RESET_VIEW, ZoomPanCanvas } from "../components/ZoomPanCanvas";
+import type { View } from "../components/ZoomPanCanvas";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { Badge, Button, Empty, ErrorBox, PageHeader, Panel, SkeletonRows, ReadoutStrip, Switch } from "../components/ui";
 import { useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
-
-const MIN_ZOOM = 1;
-const MAX_ZOOM = 12;
-const ZOOM_SENSITIVITY = 0.0015;
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
   normal: "normal",
@@ -39,13 +37,8 @@ const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
 /** Keyboard shortcuts, for fast passes over unlabelled data (§12). */
 const LABEL_KEYS: Record<string, Label> = { n: "normal", d: "defect", u: "unlabeled" };
 
-interface View {
-  zoom: number;
-  x: number;
-  y: number;
-}
-
-const RESET: View = { zoom: 1, x: 0, y: 0 };
+/** Fit-to-window, which is what zoom 1 means in this frame. */
+const RESET = RESET_VIEW;
 
 export function SampleRoute() {
   const params = useParams();
@@ -322,6 +315,12 @@ export function SampleRoute() {
  * `preview` while zoomed out, `full` once the zoom would show real pixels — a lossless
  * PNG is what makes a defect judgeable, but fetching it for a thumbnail-sized view would
  * be several megabytes for nothing.
+ *
+ * This used to be a second, hand-written copy of `ZoomPanCanvas` with its own constants.
+ * The two drifted exactly as far as you would expect: this one had a reset button and a
+ * `0` key, that one had neither, and every fix to the gesture had to be written twice or
+ * only landed on one screen. It is one component now, and the panel keeps its own reset
+ * button — which is why `fitLabel` is off here.
  */
 function ZoomPan({
   image,
@@ -332,45 +331,23 @@ function ZoomPan({
   view: View;
   onView: (view: View) => void;
 }) {
-  const dragging = useRef<{ x: number; y: number } | null>(null);
-  const tier = view.zoom > 2 ? "full" : "preview";
+  const tier = view.zoom > FULL_TIER_ZOOM ? "full" : "preview";
 
   return (
-    <div
-      className="relative h-96 cursor-grab overflow-hidden rounded bg-raised select-none "
-      onWheel={(event) => {
-        const next = Math.min(
-          MAX_ZOOM,
-          Math.max(MIN_ZOOM, view.zoom * (1 - event.deltaY * ZOOM_SENSITIVITY)),
-        );
-        onView(next === MIN_ZOOM ? RESET : { ...view, zoom: next });
-      }}
-      onPointerDown={(event) => {
-        dragging.current = { x: event.clientX - view.x, y: event.clientY - view.y };
-        event.currentTarget.setPointerCapture(event.pointerId);
-      }}
-      onPointerMove={(event) => {
-        const origin = dragging.current;
-        if (!origin) return;
-        onView({ ...view, x: event.clientX - origin.x, y: event.clientY - origin.y });
-      }}
-      onPointerUp={() => {
-        dragging.current = null;
-      }}
+    <ZoomPanCanvas
+      view={view}
+      onView={onView}
+      className="h-96 border-0 bg-raised"
+      nativeWidth={image.width}
+      fitLabel={null}
+      label={`${image.channel ?? "unassigned"} · ${view.zoom.toFixed(1)}×`}
     >
       <img
         src={imageUrl(image.id, tier)}
         alt={image.channel ?? "unassigned channel"}
         draggable={false}
         className="h-full w-full object-contain"
-        style={{
-          transform: `translate(${view.x}px, ${view.y}px) scale(${view.zoom})`,
-          transformOrigin: "center",
-        }}
       />
-      <span className="absolute bottom-1 left-1 rounded bg-black/60 px-1 font-mono text-[10px] text-white">
-        {image.channel ?? "unassigned"} · {view.zoom.toFixed(1)}×
-      </span>
-    </div>
+    </ZoomPanCanvas>
   );
 }

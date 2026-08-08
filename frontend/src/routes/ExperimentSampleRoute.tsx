@@ -31,7 +31,7 @@
  * z-map and M6's method gets whatever it emits, with no code written here.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
@@ -41,7 +41,7 @@ import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../api/imageUrl
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
-import { ZoomPanCanvas, RESET_VIEW } from "../components/ZoomPanCanvas";
+import { FULL_TIER_ZOOM, ZoomPanCanvas, RESET_VIEW } from "../components/ZoomPanCanvas";
 import type { View } from "../components/ZoomPanCanvas";
 import {
   Badge,
@@ -90,24 +90,36 @@ export function ExperimentSampleRoute() {
     });
   };
 
-  // Arrow keys step through the filtered set, matching the labelling keys the dataset
-  // browser already binds. Reset the zoom on arrival: carrying a 6x pan onto a different
-  // part shows a corner of it with no way to tell that is what happened.
+  // Reset the zoom on arrival: carrying a 6x pan onto a different part shows a corner of
+  // it with no way to tell that is what happened.
   useEffect(() => {
     setView(RESET_VIEW);
   }, [sampleId]);
 
+  /*
+   * Arrow keys step through the filtered set, matching the labelling keys the dataset
+   * browser already binds; `0` fits, matching its viewer.
+   *
+   * The handler is held in a ref and the effect has an explicit empty dependency array.
+   * Without one it re-subscribed a global listener on *every* render — which worked, but
+   * meant a component that re-renders on each pointermove was adding and removing a window
+   * listener at the same rate.
+   */
+  const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {});
+  shortcuts.current = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+    if (event.key === "ArrowLeft") goTo(neighbours.previous);
+    if (event.key === "ArrowRight") goTo(neighbours.next);
+    if (event.key === "0") setView(RESET_VIEW);
+  };
+
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const target = event.target as HTMLElement | null;
-      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
-      if (event.key === "ArrowLeft") goTo(neighbours.previous);
-      if (event.key === "ArrowRight") goTo(neighbours.next);
-    };
+    const onKey = (event: KeyboardEvent) => shortcuts.current(event);
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  });
+  }, []);
 
   if (images.error) return <ErrorBox>{images.error.message}</ErrorBox>;
   if (images.isPending) return <SkeletonRows rows={5} />;
@@ -328,9 +340,10 @@ function ChannelView({
           className="max-h-full max-w-full"
           style={{ aspectRatio: aspectOf(image), height: "100%" }}
           label={`${image.channel ?? "single view"} · ${view.zoom.toFixed(1)}×`}
+          nativeWidth={image.width}
         >
           <img
-            src={imageUrl(image.image_id, view.zoom > 2 ? "full" : "preview")}
+            src={imageUrl(image.image_id, view.zoom > FULL_TIER_ZOOM ? "full" : "preview")}
             alt={`Channel ${image.channel ?? "single view"}`}
             draggable={false}
             className="absolute inset-0 h-full w-full object-fill"

@@ -24,6 +24,8 @@ import { useParams, useSearchParams } from "react-router";
 
 import type { MetricSummary, Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
+import type { TabId } from "../api/experimentTabs";
+import { parseTab } from "../api/experimentTabs";
 import type { ResultsState } from "../api/resultsState";
 import { readResultsState, writeResultsState } from "../api/resultsState";
 import { Tabs } from "../components/Tabs";
@@ -39,21 +41,6 @@ import { ArchitectureTab, InspectorTab, PICTURE_KINDS, STRUCTURE_KINDS } from ".
 import { Configuration, Headline, Metrics } from "./experiment/OverviewTab";
 import { Results } from "./experiment/ResultsPanel";
 import { TrainingTab } from "./experiment/TrainingTab";
-
-const TAB_IDS = [
-  "overview",
-  "samples",
-  "training",
-  "benchmark",
-  "architecture",
-  "inspector",
-  "jobs",
-] as const;
-type TabId = (typeof TAB_IDS)[number];
-
-function parseTab(raw: string | null): TabId {
-  return TAB_IDS.includes(raw as TabId) ? (raw as TabId) : "overview";
-}
 
 /* A disabled tab used to give no reason at all, which reads as broken rather than as
    not-yet. Each says what would fill it. */
@@ -112,14 +99,12 @@ export function ExperimentRoute() {
     setParams(updated, { replace: true });
   };
 
-  // The results view's own state — subset, filter, layers — lives in the same query string
-  // so the gallery hands it to the sample page and gets it back on the way out.
+  // The results view's own state — tab, subset, filter, layers — lives in the same query
+  // string so the gallery hands it to the sample page and gets it back on the way out.
+  // The tab is part of that state now, so nothing here has to re-attach it by hand.
   const results = readResultsState(params);
   const updateResults = (next: Partial<ResultsState>) => {
-    const updated = writeResultsState({ ...results, ...next });
-    const tabParam = params.get("tab");
-    if (tabParam !== null) updated.set("tab", tabParam);
-    setParams(updated, { replace: true });
+    setParams(writeResultsState({ ...results, ...next }), { replace: true });
   };
   const verdicts = useVerdicts(experimentId, results);
 

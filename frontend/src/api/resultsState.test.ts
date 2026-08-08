@@ -45,6 +45,15 @@ describe("reading the results view out of a URL", () => {
     expect(roundTrip("").threshold).toBeUndefined();
     expect(roundTrip("t=nonsense").threshold).toBeUndefined();
   });
+
+  it("carries the tab a link came from, defaulting to overview", () => {
+    expect(roundTrip("tab=samples").tab).toBe("samples");
+    expect(roundTrip("").tab).toBe("overview");
+  });
+
+  it("refuses a tab that does not exist", () => {
+    expect(roundTrip("tab=nonsense").tab).toBe("overview");
+  });
 });
 
 describe("writing it back", () => {
@@ -55,6 +64,7 @@ describe("writing it back", () => {
   it("round-trips everything it writes", () => {
     const state = {
       ...EMPTY_RESULTS,
+      tab: "samples" as const,
       subset: "val" as const,
       outcome: "fp" as const,
       threshold: 1.25,
@@ -65,6 +75,22 @@ describe("writing it back", () => {
       cut: 0.3,
     };
     expect(readResultsState(writeResultsState(state))).toEqual(state);
+  });
+
+  it("brings a reader back to the tab they left", () => {
+    /**
+     * The bug this fixes: `writeResultsState` built the gallery's tile link, the sample
+     * page's back link *and* its prev/next, and knew nothing about tabs — so all three
+     * dropped `tab=samples` and every route out of a sample landed on Overview. Carrying
+     * the tab here fixes all three at once, and any future link built the same way is
+     * correct without anyone remembering to re-attach it.
+     */
+    const fromGallery = readResultsState(new URLSearchParams("tab=samples&subset=test"));
+    expect(writeResultsState(fromGallery).get("tab")).toBe("samples");
+  });
+
+  it("writes no tab for overview, matching how the tab strip clears it", () => {
+    expect(writeResultsState({ ...EMPTY_RESULTS, tab: "overview" }).has("tab")).toBe(false);
   });
 });
 
