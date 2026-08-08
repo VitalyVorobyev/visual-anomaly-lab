@@ -319,8 +319,21 @@ class DiagnosticWriter:
 
         existing = load_index(self._root)
         superseded = {(entry.key, entry.image_id) for entry in self._entries}
+        # A key emitted per-image this run replaces **every** per-image entry under that
+        # key, not merely the images this run happened to sample.
+        #
+        # Identity was `(key, image_id)` alone, which was invisible while the budget kept
+        # the first N: every run sampled the same images, so every entry was superseded.
+        # Once the budget spread across the run, two runs sampled different images and the
+        # index became their union — 74 images under a stated budget of 64, which reads as
+        # a cap that does not work. A union is also nobody's sample: half of it describes a
+        # selection the current run did not make.
+        resampled = {entry.key for entry in self._entries if entry.image_id is not None}
         kept = [
-            entry for entry in existing.entries if (entry.key, entry.image_id) not in superseded
+            entry
+            for entry in existing.entries
+            if (entry.key, entry.image_id) not in superseded
+            and not (entry.image_id is not None and entry.key in resampled)
         ]
         # Ranges merge by the same rule, one level coarser: a key belongs to whichever run
         # emitted it, so this run's keys replace outright and the other run's are carried

@@ -255,6 +255,38 @@ def test_a_kind_rendered_without_a_colormap_records_no_range(tmp_path: Path) -> 
     assert writer.flush().ranges == {}
 
 
+def test_re_running_inference_replaces_its_whole_per_image_sample(tmp_path: Path) -> None:
+    """A second run's index is that run's sample, not the union of two.
+
+    Invisible while the budget kept the first N: every run chose the same images, so every
+    entry was superseded by id. Once the budget spread across the run, two runs sampled
+    different images and the index became 74 images under a stated budget of 64 — a cap
+    that reads as broken, over a selection neither run made.
+    """
+    root = tmp_path / "diag"
+
+    training = DiagnosticWriter(root)
+    training.emit("teacher", "T", DiagnosticKind.MAP, np.zeros((4, 4), np.float32))
+    training.flush()
+
+    first = DiagnosticWriter(root, image_budget=2, keep_images=[1, 2])
+    for image_id in (1, 2):
+        first.emit("err", "E", DiagnosticKind.MAP, np.zeros((4, 4), np.float32), image_id=image_id)
+    first.flush()
+
+    second = DiagnosticWriter(root, image_budget=2, keep_images=[3, 4])
+    for image_id in (3, 4):
+        second.emit("err", "E", DiagnosticKind.MAP, np.zeros((4, 4), np.float32), image_id=image_id)
+    merged = second.flush()
+
+    per_image = sorted(entry.image_id for entry in merged.entries if entry.image_id is not None)
+    assert per_image == [3, 4], "the earlier run's images are gone, not merged in"
+    assert len(per_image) <= (merged.image_budget or 0), "the stated budget is the real one"
+    # The training run's own diagnostic is untouched — that is the M3 bug this merge exists
+    # to prevent, and narrowing the rule must not reintroduce it.
+    assert any(entry.key == "teacher" for entry in merged.entries)
+
+
 def test_a_later_run_keeps_the_earlier_run_s_ranges_and_replaces_its_own(
     tmp_path: Path,
 ) -> None:
