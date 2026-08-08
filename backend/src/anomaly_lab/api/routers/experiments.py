@@ -47,7 +47,12 @@ from anomaly_lab.eval.threshold import (
     suggest_threshold,
 )
 from anomaly_lab.experiments.infer import InferParams
-from anomaly_lab.experiments.train import TrainParams
+from anomaly_lab.experiments.train import (
+    MODEL_SUBDIR,
+    TrainingState,
+    TrainParams,
+    read_training_state,
+)
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
 from anomaly_lab.media.values import encode_plane
@@ -156,6 +161,16 @@ class ExperimentDetail(ExperimentSummary):
     jobs: list[JobSummary] = Field(default_factory=list)
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
+    supports_resume: bool = False
+    """Whether this method can continue a finished run (ADR-0025)."""
+    training_state: TrainingState | None = None
+    """
+    How much training the stored checkpoint has actually had.
+
+    `None` when nothing has trained, or when the method has no notion of a step. Rendered
+    beside the frozen configuration, because `max_steps` there is the **per-run** budget
+    and would otherwise read as the total on a model that has been continued.
+    """
     map_range: MapScale | None = None
     """
     The run-wide display range every one of this run's maps is drawn against (ADR-0019).
@@ -329,11 +344,13 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         capabilities = get_model_class(experiment.model_type).capabilities()
         produces_map = capabilities.produces_anomaly_map
         produces_diagnostics = capabilities.produces_diagnostics
+        supports_resume = capabilities.supports_resume
     except UnknownModelError:
         # A method can be removed from the registry while its experiments remain. The
         # record stays readable; only the capability-driven affordances go away.
         produces_map = False
         produces_diagnostics = False
+        supports_resume = False
 
     return ExperimentDetail(
         **_summary(conn, experiment).model_dump(),
@@ -348,6 +365,10 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         jobs=[summary_of(job) for job in jobs_repo.list_jobs_for_experiment(conn, experiment.id)],
         produces_anomaly_map=produces_map,
         produces_diagnostics=produces_diagnostics,
+        supports_resume=supports_resume,
+        # Read from a JSON sidecar, never from the checkpoint: this process has no torch,
+        # by design, and a `.pt` is unreadable without it.
+        training_state=read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR),
         map_range=_run_map_range(experiment.artifact_dir),
     )
 
@@ -486,9 +507,16 @@ def delete_experiment(request: Request, experiment_id: int) -> dict[str, bool]:
 def start_train(
     request: Request, experiment_id: int, body: TrainParams | None = None
 ) -> JobSummary:
-    experiment, _ = _load(request, experiment_id)
+    experiment, settings = _load(request, experiment_id)
     params = body or TrainParams(experiment_id=experiment.id)
     params = params.model_copy(update={"experiment_id": experiment.id})
+
+    # Refused here rather than ten minutes later inside a worker. A form that cannot
+    # succeed should fail as a form, which is the same reasoning `create_experiment`
+    # applies to a config that does not validate against its method's schema.
+    if params.additional_steps is not None:
+        _refuse_impossible_resume(experiment, settings)
+
     queue: JobQueue = request.app.state.job_queue
     return summary_of(
         queue.enqueue(
@@ -497,6 +525,41 @@ def start_train(
             experiment_id=experiment.id,
         )
     )
+
+
+def _refuse_impossible_resume(experiment: Experiment, settings: Settings) -> None:
+    """422 when a continuation cannot work, naming which of the three reasons it is."""
+    try:
+        capabilities = get_model_class(experiment.model_type).capabilities()
+    except UnknownModelError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"method {experiment.model_type} is not registered"
+        ) from exc
+
+    if not capabilities.supports_resume:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"method {experiment.model_type} cannot continue a finished run; it has "
+                "no notion of a training step. Train it from scratch instead."
+            ),
+        )
+
+    state = read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR)
+    if state is None:
+        raise HTTPException(
+            status_code=422,
+            detail="this experiment has not been trained yet, so there is nothing to continue",
+        )
+    if not state.resumable:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "this checkpoint was written before optimizer state was saved, so it "
+                "cannot be continued exactly. Train from scratch once, and that run can "
+                "then be continued."
+            ),
+        )
 
 
 @router.post("/{experiment_id}/infer", summary="Queue an inference and evaluation job")

@@ -909,3 +909,57 @@ def test_an_experiment_left_mid_training_is_reconciled_at_startup(
         reopened = restarted.get(f"/api/experiments/{experiment['id']}").json()
 
     assert reopened["status"] == "failed"
+
+
+# ------------------------------------------------------- continuing a run (ADR-0025)
+
+
+def test_continuing_a_method_without_steps_is_refused_as_a_form(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """422, not a job that fails minutes later inside a worker.
+
+    `pixel_reference` builds a median over the training set; it is either fitted or not,
+    and there is no step to continue. The message says that rather than "invalid".
+    """
+    response = client.post(
+        f"/api/experiments/{scored['id']}/train",
+        json={"experiment_id": scored["id"], "additional_steps": 500},
+    )
+
+    assert response.status_code == 422
+    assert "no notion of a training step" in response.text
+
+
+def test_a_method_without_resume_reports_so_and_carries_no_training_state(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """`training_state` is absent rather than zero: a fabricated step count reads as fact."""
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+
+    assert detail["supports_resume"] is False
+    assert detail["training_state"] is None
+
+
+def test_training_without_additional_steps_is_unaffected(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """The ordinary path must not have acquired a precondition."""
+    response = client.post(
+        f"/api/experiments/{scored['id']}/train", json={"experiment_id": scored["id"]}
+    )
+    assert response.status_code == 200
+
+
+def test_additional_steps_stays_optional_on_the_wire(client: TestClient) -> None:
+    """`default_factory`, not `= None`.
+
+    A literal default emits `"default": null` into the schema and `openapi-typescript`
+    then makes the property **required** — the trap that silently pinned a value for two
+    milestones. The schema must therefore carry no default for this field at all.
+    """
+    schema = client.get("/openapi.json").json()
+    train_params = schema["components"]["schemas"]["TrainParams"]
+
+    assert "additional_steps" not in train_params.get("required", [])
+    assert "default" not in train_params["properties"]["additional_steps"]

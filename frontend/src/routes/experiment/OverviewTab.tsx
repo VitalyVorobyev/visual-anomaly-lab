@@ -13,7 +13,7 @@
 import type { MetricValue } from "../../api/metrics";
 import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
-import type { MetricSummary, Subset } from "../../api/client";
+import type { MetricSummary, Subset, TrainingState } from "../../api/client";
 import { Button, CountRun, Disclosure, Panel } from "../../components/ui";
 import type { Tone } from "../../components/ui";
 import { useReevaluate } from "../../hooks/useExperiments";
@@ -79,12 +79,31 @@ export function Headline({
 export function Configuration({
   detail,
 }: {
-  detail: { config: Record<string, unknown>; preprocessing: Record<string, unknown> };
+  detail: {
+    config: Record<string, unknown>;
+    preprocessing: Record<string, unknown>;
+    training_state?: TrainingState | null;
+  };
 }) {
+  const state = detail.training_state ?? null;
   return (
     <Panel title="Configuration">
       {/* Frozen into the experiment at creation, so this is what the run *used* rather than
           what the form currently defaults to. Worth reading before comparing two runs. */}
+
+      {/* Above the fold of the disclosure, because without it the block below shows
+          `max_steps: 4000` beside a model that has trained for 8000 — which is a lie in
+          the one record that is supposed to make a run reproducible (ADR-0025). */}
+      {state !== null && (
+        <p className="mb-3 text-xs text-fg-muted">
+          <span className="font-mono text-fg">{state.completed_steps}</span> steps completed
+          over {state.runs} run{state.runs === 1 ? "" : "s"}
+          {state.runs > 1 && `, the last of them ${state.last_run_steps}`}.{" "}
+          <span className="font-mono">max_steps</span> below is this method&rsquo;s{" "}
+          <em>per-run</em> budget, not the total.
+        </p>
+      )}
+
       <Disclosure summary="What this run was configured with">
         <div className="grid gap-5 sm:grid-cols-2">
           <ConfigBlock title="Method" values={detail.config} />

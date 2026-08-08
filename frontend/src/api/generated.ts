@@ -1024,6 +1024,11 @@ export interface components {
              * @default false
              */
             dataset_specific: boolean;
+            /**
+             * Supports Resume
+             * @default false
+             */
+            supports_resume: boolean;
             /** @default cpu */
             preferred_device: components["schemas"]["Device"];
         };
@@ -1413,6 +1418,12 @@ export interface components {
              * @default false
              */
             produces_diagnostics: boolean;
+            /**
+             * Supports Resume
+             * @default false
+             */
+            supports_resume: boolean;
+            training_state: components["schemas"]["TrainingState"] | null;
             map_range: components["schemas"]["MapScale"] | null;
         };
         /**
@@ -2291,6 +2302,54 @@ export interface components {
              * @default true
              */
             diagnostics: boolean;
+            /**
+             * Additional Steps
+             * @description Continue the existing model for this many further steps instead of training from scratch. Only for a method that declares `supports_resume`.
+             */
+            additional_steps?: number | null;
+        };
+        /**
+         * TrainingState
+         * @description How much training an experiment's stored model has actually had.
+         *
+         *     Written beside the checkpoint as JSON, and read by the API, because a `.pt` cannot be
+         *     opened in a process that has no torch — which the API process deliberately does not.
+         *     Without this the configuration panel shows `max_steps: 4000` beside an 8000-step
+         *     model, which is a lie in the one record that is supposed to make a run reproducible.
+         */
+        TrainingState: {
+            /**
+             * Format
+             * @default 1
+             */
+            format: number;
+            /** Completed Steps */
+            completed_steps: number;
+            /**
+             * Runs
+             * @default 1
+             */
+            runs: number;
+            /**
+             * Last Run Steps
+             * @default 0
+             */
+            last_run_steps: number;
+            /**
+             * Model Type
+             * @default
+             */
+            model_type: string;
+            /**
+             * Written At
+             * @default
+             */
+            written_at: string;
+            /**
+             * Resumable
+             * @default true
+             */
+            resumable: boolean;
         };
         /** ValidationError */
         ValidationError: {

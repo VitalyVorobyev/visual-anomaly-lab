@@ -95,12 +95,27 @@ export function useCreateExperiment() {
 export function useStartRun(experimentId: number) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ kind, subsets }: { kind: "train" | "infer"; subsets?: Subset[] }) => {
+    mutationFn: async ({
+      kind,
+      subsets,
+      additionalSteps,
+    }: {
+      kind: "train" | "infer";
+      subsets?: Subset[];
+      /** Continue the stored model instead of retraining it (ADR-0025). */
+      additionalSteps?: number;
+    }) => {
       const result =
         kind === "train"
           ? await api.POST("/api/experiments/{experiment_id}/train", {
               params: { path: { experiment_id: experimentId } },
-              body: { experiment_id: experimentId, diagnostics: true },
+              body: {
+                experiment_id: experimentId,
+                diagnostics: true,
+                // Omitted entirely for a fresh run: an empty control means unset, and the
+                // default lives in Python alone.
+                ...(additionalSteps === undefined ? {} : { additional_steps: additionalSteps }),
+              },
             })
           : await api.POST("/api/experiments/{experiment_id}/infer", {
               params: { path: { experiment_id: experimentId } },

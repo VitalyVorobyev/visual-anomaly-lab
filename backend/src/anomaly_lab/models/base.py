@@ -29,7 +29,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, ClassVar, Protocol
+from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -59,6 +59,14 @@ class Capabilities(BaseModel):
     produces_diagnostics: bool = False
     channel_aware: bool = False
     dataset_specific: bool = False
+    supports_resume: bool = False
+    """Whether a finished run can be continued for further steps (ADR-0025).
+
+    A capability rather than a special case, because most methods have no notion of a
+    step: `pixel_reference` builds a median over the training set and is either fitted or
+    not. A method that declares this must also satisfy `SupportsResume`, and the train
+    handler checks that the two agree rather than trusting the flag.
+    """
     preferred_device: Device = Device.CPU
 
 
@@ -306,6 +314,46 @@ class AnomalyModel(ABC):
     @abstractmethod
     def load(self, artifact_dir: Path) -> None:
         """Restore a fitted model written by `save`."""
+
+
+@runtime_checkable
+class SupportsResume(Protocol):
+    """A method whose training can be continued from where it stopped (ADR-0025).
+
+    A **Protocol**, not two more abstract methods on `AnomalyModel`. Most methods have no
+    steps to continue — `pixel_reference` computes a median and is done — and making them
+    carry `raise NotImplementedError` stubs would put a lie in the interface: the ABC is
+    meant to say what every method does. The train handler asks `isinstance`, which works
+    because this is `runtime_checkable`.
+
+    The pair must agree with `Capabilities.supports_resume`. A method that declares the
+    flag without satisfying the protocol is a plugin bug, and the handler says so by name
+    rather than failing later inside a checkpoint load.
+    """
+
+    def completed_steps(self) -> int:
+        """Total steps this fitted model has trained for, across every run.
+
+        Absolute, not per-run. It is what makes a continued run's loss curve a
+        continuation rather than a second curve starting at zero (ADR-0020).
+        """
+        ...
+
+    def fit_more(
+        self,
+        train: Sequence[ImageRecord],
+        ctx: TrainContext,
+        *,
+        additional_steps: int,
+    ) -> None:
+        """Continue a loaded model for `additional_steps` further steps.
+
+        Called after `load`, never instead of `fit`. An implementation that cannot resume
+        exactly — an older checkpoint holding weights but no optimizer state — must refuse
+        by name rather than silently restarting the optimizer, because a continuation that
+        resets Adam's moments is not a continuation.
+        """
+        ...
 
 
 def evenly_spaced(count: int, limit: int) -> list[int]:

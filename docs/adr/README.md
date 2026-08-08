@@ -34,6 +34,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0022](0022-private-source-data-lives-outside-the-working-tree.md) | Private source data lives outside the repository working tree | Accepted |
 | [0023](0023-raw-values-beside-the-rendered-picture.md) | Raw values are served beside the rendered picture, for reading and not for drawing | Accepted |
 | [0024](0024-layer-level-introspection-as-a-shared-helper.md) | Layer-level introspection is a shared torch helper on the existing `graph` kind | Accepted |
+| [0025](0025-training-is-resumable-as-a-declared-capability.md) | Training is resumable as a declared capability, and steps are absolute | Accepted |
 
 ## Conventions
 

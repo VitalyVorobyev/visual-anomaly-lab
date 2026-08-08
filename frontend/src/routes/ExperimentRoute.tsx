@@ -146,6 +146,7 @@ export function ExperimentRoute() {
           without leaving whatever is being read. */}
       <RunBar
         experimentId={experimentId}
+        detail={detail}
         jobs={detail.jobs}
         hasTrained={hasTrained}
         onFollow={setFollowingJobId}

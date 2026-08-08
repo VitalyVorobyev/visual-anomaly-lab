@@ -70,6 +70,11 @@ if TYPE_CHECKING:  # pragma: no cover - import cost is the whole point of deferr
     import torch
 
 STATE_FILENAME = "efficientad.pt"
+
+CHECKPOINT_FORMAT = 2
+"""Format 1 was weights and `model_size` alone. Format 2 adds what a continuation needs:
+optimizer moments, LR-schedule state, the absolute step counter and both RNG streams
+(ADR-0025). A format-1 checkpoint still loads and still infers; it cannot be continued."""
 PENALTY_SUBDIR = "imagenette"
 
 # The paper trains for 70000 steps. That is roughly two and a half hours on this Mac at
@@ -207,6 +212,15 @@ class EfficientAdAnomalibModel(AnomalyModel):
         super().__init__(config)
         self.config = config
         self._module: Any = None
+        # Everything below is what makes a run continuable (ADR-0025). Held on the
+        # instance rather than reconstructed, because `save` is called by the job handler
+        # after `fit` returns and has no other way to reach the optimizer.
+        self._completed = 0
+        self._generator: Any = None
+        self._optimizer_state: Any = None
+        self._scheduler_state: Any = None
+        self._torch_rng_state: Any = None
+        self._generator_state: Any = None
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
@@ -218,6 +232,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
             requires_training=True,
             produces_anomaly_map=True,
             produces_diagnostics=True,
+            supports_resume=True,
             channel_aware=False,
             dataset_specific=False,
             preferred_device=Device.MPS,
@@ -315,25 +330,190 @@ class EfficientAdAnomalibModel(AnomalyModel):
         self._emit_architecture(ctx, model, torch)
         self._emit_teacher_view(ctx, model, train, torch)
 
-        optimizer = torch.optim.Adam(
+        total = self.config.max_steps
+        optimizer = self._build_optimizer(model, torch)
+        scheduler = self._build_scheduler(optimizer, total, torch)
+
+        self._module = module
+        self._generator = np.random.default_rng(self.config.seed)
+        self._completed = 0
+
+        ctx.log(f"training for {total} steps at batch size 1")
+        self._run_steps(module, optimizer, scheduler, train, ctx, steps=total, total=total)
+
+        self._fit_quantiles(module, ctx, train, torch)
+        model.eval()
+        self._capture_resume_state(optimizer, scheduler, torch)
+
+    # ------------------------------------------------------------------ resume
+
+    def completed_steps(self) -> int:
+        """Steps trained so far, across every run (ADR-0025)."""
+        return self._completed
+
+    def fit_more(
+        self,
+        train: Sequence[ImageRecord],
+        ctx: TrainContext,
+        *,
+        additional_steps: int,
+    ) -> None:
+        """Continue a loaded model for `additional_steps` further steps.
+
+        Refuses a format-1 checkpoint **by name** rather than restarting the optimizer.
+        Adam's moments are most of what a long run has learned about its own gradients;
+        throwing them away and calling the result a continuation would be a fabricated
+        number on a screen, which is the thing this codebase refuses everywhere else.
+        """
+        import torch
+
+        if self._module is None:
+            msg = "efficientad_anomalib cannot continue: no model is loaded"
+            raise RuntimeError(msg)
+        if self._optimizer_state is None or self._scheduler_state is None:
+            msg = (
+                "this checkpoint was written before optimizer state was saved, so training "
+                "cannot be continued exactly from it. Train from scratch once, and that "
+                "run can then be continued."
+            )
+            raise RuntimeError(msg)
+
+        # Rebuilt through `_build_module`, and the loaded weights moved into it.
+        #
+        # `load` has no `TrainContext` and so cannot know where the penalty set lives; the
+        # module it makes is fine for `predict` and cannot train, because
+        # `prepare_imagenette_data` resolves against an `imagenet_dir` it was never given.
+        # Found by running a continuation end to end, which failed on a missing class
+        # folder several layers below the cause.
+        module = self._build_module(ctx)
+        module.model.load_state_dict(self._module.model.state_dict())
+        self._module = module
+        model = module.model
+
+        self._ensure_teacher(module, ctx)
+        self._ensure_penalty_set(module, ctx)
+        ctx.raise_if_cancelled()
+
+        done = self._completed
+        total = done + additional_steps
+
+        optimizer = self._build_optimizer(model, torch)
+        optimizer.load_state_dict(self._optimizer_state)
+        # The schedule is recomputed against the **new** total, which is what makes a
+        # 4000 + 4000 continue close to what a single 8000-step run would have done — and
+        # it means the learning rate returns to its base value at the resume point, since
+        # the drop moves from 3800 to 7600. Surprising enough that the caller prints it.
+        scheduler = self._build_scheduler(optimizer, total, torch, last_epoch=done - 1)
+
+        self._restore_rng(torch, ctx)
+        ctx.log(
+            f"continuing from step {done} for {additional_steps} more, to {total}; "
+            f"the learning-rate drop moves to step {int(0.95 * total)}"
+        )
+        ctx.log(
+            "the optimizer, the schedule, the step counter and the training image order "
+            "resume exactly; the ImageNette penalty batch order restarts",
+            level="warning",
+        )
+
+        self._run_steps(
+            module, optimizer, scheduler, train, ctx, steps=additional_steps, total=total
+        )
+
+        self._fit_quantiles(module, ctx, train, torch)
+        model.eval()
+        self._capture_resume_state(optimizer, scheduler, torch)
+
+    def _capture_resume_state(self, optimizer: Any, scheduler: Any, torch_module: Any) -> None:
+        """Leave the instance in exactly the state a reloaded one would be in.
+
+        Without the two RNG snapshots, a model continued in the same process would take a
+        different path from the identical model continued after a reload — the in-memory
+        one having no state to restore. The handler always reloads, so it is unreachable
+        today; recording it anyway is what keeps "the checkpoint loses nothing" a
+        statement about the checkpoint rather than about the call order.
+        """
+        self._optimizer_state = optimizer.state_dict()
+        self._scheduler_state = scheduler.state_dict()
+        self._torch_rng_state = torch_module.get_rng_state()
+        self._generator_state = (
+            None if self._generator is None else self._generator.bit_generator.state
+        )
+
+    def _build_optimizer(self, model: Any, torch_module: Any) -> Any:
+        return torch_module.optim.Adam(
             list(model.student.parameters()) + list(model.ae.parameters()),
             lr=self.config.learning_rate,
             weight_decay=self.config.weight_decay,
         )
-        # anomalib's own schedule: one tenfold drop near the end of training.
-        scheduler = torch.optim.lr_scheduler.StepLR(
-            optimizer, step_size=int(0.95 * self.config.max_steps), gamma=0.1
+
+    def _build_scheduler(
+        self, optimizer: Any, total: int, torch_module: Any, *, last_epoch: int = -1
+    ) -> Any:
+        """anomalib's own schedule: one tenfold drop near the end of training.
+
+        `last_epoch` other than -1 makes PyTorch read `initial_lr` off every param group,
+        which `Adam` does not set — so it is seeded here. Without this, resuming raises a
+        `KeyError` a long way from its cause.
+        """
+        if last_epoch >= 0:
+            for group in optimizer.param_groups:
+                group.setdefault("initial_lr", self.config.learning_rate)
+        return torch_module.optim.lr_scheduler.StepLR(
+            optimizer, step_size=int(0.95 * total), gamma=0.1, last_epoch=last_epoch
         )
 
+    def _restore_rng(self, torch_module: Any, ctx: TrainContext) -> None:
+        """Put both random streams back where the previous run left them.
+
+        The numpy generator picks training images and the torch generator drives anything
+        stochastic in the modules. Restoring them is what makes "resume" mean the same
+        sequence of work rather than merely the same weights.
+        """
+        if self._torch_rng_state is not None:
+            torch_module.set_rng_state(self._torch_rng_state)
+        if self._generator_state is not None:
+            generator = np.random.default_rng()
+            generator.bit_generator.state = self._generator_state
+            self._generator = generator
+        else:  # pragma: no cover - only for a checkpoint written without it
+            ctx.log(
+                "this checkpoint carries no image-order state, so the training image "
+                "sequence restarts from the seed",
+                level="warning",
+            )
+            self._generator = np.random.default_rng(self.config.seed)
+
+    def _run_steps(
+        self,
+        module: Any,
+        optimizer: Any,
+        scheduler: Any,
+        train: Sequence[ImageRecord],
+        ctx: TrainContext,
+        *,
+        steps: int,
+        total: int,
+    ) -> None:
+        """The training loop, shared by `fit` and `fit_more`.
+
+        **Steps reported to `ctx.metric` are absolute across the experiment's training**,
+        so a continued run's curve is a continuation of the first rather than a second
+        curve starting at zero — no stitching in the chart, and no extra log reads, which
+        is the cliff ADR-0020 named.
+        """
+        import torch
+
+        model = module.model
         model.train()
-        generator = np.random.default_rng(self.config.seed)
-        ctx.log(f"training for {self.config.max_steps} steps at batch size 1")
+        generator = self._generator
         started = time.perf_counter()
 
-        for step in range(self.config.max_steps):
+        for index in range(steps):
             # Checked every step rather than every epoch, which is the practical benefit
             # of owning the loop: cancelling a training run stops it in ~100 ms.
             ctx.raise_if_cancelled()
+            step = self._completed
 
             record = train[int(generator.integers(len(train)))]
             image = torch.from_numpy(
@@ -347,8 +527,9 @@ class EfficientAdAnomalibModel(AnomalyModel):
             loss.backward()
             optimizer.step()
             scheduler.step()
+            self._completed = step + 1
 
-            if step % _LOSS_LOG_EVERY == 0 or step == self.config.max_steps - 1:
+            if index % _LOSS_LOG_EVERY == 0 or index == steps - 1:
                 # Scalar series reuse the `metric` event that already exists in the job
                 # protocol (ADR-0009). No new channel, no protocol change — which is the
                 # test the diagnostics contract was designed to pass.
@@ -358,19 +539,16 @@ class EfficientAdAnomalibModel(AnomalyModel):
                 ctx.metric("loss_total", float(loss.item()), step=step)
                 ctx.metric("learning_rate", float(scheduler.get_last_lr()[0]), step=step)
                 ctx.progress(
-                    0.1 + 0.8 * (step + 1) / self.config.max_steps,
-                    f"step {step + 1}/{self.config.max_steps}, loss {loss.item():.4f}",
+                    0.1 + 0.8 * (index + 1) / steps,
+                    f"step {self._completed}/{total}, loss {loss.item():.4f}",
                 )
 
         elapsed = time.perf_counter() - started
         ctx.log(
-            f"trained {self.config.max_steps} steps in {elapsed:.0f}s "
-            f"({elapsed / self.config.max_steps * 1000:.0f} ms/step on {ctx.device.value})"
+            f"trained {steps} steps in {elapsed:.0f}s "
+            f"({elapsed / max(steps, 1) * 1000:.0f} ms/step on {ctx.device.value}); "
+            f"{self._completed} completed in total"
         )
-
-        self._fit_quantiles(module, ctx, train, torch)
-        model.eval()
-        self._module = module
 
     def _fit_quantiles(
         self,
@@ -623,29 +801,61 @@ class EfficientAdAnomalibModel(AnomalyModel):
     # ---------------------------------------------------------------- persistence
 
     def save(self, artifact_dir: Path) -> None:
+        """Write everything a *continuation* needs, not only everything inference needs.
+
+        Format 2 (ADR-0025) carries the optimizer moments, the LR-schedule state, the step
+        counter and both random streams. That is roughly three times the size of the
+        weights alone — 32 MB becomes about 96 MB — and there is deliberately no option to
+        skip it: an option would make "can I continue this run?" depend on a flag someone
+        chose before they knew the answer.
+        """
         import torch
 
         if self._module is None:
             msg = "efficientad_anomalib has nothing to save; it was never fitted"
             raise RuntimeError(msg)
+
         # `mean_std` and `quantiles` are ParameterDicts, so the state dict carries the
         # fitted normalization as well as the weights — nothing extra to serialize.
-        torch.save(
-            {
-                "state_dict": self._module.model.state_dict(),
-                "model_size": self.config.model_size,
-            },
-            artifact_dir / STATE_FILENAME,
-        )
+        payload: dict[str, Any] = {
+            "format": CHECKPOINT_FORMAT,
+            "state_dict": self._module.model.state_dict(),
+            "model_size": self.config.model_size,
+            "completed_steps": self._completed,
+            "optimizer": self._optimizer_state,
+            "scheduler": self._scheduler_state,
+            "torch_rng_state": torch.get_rng_state(),
+            "generator_state": (
+                None if self._generator is None else self._generator.bit_generator.state
+            ),
+        }
+        # Guarded: `torch.mps` exists only on an Apple-silicon build, and a checkpoint
+        # written on one machine should still load on another.
+        if hasattr(torch, "mps") and hasattr(torch.mps, "get_rng_state"):
+            with contextlib.suppress(Exception):
+                payload["mps_rng_state"] = torch.mps.get_rng_state()
+
+        torch.save(payload, artifact_dir / STATE_FILENAME)
 
     def load(self, artifact_dir: Path) -> None:
+        """Restore a fitted model, and whatever of the training state was written.
+
+        A checkpoint with no `format` is format 1 — weights only. It loads, and `predict`
+        is unaffected; only `fit_more` refuses it, and by name.
+        """
         import torch
         from anomalib.models import EfficientAd
 
-        stored = torch.load(artifact_dir / STATE_FILENAME, map_location="cpu", weights_only=True)
+        stored = torch.load(artifact_dir / STATE_FILENAME, map_location="cpu", weights_only=False)
         module = EfficientAd(model_size=stored.get("model_size", self.config.model_size))
         module.model.load_state_dict(stored["state_dict"])
         self._module = module
+
+        self._completed = int(stored.get("completed_steps", 0))
+        self._optimizer_state = stored.get("optimizer")
+        self._scheduler_state = stored.get("scheduler")
+        self._torch_rng_state = stored.get("torch_rng_state")
+        self._generator_state = stored.get("generator_state")
 
 
 def _next_penalty_batch(module: Any) -> Any:
