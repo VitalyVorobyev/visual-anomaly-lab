@@ -21,10 +21,16 @@ the verified core that `test_efficientad_equivalence.py` pins, and a change is o
 `teacher_source` defaults to `nelson1425` rather than to the asset anomalib ships, because
 over three seeds on `candle` that teacher measured 0.889 sample ROC-AUC against 0.769, and
 0.914 AU-PRO against 0.539 — an effect larger than any other in this milestone and far
-outside either implementation's seed spread. **A head-to-head against the wrapper must
-therefore pin `teacher_source="anomalib"`**, or it measures the teacher rather than the
-implementation. That is the cost of the change, and it is a real one; the alternative was to
-leave the workbench defaulting to a measurably worse model to protect a comparison.
+outside either implementation's seed spread.
+
+**New runs do not use the anomalib teacher at all.** It remains a value of `teacher_source`
+only so the runs already recorded against it stay reproducible — an experiment's
+configuration is the record of what it did, and removing the value would make five of them
+unloadable. The consequence to keep in view: an implementation-versus-implementation
+head-to-head against the wrapper would have to pin it, so **that comparison is now a
+deliberate exercise rather than something a default produces**. ADR-0029 still makes the
+wrapper the baseline; it is a baseline this method has left behind rather than one it is
+tracked against run by run.
 
 **What differs from the wrapper, and why:**
 
@@ -124,16 +130,16 @@ class EfficientAdCustomConfig(BaseModel):
             "distillation mechanism works with any fixed feature extractor."
         ),
     )
-    teacher_source: Literal["anomalib", "nelson1425", "distilled"] = Field(
+    teacher_source: Literal["nelson1425", "distilled", "anomalib"] = Field(
         default="nelson1425",
         description=(
-            "Which teacher to distil the student against. The two published ones are "
-            "different networks, not two copies of one: same architecture, weights "
-            "differing tensor by tensor. 'nelson1425' is the default because it measured "
-            "far better — 0.889 against 0.769 sample ROC-AUC over three seeds on candle, "
-            "with AU-PRO 0.914 against 0.539. 'anomalib' is the release asset the wrapper "
-            "uses, and is what to pin for a like-for-like comparison against it. "
-            "'distilled' is one this workbench produced — name it in distilled_teacher."
+            "Which teacher to distil the student against. The published ones are different "
+            "networks, not two copies of one: same architecture, weights differing tensor "
+            "by tensor. 'nelson1425' measured far better — 0.889 against 0.769 sample "
+            "ROC-AUC over three seeds on candle, with AU-PRO 0.914 against 0.539 — and is "
+            "what new runs use. 'distilled' is one this workbench produced; name it in "
+            "distilled_teacher. 'anomalib' is kept only so the runs recorded against it "
+            "stay reproducible, and is listed last for that reason."
         ),
     )
     distilled_teacher: str = Field(

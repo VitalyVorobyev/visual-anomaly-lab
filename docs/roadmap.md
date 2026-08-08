@@ -348,10 +348,23 @@ workbench. So M6 continues into **distilling the teacher ourselves**:
 - **Nothing gets compared to a published number until the official protocol runs.** Every number in
   this milestone so far is on a generated split.
 
-**Left to do:** the teacher comparison replicated across seeds, then the curve resumed from 30 000
-with whichever teacher wins, then the distillation stage above, then the hypotheses in
-[measurements-efficientad.md](measurements-efficientad.md) at whatever budget the curve says is
-honest, then the protocol sweep on VisA's official split (`pcb1`, `capsules`).
+**Where it stopped, and what is deliberately not done yet.** The teacher comparison is replicated
+across three seeds, the default has moved, the distillation stage is built and smoke-tested, and the
+official one-class split is imported and verified. Three things are **postponed rather than
+forgotten**, each because it is machine time rather than design:
+
+- **The protocol sweep at 30 000 steps.** `protocol.py` takes the budget as an argument; the three
+  runs are about three and a half hours.
+- **A real distilled teacher.** The stage runs end to end; phase 1 is 10 000 steps on Imagenette,
+  and the phase-2 corpus is an open choice — ImageNet-1K needs an account and more disk than this
+  machine has free.
+- **The curve past 30 000.** `extend.py` forks a finished run and continues it, so 70 000 is one
+  command rather than a restart.
+
+**New runs no longer use the anomalib teacher.** It stays a value of `teacher_source` only so the
+five experiments recorded against it remain loadable. ADR-0029 still makes the wrapper the baseline
+this method was measured against; it is now a baseline the method has left behind rather than one it
+is tracked against run by run.
 
 ---
 

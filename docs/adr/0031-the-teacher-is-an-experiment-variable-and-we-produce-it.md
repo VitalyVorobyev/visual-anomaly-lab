@@ -74,7 +74,7 @@ the better teacher was also six times more stable.
 
 ## Consequences
 
-- **A head-to-head against `efficientad_anomalib` must now pin `teacher_source="anomalib"`.**
+- **A head-to-head against `efficientad_anomalib` must pin `teacher_source="anomalib"`.**
   ADR-0029 makes the wrapper the baseline; that only means something if both sides see the same
   teacher. This is a real cost of the default change and the most likely way to misread a
   future comparison. It is stated in the plugin's own docstring as well as here.
@@ -99,3 +99,20 @@ the better teacher was also six times more stable.
   because of it: the score-aggregation sweep found no effect under the weaker teacher and a
   0.125 effect under the better one. A null result is only evidence about the configuration it
   was measured in.
+
+## Changelog
+
+**2026-08-08 — new runs stop using the `anomalib` teacher entirely.** The decision above made
+the teacher a variable and set a better default; this narrows it further. The anomalib teacher
+remains a value of `teacher_source` **only so the five experiments recorded against it stay
+loadable** — an experiment's configuration is the record of what it did, and withdrawing a
+value would make those rows unreadable rather than merely obsolete. It is listed last in the
+field and described as what it is.
+
+The consequence above stands but changes character: pinning the teacher for an
+implementation-versus-implementation head-to-head is now a **deliberate exercise** rather than
+something anyone stumbles into, because no default produces it. ADR-0029 still makes the
+wrapper the baseline this method is measured against; it is a baseline this method has left
+behind rather than one it is tracked against run by run.
+
+Amended rather than superseded, per ADR-0030: the decision is unchanged, its scope is narrower.

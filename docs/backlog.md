@@ -81,15 +81,22 @@ same 2.7M-parameter PDN.
   - [x] Resumable, checkpointing on a step interval and on cancellation.
   - [x] The MPS finding: `adaptive_avg_pool1d` is unimplemented for non-divisible lengths, which is
         two of the three pools here. Bins gathered explicitly, pinned against the library kernel.
-  - [ ] A real Imagenette teacher at 10 000 steps, and a student against it (queued overnight).
+  - [ ] A real Imagenette teacher at 10 000 steps, and a student against it (M). **Postponed.**
+        The stage is built and smoke-tested; what is left is machine time, and it is queued
+        behind work with a better return.
+  - [ ] Choose the phase-2 corpus (S). ImageNet-1K is ~150 GB against 139 GB free and needs an
+        account, so it is an acquisition rather than a download. COCO `train2017` is 19 GB with
+        no account, ImageNet-1K `val` is 6.7 GB with one.
   - [ ] An API route so a distill job can be started from the application rather than the CLI (S).
 - [x] **Consume a distilled teacher from the student stage** (S): `teacher_source: "distilled"` plus
       `distilled_teacher`, validating recorded `model_size`, `out_channels` and preprocessing first.
 - [x] **Import the official protocol** (S). VisA `candle` from `split_csv/1cls.csv` — 810/90/200 with
       the published test set byte-identical, training confirmed normal-only from the assignments.
       The old import read `image_anno.csv`, which has no split column at all.
-- [ ] **Run the protocol sweep on it** (S, queued): `efficientad_anomalib`, then `efficientad_custom`
-      with the teacher pinned to `anomalib` for like-for-like, then with `nelson1425`.
+- [ ] **Run the protocol sweep on it** (M). **Postponed.** Three runs at 30 000 steps is about
+      three and a half hours, and the sweep's design changed underneath it: with new runs no
+      longer using the anomalib teacher, the like-for-like leg is a deliberate exercise rather
+      than part of the routine. `protocol.py` is written and takes the budget as an argument.
 - [x] **Make the aggregation comparison repeatable** (S). `scripts/audit-run.py` — per-image CSV plus
       every aggregation recomputed from stored maps, read-only and GPU-free. It overturned its own
       earlier null result the first time it was pointed at a better run.
