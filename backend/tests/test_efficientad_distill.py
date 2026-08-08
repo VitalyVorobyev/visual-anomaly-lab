@@ -180,3 +180,41 @@ def test_an_unknown_distilled_teacher_lists_what_is_there(tmp_path: Path) -> Non
         load_manifest(cache, "wrn-imagenet")
     assert "wrn-imagenette" in str(failure.value)
     assert str(teacher_dir(cache, "wrn-imagenet")) in str(failure.value)
+
+
+@pytest.mark.parametrize(
+    ("length", "target"),
+    [(4608, 1024), (9216, 1024), (2048, 384), (100, 7), (7, 7), (8, 4)],
+)
+def test_the_explicit_pool_matches_the_library_kernel(length: int, target: int) -> None:
+    """The MPS workaround has to be a workaround, not a second definition.
+
+    `F.adaptive_avg_pool1d` is unimplemented on MPS whenever the input length is not a
+    multiple of the output length (pytorch#96056), and two of this stage's three pools are
+    exactly that — 4608 to 1024 and 2048 to 384. The bins are therefore gathered explicitly,
+    and this is what says the explicit version is the same function: overlapping bins, two
+    different widths, and the edge cases where the two implementations would diverge.
+    """
+    from anomaly_lab.models.teacher_distill import _pool_last
+
+    torch.manual_seed(0)
+    values = torch.randn(2, 5, length)
+    ours = _pool_last(values, target, torch)
+    theirs = F.adaptive_avg_pool1d(values.reshape(-1, 1, length), target).reshape(2, 5, target)
+    assert torch.allclose(ours, theirs, rtol=0, atol=1e-6)
+
+
+def test_the_bin_layout_is_the_one_pytorch_documents() -> None:
+    """floor on the start, ceil on the end — which is what makes the bins overlap."""
+    from anomaly_lab.models.teacher_distill import adaptive_bins
+
+    starts, sizes, widest = adaptive_bins(9, 2, torch, torch.device("cpu"))
+    assert starts.tolist() == [0, 4]
+    assert sizes.tolist() == [5, 5]
+    assert widest == 5
+
+    starts, sizes, widest = adaptive_bins(4608, 1024, torch, torch.device("cpu"))
+    # Non-divisible: bins overlap, so the widths are not all equal and the total covered
+    # is greater than the input length. A reshape-based pool cannot express this.
+    assert widest == 5
+    assert int(sizes.sum()) > 4608

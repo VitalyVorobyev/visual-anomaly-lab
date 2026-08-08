@@ -101,6 +101,36 @@ the experiment before using it, and refuses by name on a mismatch. A `.pth` of t
 loads silently whether or not it is the right teacher, which is precisely why the manifest is
 checked instead of the file.
 
+## The smoke run, measured
+
+`--steps 50 --batch-size 1 --normalization-images 16`, on MPS, with a training run already
+occupying the GPU:
+
+| | |
+|---|---|
+| Device | `mps` |
+| Corpus | 13 394 Imagenette images |
+| Rate | **326 ms/step** at batch 1, contended |
+| Source statistics | 384 channels, mean in [0.031, 0.278], std in [0.021, 0.062] |
+| Written | `teacher.pth` 10 779 789 B, `distillation.json`, `checkpoint.pt` 32 MB |
+| Student against it | experiment 18, 50 steps: sample ROC-AUC **0.195** |
+
+**The student's number is the expected one and it is meaningless as accuracy.** Both
+EfficientAD implementations in this repository are *inverted* at 50 steps — 0.226 and 0.227
+are recorded in [the measurements](measurements-efficientad.md) — because an undertrained
+student's error tracks texture rather than defect. A 50-step teacher distilled at batch 1 is
+barely distinguishable from its initialization. What the run demonstrates is that the chain
+holds together: the corpus loads, the source's statistics are measured, the PDN regresses onto
+the right grid, the manifest is written, the student validates it and loads it, and the whole
+thing scores through the ordinary evaluation path.
+
+**Extrapolating to the reference recipe.** At 326 ms/step for batch 1, a batch of 16 will not
+cost 16× — the backbone forward dominates and amortizes — but it will not be free either. The
+reference is 60 000 steps at batch 16 over ImageNet-1K. **Measure the rate from your own
+batch-size-4 run before starting anything long**; on this hardware the honest expectation for a
+full reference-recipe distillation is measured in days, not hours, and that is the reason
+`--corpus directory` is opt-in.
+
 ## What is written
 
 `data/model-cache/efficientad-teacher-distilled/<name>/`:

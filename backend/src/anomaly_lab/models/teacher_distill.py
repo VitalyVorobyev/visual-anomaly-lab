@@ -221,18 +221,57 @@ def _patchify(feature: Any, torch_module: Any) -> tuple[Any, tuple[int, int]]:
     )
 
 
+def adaptive_bins(length: int, target: int, torch_module: Any, device: Any) -> tuple[Any, Any, int]:
+    """The `(start, size)` of every bin `adaptive_avg_pool1d` would use, and the widest.
+
+    PyTorch defines bin `i` as `[floor(i * L / O), ceil((i + 1) * L / O))`. When `L` is not a
+    multiple of `O` those bins **overlap** and have two different widths, which is why no
+    reshape trick reproduces this and why it has to be spelled out.
+    """
+    index = torch_module.arange(target, device=device)
+    starts = (index * length) // target
+    ends = -((-(index + 1) * length) // target)  # ceil division, integer-only
+    sizes = ends - starts
+    return starts, sizes, int(sizes.max())
+
+
 def _pool_last(flat: Any, target: int, torch_module: Any) -> Any:
-    """Adaptive average pool over the last dimension, chunked across positions."""
-    batch, positions, _ = flat.shape
+    """Adaptive average pool over the last dimension, chunked across positions.
+
+    **Not `F.adaptive_avg_pool1d`, because MPS refuses it.** That kernel is unimplemented on
+    MPS whenever the input length is not a multiple of the output length
+    (pytorch#96056) — and two of the three pools here are exactly that: 4608 to 1024, and
+    2048 to 384. The failure is a hard `RuntimeError` at the first step, not a slow path.
+
+    So the bins are gathered explicitly: at most `ceil(L / O) + 1` inputs contribute to any
+    output, so a gather of that fixed width plus a masked sum is both exact and *cheaper*
+    than the library op — five multiply-adds per output instead of a reduction over 4608.
+    The divisible case still takes the library kernel, which MPS does implement.
+    """
+    batch, positions, length = flat.shape
     out = torch_module.empty(batch, positions, target, device=flat.device, dtype=flat.dtype)
+    divisible = length % target == 0
+    if not divisible:
+        starts, sizes, widest = adaptive_bins(length, target, torch_module, flat.device)
+        offsets = torch_module.arange(widest, device=flat.device)
+        indices = (starts[:, None] + offsets[None, :]).clamp_(max=length - 1)
+        mask = (offsets[None, :] < sizes[:, None]).to(flat.dtype)
+        divisor = sizes.to(flat.dtype)[None, None, :]
+
     for start in range(0, positions, POOL_CHUNK):
         stop = min(start + POOL_CHUNK, positions)
         piece = flat[:, start:stop]
-        shape = piece.shape
-        pooled = torch_module.nn.functional.adaptive_avg_pool1d(
-            piece.reshape(-1, 1, shape[-1]), target
-        )
-        out[:, start:stop] = pooled.reshape(shape[0], shape[1], target)
+        if divisible:
+            shape = piece.shape
+            pooled = torch_module.nn.functional.adaptive_avg_pool1d(
+                piece.reshape(-1, 1, shape[-1]), target
+            )
+            out[:, start:stop] = pooled.reshape(shape[0], shape[1], target)
+        else:
+            gathered = piece[..., indices.reshape(-1)].reshape(
+                piece.shape[0], piece.shape[1], target, -1
+            )
+            out[:, start:stop] = (gathered * mask).sum(dim=-1) / divisor
     return out
 
 
