@@ -1,320 +1,149 @@
 # Roadmap
 
-**visual-anomaly-lab** is a local desktop workbench for training, evaluating and comparing visual anomaly-detection methods. The goal is a *universal* anomaly-detection explorer for arbitrary image datasets, validated against public benchmarks whose published numbers can be checked against our own (**ADR-0015**). The private showcase dataset, images of a manufactured circular part, is one reference dataset among them, and only the classical baseline is showcase-dataset-specific (**ADR-0010**). The loop: import a dataset, browse grouped multi-view samples, train and compare methods under one evaluation protocol, and inspect anomaly-map overlays.
+**visual-anomaly-lab** is a local desktop workbench for training, evaluating and comparing visual
+anomaly-detection methods on arbitrary image datasets, validated against public benchmarks whose
+published numbers can be checked against our own (**ADR-0015**). The private showcase dataset —
+images of a manufactured circular part — is one reference dataset among them, and only the classical
+baseline is showcase-specific (**ADR-0010**).
 
-This roadmap follows the delivery order the brief asks for — *plan first* (M0: system design, ADRs, repo safety), *then one working vertical slice end-to-end with a single method* (M1 walking skeleton → M2 import and browse → M3 the six vertical-slice capabilities), *then the depth and the remaining methods behind the same interface* (M4 the workbench UI, M5 comparison, M6 custom EfficientAD, M7 PatchCore, M8 the classical baseline), *then the README* (M9). Nothing in M5–M8 is allowed to change the application outside the model plugin boundary (**ADR-0007**); if it does, the slice was not actually vertical.
+Delivery order: plan first, then one working vertical slice end to end with a single method, then
+depth and the remaining methods behind the same interface. **Nothing from M5 on may change the
+application outside the model plugin boundary** (**ADR-0007**); if it does, the slice was not
+actually vertical.
 
-**The order changed after M2.** M3 originally ran the vertical slice on `classical_circular`, which would have made the first end-to-end proof of the architecture a proof that it works for one dataset. The slice now runs on a dataset-agnostic method against public benchmarks, and the classical baseline moved to an optional M8. **ADR-0015** records why and what it costs.
+Sizing is honest, not aspirational: one developer plus Claude Code on an Apple Silicon Mac, evenings
+and weekends. Milestones are sequential, and the [backlog](backlog.md) is re-triaged after each one.
 
-**Sizing is honest, not aspirational.** This is one developer plus Claude Code on an Apple Silicon Mac, working in evenings and weekends. M0 and M1 are day-scale. **M2 and M3 are the two big ones**; they carry the whole product surface (import, browse, jobs, evaluation, three UI screens) and everything after them is comparatively cheap because it reuses that machinery. M3 carries real schedule risk: anomalib on MPS is the one place where an upstream incompatibility could cost days, which is why the smoke test comes before the wrapper. M4 is large but low-risk frontend work over a contract that already exists. M6 is large but isolated — a from-scratch paper reimplementation that touches nothing but one plugin. Milestones are strictly sequential; the backlog ([backlog.md](backlog.md)) is re-triaged at the end of each one.
-
----
-
-## M0 — Repo safety + foundation docs
-
-**Status: complete (2026-08-06).**
-
-**Goal.** Make it impossible to leak the private dataset by accident, and write down the architecture before writing any application code, so that the vertical slice is implemented against a decided design rather than an improvised one.
-
-**Scope**
-
-- Hardened `.gitignore`: `privatedata/`, `*.bmp` / `*.BMP` as defense in depth, `data/`, model artifact extensions, SQLite files (**ADR-0001**).
-- `scripts/check-repo-safety.sh` — pre-push verification that nothing private is staged or tracked.
-- `README.md` stub with the private-data warning and pointers into `docs/`.
-- `docs/system-design.md` — architecture, domain model, API surface, directory layout.
-- `docs/roadmap.md` and `docs/backlog.md` (this document and its companion).
-- ADRs 0001–0011: private data isolation, monorepo layout, FastAPI sidecar, SQLite + filesystem artifacts, domain model, import adapters + manifest, model plugin interface, hybrid DL strategy on MPS, subprocess jobs, classical baseline algorithm, evaluation protocol.
-- First commit and push to GitHub, verified clean.
-
-**Exit criteria**
-
-- [x] `git check-ignore -v` returns a match for real paths under `privatedata/` (not just the directory name — an actual `.bmp` file path several levels deep).
-- [x] `git ls-files` contains no image files of any extension; `scripts/check-repo-safety.sh` exits 0.
-- [x] `docs/system-design.md`, `docs/roadmap.md`, `docs/backlog.md` and ADRs 0001–0011 are mutually consistent: same terminology (Dataset, Channel, Sample, Image, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet), same registry keys (`classical_circular`, `efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom`), no contradictory claims about storage or process boundaries.
-- [x] Repository pushed to GitHub; the pushed tree contains documentation and scripts only.
-
-**Size:** days. Mostly writing, and the writing is the point — every hour here removes a day of rework in M2/M3.
+**Completed milestones below are summaries.** Each keeps only what still constrains future work; the
+narrative of how each finding was reached lives in the git history and in the ADRs it produced.
 
 ---
 
-## M1 — Walking skeleton
+## Done
 
-**Status: complete (2026-08-06).**
+### M0 — Repo safety + foundation docs · complete 2026-08-06
 
-**Goal.** Get one thin thread of every technology in the stack running at once: Tauri window → React app → HTTP + WebSocket → FastAPI sidecar → SQLite. No features, just the wiring, so that later milestones never have to debug infrastructure and a feature at the same time.
+Layered ignore rules, `scripts/check-repo-safety.sh`, and ADRs 0001–0011 written before any
+application code, so the vertical slice was implemented against a decided design.
 
-**Scope**
+**Still binds:** the private-data arrangement was reconsidered in **ADR-0022** — source images now
+live *outside* the working tree, so the guards are defence in depth rather than the only control.
 
-- `uv`-managed Python backend package on Python 3.12; FastAPI app with `GET /api/health` returning version and database status (**ADR-0003**).
-- SQLite migration runner (forward-only, versioned SQL files, `PRAGMA user_version`) and schema v1 covering every entity in the domain model (**ADR-0004**, **ADR-0005**).
-- Vite + React + TypeScript frontend scaffold: routing, application shell, and an API client generated from the backend's OpenAPI schema (**ADR-0012**).
-- Tauri desktop shell that spawns the sidecar as a child process, reads the chosen port back from it, and tears the process down on window close — including the crash and force-quit paths.
-- WebSocket echo endpoint proven end-to-end from the React app.
-- Dev scripts: run backend alone, run frontend alone against it, run the full desktop app.
-- Guardrails: `ruff`, `mypy --strict`, `pytest`, `vitest`, a versioned pre-commit hook running the private-data guard, and CI.
+### M1 — Walking skeleton · complete 2026-08-06
 
-**Exit criteria**
+Tauri shell spawning a FastAPI sidecar on an OS-chosen port, announced back over stdout; health
+screen; the job queue and its WebSocket; CI.
 
-- [x] The desktop app opens and displays live backend health (version, schema version, DB path) fetched from the spawned sidecar.
-- [x] The *same* React UI, served by `vite dev` in an ordinary browser, works against a manually started `uv run` backend — the browser path stays first-class for the whole project, because it is how debugging will actually happen.
-- [x] Closing the app leaves no orphaned Python process (verified with `ps`).
-- [x] A fresh clone reaches a running app using only the documented dev scripts.
+**Still binds:** the browser path is first class — the same UI runs against a manually started
+backend, and that is where most debugging happens.
 
-**Size:** days. Mostly scaffolding; the only genuinely fiddly part is sidecar lifecycle and port handoff.
+### M2 — Import + browse · complete 2026-08-06
 
-**What the fiddly part actually turned out to be.** Three things, all worth knowing before M7 touches packaging:
-`uv run` sits between the shell and the interpreter, so the sidecar's orphan watchdog must probe the *recorded*
-parent pid rather than compare `os.getppid()`; macOS keeps an application alive after its last window closes,
-which would strand a sidecar; and a path-based router renders a blank page when the WebView loads
-`…/index.html`, which is why routing is fragment-based (**ADR-0012**).
+Two-phase import (scan → reviewable manifest → commit), the media tier cache, sample browsing and
+labelling, seeded sample-level splits.
 
----
+**Still binds:** import runs on the *same* job machinery as training, which is why training needed no
+second progress mechanism. Adapter option forms are generated from each adapter's JSON Schema.
 
-## M2 — Import + browse
+### M3 — Universal vertical slice · complete 2026-08-07
 
-**Status: complete (2026-08-06).**
+The loop closes: import a directory tree or a public benchmark, browse and label it, adopt or draw a
+split, train, score, and read image- and pixel-level metrics with a working overlay. Two methods
+ship: `pixel_reference` and `efficientad_anomalib`. The diagnostics contract (**ADR-0018**) and the
+evaluation layer (**ADR-0011**, **ADR-0017**) both date from here.
 
-**Goal.** Turn 3.2 GB of BMPs on disk into a queryable dataset of grouped samples, and make browsing them fast enough to be pleasant. This is the first milestone that touches the real data, so it is also where the data's irregularities have to be handled rather than assumed away.
+**Still binds:**
 
-**Scope**
+- **CI installs without `--extra dl`.** The torch-free environment demonstrably runs ruff, format,
+  `mypy --strict` and the suite, so the `dl` boundary is measured rather than asserted. Anything
+  added to the evaluation path must stay torch-free. Found when CI ran for the first time, having
+  been dead since M1 behind a tag that resolved to nothing — the lesson being that "verification is
+  green" was asserted from local runs while the authoritative one was red.
+- **Score normalization moves ROC-AUC**, despite the metric being threshold-free. EfficientAD scores
+  `max_p [ w_st·map_st[p] + w_ae·map_stae[p] ]` and the two weights come from *different* quantile
+  pairs, so the fit sets their **ratio** — the relative influence of the two branches before the max
+  — and images reorder. Measured at a fixed 4 000 steps on a byte-identical test set: fitting the
+  quantiles on 90 genuinely held-out normals rather than on the training normals moved sample
+  ROC-AUC 0.744 → **0.769**, pixel ROC-AUC 0.853 → **0.873**, AU-PRO 0.571 → **0.595** — and that
+  understates it, since the holdout also costs 90 training images.
+- **The EfficientAD wrapper does not use Lightning.** `EfficientAd.on_train_start` reads
+  `self.trainer.datamodule`, so the Lightning path means adopting anomalib's preprocessing and
+  breaking the property that makes any comparison meaningful. anomalib supplies the architecture,
+  losses, maps, pretrained teacher and statistics; the training loop is ours. The cost is that our
+  loop can drift from theirs; the benefit is that cancellation lands within one step — and that
+  warm-starting a run is tractable at all.
+- **The published EfficientAD figure was not reproduced.** The gap is measured and broken down into
+  what was ruled out and what was left untested by decision, rather than asserted away. Default
+  `max_steps` is 4 000 against the paper's 70 000, which any comparison against a published number
+  inherits.
 
-- Manifest schema and the `channel_folders` import adapter: scan a directory tree, canonicalize channel names, group images into samples, compute `sha256`, and emit a reviewable manifest before anything is written to the database (**ADR-0006**).
-- Import review UI: proposed samples, detected channels, and **explicit warnings** for irregular groups — the 2-channel group in `unsorted/`, ungroupable orphans, duplicate hashes, unreadable files. Channel count is data, never a constant (**ADR-0005**).
-- Import **scan** runs as a Job with progress; commit is one synchronous transaction, because
-  the expensive work is the walk and the hash, not the few hundred inserts (**ADR-0009**, **ADR-0013**).
-- Dataset browser: virtualized thumbnail grid with label and channel filters.
-- Grouped sample viewer: one sample, channel tabs, zoom/pan, metadata panel.
-- Split creation: seeded, **sample-level** (never image-level — no channel of a sample may straddle the split boundary), normal-only training set, labeled normals and defects in val/test (**ADR-0011**).
-- Thumbnail and preview cache under `data/`, with a post-import pre-warm job.
-- Dataset verify operation: re-check that every recorded path exists and its `sha256` still matches.
+### M4 — The researcher's workbench UI · complete 2026-08-07
 
-**Exit criteria**
+Architecture view from a real forward pass, teacher inspector, live training charts, benchmark
+charts, per-branch diagnostic overlays. Every view renders by diagnostic `kind` and never by method
+name, so a future method inherits all of them (**ADR-0018**). Charts are hand-rolled SVG, not a
+library.
 
-- [x] `set1` + `set2` import as **189 samples** (98 normal + 91 defect), each with its illumination channels correctly grouped; the count is asserted, not eyeballed — see `backend/tests/test_showcase_import.py`, which runs against the private tree on demand and is skipped everywhere else.
-- [x] The irregular tree imports as **113 unlabeled samples** with its 2-channel group surfaced as a warning rather than silently dropped or padded, and the commit is blocked until that warning is acknowledged. *Rewritten from the original wording: the labelled corpus is `set1` + `set2` only, because the third tree has no clean defect / no-defect split. It is imported as a separate dataset during verification, which is what keeps the variable-channel-count path exercised against real data rather than only against fixtures.*
-- [x] Scrolling the browser over the full dataset is fluid — the grid requests the `thumb` tier and nothing else, verified in the network panel.
-- [x] A created split persists across an application relaunch and reports its exact composition (samples per subset, normal/defect counts).
-- [x] Re-running import on an already-imported directory is idempotent — no duplicate samples.
+**Still binds:**
 
-**Size:** **1–2 weeks — one of the two big milestones.** The adapter is fiddly (real filenames are messier than expected), the review UI is real UI work, and the media cache has to be built properly or every later milestone feels slow.
+- **`GET /api/jobs/{id}/metrics` replays scalar series from the job log** (**ADR-0020**), because
+  `metric` events are streamed and stored in no column. The read is linear in the log's size on
+  every request — the first thing to look at if a comparison view ever asks for several runs at once.
+- **Val AUROC per epoch was not delivered, by decision.** `TrainContext.val` is a bare sequence with
+  no labels and the train handler filters it to normals (**ADR-0011**), so `roc_auc` correctly
+  returns `None`. Delivering it means giving `TrainContext` labelled validation data, which is an
+  **ADR-0007** change and a decision of its own. In the backlog.
+- **Pixel-level ROC and PR curves cannot be drawn.** The pixel accumulator streams its histograms and
+  discards them by design (**ADR-0017**), so the curve would mean re-reading every anomaly map. The
+  benchmark tab says so on screen. The pixel ROC-AUC and AU-PRO themselves are unaffected.
 
-**What measuring the data changed.** Three things, recorded in **ADR-0013**. The files that
-were assumed not to group by stem do group, perfectly. Hashing the whole corpus takes about
-two seconds rather than the minutes assumed, so the scan is cheap and *thumbnail rendering*
-is the slow operation that actually justifies the job system. And one capture group has its
-channel name fused into its own directory name, which a component-matching adapter reads as
-twice as many single-image samples with no error anywhere — the reason channel matching is
-token-level. **The ADR-0009 job machinery was built here rather than in M3**, since M2 needs
-it for the scan and the pre-warm; M3 adds train and infer by writing one handler each.
+### M4.5 — The UI/UX pass · complete 2026-08-07
 
----
+Unplanned, taken before M5 on the grounds that a comparison screen built in the old idiom would have
+to be rebuilt in the new one. A semantic token layer, light and dark themes with a three-state
+toggle, a primitive set under `components/ui/`, and a visible focus ring the application did not
+previously have anywhere (**ADR-0021**).
 
-## M3 — Universal vertical slice on EfficientAD
+**Still binds:** the chrome carries no saturation, so the data can be loud — full colour belongs to
+charts and images. `enum` is read before `type` and `$ref` resolves through `$defs`, so every
+pydantic shape reaches the right control. **An empty control means unset**, and defaults live in
+Python alone.
 
-**Status: complete (2026-08-07).** The loop closes: import a directory tree or a public benchmark, browse and label it, adopt or draw a split, train a method, score it, and read image- and pixel-level metrics with a working overlay. One exit criterion carries a recorded caveat rather than a clean pass — the EfficientAD image-level number sits below the published figure, with the gap broken down into what was measured, what was ruled out, and what was left untested by decision.
+### M4.6 — Reachability · complete 2026-08-08
 
-**Goal.** Deliver all six capabilities the brief requires from the vertical slice — import, display, create experiment, train/run a method, show scores and maps, persist and reopen results — on a **dataset-agnostic** method, measured against public benchmarks whose published numbers we can check ourselves against (**ADR-0015**). When this milestone closes, the application is *complete in shape*; everything afterwards is a new plugin or a new view.
+Unplanned, taken before M5 because the workbench had built views nobody could reach. A finished run
+did not refresh its own screen, so the Benchmark tab stayed disabled and the run list stayed on
+`queued` until the user navigated away and back. Everything else followed from looking at the
+running application.
 
-The milestone was re-aimed after M2. It previously put `classical_circular` first, which would have made the first end-to-end proof of the architecture a proof that it works for one dataset. The infrastructure in scope was always method-agnostic; only the first method changed.
+What shipped: a **Samples** gallery ranking every scored sample as a picture, filterable by outcome
+(*mistakes* = FP + FN); the sample page rebuilt around a full-height canvas with prev/next, zoom and
+pan; an **anomaly segmentation** overlay that can be laid against the ground-truth outline; the
+artifact directory surfaced with a *Reveal in Finder* shell capability (**ADR-0014**'s anticipated
+second one); and the per-image diagnostics budget spread across the run instead of taking its first
+twelve images.
 
-**Scope**
+**Still binds:**
 
-- **Import layer for public datasets (done).** `folder_classes` — point at the directories holding defect-free and defective images; one image becomes one sample with no channel, which is also the first thing to exercise the single-view path (**ADR-0016**). `csv_table` — every column name configurable, so a benchmark's own split table is read rather than re-drawn. Masks enter the catalog and `verify` walks them. `SplitStrategy.IMPORTED` materializes a published partition. The adapter-options form is generated from each adapter's JSON Schema, as **ADR-0006** always specified and as nothing previously implemented.
-- **Bulk labelling and sample paging (done).** Label a whole filtered set in one action; walk an open sample's neighbours with the arrow keys, auto-advancing after each label.
-- Model plugin interface (`fit` / `predict` / `save` / `load` / config JSON Schema) and a registry keyed by method name (**ADR-0007**).
-- `train` and `infer` job handlers — one registry entry and one function each. The queue, protocol, cancellation, log tee-ing and WebSocket fan-out were built in M2 and are kind-agnostic; if either needs a change inside them, that is a finding about the boundary.
-- **The diagnostics contract.** `Capabilities.produces_diagnostics`, and `ctx.emit_diagnostic(key, title, kind, payload)` writing float32 `.npy` maps under `artifacts/exp-<id>/diagnostics/` behind a self-describing `diagnostics.json`. Scalar series reuse the **existing** `metric` job event, which is itself a test of **ADR-0009**. M4's visualization is built once against this and never branches on model name.
-- MPS smoke test **first**, as a standalone script, before any wrapper code (**ADR-0008**). Preprocessing config bridge so every method sees identical inputs.
-- `efficientad_anomalib`: `fit` / `predict` / `save` / `load`, a Lightning callback mapping epochs and per-branch losses onto the job protocol, and diagnostics from forward hooks on the teacher, student and autoencoder. The ImageNette penalty set is an explicit, visible, cancellable download step — not a hidden network call in a tool that claims to be local-only.
-- `pixel_reference`: the dataset-agnostic floor baseline. numpy and Pillow only, trains in seconds, exercises the whole results path before torch is involved.
-- Evaluation layer, independent of any model (**ADR-0011**): channel→sample aggregation, sample- and image-level ROC-AUC, average precision, ranked lists, timing — **plus pixel-level ROC-AUC and PRO** over the samples that have masks. Pixel metrics stream through a fixed-bin score histogram rather than accumulating maps, so memory stays constant in the number of test images.
-- Experiment screens: create (config form from the plugin's JSON Schema), progress + live logs, results with a threshold slider, confusion matrix and TP/FP/TN/FN lists, and a sample viewer with an anomaly-map overlay and ground-truth mask contours.
-
-**Exit criteria**
-
-- [x] A whole filtered set of samples is labelled in **one action**, and an open sample pages to its neighbours with the arrow keys, auto-advancing after each label.
-- [x] `git check-ignore` matches `datasets/…` and does **not** match the backend datasets package; `scripts/check-repo-safety.sh` exits 0 with a `datasets/` rule in place.
-- [x] GKN imports through `folder_classes` as 203 normal + 197 defect single-image samples, with `Nick` / `Scratch` recorded as the defect type.
-- [x] One VisA class imports through `csv_table` with its **official** train/test split (900 train normal, 100 test normal, 100 test anomaly) and its 100 ground-truth masks attached, and `verify` reports no drift on either.
-- [x] The import screen's options form is generated from the adapter's schema, and a required option blocks the scan with the field named.
-- [x] The **MPS smoke test runs first**, as a standalone script, before any wrapper code (**ADR-0008**). Measured on this Mac: MPS 123 ms/step against CPU 295 ms. It earned itself immediately — EfficientAD's penalty batch defaults to `None` in the signature and is dereferenced unconditionally in training, which the script found before a line of wrapper existed.
-- [x] EfficientAD trains to completion on this Mac (MPS, with a documented CPU fallback and its runtime) on that split. Two runs at the default 256×256: **4 000 steps in 526 s** and **20 000 steps in 2 624 s**, both on MPS, inference 46.3 ms/image. The CPU fallback is selected automatically when MPS is unavailable and costs the ratio the smoke test measured — 295 against 123 ms/step, so roughly 2.4× — putting the 20 000-step run near 1 h 45 m on CPU. That ratio is measured per step; no full CPU run was made, and the number is presented as the extrapolation it is.
-- [x] Image-level and **pixel-level** ROC-AUC are both reported, and the gap against the published VisA figure is accounted for rather than waved at. Best run — 20 000 steps on the official split — is **0.809 sample ROC-AUC, 0.810 image AP, 0.933 pixel ROC-AUC, 0.809 AU-PRO**, against a published EfficientAD figure of roughly 0.98 image AU-ROC (reported as a mean over the twelve VisA classes, not for candle alone). The gap is real and is broken down below rather than left as a number.
-
-  *Measured, by controlled experiment:*
-
-  | | sample ROC-AUC | pixel ROC-AUC | AU-PRO |
-  | --- | --- | --- | --- |
-  | 4 000 steps, official split | 0.744 | 0.853 | 0.571 |
-  | 4 000 steps, quantiles on held-out normals | 0.769 | 0.873 | 0.595 |
-  | 20 000 steps, official split | **0.809** | **0.933** | **0.809** |
-
-  Step count is the larger effect (+0.065 image, +0.080 pixel, +0.238 AU-PRO from 4 000 to 20 000);
-  score-normalization calibration is the smaller one (+0.025 image at fixed steps on a byte-identical
-  test set), and is a lower bound because the holdout also costs 90 training images.
-
-  *Ruled out by reading anomalib's source rather than by assumption:* input normalization
-  (`imagenet_norm_batch` runs inside every branch's forward, so `[0, 1]` tensors are what it wants);
-  preprocessing (anomalib's own EfficientAD pre-processor is a bare `Resize` and it *rejects* a
-  `Normalize` in the transform, which is exactly what our bridge feeds); optimizer and schedule
-  (Adam plus `StepLR(0.95 · max_steps, γ = 0.1)`, identical); batch size 1; and the penalty
-  pipeline, since `prepare_imagenette_data` is anomalib's routine called directly.
-
-  *Named and untested:* the paper trains **70 000 steps**, 3.5× what was run here, and the measured
-  trend points that way — that run was started and then deliberately stopped, so it is deferred, not
-  overlooked. Two smaller candidates remain open: `model_size` is `small` (EfficientAD-S) where
-  headline tables often quote the -M variant, and the training loop samples uniformly *with
-  replacement* where a shuffled `DataLoader` would not.
-- [x] `pixel_reference` runs on the same split through the identical interface and the same results screen, giving the deep result a floor to beat: **0.814 sample ROC-AUC, 0.888 pixel ROC-AUC, 0.808 AU-PRO** on VisA candle, trained and scored in 6 seconds on CPU.
-- [x] Adding both methods required **no** change to the queue, protocol, cancellation or fan-out — each cost one registry entry and one handler function. Two defects were *found* in the queue by the first job long enough to draw a progress bar, and are recorded below rather than papered over.
-- [x] Anomaly maps overlay in spatial alignment with the source image, with ground-truth contours where masks exist.
-- [x] Force-quitting the app mid-training leaves an orphan-free system, and the interrupted Job is marked `failed` with its log preserved on the next startup.
-- [x] Closing and reopening the app restores the experiment list; any past experiment reopens with identical numbers — nothing is recomputed on read, so this is structural rather than lucky.
-
-**Findings recorded during M3**
-
-Two are about the job machinery M2 built, and were invisible until a job ran for more than a few
-seconds while a library drew a progress bar:
-
-- **`readline` cannot read a progress bar.** `asyncio.StreamReader.readline` raises `ValueError`
-  past a 64 KiB line, and tqdm separates its frames with `\r`, never `\n` — so a progress bar is
-  one line, and a long enough download makes it an over-long one. Worker output is now read in
-  chunks and split on both terminators, which also makes the log tail render as a terminal would.
-- **The runner had no guard.** That `ValueError` escaped `_execute` and killed the runner task.
-  Because nothing awaited it the failure was silent: the running job stayed `running` for ever and
-  every later job stayed `queued`, with no error anywhere. `_execute` now finalizes its own job on
-  failure and kills the worker, and the runner loop survives anything `_execute` can raise.
-
-One is about the verification itself, and it invalidated a claim made repeatedly before it was
-caught:
-
-- **CI had never run, on any commit, since it was written in M1.** The workflow pinned
-  `astral-sh/setup-uv@v9` — `v9.0.0` is a real release, but that repository publishes floating
-  major tags only through `v7`, so `@v9` resolved to nothing and both uv-dependent jobs died inside
-  "Set up job" before checking anything out. Frontend, Repo safety and Tauri shell passed
-  throughout, which is exactly why it read as a partial failure rather than a dead workflow. With
-  it fixed, the Backend job ran for the first time and immediately failed on something real: CI
-  installs `uv sync --locked` **without** `--extra dl`, so `torch` is absent, and the mypy override
-  beside the two lazy `import torch` statements covered `anomalib` and `torchvision` but not
-  `torch`. It passed locally only because this machine has the extra installed. The lesson is not
-  the tag — it is that "verification is green" was being asserted from local runs while the
-  authoritative one was red. A useful side effect: the torch-free environment now demonstrably runs
-  ruff, format, `mypy --strict` and 339 passed / 6 skipped, so the `dl`-extra boundary that
-  `CLAUDE.md` asserts is measured rather than assumed.
-
-Three more were found by running the thing and looking at it, rather than by a test:
-
-- **A stored anomaly map with a stray channel axis** was accepted by `write_map` and failed
-  minutes later inside the evaluation layer, with an error naming a dtype rather than the
-  plugin. Maps are squeezed and checked where they are written.
-- **The inference run's diagnostics index erased the training run's**, leaving the
-  architecture graph on disk but unreferenced. The index is merged on `(key, image_id)`.
-- **An experiment left mid-training by a crash stayed `training` for ever.** Jobs were
-  reconciled at startup; experiments were not. On screen, `training` is indistinguishable
-  from a run genuinely in progress.
-
-And two are about how the results read rather than whether they are right:
-
-- **The anomaly-map overlay tinted the whole photograph.** A colormap's low end is still a
-  colour, so at any opacity and under any blend mode the regions where the model found
-  nothing looked as processed as the region where it found something. Alpha now follows the
-  score.
-- **A model's configuration panel was an empty box.** The rule that folds away
-  already-defaulted options is right for an adapter and leaves a model — whose
-  hyperparameters all have defaults — showing nothing at all.
-
-Two are about the method:
-
-- **"ROC-AUC is threshold-free, so the score normalization cannot affect it" is wrong**, and it
-  was written into the wrapper as a reassurance next to the fallback that triggers it. EfficientAD
-  scores an image as `max_p [ w_st·map_st[p] + w_ae·map_stae[p] ]`, and the two weights come from
-  *different* quantile pairs. A shared scale and an offset are monotone and genuinely cannot move a
-  ranking — but the fit decides the **ratio** of the two weights, which is the relative influence of
-  the student-teacher and autoencoder branches before the max. Change it and images reorder, which
-  is exactly what ROC-AUC measures. Measured, not argued: at a fixed 4 000 steps on a byte-identical
-  test set, fitting the quantiles on 90 genuinely held-out normals instead of on the training
-  normals moved sample ROC-AUC 0.744 → **0.769**, pixel ROC-AUC 0.853 → **0.873** and AU-PRO
-  0.571 → **0.595** — and that understates it, since the holdout also costs 90 training images.
-  `holdout_from_train` exists so this is testable without touching the published test set.
-- **The EfficientAD wrapper does not use Lightning**, as the plan assumed it would.
-  `EfficientAd.on_train_start` reads `self.trainer.datamodule`, so the Lightning path means adopting
-  anomalib's datamodule and with it anomalib's preprocessing — which would break the property that
-  makes any comparison meaningful. anomalib still supplies the architecture, the losses, the maps,
-  the pretrained teacher and the statistics routines. Recorded in the module and in **ADR-0018**'s
-  neighbourhood; the cost is that our loop can drift from theirs.
-
-**Size:** **2–3 weeks — the big milestone.** The EfficientAD integration carries the schedule risk; the import layer and labelling workflow landed first and are usable on their own.
+- **A working overlay can read as a missing feature.** `alpha_follows_score` is correct and is what
+  keeps a map from tinting the whole photograph, but the run-wide high end is set by the hottest
+  image in the run, so a mid-scoring image is legitimately almost transparent. The segmentation
+  layer and the printed scale exist because of this.
+- **A segmentation cut is a *display* decision** in map units, taken as a fraction of the run-wide
+  range so it is the same cut on every image. It feeds no metric, and is deliberately never
+  conflated with the sample-score threshold or with the pixel metrics, which integrate over every
+  threshold.
+- **A rank order can be inverted and look right.** "Most anomalous" opened the grid on the cleanest
+  samples in the run for as long as it took to read the scores under the tiles. Pinned by a test.
+- **`openapi-typescript` emits a property with a literal `default` as required**, which forces every
+  caller to restate it — which is how the frontend came to pin a value that silently overrode the
+  Python default for two milestones. `default_factory` keeps a default in Python and off the wire.
 
 ---
 
-## M4 — The researcher's workbench UI
+## Next
 
-**Status: complete (2026-08-07),** with one scope item deliberately not delivered and recorded below.
-
-**Goal.** Make the method *legible*, not just runnable. Everything here is built on M3's diagnostics contract, so it renders whatever a model declares and never branches on model name.
-
-**Scope**
-
-- **Model architecture view** — interactive PDN teacher / student / autoencoder diagram with real tensor shapes and parameter counts, generated from a dry forward pass rather than hand-drawn, so it cannot go stale.
-- **Teacher inspector** — pick a sample and see the input, the teacher's feature maps as both a PCA-to-RGB composite and a per-channel small-multiples grid, and a feature-magnitude heatmap.
-- **Training charts** — per-branch loss curves (`loss_st` / `loss_ae` / `loss_stae`), learning rate, quantile-normalization parameters, and val AUROC per epoch where a val subset exists. Fed by the `metric` events already streaming over the WebSocket.
-- **Benchmark charts** — score histograms by class with the threshold drawn on them, ROC and PR curves, confusion matrix, per-defect-type breakdown (from the `notes` an adapter recorded), timing summary.
-- **Diagnostic overlays** — student–teacher error and autoencoder–student error side by side against the combined map and the ground-truth mask.
-
-**Charting: hand-rolled SVG primitives** in `frontend/src/components/charts/`, not a charting library. The chart types needed are few and simple, the frontend is deliberately on current React / TypeScript / Tailwind, and adding a library that lags those versions would mean either downgrading the project or isolating a laggard — a cost that outweighs five straightforward chart components.
-
-**Exit criteria**
-
-- [x] A researcher can see what the teacher produces on a chosen sample, without reading any code. The *Inspector* tab renders every run-scoped picture a method recorded, with the plugin's own description under each. Per-image diagnostics render on the sample page beside the combined map they decompose, which is the comparison that makes a two-branch method legible.
-- [x] Training is watchable live: per-branch losses update as the run progresses, and the charts survive a page reload mid-run. **This did not work and could not have**, and finding out why is the milestone's main finding — see below.
-- [x] The architecture view's shapes and parameter counts are read from the model, and a change to the model's configuration is visible in the diagram without any edit here. The `graph` payload is captured from a dry forward pass at the experiment's own preprocessing size, so changing that size and retraining changes the diagram with no frontend edit.
-- [x] Every visualization is driven by the diagnostics contract, so `efficientad_custom` gets all of them for free in M6. Pinned by a test rather than asserted: `DiagnosticsPanel.test.tsx` feeds the panel an index containing a kind this build has never heard of, and the same key emitted once as `image` and once as `map`.
-
-**Findings recorded during M4**
-
-- **The exit criterion "the charts survive a page reload" was not reachable from what M3 built**, and the shape of the gap was invisible until a chart needed the data. `metric` events are streamed and tee'd to the job log, and stored in no column: `_observe` handles `progress`, `done` and `error`, and a `MetricEvent` falls through with no branch. The only history served was `log_tail`, 200 raw lines of a stream that also carries progress frames and library chatter — for a 20 000-step run, its final seconds. A chart rebuilt from that would have *looked* like a chart. The fix reads the job's own log file, which was already the durable copy of the stream, so it cost no table and no migration (**ADR-0020**).
-- **The diagnostics contract had a write half and no read half.** M3's index names `map`, `image` and `grid` payloads by a path relative to the diagnostics directory, and no route resolved it — the views had an index of things they could name and not fetch. Serving them by that path would have put a client-supplied string on the filesystem, so the payload route resolves `(key, image_id)` *through* the index instead (**ADR-0019**).
-- **Diagnostic arrays had no run-wide display range**, so twelve images' student-teacher error would have been twelve independent normalizations presented as a comparison — the exact mistake `render_anomaly_map`'s own docstring warns about for anomaly maps. The writer now records one span per key, with a 99.9th-percentile high end so a single hot pixel cannot flatten the key to black.
-- **Score-driven alpha is an *overlay* decision and is wrong outside an overlay.** It is what keeps a map from tinting the whole photograph; in a diagnostics panel beside an opaque per-branch map it makes a clean image render blank and puts the two panes on visibly different scales, which defeats the comparison the panel exists for. Both renderers now take a flag.
-- **"Snapshot, then subscribe" is now two requests, and gating on one of them is a bug that looks like working software.** Found by reloading during a real training run: the job snapshot is the smaller request and lands first, so the socket opened while the metric history was still on the wire, the baseline froze empty, and the chart redrew from the moment the page opened. It still *moved*, which is precisely why it read as fine — the criterion is "the charts survive a reload", and a chart that restarts is the failure mode hardest to see. The gate is now a named predicate with a test rather than an inline condition.
-- **Four findings came from looking at the rendered page rather than from a test.** A chart's font size is in viewBox units and therefore scales with the panel, so the same 10-unit label rendered at 9 px in a two-column grid and 21 px across a full-width one — one screen, two apparent design systems. A series with a single point was drawn as a scatter of one dot against a step axis running −1 to 1, which is a chart of nothing and reads as a run that recorded nothing; `pixel_reference` reports two such scalars and they are now printed as values. And a tick step of 0.25 labelled its axis 0.3 / 0.5 / 0.8, because `ceil(-log10(step))` gives one decimal where the step needs two.
-
-**Not delivered, by decision**
-
-- **Val AUROC per epoch.** The scope above lists it; it cannot be built without changing the plugin interface. `TrainContext.val` is a bare `Sequence[ImageRecord]` with no labels, and the train handler filters it to `Label.NORMAL` by **ADR-0011** — one class, so `roc_auc` correctly returns `None`. Delivering it means giving `TrainContext` labelled validation data, which is an ADR-0007 change and a decision of its own rather than a chart. Promoted to the backlog.
-- **Pixel-level ROC and PR curves.** The pixel accumulator streams its histograms and discards them by design (**ADR-0017**), so drawing that curve means re-reading every anomaly map — the expensive pass the design exists to avoid. The benchmark tab says so on screen rather than leaving a reader to wonder where they went; the pixel ROC-AUC and AU-PRO themselves are unaffected and still reported.
-
-**Size:** large, but low-risk and pausable — it is frontend work against a contract that already exists. That held: of the four backend additions, three were gaps in the M3 contract that only a consumer could reveal.
-
----
-
-## M4.5 — The UI/UX pass
-
-**Status: complete (2026-08-07).** Unplanned, and taken before M5 on the grounds that a comparison screen built in the old idiom would have to be rebuilt in the new one.
-
-By the end of M4 the application had eleven working screens and no visual system. `styles.css` was one line, no `font-family` was declared anywhere so it rendered in whatever the OS thought `system-ui` was, colour was a raw `slate-*` utility at 250-odd call sites, and dark mode followed the OS with no way to override it — on a tool whose job is judging images.
-
-**What was built**
-
-- **A semantic token layer** (`frontend/src/styles.css`) under one thesis: *the chrome is grey so the data can be loud*. Zero saturation in chrome, one accent that means "you can act here", and the verdict colours reserved for verdicts. True-neutral greys rather than blue-cast `slate`, because a blue-tinted grey beside an inferno map shifts how the map's cool end reads. Light and dark, with a three-state toggle. IBM Plex Sans and Mono, self-hosted, tabular figures throughout (**ADR-0021**).
-- **A primitive set** under `frontend/src/components/ui/`, replacing eight OS-styled `<select>`s, three unstyled range inputs, five hand-rolled tables, and a dataset delete that fired on one click with no confirmation. Four Radix primitives — `Select`, `Dialog`, `Tooltip`, `Slider` — which are exactly the controls ADR-0012 named as its test for revisiting.
-- **A visible focus ring**, which the application did not previously have anywhere.
-
-**The bug the pass was really about**
-
-`api/schemaForm.ts` tested `type === "string"` before it ever looked at `enum`, and `enum` was declared on the type and read by nobody. So `Literal["small", "medium"]` rendered as a **free text box** whose placeholder was the default — a value the backend would reject was a typo away — and a `StrEnum`, which pydantic emits as a `$ref` into `$defs`, fell through every branch to a **JSON textarea**, its options not merely un-offered but invisible. Numeric bounds went the same way: `max_steps` carries `minimum: 10, maximum: 200000` and the control accepted anything, so an out-of-range value surfaced as a 422 half a screen from the field that caused it.
-
-On the experiment screen that was 15 fields, four of them enums, and zero pickers. The same bug hit every import adapter. Fixed by reading `enum` first and resolving `$ref` through `$defs`; a set of three or fewer becomes a segmented control, more becomes a select.
-
-**Findings recorded**
-
-- **The "empty means unset" contract survived, and had to be verified on the wire rather than assumed.** A picker whose default is pre-selected would send that default back on every run, so a later change to it would silently not reach anyone who had once opened the form. A segmented control now highlights the *effective* value and stores `""` when that is the schema default. Confirmed by intercepting the POST: an untouched form sends `config: {}`.
-- **Removing the UA `<summary>` marker globally is a trap that bites once per raw `<details>`.** The experiment's Configuration panel rendered as an empty box with no caret and read as broken. Found by looking at the page, not by a test — the same way four of M4's findings were.
-- **Two rendering models for controls now coexist.** A Radix `Checkbox` is a `button[role="checkbox"]` with no `.checked` property, so a test reaching for the DOM property had to move to the ARIA role.
-
----
-
-## M5 — Comparison UI
+### M5 — Comparison UI
 
 **Goal.** Several methods, one split, one evaluation protocol, compared directly. This is what makes the workbench worth having.
 
@@ -334,7 +163,7 @@ On the experiment screen that was 15 fields, four of them enums, and zero picker
 
 ---
 
-## M6 — Custom EfficientAD
+### M6 — Custom EfficientAD
 
 **Goal.** Reimplement EfficientAD from the paper (arXiv:2303.14535) in PyTorch, behind the same interface, with the anomalib version's number as its yardstick — the research payoff of having built the workbench.
 
@@ -353,7 +182,7 @@ On the experiment screen that was 15 fields, four of them enums, and zero picker
 
 ---
 
-## M7 — PatchCore
+### M7 — PatchCore
 
 **Goal.** A third method, and the first one whose resource profile is genuinely awkward.
 
@@ -370,7 +199,7 @@ On the experiment screen that was 15 fields, four of them enums, and zero picker
 
 ---
 
-## M8 — `classical_circular` (optional)
+### M8 — `classical_circular` (optional)
 
 **Goal.** The showcase-specific baseline, if it is still wanted once the universal tool exists.
 
@@ -388,7 +217,7 @@ On the experiment screen that was 15 fields, four of them enums, and zero picker
 
 ---
 
-## M9 — Polish + README
+### M9 — Polish + README
 
 **Goal.** Make the project reproducible by someone who is not the author (including the author six months later), and bring the documentation back in line with what was actually built.
 

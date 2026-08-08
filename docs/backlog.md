@@ -1,154 +1,101 @@
 # Backlog
 
-Working task list for **visual-anomaly-lab**, organised as epics keyed to the milestones in [roadmap.md](roadmap.md). The roadmap says *what* each milestone must achieve and how it is judged done; this file says *what to actually do next*.
+Working task list, keyed to the milestones in [roadmap.md](roadmap.md). The roadmap says *what* each
+milestone must achieve; this says *what to actually do next*.
 
-**Sizes.** `S` ≈ half a day or less. `M` ≈ one focused day. `L` = multi-day, and should be split into subtasks before it is started rather than after. Sizes assume a solo developer working with Claude Code, and include the time to review generated code properly — a task is not done until its output has been read.
+**Sizes.** `S` ≈ half a day. `M` ≈ one focused day. `L` = multi-day, and should be split before it is
+started rather than after. Sizes include reading the generated code properly — a task is not done
+until its output has been reviewed.
 
-**Detail falls off with distance.** Tasks for M0–M3 are concrete and directly actionable. Tasks for M4–M7 are deliberately coarse: their real shape depends on what M2 and M3 teach us about the data, the job machinery, and how anomalib behaves on this machine. Estimating them precisely now would be false precision.
-
-**Re-triage at the end of every milestone**: close what shipped, delete what stopped mattering, split any `L` that is next up, and promote anything the milestone revealed from *Later / ideas* into a real epic. Items are added to the bottom of the relevant epic, not slipped into the middle of one in progress.
+**Re-triage at the end of every milestone**: close what shipped, delete what stopped mattering, split
+any `L` that is next up, and promote anything the milestone revealed out of *Later / ideas*.
 
 ---
 
-## E1 — Repo & docs (M0)
+## Shipped
 
-- [x] Write hardened `.gitignore`: `privatedata/`, `*.bmp` / `*.BMP`, `data/`, `results/`, SQLite files, model artifacts, Python/Node/Rust/macOS noise (S) — **ADR-0001**
-- [x] Write `scripts/check-repo-safety.sh`: fail on tracked or staged private paths and image extensions; usable as a pre-push check (S)
-- [x] Write `README.md` stub: one-liner, private-data warning, links into `docs/` (S)
-- [x] Write `docs/system-design.md`: architecture, process boundaries, domain model, API surface, directory layout, artifact conventions (M)
-- [x] Write `docs/roadmap.md` and `docs/backlog.md` (S)
-- [x] Write ADRs 0001–0011 (M)
-- [x] Verify safety end-to-end, then first commit + push: `git check-ignore -v` on a deep real `privatedata/` BMP path, `git ls-files` free of images, `check-repo-safety.sh` green, docs cross-consistent (S)
-- [x] `CLAUDE.md` + full user-facing `README.md`; genericize all committed docs (showcase dataset, no product identity); untrack the original brief (S)
+Kept as one line each. What still constrains future work is in the roadmap's per-milestone summaries;
+the detail is in the git history and the ADRs.
 
-## E2 — Walking skeleton (M1)
+| Epic | Milestone | What landed |
+| --- | --- | --- |
+| E1 | M0 | Layered ignore rules, the safety guard, system design, roadmap, backlog, ADRs 0001–0011 |
+| E2 | M1 | Backend scaffold, migration runner and schema v1, frontend scaffold, Tauri shell with port handover, the WebSocket, CI and the pre-commit hook |
+| E3 | M2 | Manifest schema, the `channel_folders` adapter, scan/commit, the import review UI with its warnings panel, dataset browser, grouped sample viewer, seeded sample-level splits, `verify` |
+| E4 | M2 | Thumbnail and preview cache with content-derived ETags, a pre-warm job, an uncached full-resolution tier |
+| E5 | M3 | `AnomalyModel` and the lazy registry, the subprocess worker and its JSON-lines protocol, the FIFO queue with crash recovery, `train` and `infer` handlers, the preprocessing bridge, the diagnostics contract |
+| E7 | M3 | Aggregation, threshold-independent metrics, on-demand threshold outputs, rankings, timing, the pixel accumulator at constant memory |
+| E8 | M3 | Experiment create with a schema-generated config form, the training console, the results screen with its overlay |
+| E9 | M3 | `pixel_reference` and `efficientad_anomalib`, the MPS smoke test, the ImageNette penalty set |
+| E13 | M4 | The diagnostic payload route, run-wide display ranges, `GET /jobs/{id}/metrics`, the SVG chart primitives, render-by-kind panels, the experiment tabs, live training charts |
+| E14 | M4.5 | The token layer, light/dark themes, the primitive set, the schema→control mapping fixed so every pydantic shape reaches the right control |
+| E15 | M4.6 | Query invalidation on a finished run, the Samples gallery with outcome filters, the sample page rebuilt around its canvas, the anomaly segmentation overlay, the artifact listing and *Reveal in Finder*, the diagnostics budget spread across the run |
 
-- [x] Backend scaffold: `uv` project on Python 3.12, package layout, FastAPI app, `GET /api/health` (version, schema version, DB path), settings module, ruff + mypy + pytest wired (S) — **ADR-0003**
-- [x] SQLite migration runner (forward-only numbered SQL files, `PRAGMA user_version`, applied at startup) + schema v1 covering **all** ADR-0005 entities: Dataset, Channel, Sample, Image, Mask, Split, SplitAssignment, Experiment, Job, ImageResult, SampleResult, MetricSet — with indices and foreign keys (M) — **ADR-0004**, **ADR-0005**
-- [x] Frontend scaffold: Vite + React + TypeScript, router, app shell/layout, API client generated from the OpenAPI schema with a single configurable base URL (S) — **ADR-0012**
-- [x] Tauri shell: spawn the Python sidecar, read the port it bound back from it, hand it to the frontend, terminate the child on window close *and* on crash; verify no orphan process survives (M) — **ADR-0003**
-- [x] WebSocket echo endpoint + frontend hook, proven end-to-end in both the desktop app and a plain browser (S)
-- [x] Dev scripts (backend only, frontend only, full desktop) + a README dev section documenting the browser-against-`uv run` workflow (S)
-- [x] Guardrails: versioned `.githooks/pre-commit` running the private-data guard (closing ADR-0001's "advisory unless invoked" gap), and CI running the guard, ruff, mypy, pytest, tsc, vitest, the frontend build, `cargo fmt`/`clippy`, and an API-contract check that regenerates the TypeScript client and fails on a diff (S)
+---
 
-## E3 — Dataset & import (M2)
+## Open
 
-- [x] Manifest schema (JSON): datasets, proposed samples, images, per-image `sha256`, detected channels, warnings — versioned, reviewable before commit (M) — **ADR-0006**
-- [x] `channel_folders` adapter: classifies path *components* against label and channel vocabularies in any nesting order, with token-level channel matching so a channel fused into a group folder's name still resolves; every vocabulary is an option carried in the manifest (M) — **ADR-0006**, **ADR-0013**
-- [x] Scan + commit endpoints: `scan` runs as a Job and produces a manifest without writing to the DB; `commit` is one synchronous idempotent transaction, because the walk and the hash are the expensive part and the inserts take milliseconds (M) — **ADR-0009**, **ADR-0013**
-- [x] Import review UI: dataset summary, editable channel mapping, per-group label correction, and a **warnings panel** — variable channel count, unassigned channels, duplicate hashes, unreadable and empty files — with commit blocked until warnings are acknowledged (M)
-- [x] Dataset browser: virtualized thumbnail grid, filter by label / channel / split membership, sample count header (M)
-- [x] Grouped sample viewer: channel tabs (count driven by the data), synchronized zoom/pan across channels, side-by-side comparison, keyboard labelling, metadata panel (M)
-- [x] Split creation: seeded RNG, **sample-level** assignment, normal-only train strategy, stratified by capture group, val/test containing normals and defects, persisted with its seed *and its fractions* so it is reproducible (M) — **ADR-0011**
-- [x] Dataset verify operation: re-check every recorded path exists and its `sha256` matches; report drift and never repair it (S) — **ADR-0013**
+### E7 — Evaluation (M3)
 
-## E4 — Media (M2)
+- [ ] **Give `TrainContext` labelled validation data**, so a method can report val AUROC per epoch (M) — **ADR-0007**, **ADR-0011**. M4 wanted the chart and could not have it: `val` is filtered to normals and carries no labels, so there is one class and no AUROC. A plugin-interface decision, not a chart.
 
-- [x] Thumbnail + preview cache under `data/`, keyed by image id because imported files are immutable, with an `ETag` derived from `sha256` + tier and immutable cache headers (M)
-- [x] Post-import pre-warm job that generates thumbnails for a whole dataset with progress (S)
-- [x] Full-resolution lossless PNG endpoint for the sample viewer, rendered on demand and deliberately not cached — a cached full tier costs most of a gigabyte per dataset (S)
+### E9 — Anomalib integration (M7)
 
-## E5 — Model interface & jobs (M3) — done
+- [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M)
+- [ ] Revisit the training loop against anomalib's Lightning path if their module stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
 
-*The job machinery landed in M2, which needed it for the import scan and the thumbnail
-pre-warm. The model side landed in M3, and cost exactly what ADR-0009 predicted: one
-registry entry and one handler function per new job kind, with no change inside the
-queue, the protocol, cancellation or the fan-out.*
+### E10 — Comparison UI (M5)
 
-- [x] `models/base.py`: `AnomalyModel` interface (`fit`, `predict`, `save`, `load`, config JSON Schema, capability flags) + a lazy-loading registry (S) — **ADR-0007**
-- [x] Subprocess worker + JSON-lines event protocol on stdout (`progress`, `log`, `metric`, `done`, `error`), with a parent-side parser that tolerates interleaved library output (L) — **ADR-0009** *(M2)*
-- [x] FIFO job queue + Job table persistence + crash recovery on startup (any Job left `running` → `failed`, log preserved) (M) — **ADR-0009** *(M2)*
-- [x] WebSocket fan-out of job events to the UI + per-job log files (M) *(M2)*
-- [x] Cancellation: SIGTERM → grace period → SIGKILL, with the Job ending in `cancelled` and no orphan children (S) *(M2)*
-- [x] `train` and `infer` job handlers (S) — **ADR-0009**
-- [x] Preprocessing bridge: one config on the experiment, one loader every method uses, so a comparison is not partly measuring a resize (M)
-- [x] Diagnostics contract: `produces_diagnostics` + `emit_diagnostic`, float32 `.npy` behind a self-describing index, scalar series reusing the existing `metric` event (M) — **ADR-0018**
-- [x] Device resolution that never raises and always records the reason it chose what it chose (S)
+Sized `M` when it was one line; it is more than that now, and should be split before it is started.
 
-## E6 — Classical baseline (M8, optional)
+- [ ] N-way metric table: sample / image / pixel ROC-AUC, AU-PRO, AP, confusion at a shared threshold, timing (M)
+- [ ] Overlaid ROC and PR curves across the selected experiments (S)
+- [ ] Config diff, calling out **preprocessing** differences loudly — comparability under identical preprocessing is the milestone's first exit criterion (S)
+- [ ] A/B anomaly-map view on one sample, each map on its own recorded run-wide range with that range printed (M) — needs an ADR: **ADR-0019** does not say how two runs' scales are shown together, and cross-method score units are not comparable
+- [ ] Guard the selection to one dataset and one split; warn rather than block on differing preprocessing (S)
 
-*Moved off the critical path by **ADR-0015**: making the showcase-specific method the
-first one would have proved the architecture works for exactly one dataset. `pixel_reference`
-took its place in the slice and is the geometry-free core of the same algorithm, so what
-remains here is a circle-fit front end onto a component that already exists and is tested.*
+*Build it N-way and capability-driven, never two-way and method-named: M7 requires a third method to
+appear here with no change outside the plugin. Do not pull training curves for several runs at once —
+**ADR-0020** flags that as a known cliff.*
 
-- [ ] Circle detection: Hough seed → radial-ray subpixel edge sampling → robust circle fit (RANSAC + Taubin), with a per-dataset median-prior fallback when the fit is unreliable (M) — **ADR-0010**
-- [ ] Polar transform + orientation estimation by FFT angular correlation, with reference bootstrap (first pass builds the reference from mutually aligned training samples) (M) — **ADR-0010**
-- [ ] Per-channel robust reference build: median + MAD over aligned polar training images (S)
-- [ ] Predict path: z-map (deviation / MAD) → Gaussian smoothing → inverse-polar warp back to image space → high-percentile image score (M)
-- [ ] Parameter defaults sweep on `set1` (ray count, smoothing sigma, score percentile, polar resolution); record chosen defaults and the numbers that justified them (M)
-- [ ] Unit tests on synthetic discs: known centre/radius/rotation recovered within tolerance; injected blob raises the score (S)
+### E11 — Custom EfficientAD (M6)
 
-## E7 — Evaluation (M3) — done
+- [ ] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface (L)
+  - split when scheduled: PDN backbone → teacher distillation → student loss → autoencoder branch → quantile normalization → training loop with progress events → comparison run against `efficientad_anomalib`
 
-- [x] Channel → sample score aggregation (`max` and `mean`, configurable per experiment) (S) — **ADR-0011**
-- [x] Sample-level and image-level ROC-AUC and average precision, tie-aware, returning `None` rather than a fabricated number when a subset has one class (S)
-- [x] **Pixel-level ROC-AUC and AU-PRO**, streamed through fixed-bin histograms so memory is constant in the number of test images (M) — **ADR-0017**
-- [x] On-demand threshold endpoint returning the confusion matrix *and* the classified rows, so the threshold rule lives in one language (M)
-- [x] Ranked lists: most-anomalous and most-normal samples with scores (S)
-- [x] Timing statistics: per-sample inference time, mean/median/p95, recorded in the MetricSet (S)
-- [x] ROC and PR *curve* endpoints for the M4 benchmark charts (S). `roc_curve` was dead code and the PR arrays were local to `average_precision`; both now come from one cut-point helper, so a chart cannot disagree with the scalar drawn beside it. A one-class subset returns `None` rather than a chance diagonal.
-- [ ] **Give `TrainContext` labelled validation data**, so a method can report val AUROC per epoch (M) — **ADR-0007**, **ADR-0011**. M4 wanted the chart and could not have it: `val` is filtered to normals and carries no labels, so there is one class and no AUROC. This is a plugin-interface decision, not a chart.
+### E6 — `classical_circular` (M8, optional)
 
-## E8 — Experiment UI (M3) — done
+- [ ] Circle detection: Hough seed → radial-ray subpixel edges → robust circle fit (RANSAC + Taubin), with a median-prior fallback (M) — **ADR-0010**
+- [ ] Polar transform + FFT angular-correlation orientation, with a bootstrapped reference (M) — **ADR-0010**
+- [ ] Per-channel robust reference: median + MAD over aligned polar training images (S)
+- [ ] Predict path: z-map → smoothing → inverse-polar warp → high-percentile score (M)
+- [ ] Parameter defaults sweep; record the chosen values and the numbers that justified them (M)
+- [ ] Unit tests on synthetic discs: centre, radius and rotation recovered within tolerance; an injected blob raises the score (S)
 
-- [x] Experiment create screen: dataset + split pickers, method picker, config form generated from the plugin's JSON Schema, preprocessing and evaluation sections (M) — **ADR-0007**
-- [x] Progress + logs screen: live WebSocket progress bar, streaming log view, cancel button, terminal states — reusing `JobProgress` and `useJob` unchanged (M)
-- [x] Results screen: threshold slider driving the confusion matrix, TP/FP/TN/FN filtering, ranked lists (L)
-- [x] Sample result viewer: anomaly-map overlay with an opacity slider, ground-truth outline where a mask exists (M)
-- [x] Experiment list with status, headline metric, and reopen-from-persistence (S)
+### E12 — README & polish (M9)
 
-## E9 — Anomalib integration (M3 done; PatchCore at M7)
+- [ ] "How to add a new anomaly-detection method", written against the real interface with a worked example (S) — **ADR-0007**
+- [ ] Docs refresh: `system-design.md` and ADR amendments where the implementation diverged (S)
+- [ ] Loading and empty states, error surfaces, keyboard navigation, cross-screen layout consistency (M)
+- [ ] Backlog re-triage and a refreshed *Later / ideas* list (S)
 
-- [x] Add anomalib as an optional dependency group + standalone MPS smoke test script — **run before writing wrapper code** (S) — **ADR-0008**. It earned itself immediately: the penalty batch turned out to be mandatory despite defaulting to `None`.
-- [x] `efficientad_anomalib`: `fit` / `predict` / `save` / `load`, step progress and per-branch losses onto the job event protocol, forward-hook diagnostics, explicit downloads (L)
-- [x] Preprocessing config bridge — see E5 (M)
-- [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M) — **M7**
-- [ ] Revisit the training loop against anomalib's Lightning path when their datamodule stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
-
-## E13 — Workbench UI (M4) — done
-
-*Every view is written once against the diagnostics index and renders by `kind`, so
-`efficientad_custom` inherits all of them in M6 (**ADR-0018**). The three backend items
-were gaps in M3's contract that only a consumer could reveal.*
-
-- [x] Diagnostic payload route: `(key, image_id)` resolved **through the index**, never by the path it carries, with `map` / `image` / `grid` rendered and the inline kinds refused (M) — **ADR-0019**
-- [x] Run-wide display range per diagnostic key, recorded by the writer at a 99.9th-percentile high end and merged the way entries merge (S) — **ADR-0019**
-- [x] `GET /api/jobs/{id}/metrics`: named scalar series parsed back out of the job log, downsampled with the drop reported (S) — **ADR-0020**
-- [x] Hand-rolled SVG chart primitives — scales and ticks as a pure, tested module; line, curve, histogram and stacked-bar components (M)
-- [x] Render-by-kind diagnostics panel + architecture graph laid out from the recorded edges; an unknown kind renders as a named placeholder rather than a crash (M)
-- [x] Experiment screen as tabs — Overview, Training, Benchmark, Architecture, Inspector — with the active tab in the URL and each gated on what the run recorded, never on which method recorded it (M)
-- [x] Live training charts on the existing socket, snapshot-then-subscribe with the console's freeze rule (S)
-- [x] Per-image diagnostic panes on the sample screen, beside the combined map they decompose (S)
-- [x] Score-normalization emitted as a `table` diagnostic, carrying the quantiles and what they were fitted on (S)
-
-## E10 — Comparison UI (M5)
-
-- [ ] Multi-experiment comparison: metric table (ROC-AUC, confusion at a chosen threshold, timing) + overlay A/B view of two methods' anomaly maps on the same sample (M)
-
-## E11 — Custom EfficientAD (M6)
-
-- [ ] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface: PDN student/teacher distillation, autoencoder branch, quantile-based score normalization, MPS training loop (L)
-  - split when scheduled: PDN backbone → teacher pretraining/distillation → student loss → autoencoder branch → quantile normalization → training loop + progress events → comparison run against `efficientad_anomalib`
-
-## E12 — README & polish (M9)
-
-- [ ] Full README: setup from a fresh machine, dataset conventions, architecture overview, troubleshooting (M)
-- [ ] "How to add a new anomaly-detection method" guide, written against the real interface with a worked example (S) — **ADR-0007**
-- [ ] Docs refresh (system design + ADR amendments where implementation diverged) and backlog re-triage (S)
+*The user-facing README was rewritten in M4.6 and is no longer an M9 task.*
 
 ---
 
 ## Later / ideas
 
-Not scheduled. Revisit at each milestone re-triage; promote into an epic when there is a concrete reason to.
+Not scheduled. Revisit at each re-triage; promote when there is a concrete reason to.
 
-- Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate the sample score by scale alone.
-- Explicit detector for the part's asymmetric surface features as an orientation fallback when FFT angular correlation is ambiguous (near-rotationally-symmetric parts).
-- Per-set classical references (separate `set1` / `set2` references) if lighting or fixturing drift between sets turns out to matter.
-- Uninformed Students (Student-Teacher Anomaly Detection, [papers.md](papers.md) #4) as a fourth method.
-- Export / report generation: experiment results and comparison tables to PDF or HTML for sharing without the app.
-- **`mask.sha256`, as a numbered migration.** `verify` can check that a mask file is still there and not that it is still the same file, so a mask re-exported in place silently changes a pixel metric. Worth doing before pixel numbers are relied on (ADR-0016, ADR-0017).
-- **Warn when an imported split's train subset contains defects.** The `imported` strategy trusts the source completely, which is the point, but a bad benchmark file currently produces a bad experiment quietly. The training handler already excludes them and logs it; the split screen says nothing.
-- Per-image inference batching for the deep methods — currently one image per forward pass, which is simple and leaves throughput on the table.
-- Show the pixel-metric protocol on the results screen. "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.
+- **`mask.sha256`, as a numbered migration.** `verify` can check a mask file is still there, not that it is still the same file, so a mask re-exported in place silently changes a pixel metric. Worth doing before pixel numbers are relied on (ADR-0016, ADR-0017).
+- **Warn when an imported split's train subset contains defects.** The `imported` strategy trusts the source completely, which is the point, but a bad benchmark file produces a bad experiment quietly. The training handler excludes them and logs it; the split screen says nothing.
+- **Show the pixel-metric protocol on the results screen.** "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.
+- **Warm-start training from a finished run.** Continue 4 000 → 8 000 steps rather than starting over. The loop is hand-owned so it is tractable, but exact resume needs optimizer, LR-schedule, step and RNG state in the checkpoint, and `max_steps` becoming a total — an **ADR-0007** change, and it collides with "an experiment's config is frozen at creation".
+- **Layer-level architecture view.** The `graph` payload carries three branch nodes; per-layer shapes and parameter counts would come from forward hooks in a shared helper, so any torch method inherits it.
+- **A warm inference worker.** Measured: ~4.8 s of process spawn and torch import before the first image, then ~46 ms per image. On-demand "explain this image" wants the model resident, which cuts against ADR-0009's subprocess-per-job isolation and needs its own record. M7's resource profile may force the conversation anyway.
+- Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate a sample score by scale alone.
+- Per-image inference batching for the deep methods — one image per forward pass today, which is simple and leaves throughput on the table.
+- Uninformed Students ([papers.md](papers.md) #4) as a fourth method.
+- Export / report generation: results and comparison tables to PDF or HTML for sharing without the app.
+- Orientation fallback for near-rotationally-symmetric parts, when FFT angular correlation is ambiguous.
+- Per-set classical references, if lighting or fixturing drift between capture sets turns out to matter.

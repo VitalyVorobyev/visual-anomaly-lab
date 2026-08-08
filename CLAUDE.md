@@ -61,19 +61,16 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M3 are done: the loop closes.** The app imports a directory tree — or a public benchmark, through
-  `folder_classes` or `csv_table` — into a catalog of grouped samples with masks and an optional published
-  split; browses and labels them in bulk; creates splits either seeded or adopted from the source; then
-  creates an experiment, trains a method, scores it, and reports image- **and** pixel-level metrics with a
-  working anomaly-map overlay. Two methods ship: `pixel_reference` (numpy + Pillow, the floor) and
-  `efficientad_anomalib` (MPS).
-- **M4 is complete**, and was followed by a UI/UX pass that gave the app a visual system: a semantic
-  token layer, a primitive set under `frontend/src/components/ui/`, light and dark themes with a
-  toggle, and the schema→control mapping fixed so a closed set renders as a picker (**ADR-0021**).
-  **M5 — the comparison UI — is next.** Check `docs/roadmap.md` before starting work.
+- **M0–M4.6 are done.** The loop closes and its output is reachable: import a directory tree or a
+  public benchmark, browse and label it, split it, train, score, and read image- and pixel-level
+  metrics — then browse every scored sample as a picture, filter to the model's mistakes, and lay its
+  segmentation against the ground truth. Two methods ship: `pixel_reference` (numpy + Pillow, the
+  floor) and `efficientad_anomalib` (MPS).
+- **M5 — the comparison UI — is next.** Read `docs/roadmap.md` before starting work; the completed
+  milestones there are summaries that keep only what still constrains new work.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
-  `Skeleton`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
+  `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
   `<select>`, `<input type="range">` or `<table>` — those are what the pass removed. A raw
   `<details>` in particular now renders **with no caret**, because the base layer drops the UA
   marker; use `Disclosure`.
