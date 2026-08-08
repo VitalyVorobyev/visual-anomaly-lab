@@ -153,7 +153,7 @@ Ruled out on the way, each cheaply and each against stored artifacts rather than
 
 | Suspected | How it was tested | Result |
 |---|---|---|
-| the `max` reduction | swept max, top-16/64/256/1024, p95/p99/p99.9, mean | every variant lands 0.71–0.77; the map's **mean** ranks as well as its max |
+| the `max` reduction | swept max, top-16/64/256/1024, p95/p99/p99.9, mean | every variant lands 0.71–0.77; the map's **mean** ranks as well as its max — but see below, this conclusion did not survive a better teacher |
 | a border artifact | crop sweep 4 → 48 px | best is +0.018, and the mean map over normals is not elevated at the edge |
 | branch weighting | swept w = 0, .25, .5, .75, 1 | ST alone 0.730, AE alone 0.707, **0.5/0.5 = 0.751 is already the optimum** |
 | quantiles fitted on memorised data | read `score_normalization` | already fitted on 200 held-out normals on this split |
@@ -230,6 +230,31 @@ Worth naming as a process finding rather than a result: this was found because t
 were enumerated, not the differing ones. "Two independent implementations agree, so the code is not
 the cause" was sound reasoning that pointed at the data and the protocol, and quietly skipped the one
 other thing both implementations load from the same place.
+
+### A negative result measured on a broken configuration is a measurement of the breakage
+
+The score-aggregation sweep above was run again on the same object with the better teacher,
+using `scripts/audit-run.py`, which reads the maps a run already wrote and costs no GPU:
+
+| Aggregation | `anomalib` teacher | `nelson1425` teacher |
+|---|---|---|
+| `max` (the paper) | 0.751 | **0.886** |
+| top-64 mean | 0.758 | 0.888 |
+| p99 | 0.765 | 0.798 |
+| p95 | 0.770 | 0.710 |
+| plain mean | 0.756 | 0.761 |
+
+Under the weaker teacher every reducer scored the same, and the honest reading at the time
+was that **the aggregation does not matter**. That reading was wrong, and not because the
+arithmetic was: nothing was localized, so every summary of the map was a summary of the same
+noise. Under the better teacher the max is worth 0.125 over the plain mean and 0.176 over
+p95 — there is now a peak to find, and finding it is what the reducer is for.
+
+This is the second time in this file that a conclusion drawn at a broken setting had to be
+withdrawn, after "4000 steps is a fair budget". **A null result is only evidence about the
+configuration it was measured in**, and it is worth writing down which one that was — which
+is why the sweep is now a script in the repository rather than something reconstructed from
+memory. `score_reduction` stays at `max`; top-64 is 0.002 ahead and that is noise.
 
 ### The step-budget curve — one trajectory, read at six points
 

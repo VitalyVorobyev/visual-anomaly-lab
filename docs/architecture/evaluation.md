@@ -124,6 +124,20 @@ tolerate an empty subset rather than assume three:
   the sentence explaining that choice**, which the results screen prints under the slider. A slider that opens
   at a fabricated position with no explanation invites the operator to read it as a recommendation.
 
+## Auditing a run from what it already wrote
+
+`scripts/audit-run.py <experiment_id>` reads a scored run's stored maps and rows and reports
+two things the results screen does not: **one CSV row per image** — label, subset, score,
+inference time and the paths to its map and ground-truth mask, which is what makes a reported
+figure checkable by somebody who does not trust it — and the **image-level ROC-AUC under every
+map aggregation**, recomputed from the maps on disk.
+
+Read-only, numpy only, no torch and no GPU, so it can be pointed at a run from months ago at
+no cost. That property is the point: it made a wrong conclusion cheap to overturn. The
+aggregation sweep first said the reducer did not matter, which was true of a run whose maps
+were not localized and false in general — see
+[the measurements](../measurements-efficientad.md).
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)
