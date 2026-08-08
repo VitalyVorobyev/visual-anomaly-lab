@@ -74,6 +74,13 @@ JobEvent = Annotated[
 
 _EVENT_ADAPTER: TypeAdapter[JobEvent] = TypeAdapter(JobEvent)
 
+# The one field of the *inbound* half of this protocol (ADR-0026). ADR-0009's worker
+# protocol is one-way; the resident inference worker also reads request frames on stdin,
+# and echoes this back in its `done` result so the parent can assert it is reading the
+# answer to the question it asked. It lives here, with the events, so neither the manager
+# nor the entrypoint has to import the other for it.
+REQUEST_ID = "rid"
+
 
 def encode(event: JobEvent) -> str:
     """Serialize one event to its wire form, without a trailing newline."""

@@ -208,12 +208,24 @@ class TrainContext(ModelContext):
 class InferContext(ModelContext):
     """`predict`'s view of the world."""
 
+    maps_subdir: str = "maps"
+    """Which directory under `artifact_dir` receives this run's maps.
+
+    Set by the caller, never by a plugin, and the default is what every job uses. It
+    exists because `predict` writes a map unconditionally, and a caller that is *not* a
+    run must not be able to overwrite one: an on-demand diagnostic request scores a single
+    image to see what its branches did, and dropping the result into `maps/{image_id}.npy`
+    would replace a stored map under a `range.json` fitted by a different run — leaving
+    that image's map a generation ahead of its own score row, with nothing saying so
+    (ADR-0026).
+    """
+
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
     @property
     def maps_dir(self) -> Path:
         """Where anomaly maps are written. Created on first use, not at construction."""
-        path = self.artifact_dir / "maps"
+        path = self.artifact_dir / self.maps_subdir
         path.mkdir(parents=True, exist_ok=True)
         return path
 

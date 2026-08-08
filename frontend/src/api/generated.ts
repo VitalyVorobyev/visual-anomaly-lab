@@ -420,9 +420,43 @@ export interface paths {
          *     experiment.
          *
          *     Refused with 409 while a job is running, because an inference job's index write merges
-         *     with what is on disk and would put back exactly what this removed.
+         *     with what is on disk and would put back exactly what this removed. The resident worker
+         *     can write the same file, so it is evicted first rather than raced — the delete waits
+         *     for any request in flight, which is bounded and is the same guarantee the queue gets.
          */
         delete: operations["clear_diagnostics_api_experiments__experiment_id__diagnostics_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/diagnose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record diagnostics for one image, now
+         * @description Ask the method what it saw in one image, outside any job (ADR-0026).
+         *
+         *     An inference run records per-image diagnostics for a bounded sample of what it scored,
+         *     so most images have none. This answers for any image in the split, served from a
+         *     resident worker that keeps the checkpoint loaded — the first request pays the model
+         *     load, the rest do not.
+         *
+         *     **It does not change this image's score, its map, or any metric.** Those come from a
+         *     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+         *     `on_demand` in the index (ADR-0027).
+         *
+         *     Refused with 409 while a job is running: one machine, one device, and a browse request
+         *     must not queue behind a two-hour train.
+         */
+        post: operations["diagnose_api_experiments__experiment_id__diagnose_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -1289,6 +1323,29 @@ export interface components {
          * @enum {string}
          */
         Device: "cpu" | "mps" | "cuda";
+        /** DiagnoseRequest */
+        DiagnoseRequest: {
+            /**
+             * Image Id
+             * @description The image to diagnose. Must belong to this split.
+             */
+            image_id: number;
+        };
+        /** DiagnoseResponse */
+        DiagnoseResponse: {
+            /**
+             * Keys
+             * @description The diagnostic keys recorded for this image.
+             */
+            keys: string[];
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /**
+             * Warm
+             * @description False when this request had to load the model first, which is what makes it take seconds. True once a resident is serving.
+             */
+            warm: boolean;
+        };
         /**
          * DiagnosticEntry
          * @description One row of the index. Self-describing on purpose.
@@ -1505,6 +1562,8 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
+            /** @description The resident inference worker, when one is live. */
+            resident?: components["schemas"]["ResidentHealth"] | null;
         };
         /**
          * ImageScore
@@ -2056,6 +2115,31 @@ export interface components {
          * @enum {string}
          */
         PruneScope: "image" | "on_demand" | "all";
+        /**
+         * ResidentHealth
+         * @description The one long-lived compute process nothing else would show (ADR-0026).
+         *
+         *     A resident inference worker holds a loaded checkpoint — and on this machine, the MPS
+         *     device — between browse requests. Without this block the only evidence it exists is a
+         *     second Python process in Activity Monitor, which is the wrong place to discover that
+         *     something is holding your accelerator.
+         */
+        ResidentHealth: {
+            /** Experiment Id */
+            experiment_id: number;
+            /**
+             * Generation
+             * @description Checkpoint fingerprint; a retrain changes it.
+             */
+            generation: string;
+            /**
+             * Evicted In Seconds
+             * @description Until the idle timeout takes it down.
+             */
+            evicted_in_seconds: number;
+            /** Requests Served */
+            requests_served: number;
+        };
         /**
          * ResultsPage
          * @description Ranked samples for one subset, with a starting threshold and its rationale.
@@ -3152,6 +3236,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PruneResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    diagnose_api_experiments__experiment_id__diagnose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiagnoseRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiagnoseResponse"];
                 };
             };
             /** @description Validation Error */

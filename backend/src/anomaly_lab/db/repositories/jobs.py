@@ -97,6 +97,17 @@ def next_queued_job(conn: sqlite3.Connection) -> Job | None:
     return _to_job(row) if row is not None else None
 
 
+def running_job(conn: sqlite3.Connection) -> Job | None:
+    """The job whose worker is executing, if any. At most one, by construction (ADR-0009).
+
+    The durable half of "is anything holding the device". A row left `running` by a
+    process that died is reconciled at startup by `fail_stale_running_jobs`, so within a
+    live process this is true when and only when a worker exists.
+    """
+    row = conn.execute("SELECT * FROM job WHERE status = 'running' ORDER BY id LIMIT 1").fetchone()
+    return _to_job(row) if row is not None else None
+
+
 def mark_running(conn: sqlite3.Connection, job_id: int, *, log_path: str) -> None:
     conn.execute(
         """

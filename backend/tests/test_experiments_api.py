@@ -14,8 +14,6 @@ from __future__ import annotations
 import json
 import sqlite3
 import struct
-from collections.abc import Iterator
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -26,152 +24,15 @@ from PIL import Image
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.db.repositories import samples as samples_repo
-from anomaly_lab.db.repositories import splits as splits_repo
-from anomaly_lab.domain.entities import JobKind, Label, Subset
-from anomaly_lab.experiments.infer import run_infer_job
-from anomaly_lab.experiments.train import run_train_job
-from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.domain.entities import JobKind, Label
 
-SIZE = 16
-TRAIN_NORMALS = 8
-TEST_NORMALS = 3
-TEST_DEFECTS = 3
-
-
-def _gradient(seed: int) -> np.ndarray:
-    generator = np.random.default_rng(seed)
-    base = np.linspace(40, 200, SIZE * SIZE).reshape(SIZE, SIZE)
-    return np.clip(base + generator.normal(0, 3, size=(SIZE, SIZE)), 0, 255)
-
-
-def _write_normal(path: Path, seed: int) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(_gradient(seed).astype(np.uint8), mode="L").convert("RGB").save(path)
-
-
-def _write_defect(path: Path, mask_path: Path, seed: int) -> None:
-    array = _gradient(seed)
-    array[5:10, 5:10] = 255
-    path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(array.astype(np.uint8), mode="L").convert("RGB").save(path)
-
-    mask = np.zeros((SIZE, SIZE), dtype=np.uint8)
-    mask[5:10, 5:10] = 255
-    mask_path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(mask, mode="L").save(mask_path)
-
-
-@dataclass(frozen=True)
-class Fixture:
-    dataset_id: int
-    split_id: int
-    defect_image_ids: list[int]
-    normal_image_ids: list[int]
-
-
-def _seed(conn: sqlite3.Connection, root: Path) -> Fixture:
-    """A dataset of single-image samples with an explicit train/test split and masks."""
-    dataset = datasets_repo.create_dataset(conn, name="synthetic", root_path=str(root))
-    assignments: dict[int, Subset] = {}
-    defect_image_ids: list[int] = []
-    normal_image_ids: list[int] = []
-
-    def add(external_id: str, path: Path, label: Label, subset: Subset) -> int:
-        sample, _ = samples_repo.upsert_sample(
-            conn, dataset.id, group_key="all", external_id=external_id, label=label
-        )
-        image, _ = images_repo.upsert_image(
-            conn,
-            sample.id,
-            channel_id=None,
-            path=str(path),
-            width=SIZE,
-            height=SIZE,
-            bit_depth=24,
-            file_size=path.stat().st_size,
-            sha256=f"sha-{external_id}",
-        )
-        assignments[sample.id] = subset
-        return image.id
-
-    for index in range(TRAIN_NORMALS):
-        path = root / "train" / f"n{index}.png"
-        _write_normal(path, index)
-        add(f"train-{index}", path, Label.NORMAL, Subset.TRAIN)
-
-    for index in range(TEST_NORMALS):
-        path = root / "test" / f"n{index}.png"
-        _write_normal(path, 500 + index)
-        normal_image_ids.append(add(f"test-n{index}", path, Label.NORMAL, Subset.TEST))
-
-    for index in range(TEST_DEFECTS):
-        path = root / "test" / f"d{index}.png"
-        mask_path = root / "masks" / f"d{index}.png"
-        _write_defect(path, mask_path, 900 + index)
-        image_id = add(f"test-d{index}", path, Label.DEFECT, Subset.TEST)
-        masks_repo.upsert_mask(conn, image_id, path=str(mask_path))
-        defect_image_ids.append(image_id)
-
-    split = splits_repo.create_split(
-        conn,
-        dataset.id,
-        name="official",
-        strategy="imported",
-        seed=0,
-        params={"strategy": "imported"},
-        assignments=assignments,
-    )
-    return Fixture(
-        dataset_id=dataset.id,
-        split_id=split.id,
-        defect_image_ids=defect_image_ids,
-        normal_image_ids=normal_image_ids,
-    )
-
-
-@pytest.fixture
-def seeded(client: TestClient, settings: Settings, tmp_path: Path) -> Iterator[Fixture]:
-    root = tmp_path / "source"
-    with connection(settings.db_path) as conn:
-        yield _seed(conn, root)
-
-
-def _create(client: TestClient, seeded: Fixture, **overrides: Any) -> dict[str, Any]:
-    body: dict[str, Any] = {
-        "name": "baseline",
-        "dataset_id": seeded.dataset_id,
-        "split_id": seeded.split_id,
-        "model_type": "pixel_reference",
-        "config": {"smoothing_sigma": 1.0},
-        "preprocessing": {"width": SIZE, "height": SIZE},
-        "evaluation": {},
-    }
-    body.update(overrides)
-    response = client.post("/api/experiments", json=body)
-    assert response.status_code == 200, response.text
-    payload: dict[str, Any] = response.json()
-    return payload
-
-
-def _run(settings: Settings, kind: JobKind, params: dict[str, Any]) -> dict[str, Any]:
-    """Run a handler in-process. The subprocess path is covered in `test_job_queue`."""
-    handler = run_train_job if kind is JobKind.TRAIN else run_infer_job
-    return handler(JobContext(job_id=1, kind=kind, params=params, settings=settings))
-
-
-@pytest.fixture
-def scored(client: TestClient, settings: Settings, seeded: Fixture) -> dict[str, Any]:
-    """A fully trained and scored experiment — the state most tests here start from."""
-    experiment = _create(client, seeded)
-    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
-    _run(settings, JobKind.INFER, {"experiment_id": experiment["id"], "subsets": ["test"]})
-    return experiment
-
+from .conftest import FIXTURE_SIZE as SIZE
+from .conftest import TEST_DEFECTS, TEST_NORMALS, TRAIN_NORMALS, Fixture
+from .conftest import create_experiment as _create
+from .conftest import run_handler as _run
 
 # ----------------------------------------------------------------- the catalog
 
