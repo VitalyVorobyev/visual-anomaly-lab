@@ -88,6 +88,10 @@ export type DiagnosticIndex = Schemas["DiagnosticIndex"];
 export type DiagnosticEntry = Schemas["DiagnosticEntry"];
 export type DiagnosticKind = Schemas["DiagnosticKind"];
 export type DiagnosticScope = Schemas["DiagnosticScope"];
+export type DiagnosticOrigin = Schemas["DiagnosticOrigin"];
+export type DiagnoseResponse = Schemas["DiagnoseResponse"];
+export type PruneResult = Schemas["PruneResult"];
+export type PruneScope = Schemas["PruneScope"];
 export type Curve = Schemas["Curve"];
 export type CurveSet = Schemas["CurveSet"];
 

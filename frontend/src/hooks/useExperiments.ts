@@ -15,12 +15,15 @@ import { api, unwrap } from "../api/client";
 import type {
   ArtifactListing,
   CurveSet,
+  DiagnoseResponse,
   ExperimentDetail,
   ExperimentSummary,
   DiagnosticIndex,
   ImageScore,
   MethodCatalog,
   MetricSummary,
+  PruneResult,
+  PruneScope,
   ResultsPage,
   SamplePreview,
   Subset,
@@ -329,6 +332,50 @@ export function useDeleteExperiment() {
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["experiments"] });
+    },
+  });
+}
+
+/**
+ * Ask the method what it saw in one image, now (ADR-0026).
+ *
+ * Deliberately without an optimistic update: the honest thing on screen while this runs is
+ * "the first request loads the model", not a pane that will appear. The whole index is
+ * refetched on success because an on-demand emission can widen a key's display range
+ * (ADR-0027), which changes how every *other* pane of that key is drawn.
+ */
+export function useDiagnoseImage(experimentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<DiagnoseResponse, Error, number>({
+    mutationFn: async (imageId: number) =>
+      unwrap(
+        await api.POST("/api/experiments/{experiment_id}/diagnose", {
+          params: { path: { experiment_id: experimentId } },
+          body: { image_id: imageId },
+        }),
+        "the diagnostics for this image",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnostics(experimentId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(experimentId) });
+    },
+  });
+}
+
+/** Delete stored diagnostics to reclaim disk, and report what that freed (ADR-0027). */
+export function useClearDiagnostics(experimentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<PruneResult, Error, PruneScope>({
+    mutationFn: async (scope: PruneScope) =>
+      unwrap(
+        await api.DELETE("/api/experiments/{experiment_id}/diagnostics", {
+          params: { path: { experiment_id: experimentId }, query: { scope } },
+        }),
+        "what the clear reclaimed",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.diagnostics(experimentId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.artifacts(experimentId) });
     },
   });
 }
