@@ -19,6 +19,8 @@ declare global {
       apiBaseUrl?: string;
       /** Native folder chooser. Resolves to `null` when the user cancels. */
       pickDirectory?: () => Promise<string | null>;
+      /** Show a path in the OS file manager. Rejects for a path outside `data/`. */
+      revealPath?: (path: string) => Promise<void>;
     };
   }
 }
@@ -31,4 +33,22 @@ export async function pickDirectory(): Promise<string | null> {
   const pick = globalThis.window?.__ANOMALY_LAB__?.pickDirectory;
   if (typeof pick !== "function") return null;
   return pick();
+}
+
+/**
+ * Whether this host can show a path in a file manager.
+ *
+ * The second capability, and the shape ADR-0014 predicted: the desktop app opens Finder,
+ * the browser shows the path as selectable text. Neither is a degraded version of the
+ * other, and the browser must never see a disabled button whose only explanation is that
+ * it is not the desktop app.
+ */
+export function hasRevealPath(): boolean {
+  return typeof globalThis.window?.__ANOMALY_LAB__?.revealPath === "function";
+}
+
+export async function revealPath(path: string): Promise<void> {
+  const reveal = globalThis.window?.__ANOMALY_LAB__?.revealPath;
+  if (typeof reveal !== "function") return;
+  await reveal(path);
 }

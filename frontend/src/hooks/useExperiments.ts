@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import type {
+  ArtifactListing,
   CurveSet,
   ExperimentDetail,
   ExperimentSummary,
@@ -205,6 +206,21 @@ export function useSamplePreviews(experimentId: number | undefined, subset: Subs
       ),
     enabled: experimentId !== undefined,
     staleTime: Infinity,
+  });
+}
+
+/** What the run left on disk, and where. A listing — nothing here downloads anything. */
+export function useArtifacts(experimentId: number | undefined) {
+  return useQuery<ArtifactListing>({
+    queryKey: queryKeys.artifacts(experimentId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/artifacts", {
+          params: { path: { experiment_id: experimentId as number } },
+        }),
+        "the artifact listing",
+      ),
+    enabled: experimentId !== undefined,
   });
 }
 

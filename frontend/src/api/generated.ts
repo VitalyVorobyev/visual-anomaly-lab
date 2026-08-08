@@ -286,6 +286,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What this run left on disk
+         * @description Everything under the experiment's directory, grouped and sized.
+         *
+         *     A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
+         *     directory statically, and one of its stated reasons was that doing so exposes the
+         *     checkpoints; nothing here changes that. What it fixes is the other half of the
+         *     problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
+         *     and then not say where it was — the path was in `ExperimentDetail` all along and no
+         *     screen showed it.
+         *
+         *     Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+         *     path as text, which is a different affordance rather than a broken one.
+         */
+        get: operations["get_artifacts_api_experiments__experiment_id__artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/previews": {
         parameters: {
             query?: never;
@@ -807,6 +837,48 @@ export interface components {
             options_schema: {
                 [key: string]: unknown;
             };
+        };
+        /** ArtifactFile */
+        ArtifactFile: {
+            /** Name */
+            name: string;
+            /** Bytes */
+            bytes: number;
+        };
+        /**
+         * ArtifactGroup
+         * @description One subdirectory of a run's output.
+         */
+        ArtifactGroup: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Path */
+            path: string;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /**
+             * Files
+             * @description Empty when the group is large enough that only its count is useful.
+             */
+            files: components["schemas"]["ArtifactFile"][];
+        };
+        /**
+         * ArtifactListing
+         * @description Where a run's output is, and what it weighs.
+         */
+        ArtifactListing: {
+            /** Root */
+            root: string;
+            /** Exists */
+            exists: boolean;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Groups */
+            groups: components["schemas"]["ArtifactGroup"][];
         };
         /**
          * Availability
@@ -2713,6 +2785,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThresholdReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_artifacts_api_experiments__experiment_id__artifacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactListing"];
                 };
             };
             /** @description Validation Error */

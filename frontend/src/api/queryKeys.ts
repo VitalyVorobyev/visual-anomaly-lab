@@ -59,6 +59,7 @@ export const queryKeys = {
     ["experiments", experimentId, "sample-images", sampleId] as const,
   previews: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "previews", subset ?? null] as const,
+  artifacts: (experimentId: number) => ["experiments", experimentId, "artifacts"] as const,
   diagnostics: (experimentId: number) => ["experiments", experimentId, "diagnostics"] as const,
   curves: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "curves", subset ?? null] as const,

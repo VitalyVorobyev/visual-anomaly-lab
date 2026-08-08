@@ -26,6 +26,7 @@ import { Tabs } from "../components/Tabs";
 import { Badge, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows } from "../components/ui";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment } from "../hooks/useExperiments";
+import { ArtifactsPanel } from "./experiment/ArtifactsPanel";
 import { BenchmarkTab } from "./experiment/BenchmarkTab";
 import { GalleryTab } from "./experiment/GalleryTab";
 import { useVerdicts } from "./experiment/useVerdicts";
@@ -206,6 +207,8 @@ export function ExperimentRoute() {
           )}
 
           <Configuration detail={detail} />
+
+          <ArtifactsPanel experimentId={experimentId} />
 
           {detail.metrics.length > 0 && (
             <Metrics

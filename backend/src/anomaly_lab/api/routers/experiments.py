@@ -198,6 +198,40 @@ class CurveSet(BaseModel):
     image_pr: Curve | None = None
 
 
+class ArtifactFile(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    name: str
+    bytes: int
+
+
+class ArtifactGroup(BaseModel):
+    """One subdirectory of a run's output."""
+
+    model_config = API_MODEL_CONFIG
+
+    name: str
+    title: str
+    path: str
+    file_count: int
+    total_bytes: int
+    files: list[ArtifactFile] = Field(
+        default_factory=list,
+        description="Empty when the group is large enough that only its count is useful.",
+    )
+
+
+class ArtifactListing(BaseModel):
+    """Where a run's output is, and what it weighs."""
+
+    model_config = API_MODEL_CONFIG
+
+    root: str
+    exists: bool
+    total_bytes: int
+    groups: list[ArtifactGroup] = Field(default_factory=list)
+
+
 class SamplePreview(BaseModel):
     """One image standing for one sample, so a gallery tile needs no request of its own."""
 
@@ -513,6 +547,63 @@ def get_threshold(
     with connection(settings.db_path) as conn:
         samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
     return report(samples, value, include_samples=True)
+
+
+@router.get("/{experiment_id}/artifacts", summary="What this run left on disk")
+def get_artifacts(request: Request, experiment_id: int) -> ArtifactListing:
+    """Everything under the experiment's directory, grouped and sized.
+
+    A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
+    directory statically, and one of its stated reasons was that doing so exposes the
+    checkpoints; nothing here changes that. What it fixes is the other half of the
+    problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
+    and then not say where it was — the path was in `ExperimentDetail` all along and no
+    screen showed it.
+
+    Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+    path as text, which is a different affordance rather than a broken one.
+    """
+    experiment, _ = _load(request, experiment_id)
+    root = Path(experiment.artifact_dir)
+
+    groups = [
+        _artifact_group(root, "model", "Trained weights"),
+        _artifact_group(root, "maps", "Anomaly maps", summarize_from=32),
+        _artifact_group(root, "diagnostics", "Diagnostics", summarize_from=32),
+        _artifact_group(root, "logs", "Job logs"),
+    ]
+    return ArtifactListing(
+        root=str(root),
+        exists=root.is_dir(),
+        total_bytes=sum(group.total_bytes for group in groups),
+        groups=[group for group in groups if group.file_count > 0],
+    )
+
+
+def _artifact_group(root: Path, name: str, title: str, *, summarize_from: int = 0) -> ArtifactGroup:
+    """One subdirectory, with its files listed or merely counted.
+
+    A run writes one file per scored image into `maps/`, so listing every one of them
+    would be five hundred rows answering a question nobody asked. Past `summarize_from`
+    the group reports its count and total size and stops naming names.
+    """
+    directory = root / name
+    files = sorted(path for path in directory.rglob("*") if path.is_file())
+    sizes = [path.stat().st_size for path in files]
+    listed: list[ArtifactFile] = []
+    if summarize_from == 0 or len(files) <= summarize_from:
+        listed = [
+            ArtifactFile(name=str(path.relative_to(directory)), bytes=size)
+            for path, size in zip(files, sizes, strict=True)
+        ]
+    return ArtifactGroup(
+        name=name,
+        title=title,
+        path=str(directory),
+        file_count=len(files),
+        total_bytes=sum(sizes),
+        files=listed,
+    )
 
 
 @router.get("/{experiment_id}/previews", summary="One representative image per scored sample")
