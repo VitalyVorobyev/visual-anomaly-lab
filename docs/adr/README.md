@@ -18,7 +18,7 @@ frontend and the docs. A number is an address; it is never reused and never with
 
 ## Decisions
 
-The seventeen that still settle something.
+The eighteen that still settle something.
 
 | # | Title | Area |
 |---|---|---|
@@ -40,6 +40,7 @@ The seventeen that still settle something.
 | [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Comparing runs whose scores are not in the same units | Evaluation |
 | [0029](0029-anomalib-is-the-baseline-not-the-specification.md) | `efficientad_custom` is our implementation; anomalib is the baseline it beats or does not | Methods |
 | [0030](0030-decisions-are-amendable-and-the-handbook-holds-current-truth.md) | Decisions are amendable, and the handbook holds current truth | Process |
+| [0031](0031-the-teacher-is-an-experiment-variable-and-we-produce-it.md) | The teacher is an experiment variable, and we produce it | Methods |
 
 ## Folded
 

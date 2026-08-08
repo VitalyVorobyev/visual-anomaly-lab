@@ -114,6 +114,7 @@ boundary is wrong — fix the boundary, not the caller.
 | [`roadmap.md`](roadmap.md) | What is built, what is next, and what each stage has to satisfy |
 | [`backlog.md`](backlog.md) | Task-level breakdown |
 | [`measurements-efficientad.md`](measurements-efficientad.md) | The append-only evidence log behind ADR-0029 |
+| [`teacher-distillation.md`](teacher-distillation.md) | Distilling the EfficientAD teacher here, with the exact commands |
 
 **Read the handbook to learn the system; read a record to learn why.** When the two disagree, the
 handbook is right about what the code does and the record is right about what was chosen.

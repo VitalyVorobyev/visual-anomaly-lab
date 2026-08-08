@@ -55,7 +55,7 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M9 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **30 records: 18 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
+- `docs/adr/` — **31 records: 19 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
   reclassified them; `docs/adr/README.md` is the index). A record captures a choice **that had a live
   alternative**; the bar is *would a competent engineer plausibly have chosen otherwise, and would
   changing it now cost more than a refactor?* A contract detail, a helper, or a read path for something

@@ -20,7 +20,9 @@ code does and the record is right about what was chosen** (ADR-0030).
 | [Security](security.md) | The local attack surface, and what is deliberately not defended |
 
 Sequencing of the work is in [`roadmap.md`](../roadmap.md); the task breakdown is in
-[`backlog.md`](../backlog.md); measurement logs are in [`measurements-efficientad.md`](../measurements-efficientad.md).
+[`backlog.md`](../backlog.md); measurement logs are in [`measurements-efficientad.md`](../measurements-efficientad.md);
+producing an EfficientAD teacher rather than downloading one is in
+[`teacher-distillation.md`](../teacher-distillation.md).
 
 ---
 
