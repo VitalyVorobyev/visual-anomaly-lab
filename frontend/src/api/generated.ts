@@ -449,6 +449,14 @@ export interface paths {
          *     a diagnostics panel beside an opaque per-branch map, it makes a clean image look
          *     blank and puts the two panes on visibly different scales — which defeats the
          *     comparison the panel exists for.
+         *
+         *     `render` chooses between a heatmap and a **segmentation**. The heatmap shows how much,
+         *     everywhere; the segmentation shows where, with an edge — which is the only form that
+         *     can be laid against a ground-truth outline and read as agreement or disagreement.
+         *
+         *     The numbers behind the picture — this map's extremes and the run's range — are served
+         *     as JSON on the experiment's per-sample image route, not as headers here. An `<img>` tag
+         *     cannot read a response header, and this endpoint exists to be an `img src`.
          */
         get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
         put?: never;
@@ -1242,6 +1250,7 @@ export interface components {
              * @default false
              */
             produces_diagnostics: boolean;
+            map_range: components["schemas"]["MapScale"] | null;
         };
         /**
          * ExperimentStatus
@@ -1320,6 +1329,17 @@ export interface components {
              * @default false
              */
             has_mask: boolean;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            map_scale: components["schemas"]["MapScale"] | null;
         };
         /**
          * ImageSummary
@@ -1694,6 +1714,31 @@ export interface components {
             message: string;
             /** Paths */
             paths: string[];
+        };
+        /**
+         * MapRender
+         * @description How an anomaly map should be drawn.
+         *
+         *     A heatmap answers "how anomalous, everywhere"; a segmentation answers "where, exactly".
+         *     Only the second has an edge, and only something with an edge can be laid against a
+         *     ground-truth outline and read as agreement or disagreement.
+         * @enum {string}
+         */
+        MapRender: "heatmap" | "region" | "contour";
+        /**
+         * MapScale
+         * @description The numbers a rendered map is drawn against.
+         *
+         *     Served as JSON because an `<img>` tag cannot read a response header, and the map
+         *     endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
+         *     cold looks exactly like one that failed to render — which is what score-driven alpha
+         *     does to every low-scoring image (ADR-0019).
+         */
+        MapScale: {
+            /** Low */
+            low: number;
+            /** High */
+            high: number;
         };
         /**
          * MethodCatalog
@@ -2826,6 +2871,10 @@ export interface operations {
                 native?: boolean;
                 /** @description Scale opacity with the score, for laying over the source image. Set false for a standalone panel, where a low-scoring map would otherwise be invisible. */
                 alpha?: boolean;
+                /** @description `heatmap` colormaps the whole map. `region` and `contour` draw only where it crosses `threshold`, which is the model's own segmentation. */
+                render?: components["schemas"]["MapRender"];
+                /** @description Cut in **map units**, required by `region` and `contour`. A display decision only: no metric is computed from it. */
+                threshold?: number | null;
             };
             header?: never;
             path: {

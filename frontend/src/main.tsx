@@ -10,7 +10,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
-import { App } from "./App";
+import { App, CanvasLayout, ReadingLayout } from "./App";
 import { DatasetRoute } from "./routes/DatasetRoute";
 import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
@@ -47,22 +47,29 @@ createRoot(container).render(
       <HashRouter>
         <Routes>
           <Route element={<App />}>
-            <Route index element={<DatasetsRoute />} />
-            <Route path="import" element={<ImportRoute />} />
-            <Route path="datasets/:datasetId" element={<DatasetRoute />} />
-            <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
-            <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
-            <Route path="experiments" element={<ExperimentsRoute />} />
-            <Route path="experiments/:experimentId" element={<ExperimentRoute />} />
-            <Route
-              path="experiments/:experimentId/samples/:sampleId"
-              element={<ExperimentSampleRoute />}
-            />
-            <Route path="health" element={<HealthRoute />} />
-            {/* Kept as a debugging aid for the WebSocket path, off the navigation. */}
-            <Route path="echo" element={<EchoRoute />} />
-            {/* Never fail to an empty document again. */}
-            <Route path="*" element={<NotFoundRoute />} />
+            {/* Read rather than looked at: capped at a readable measure. */}
+            <Route element={<ReadingLayout />}>
+              <Route index element={<DatasetsRoute />} />
+              <Route path="import" element={<ImportRoute />} />
+              <Route path="datasets/:datasetId" element={<DatasetRoute />} />
+              <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
+              <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
+              <Route path="experiments" element={<ExperimentsRoute />} />
+              <Route path="experiments/:experimentId" element={<ExperimentRoute />} />
+              <Route path="health" element={<HealthRoute />} />
+              {/* Kept as a debugging aid for the WebSocket path, off the navigation. */}
+              <Route path="echo" element={<EchoRoute />} />
+              {/* Never fail to an empty document again. */}
+              <Route path="*" element={<NotFoundRoute />} />
+            </Route>
+
+            {/* The image is the content: full window width, and the viewport's height. */}
+            <Route element={<CanvasLayout />}>
+              <Route
+                path="experiments/:experimentId/samples/:sampleId"
+                element={<ExperimentSampleRoute />}
+              />
+            </Route>
           </Route>
         </Routes>
       </HashRouter>

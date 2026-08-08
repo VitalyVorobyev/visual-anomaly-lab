@@ -43,6 +43,13 @@ export const queryKeys = {
 
   modelTypes: () => ["experiments", "model-types"] as const,
   experiments: (datasetId?: number) => ["experiments", "list", datasetId ?? null] as const,
+  /**
+   * Every experiment list, whichever dataset it was filtered to.
+   *
+   * `experiments(datasetId)` is a *complete* key, not a prefix, so invalidating one list
+   * leaves the others stale. A finished run changes the headline metric on all of them.
+   */
+  experimentLists: () => ["experiments", "list"] as const,
   experiment: (experimentId: number) => ["experiments", experimentId] as const,
   results: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "results", subset ?? null] as const,

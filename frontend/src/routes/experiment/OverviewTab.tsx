@@ -9,7 +9,7 @@
  */
 
 import type { MetricValue } from "../../api/metrics";
-import { caveats, detectionRows, pixelRows, timingRows } from "../../api/metrics";
+import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { JobSummary, Subset } from "../../api/client";
 import { JobProgress } from "../../components/JobProgress";
@@ -86,8 +86,11 @@ export function jobTone(status: string): Tone {
   return "neutral";
 }
 
-export function Console({ jobId }: { jobId: number }) {
-  const { job, lines, error } = useJob(jobId);
+export function Console({ jobId, experimentId }: { jobId: number; experimentId: number }) {
+  // The experiment id is what makes the screen refresh itself when this job ends: the
+  // console is the one thing following the socket, so its terminal frame is the only
+  // moment anything here knows the run is over.
+  const { job, lines, error } = useJob(jobId, { experimentId });
   return (
     <Panel title={`Job #${jobId}`}>
       <JobProgress jobId={jobId} job={job} lines={lines} error={error} />
@@ -173,6 +176,7 @@ export function Metrics({
 function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricValue }) {
   const counts = (metrics.samples ?? {}) as Record<string, number>;
   const notes = caveats(metrics);
+  const ungrouped = groupingNote(metrics);
 
   return (
     <div className="flex flex-col gap-2">
@@ -188,6 +192,9 @@ function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricVal
       </h3>
 
       <MetricList rows={detectionRows(metrics)} />
+      {/* Not a warning — an explanation of an absence, so it reads in the muted chrome
+          colour rather than the verdict palette (ADR-0021). */}
+      {ungrouped !== null && <p className="text-xs text-fg-subtle">{ungrouped}</p>}
       {pixelRows(metrics).length > 0 && (
         <>
           <h4 className="mt-1 text-xs font-semibold text-fg">

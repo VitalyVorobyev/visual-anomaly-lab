@@ -10,6 +10,7 @@
 import { useState } from "react";
 
 import type { MetricSummary, Subset } from "../../api/client";
+import { groupingNote } from "../../api/metrics";
 import { CurveChart } from "../../components/charts/CurveChart";
 import { Empty, Panel, SkeletonRows } from "../../components/ui";
 import { useCurves } from "../../hooks/useExperiments";
@@ -34,6 +35,10 @@ export function BenchmarkTab({
   const forSubset = metrics.find((entry) => entry.subset === subset);
 
   const absent = "This subset has only one class in it, so there is no curve to draw.";
+  /* One image per sample means `max` over a single value, so the image-level curve is the
+     sample-level curve redrawn — four charts, two findings. Derived from the counts the
+     evaluation layer recorded, so a grouped dataset still gets both pairs. */
+  const ungrouped = groupingNote(forSubset?.metrics ?? {});
 
   return (
     <div className="flex flex-col gap-6">
@@ -44,37 +49,42 @@ export function BenchmarkTab({
             <CurveChart
               curve={curves.data.sample_roc}
               kind="roc"
-              label="Sample-level ROC curve"
+              label={ungrouped ? "ROC curve" : "Sample-level ROC curve"}
               area={scalar(forSubset, "sample_roc_auc")}
-              areaLabel="sample ROC-AUC"
+              areaLabel={ungrouped ? "ROC-AUC" : "sample ROC-AUC"}
               absent={absent}
             />
             <CurveChart
               curve={curves.data.sample_pr}
               kind="pr"
-              label="Sample-level PR curve"
+              label={ungrouped ? "PR curve" : "Sample-level PR curve"}
               area={scalar(forSubset, "sample_average_precision")}
-              areaLabel="sample AP"
+              areaLabel={ungrouped ? "AP" : "sample AP"}
               absent={absent}
             />
-            <CurveChart
-              curve={curves.data.image_roc}
-              kind="roc"
-              label="Image-level ROC curve"
-              area={scalar(forSubset, "image_roc_auc")}
-              areaLabel="image ROC-AUC"
-              absent={absent}
-            />
-            <CurveChart
-              curve={curves.data.image_pr}
-              kind="pr"
-              label="Image-level PR curve"
-              area={scalar(forSubset, "image_average_precision")}
-              areaLabel="image AP"
-              absent={absent}
-            />
+            {ungrouped === null && (
+              <>
+                <CurveChart
+                  curve={curves.data.image_roc}
+                  kind="roc"
+                  label="Image-level ROC curve"
+                  area={scalar(forSubset, "image_roc_auc")}
+                  areaLabel="image ROC-AUC"
+                  absent={absent}
+                />
+                <CurveChart
+                  curve={curves.data.image_pr}
+                  kind="pr"
+                  label="Image-level PR curve"
+                  area={scalar(forSubset, "image_average_precision")}
+                  areaLabel="image AP"
+                  absent={absent}
+                />
+              </>
+            )}
           </div>
         )}
+        {ungrouped !== null && <p className="mt-4 text-xs text-fg-muted">{ungrouped}</p>}
         <p className="mt-4 text-xs text-fg-muted">
           {/* Stating the gap rather than leaving a reader to wonder where it went. */}
           Pixel-level curves are not drawn. The pixel metrics stream their histograms and

@@ -57,7 +57,7 @@ export function ExperimentRoute() {
   // so that opening the tab after a run finished shows the run rather than nothing.
   const lastTrainJob = experiment.data?.jobs.filter((job) => job.kind === "train").at(0);
   const chartedJobId = followingJobId ?? lastTrainJob?.id;
-  const charted = useJob(chartedJobId);
+  const charted = useJob(chartedJobId, { experimentId });
 
   const tab = parseTab(params.get("tab"));
   const selectTab = (next: TabId) => {
@@ -126,7 +126,9 @@ export function ExperimentRoute() {
             followingJobId={followingJobId}
           />
 
-          {followingJobId !== undefined && <Console jobId={followingJobId} />}
+          {followingJobId !== undefined && (
+            <Console jobId={followingJobId} experimentId={experimentId} />
+          )}
 
           <Configuration detail={detail} />
 

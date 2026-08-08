@@ -46,7 +46,7 @@ from anomaly_lab.eval.threshold import (
 from anomaly_lab.experiments.infer import InferParams
 from anomaly_lab.experiments.train import TrainParams
 from anomaly_lab.jobs.queue import JobQueue
-from anomaly_lab.media.overlay import render_anomaly_map, render_rgb_image
+from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
 from anomaly_lab.models.base import ModelDescription, evenly_spaced
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
@@ -117,6 +117,21 @@ class ExperimentSummary(BaseModel):
     )
 
 
+class MapScale(BaseModel):
+    """The numbers a rendered map is drawn against.
+
+    Served as JSON because an `<img>` tag cannot read a response header, and the map
+    endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
+    cold looks exactly like one that failed to render — which is what score-driven alpha
+    does to every low-scoring image (ADR-0019).
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    low: float
+    high: float
+
+
 class ExperimentDetail(ExperimentSummary):
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
@@ -129,6 +144,15 @@ class ExperimentDetail(ExperimentSummary):
     jobs: list[JobSummary] = Field(default_factory=list)
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
+    map_range: MapScale | None = None
+    """
+    The run-wide display range every one of this run's maps is drawn against (ADR-0019).
+
+    A segmentation threshold has to come from *this*, not from the image on screen: a cut
+    derived per image is a different cut on every image, so two samples' predicted regions
+    would not be comparable — the same mistake the run-wide range exists to prevent for the
+    heatmap.
+    """
 
 
 class ResultsPage(BaseModel):
@@ -185,6 +209,16 @@ class ImageScore(BaseModel):
     inference_ms: float
     has_map: bool = False
     has_mask: bool = False
+    width: int = 0
+    height: int = 0
+    """
+    The source image's pixel dimensions, so a viewer can shape its frame before the
+    picture arrives. Without them the canvas is laid out square and reflows on load, or —
+    worse — is drawn full-width with the image letterboxed inside it, which spends the
+    window on black bars on exactly the screen that exists to show a photograph.
+    """
+    map_scale: MapScale | None = None
+    """This image's own extremes. `None` when the map file could not be read."""
 
 
 def _headline(metric_sets: list[MetricSummary]) -> float | None:
@@ -246,7 +280,14 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         jobs=[summary_of(job) for job in jobs_repo.list_jobs_for_experiment(conn, experiment.id)],
         produces_anomaly_map=produces_map,
         produces_diagnostics=produces_diagnostics,
+        map_range=_run_map_range(experiment.artifact_dir),
     )
+
+
+def _run_map_range(artifact_dir: str) -> MapScale | None:
+    """The run-wide range from `maps/range.json`, or `None` before anything is scored."""
+    found = read_display_range(Path(artifact_dir) / "maps")
+    return None if found is None else MapScale(low=found[0], high=found[1])
 
 
 def _load(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
@@ -525,6 +566,22 @@ def _curve(arrays: tuple[np.ndarray, np.ndarray] | None) -> Curve | None:
     )
 
 
+def _map_scale(map_path: str | None) -> MapScale | None:
+    """This map's own extremes, or `None` if it cannot be read.
+
+    One `.npy` read per image of the sample being viewed — a few hundred kilobytes for the
+    one part on screen, not a scan of the run.
+    """
+    if not map_path:
+        return None
+    try:
+        array = np.load(map_path, allow_pickle=False)
+    except (OSError, ValueError):
+        # Deletable by design; the caller renders the absence rather than failing.
+        return None
+    return MapScale(low=float(np.min(array)), high=float(np.max(array)))
+
+
 @router.get("/{experiment_id}/samples/{sample_id}/images", summary="Per-image scores of a sample")
 def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> list[ImageScore]:
     """What the result viewer needs to draw one part across its channels."""
@@ -545,6 +602,9 @@ def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> l
             inference_ms=image.inference_ms,
             has_map=image.map_path is not None,
             has_mask=image.image_id in masks,
+            width=image.width,
+            height=image.height,
+            map_scale=_map_scale(image.map_path),
         )
         for image in scored
     ]
