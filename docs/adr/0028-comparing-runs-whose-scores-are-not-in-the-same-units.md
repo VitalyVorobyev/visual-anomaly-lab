@@ -69,8 +69,11 @@ because a silently-opened slider invites being read as a recommendation.
     and therefore the same rule, the same implementation and the same rationale sentence the results
     screen shows. Every method at its own best, which is the fairest reading when the question is
     "which method".
-  - **`recall`** — the lowest threshold at which a run reaches a target recall, so every method is
-    held to the same detection rate and the comparison is of what that rate *costs* in false alarms.
+  - **`recall`** — the *highest* threshold at which a run still reaches a target recall, so every
+    method is held to the same detection rate and the comparison is of what that rate *costs* in
+    false alarms. Highest rather than any: recall only falls as the threshold rises, so every lower
+    cut reaches the target too, and the highest one is the only choice that does not hand a method
+    false alarms it did not need.
     This is the operating point an inspection engineer actually specifies, and it is the one that
     makes the confusion matrix say something the AUROC does not. A run that cannot reach the target
     at any threshold reports no operating point rather than its closest attempt.
