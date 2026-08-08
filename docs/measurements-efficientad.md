@@ -62,23 +62,58 @@ published number or against a protocol row below.
 |---|---|---|---|---|---|---|---|
 | 2026-08-08 | `pixel_reference` (floor) | — | 0 | 0.790 | 0.891 | 0.819 | 7.8 |
 | 2026-08-08 | `efficientad_anomalib` | 4000 | 0 | 0.727 | 0.875 | 0.523 | 48.7 |
-| 2026-08-08 | `efficientad_custom` | 4000 | 0 | **0.751** | **0.900** | **0.560** | **25.8** |
+| 2026-08-08 | `efficientad_anomalib` | 4000 | 1 | 0.731 | 0.890 | 0.534 | 45.6 |
+| 2026-08-08 | `efficientad_anomalib` | 4000 | 2 | 0.746 | 0.880 | 0.548 | 46.7 |
+| 2026-08-08 | `efficientad_custom` | 4000 | 0 | 0.751 | 0.900 | 0.560 | 25.8 |
+| 2026-08-08 | `efficientad_custom` | 4000 | 1 | 0.764 | 0.878 | 0.498 | 25.7 |
+| 2026-08-08 | `efficientad_custom` | 4000 | 2 | 0.792 | 0.893 | 0.612 | 25.9 |
 | 2026-08-08 | `efficientad_anomalib` | **50** | 0 | **0.227** | 0.680 | 0.086 | 45.5 |
 | 2026-08-08 | `efficientad_custom` | **50** | 0 | **0.226** | 0.689 | 0.110 | 25.6 |
 
-At 4000 steps ours is ahead on every metric — sample ROC-AUC +0.024, pixel +0.025, AU-PRO +0.037 —
-and takes **1.9× less time per image**. Seeds 1 and 2 are needed before any of that counts as
-evidence under the rule above, and are in flight; the accuracy gaps are small enough that the seed
-range may well swallow them.
+### What the three seeds actually support
 
-**The speed difference is not noise and does not need seeds.** The wrapper computes the branch maps
-twice per image: once inside `model(image)` for the score and again in `get_maps` for the two
-per-branch diagnostics. Ours computes them once and reduces the combined map separately, which is
-what `reduce_score` exists for. 48.7 → 25.8 ms is that second forward pass through teacher, student
-and autoencoder, and nothing else.
+| Metric | `efficientad_custom` median (range) | `efficientad_anomalib` median (range) | Gap | Verdict |
+|---|---|---|---|---|
+| Sample ROC-AUC | 0.764 (0.751–0.792) | 0.731 (0.727–0.746) | +0.033 | **not established** |
+| Pixel ROC-AUC | 0.893 (0.878–0.900) | 0.880 (0.875–0.890) | +0.013 | no claim |
+| AU-PRO | 0.560 (0.498–0.612) | 0.534 (0.523–0.548) | +0.026 | no claim |
+| ms/image | 25.8 (25.7–25.9) | 46.7 (45.6–48.7) | **−20.9** | **evidence** |
 
-Training cost is the same to within measurement noise: **130 ms/step on MPS** against the 123 the
-wrapper recorded. Nothing here is faster because it does less work per step.
+**Only the speed result is claimed.** The two implementations are 1.8× apart on inference with
+non-overlapping ranges an order of magnitude smaller than the gap, and there is a mechanism rather
+than a correlation: the wrapper computes the branch maps twice per image, once inside `model(image)`
+for the score and again in `get_maps` for the two per-branch diagnostics. Ours computes them once and
+reduces the combined map separately, which is what `reduce_score` exists for. Training cost is
+unchanged — **130 ms/step on MPS** against the 123 the wrapper recorded — so nothing here is fast
+because it does less work.
+
+**On accuracy the rule says no, and the rule wins.** The gap in sample ROC-AUC is +0.033 and the
+widest seed span is 0.041, so by the rule set in ADR-0029 before any of this was run, it is not
+evidence. Pixel ROC-AUC and AU-PRO are worse than that — their ranges overlap outright.
+
+Worth stating precisely, because it is the one place the rule and the data disagree: **all three of
+our runs beat all three of the wrapper's** on sample ROC-AUC (0.751 > 0.746), and a clean separation
+of three against three is the smallest p-value that design can produce — one-sided p = 1/20. So the
+result is more suggestive than "not evidence" makes it sound, and it is still not a claim. The
+resolution is more seeds, not a softer rule; a rule that gets relaxed the first time it is
+inconvenient was never a rule. It is also a fair criticism of the rule itself, recorded here rather
+than quietly reinterpreted: comparing a gap of medians against a within-group *span* conflates spread
+with uncertainty of the median, and a rank test would use the data better. Changing it is a new ADR,
+not an edit.
+
+### Our seed spread is twice the wrapper's, and that is probably our doing
+
+0.041 against 0.019 on sample ROC-AUC. The likely cause is in this file's own configuration: the
+quantile fit samples `quantile_pixel_budget // quantile_images` pixels per map, which at the
+compared settings (2²² over 128 images) is 32 768 of each map's 65 536 — **half the pixels, drawn at
+random** — where the wrapper pools whole maps and takes an exact quantile. At 128 images the full set
+is 8.4M elements, comfortably under `torch.quantile`'s 2²⁴ limit, so the subsampling bought nothing
+here and cost run-to-run stability.
+
+That makes the top hypothesis a defect in a default rather than an idea: **the budget should be spent
+only when the exact fit does not fit.** It is deliberately not fixed yet, because changing it would
+invalidate the six runs above; it is the first thing to measure next, and it should reduce variance
+rather than move the median.
 
 **The two 50-step rows are the most useful thing measured so far.** Both implementations land at
 0.226 / 0.227 — a difference of 0.002 — on the same split, the same preprocessing and the same
@@ -130,6 +165,7 @@ behaviour, so measuring one is a single changed number and nothing else.
 
 | Field | Hypothesis | Why it might be true |
 |---|---|---|
+| `quantile_pixel_budget` | **Spending the budget only when an exact fit does not fit reduces the seed spread**, without moving the median. | Measured above: our spread is twice the wrapper's, and the one stochastic step the wrapper does not have is this sampling. At 128 calibration images the exact fit is 8.4M elements, under `torch.quantile`'s limit, so the sampling bought nothing. **Run this first — it is a defect in a default, not an idea, and a smaller spread is what makes every other hypothesis measurable.** |
 | `calibration_holdout` | Fitting the score normalization on normals the student has *not* memorized raises sample ROC-AUC. | The two branch weights come from different quantile pairs, so the fit sets their **ratio**, and the ratio reorders images. M3 measured 0.744 → 0.769 for held-out versus training-fitted quantiles — and that already paid for 90 fewer training images. VisA's official split has no `val`, so this is live on the primary protocol. |
 | `score_reduction` | The mean of the hottest `score_top_k` pixels beats a single maximum. | `amax` over 65 536 pixels is one pixel's opinion, and `pixel_reference` already reduces by a percentile for that reason. Sign genuinely unknown: a *percentile* would be wrong here — the 99.5th is the top 328 pixels, an 18 × 18 region, and many VisA defects are smaller than that — which is why the alternative offered is a small top-k rather than a quantile. |
 | `student_teacher_weight` | The fixed 0.5 / 0.5 branch blend is not optimal. | Report as an **oracle upper bound only**. It cannot be tuned on normals alone, and tuning it on the test set is cheating (ADR-0029 rules it out as a shipped default). Its value is as a ceiling on what a better calibration could recover. |

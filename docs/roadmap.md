@@ -244,22 +244,57 @@ view sharing one cut fraction and one zoom across every pane.
 
 ## Next
 
-### M6 — Custom EfficientAD
+### M6 — Custom EfficientAD · in progress
 
-**Goal.** Reimplement EfficientAD from the paper (arXiv:2303.14535) in PyTorch, behind the same interface, with the anomalib version's number as its yardstick — the research payoff of having built the workbench.
+The milestone turned on a question the plan had not asked, and the answer reshaped it: **what is a
+second implementation actually for?** Measuring our own against the wrapper's number makes the
+wrapper the specification and the goal a second copy of something already known. **ADR-0029** answers
+it — anomalib is the floor this method beats or does not — and it was written before the measuring
+started, because a rule invented afterwards is not a rule.
 
-**Scope**
-
-- PDN student/teacher architecture and distillation loss; the autoencoder branch; quantile-based score normalization; an MPS training loop.
-- Registered as `efficientad_custom` behind the unchanged plugin interface (**ADR-0007**), emitting the same diagnostics as the wrapper so M4's views work on it unchanged.
+**Shipped.** `efficientad_custom`: the PDN in both published widths, the autoencoder, the three
+losses, teacher statistics, quantile calibration, an MPS training loop, ADR-0025 resume, and asset
+acquisition of its own so the method needs **torch alone, not anomalib**. One registry entry and one
+module — no route, no schema, no TypeScript, which is the prediction ADR-0007 made and the first time
+it has been tested by a method the interface was not designed around.
 
 **Exit criteria**
 
-- [ ] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface.
-- [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained (a gap is an acceptable outcome; an unexplained gap is not).
-- [ ] Every M4 visualization works on it with no new code — if any needed a special case, that is a finding about the diagnostics contract and gets an ADR.
+- [x] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface. 130 ms/step, 25.8 ms/image.
+- [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained. *Measured on `candle` at three seeds; the protocol sweep on the official split is outstanding.*
+- [x] Every M4 visualization works on it with no new code. Checked against two real runs, not a fixture: identical diagnostic keys, kinds and scopes, 37 architecture nodes each with real shapes, same edges. Nothing needed a special case.
 
-**Size:** large, but **isolated and low-risk to the rest of the system**. Split it into subtasks (backbone → distillation → autoencoder branch → normalization → training loop) when it is actually scheduled.
+**Still binds:**
+
+- **A method that runs and a method that detects are different claims, and only one of them was
+  being tested.** Before M6 nothing in the suite asserted that any EfficientAD detects anything —
+  the `dl`-gated files covered checkpoint exactness and introspection, and neither called `predict`.
+  A model that trained, wrote maps, saved, reloaded and separated nothing would have passed
+  everything. The detection test trains for real and asserts a ROC-AUC bar; two assertions beside it
+  carry more weight than the AUROC does, because each branch has to separate *on its own* and the
+  error on held-out normals has to actually fall.
+- **Writing that second assertion found the bug worth finding.** Weight initialisation draws from
+  torch's global stream, so `seed` controlled the training order over *different* initial weights.
+  Two runs of one configuration were not one experiment, which would have put noise under every
+  number this milestone exists to produce.
+- **The two implementations agree to 0.002 sample ROC-AUC at 50 steps, and are both inverted there.**
+  Independent code arriving at the same number is the strongest validation available; both scoring
+  defects *below* normals is a fact about EfficientAD's undertrained regime, not about either
+  implementation. A run stopped early is not a weaker detector, it is a backwards one.
+- **Only the speed result is claimed: 25.8 ms/image against 46.7.** The wrapper computes the branch
+  maps twice, once for the score and again for the diagnostics. On accuracy the seed spread swallows
+  a +0.033 median gap, and **the rule set in ADR-0029 before the runs says that is not evidence** —
+  even though all three of our runs beat all three of the wrapper's. More seeds, not a softer rule.
+- **Our seed spread is twice the wrapper's, and it is our own default's fault.** The quantile fit
+  samples half of each calibration map at random where an exact fit would have fitted under
+  `torch.quantile`'s limit. Fixing that is the next measurement, and it should narrow the spread
+  rather than move the median.
+- **`total_parameters` differs by exactly 772** — anomalib counts its `mean_std` and `quantiles`
+  `ParameterDict`s as parameters. They are fitted statistics; ours are buffers. A correctness
+  decision that turns out to be visible in the Architecture tab.
+
+**Left to do:** the protocol sweep on VisA's official split (`pcb1`, `capsules`), then the hypotheses
+in [measurements-efficientad.md](measurements-efficientad.md) in order.
 
 ---
 
