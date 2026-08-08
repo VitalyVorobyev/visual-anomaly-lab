@@ -1,6 +1,10 @@
 # ADR-0024: Layer-level introspection is a shared torch helper on the existing `graph` kind
 
-**Status:** Accepted (2026-08-08)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-08.
+
+> **Read [`architecture/diagnostics.md`](../architecture/diagnostics.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Extends **ADR-0018**. The diagnostics contract, the `graph` kind and the render-by-kind rule are
 unchanged; this decides how a payload of that kind comes to describe a whole network rather than

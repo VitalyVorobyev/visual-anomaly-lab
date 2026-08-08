@@ -1,7 +1,7 @@
 /**
  * Turning a plugin's JSON Schema into a form, and a form back into options.
  *
- * ADR-0007 and system-design §5 both say an options model "drives the UI form", and until
+ * ADR-0007 and the methods handbook both say an options model "drives the UI form", and until
  * now that was a claim rather than a mechanism: the import screen hardcoded one option and
  * relied on Python defaults for the rest. That stops being survivable the moment a model
  * has a *required* option nobody can type.

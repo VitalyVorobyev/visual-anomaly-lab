@@ -84,6 +84,9 @@ PENALTY_SUBDIR = "imagenette"
 DEFAULT_MAX_STEPS = 4000
 
 _LOSS_LOG_EVERY = 20
+_LR_GAMMA = 0.1
+"""The single tenfold drop. Named because `_build_scheduler` applies it twice — once
+through `StepLR` and once in the closed form that positions a resumed run."""
 
 
 class EfficientAdConfig(BaseModel):
@@ -403,6 +406,8 @@ class EfficientAdAnomalibModel(AnomalyModel):
         # 4000 + 4000 continue close to what a single 8000-step run would have done — and
         # it means the learning rate returns to its base value at the resume point, since
         # the drop moves from 3800 to 7600. Surprising enough that the caller prints it.
+        # It is also only true because `_build_scheduler` sets the rate rather than letting
+        # the restored optimizer's decayed one stand; see its docstring.
         scheduler = self._build_scheduler(optimizer, total, torch, last_epoch=done - 1)
 
         self._restore_rng(torch, ctx)
@@ -452,15 +457,26 @@ class EfficientAdAnomalibModel(AnomalyModel):
     ) -> Any:
         """anomalib's own schedule: one tenfold drop near the end of training.
 
-        `last_epoch` other than -1 makes PyTorch read `initial_lr` off every param group,
-        which `Adam` does not set — so it is seeded here. Without this, resuming raises a
-        `KeyError` a long way from its cause.
+        Resuming makes this harder than it looks, and getting it wrong is invisible.
+        `StepLR.get_lr` is *multiplicative on the group's current learning rate*, and
+        `Adam.load_state_dict` restores the rate the previous leg ended on — which, since
+        every leg anneals over its own last 5%, is the decayed one. Left to itself each
+        continuation would start where the last drop left it and then drop again: measured
+        at 1e-5 instead of 1e-4 on the first resume, reaching 1e-9 by the fifth. So the rate
+        is *computed* from the schedule's closed form at the resume point rather than
+        inherited from the restored optimizer.
+
+        `last_epoch` other than -1 also makes PyTorch read `initial_lr` off every param
+        group, which `Adam` does not set — so it is seeded here. Without this, resuming
+        raises a `KeyError` a long way from its cause.
         """
+        step_size = max(1, int(0.95 * total))
         if last_epoch >= 0:
             for group in optimizer.param_groups:
-                group.setdefault("initial_lr", self.config.learning_rate)
+                group["initial_lr"] = self.config.learning_rate
+                group["lr"] = self.config.learning_rate * _LR_GAMMA ** (last_epoch // step_size)
         return torch_module.optim.lr_scheduler.StepLR(
-            optimizer, step_size=int(0.95 * total), gamma=0.1, last_epoch=last_epoch
+            optimizer, step_size=step_size, gamma=_LR_GAMMA, last_epoch=last_epoch
         )
 
     def _restore_rng(self, torch_module: Any, ctx: TrainContext) -> None:

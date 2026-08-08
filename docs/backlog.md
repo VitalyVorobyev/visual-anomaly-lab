@@ -48,8 +48,73 @@ the detail is in the git history and the ADRs.
 
 ### E11 — Custom EfficientAD (M6)
 
-- [ ] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface (L)
-  - split when scheduled: PDN backbone → teacher distillation → student loss → autoencoder branch → quantile normalization → training loop with progress events → comparison run against `efficientad_anomalib`
+- [x] Reimplement EfficientAD from arXiv:2303.14535 as `efficientad_custom` behind the unchanged plugin interface (L) — **ADR-0029**
+  - [x] PDN backbone, pinned against the reference at `atol=0` so the published teacher weights load into the network they describe
+  - [x] Teacher statistics, student loss, autoencoder branch, quantile normalization, training loop with progress events
+  - [x] Asset acquisition of our own, so the method needs torch and not anomalib
+  - [x] Resume (**ADR-0025**), including the penalty order the wrapper restarts
+  - [x] A detection test with a real ROC-AUC bar — the thing no EfficientAD in this repo previously had
+  - [ ] The head-to-head against `efficientad_anomalib` on VisA, recorded in `measurements-efficientad.md`
+- [ ] Measure the hypotheses in `measurements-efficientad.md`, in order: the step-budget curve first (nearly free — one run continues into three points), then `calibration_holdout`, then `score_reduction` (S each, mostly unattended compute)
+- [ ] A walkthrough confirming every M4 view renders for `efficientad_custom` with no frontend change; any that needs a special case is a finding about **ADR-0018** and gets its own record (S)
+
+### E17 — The teacher is ours too (M6)
+
+The teacher turned out to be the largest single effect measured in this milestone — swapping which
+published one is loaded moved AU-PRO 0.560 → 0.916 at a fixed budget. A weight file nobody in this
+repository produced is therefore the most important input we do not control, and this epic is about
+producing it: **distil a frozen source model into the compact PDN ourselves**, so the teacher becomes
+something the workbench measures rather than something it is handed.
+
+Inference cost is unchanged by any of this. The source model is training-only; what ships is the
+same 2.7M-parameter PDN.
+
+- [x] **Validate the PDN against the reference architecture, not just against its shapes** (S).
+      `test_our_pdn_is_the_reference_pdn`, both widths, padding on and off. It also pins the one
+      genuine difference: ours normalizes inside `forward`, the reference in its dataset transform.
+- [x] **The distillation stage** (L): a `distill` job kind and one module. `wide_resnet101_2`
+      (`IMAGENET1K_V1`) frozen, `layer2` + `layer3`, patch-aggregated to 384 channels at 64×64, MSE
+      into the PDN with padding on, Adam 1e-4 / weight decay 1e-5. Writes the weights, the source's
+      feature-normalization statistics and the full configuration as one described artifact.
+  - [x] The **feature source behind a protocol**, so DINOv2-S is a class rather than a rewrite.
+  - [x] **Imagenette as the smoke corpus**, ImageNet-1K opt-in and never a default.
+  - [x] Resumable, checkpointing on a step interval and on cancellation.
+  - [x] The MPS finding: `adaptive_avg_pool1d` is unimplemented for non-divisible lengths, which is
+        two of the three pools here. Bins gathered explicitly, pinned against the library kernel.
+  - [ ] A real Imagenette teacher at 10 000 steps, and a student against it (M). **Postponed.**
+        The stage is built and smoke-tested; what is left is machine time, and it is queued
+        behind work with a better return.
+  - [ ] Choose the phase-2 corpus (S). ImageNet-1K is ~150 GB against 139 GB free and needs an
+        account, so it is an acquisition rather than a download. COCO `train2017` is 19 GB with
+        no account, ImageNet-1K `val` is 6.7 GB with one.
+  - [ ] An API route so a distill job can be started from the application rather than the CLI (S).
+- [x] **Consume a distilled teacher from the student stage** (S): `teacher_source: "distilled"` plus
+      `distilled_teacher`, validating recorded `model_size`, `out_channels` and preprocessing first.
+- [x] **Import the official protocol** (S). VisA `candle` from `split_csv/1cls.csv` — 810/90/200 with
+      the published test set byte-identical, training confirmed normal-only from the assignments.
+      The old import read `image_anno.csv`, which has no split column at all.
+- [ ] **Run the protocol sweep on it** (M). **Postponed.** Three runs at 30 000 steps is about
+      three and a half hours, and the sweep's design changed underneath it: with new runs no
+      longer using the anomalib teacher, the like-for-like leg is a deliberate exercise rather
+      than part of the routine. `protocol.py` is written and takes the budget as an argument.
+- [x] **Make the aggregation comparison repeatable** (S). `scripts/audit-run.py` — per-image CSV plus
+      every aggregation recomputed from stored maps, read-only and GPU-free. It overturned its own
+      earlier null result the first time it was pointed at a better run.
+**Two things to be honest about before starting:**
+
+- **An Imagenette-distilled teacher is a pipeline validation, not a competitive teacher.** Imagenette
+  is 13 394 images across 10 classes; the reference recipe distils over ImageNet-1K, 1.28M images
+  across 1000. Expect it to lose to `nelson1425` and report that as the expected result rather than a
+  regression.
+- **A full ImageNet distillation is not an overnight job on this hardware.** The reference recipe is
+  60 000 steps at batch 16 with a WideResNet-101 forward at 512×512. The step cost will be measured
+  and the extrapolation written down before anything long is started.
+
+**Found while building it, not scheduled:**
+
+- [ ] Make the autoencoder resolution-agnostic — replace the hard-coded `//64 - 1` upsample ladder and the 8×8 bottleneck, so the 256 px floor goes away (M). The guard refusing smaller inputs is honest but it refuses a configuration the architecture could support, and this crashes the wrapper outright.
+- [ ] Consider the same input-size guard for `efficientad_anomalib`, which fails inside `conv2d` with a message about a padded input size (S).
+- [ ] Batched inference for the deep methods — one image per forward pass today (M).
 
 ### E6 — `classical_circular` (M8, optional)
 
@@ -63,7 +128,7 @@ the detail is in the git history and the ADRs.
 ### E12 — README & polish (M9)
 
 - [ ] "How to add a new anomaly-detection method", written against the real interface with a worked example (S) — **ADR-0007**
-- [ ] Docs refresh: `system-design.md` and ADR amendments where the implementation diverged (S)
+- [ ] Docs refresh: handbook pages and ADR amendments where the implementation diverged (S)
 - [ ] Loading and empty states, error surfaces, keyboard navigation, cross-screen layout consistency (M)
 - [ ] Backlog re-triage and a refreshed *Later / ideas* list (S)
 

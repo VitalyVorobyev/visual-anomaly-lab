@@ -1,6 +1,10 @@
 # ADR-0023: Raw values are served beside the rendered picture, for reading and not for drawing
 
-**Status:** Accepted (2026-08-08)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-08.
+
+> **Read [`architecture/diagnostics.md`](../architecture/diagnostics.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Amends **ADR-0019**, which ruled out "returning raw `.npy` for the client to decode". That reasoning
 still holds and is not reversed: the colormap and the display range stay server-side, in one

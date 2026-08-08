@@ -1,6 +1,10 @@
 # ADR-0019: Serving diagnostic payloads through the index, on a recorded scale
 
-**Status:** Accepted (2026-08-07)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-07.
+
+> **Read [`architecture/diagnostics.md`](../architecture/diagnostics.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Extends **ADR-0018**. Nothing in that record is reversed: the capability flag, the authoring surface
 and the self-describing index stay exactly as decided. This adds the read path they implied and

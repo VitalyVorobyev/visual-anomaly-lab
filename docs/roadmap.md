@@ -244,22 +244,129 @@ view sharing one cut fraction and one zoom across every pane.
 
 ## Next
 
-### M6 — Custom EfficientAD
+### M6 — Custom EfficientAD · in progress
 
-**Goal.** Reimplement EfficientAD from the paper (arXiv:2303.14535) in PyTorch, behind the same interface, with the anomalib version's number as its yardstick — the research payoff of having built the workbench.
+The milestone turned on a question the plan had not asked, and the answer reshaped it: **what is a
+second implementation actually for?** Measuring our own against the wrapper's number makes the
+wrapper the specification and the goal a second copy of something already known. **ADR-0029** answers
+it — anomalib is the floor this method beats or does not — and it was written before the measuring
+started, because a rule invented afterwards is not a rule.
 
-**Scope**
-
-- PDN student/teacher architecture and distillation loss; the autoencoder branch; quantile-based score normalization; an MPS training loop.
-- Registered as `efficientad_custom` behind the unchanged plugin interface (**ADR-0007**), emitting the same diagnostics as the wrapper so M4's views work on it unchanged.
+**Shipped.** `efficientad_custom`: the PDN in both published widths, the autoencoder, the three
+losses, teacher statistics, quantile calibration, an MPS training loop, ADR-0025 resume, and asset
+acquisition of its own so the method needs **torch alone, not anomalib**. One registry entry and one
+module — no route, no schema, no TypeScript, which is the prediction ADR-0007 made and the first time
+it has been tested by a method the interface was not designed around.
 
 **Exit criteria**
 
-- [ ] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface.
-- [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained (a gap is an acceptable outcome; an unexplained gap is not).
-- [ ] Every M4 visualization works on it with no new code — if any needed a special case, that is a finding about the diagnostics contract and gets an ADR.
+- [x] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface. 130 ms/step, 25.8 ms/image.
+- [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained. *Measured on `candle` at three seeds; the protocol sweep on the official split is outstanding.*
+- [x] Every M4 visualization works on it with no new code. Checked against two real runs, not a fixture: identical diagnostic keys, kinds and scopes, 37 architecture nodes each with real shapes, same edges. Nothing needed a special case.
 
-**Size:** large, but **isolated and low-risk to the rest of the system**. Split it into subtasks (backbone → distillation → autoencoder branch → normalization → training loop) when it is actually scheduled.
+**Still binds:**
+
+- **A method that runs and a method that detects are different claims, and only one of them was
+  being tested.** Before M6 nothing in the suite asserted that any EfficientAD detects anything —
+  the `dl`-gated files covered checkpoint exactness and introspection, and neither called `predict`.
+  A model that trained, wrote maps, saved, reloaded and separated nothing would have passed
+  everything. The detection test trains for real and asserts a ROC-AUC bar; two assertions beside it
+  carry more weight than the AUROC does, because each branch has to separate *on its own* and the
+  error on held-out normals has to actually fall.
+- **Writing that second assertion found the bug worth finding.** Weight initialisation draws from
+  torch's global stream, so `seed` controlled the training order over *different* initial weights.
+  Two runs of one configuration were not one experiment, which would have put noise under every
+  number this milestone exists to produce.
+- **The two implementations agree to 0.002 sample ROC-AUC at 50 steps, and are both inverted there.**
+  Independent code arriving at the same number is the strongest validation available; both scoring
+  defects *below* normals is a fact about EfficientAD's undertrained regime, not about either
+  implementation. A run stopped early is not a weaker detector, it is a backwards one.
+- **Only the speed result is claimed: 25.8 ms/image against 46.7.** The wrapper computes the branch
+  maps twice, once for the score and again for the diagnostics. On accuracy the seed spread swallows
+  a +0.033 median gap, and **the rule set in ADR-0029 before the runs says that is not evidence** —
+  even though all three of our runs beat all three of the wrapper's. More seeds, not a softer rule.
+- **Our seed spread is twice the wrapper's, and it is our own default's fault.** The quantile fit
+  samples half of each calibration map at random where an exact fit would have fitted under
+  `torch.quantile`'s limit. Fixing that is the next measurement, and it should narrow the spread
+  rather than move the median.
+- **`total_parameters` differs by exactly 772** — anomalib counts its `mean_std` and `quantiles`
+  `ParameterDict`s as parameters. They are fitted statistics; ours are buffers. A correctness
+  decision that turns out to be visible in the Architecture tab.
+
+- **4000 steps is not a budget at which a model can be judged.** Both implementations sit *below* the
+  numpy floor there (0.727 and 0.764 against 0.790) where the paper reports 0.975 at 70 000, and the
+  seed spread (0.041) is larger than every effect the remaining hypotheses chase (0.01–0.03). The
+  head-to-head is fair *at budget 4000* and says nothing about the converged ranking. **A
+  step-budget curve to 70 000 therefore runs before any other hypothesis**, as one resumed trajectory
+  read at six points rather than five separate runs.
+- **Resume had been silently wrong since it was written, in both plugins.** `StepLR.get_lr`
+  multiplies the param group's *current* rate and `Adam.load_state_dict` restores the decayed one, so
+  every continuation started a tenfold low and dropped again — 1e-5 instead of 1e-4 on the first
+  resume, 1e-9 by the fifth. Nothing in the application would have shown it: the loss curve
+  continues, the step counter is right, the run finishes. It took a measurement that *depended* on
+  the learning rate being correct to make it visible, sixty seconds into the first leg.
+
+- **The curve answered its question at 30 000 and the answer was large.** Sample ROC-AUC 0.723 →
+  0.835 and AU-PRO 0.680 → 0.833 between 16 000 and 30 000 steps, on one trajectory where seed noise
+  cannot explain it. The 4000-step rows above are not weak measurements of this method, they are
+  measurements of an unconverged one — including the comparison against the numpy floor, which
+  EfficientAD now clears on both metrics.
+- **The failure at low budget is diagnosable, and the diagnostic is worth keeping.** The map's
+  maximum lands inside the ground-truth defect on 16% of defect images at 4000 steps and 24% at
+  16 000, with the mean maximum *outside* the mask exceeding the one inside it. That single number
+  explains why pixel metrics climb while sample ROC-AUC sits flat — an image score is a maximum, so
+  it is decided by whatever is hottest, defect or not — and it moves earlier than sample ROC-AUC
+  does. Reduction, border artifacts, branch weighting and calibration source were each swept and
+  each ruled out first, at a cost of no GPU time, against stored maps.
+- **The pretrained teacher is not a public constant, and treating it as one was an unexamined
+  assumption.** anomalib's teacher and the one bundled with nelson1425/EfficientAD — the
+  reproduction reporting the paper's numbers — have identical architecture and shapes and differ
+  tensor by tensor by up to 1.4. "Two independent implementations agree, so it is not the code" was
+  sound and also incomplete: the teacher is the *other* thing both share. It is now `teacher_source`,
+  a field of the experiment, with both layouts loadable — anomalib names its layers, nelson1425 keys
+  by position in an `nn.Sequential`.
+
+**The milestone grew a second half, and the measurement is what grew it.** M6 set out to reimplement
+the method. It has now established that the largest lever measured anywhere in this project is not in
+the method at all — it is **the teacher**, a weight file nobody here produced. Reimplementing the
+student while accepting somebody else's teacher leaves the most important input outside the
+workbench. So M6 continues into **distilling the teacher ourselves**:
+
+- **A frozen source model, distilled into the compact PDN.** `wide_resnet101_2` (`IMAGENET1K_V1`),
+  `layer2` + `layer3`, patch-aggregated to 384 channels at 64×64, MSE into the PDN. The source model
+  is **training-only** — what ships is the same 2.7M-parameter PDN, so inference cost does not move.
+- **Staged, and cheap by default.** Imagenette is the smoke corpus and is already on disk; ImageNet-1K
+  is an opt-in path that is never the default. The reference recipe is 60 000 steps at batch 16 with a
+  WideResNet-101 forward at 512×512, which is not an overnight job here — the step cost gets measured
+  and the extrapolation written down before anything long starts.
+- **The feature source is a protocol from the first commit.** `features(batch)` plus the preprocessing
+  it requires. That is the entire cost of making a frozen DINOv2-S a second implementation later
+  rather than a rewrite, and paying it now is nearly free.
+- **The expected result is stated in advance.** Imagenette is 13 394 images across 10 classes against
+  ImageNet's 1.28M across 1000, so a smoke-distilled teacher should *lose* to `nelson1425`. That is
+  the pipeline working, not a regression, and saying so before the run is what makes it evidence.
+- **Nothing gets compared to a published number until the official protocol runs.** Every number in
+  this milestone so far is on a generated split.
+
+**Where it stopped, and what is deliberately not done yet.** The teacher comparison is replicated
+across three seeds, the default has moved, the distillation stage is built and smoke-tested, and the
+official one-class split is imported and verified. Three things are **postponed rather than
+forgotten**, each because it is machine time rather than design:
+
+- **The protocol sweep at 30 000 steps.** `protocol.py` takes the budget as an argument; the three
+  runs are about three and a half hours.
+- **A real distilled teacher.** The stage runs end to end; phase 1 is 10 000 steps on Imagenette,
+  and the phase-2 corpus is an open choice — ImageNet-1K needs an account and more disk than this
+  machine has free.
+- **The curve past 30 000.** It ended at 0.955 sample ROC-AUC and 0.994 pixel, with AU-PRO
+  plateaued at 16 000 and the per-leg sample gain shrinking (+0.030, +0.027, +0.012) — a
+  quantity approaching a limit rather than one that has reached it. `extend.py` forks a
+  finished run, so 70 000 is one command rather than a restart.
+
+**New runs no longer use the anomalib teacher.** It stays a value of `teacher_source` only so the
+five experiments recorded against it remain loadable. ADR-0029 still makes the wrapper the baseline
+this method was measured against; it is now a baseline the method has left behind rather than one it
+is tracked against run by run.
 
 ---
 
@@ -306,7 +413,7 @@ view sharing one cut fraction and one zoom across every pane.
 
 - Full README: setup from a fresh machine, how to obtain and import each reference dataset, architecture overview, and a **"how to add a new anomaly-detection method"** guide walking through the plugin interface with a working example.
 - UX polish pass: loading and empty states, error surfaces, keyboard navigation, consistent layout across screens — it should read as an engineering tool, not a debug panel.
-- Documentation refresh: `system-design.md` and the ADRs updated where implementation diverged from the decision (with amendments, not silent edits).
+- Documentation refresh: the handbook pages updated where implementation diverged, and ADR amendments where a decision was refined.
 - Backlog re-triage: drop what no longer matters, promote what the work revealed.
 
 **Exit criteria**

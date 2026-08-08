@@ -1,6 +1,10 @@
 # ADR-0025: Training is resumable as a declared capability, and steps are absolute
 
-**Status:** Accepted (2026-08-08)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-08.
+
+> **Read [`architecture/jobs.md`](../architecture/jobs.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Extends **ADR-0007** (the plugin interface) and **ADR-0020** (metric series from the job log). It
 resolves the collision the backlog recorded: warm-starting a run wants `max_steps` to be a total,

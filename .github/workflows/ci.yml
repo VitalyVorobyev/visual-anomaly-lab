@@ -76,11 +76,33 @@ jobs:
       - name: Install with the dl extra
         run: uv sync --directory backend --locked --extra dl
 
-      # Named explicitly rather than run as the whole suite: everything else is already
-      # covered above, and this job exists for the files that cannot run there. It runs on
-      # CPU — the MPS path stays local-only, and no assertion here depends on the device.
+      # A glob rather than a list of filenames: M6 added four more files here, and a list
+      # that has to be edited for each one goes stale silently — a `dl`-gated file nobody
+      # added would skip in the job above and run nowhere at all, which is the exact gap
+      # this job was created to close. Everything else is already covered above.
+      #
+      # The glob is therefore a **naming contract**, not a convenience: a `dl`-gated test
+      # file must be called `test_efficientad_*.py` or it runs nowhere. That is a real edge
+      # — `test_teacher_distill.py` was written, matched nothing, and would have gone
+      # untested in CI while passing locally, which is the failure this comment describes
+      # happening to the comment. It was renamed rather than the glob widened, because one
+      # naming rule is easier to keep than a second pattern to remember.
+      #
+      # It runs on CPU — the MPS path stays local-only, and no assertion here depends on
+      # the device. This is by far the slowest job, because `test_efficientad_custom.py`
+      # trains real models: a method that runs without detecting anything is the failure
+      # worth catching, and nothing cheaper catches it. The cost is dominated by *fitting*,
+      # not by the number of assertions, so the way to keep it down is to share fitted
+      # models between tests that only read them — which is what the `saved` and `trained`
+      # module fixtures are for. Adding another test that fits its own model is a decision
+      # about this job's runtime, not a free addition.
+      #
+      # `cd backend` rather than `uv run --directory backend`, because the shell expands
+      # the glob before uv changes directory: from the repository root the pattern matches
+      # nothing, and pytest exits 4 having run no tests. Caught by this job failing on the
+      # commit that introduced it, which is the job working.
       - name: The dl-gated tests
-        run: uv run --directory backend pytest tests/test_efficientad_resume.py tests/test_efficientad_introspect.py
+        run: cd backend && uv run pytest tests/test_efficientad_*.py
 
   frontend:
     name: Frontend

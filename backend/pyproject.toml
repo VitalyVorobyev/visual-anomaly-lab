@@ -15,6 +15,12 @@ dependencies = [
 [project.optional-dependencies]
 dl = [
     "anomalib>=2.6.0",
+    # `efficientad_custom`'s own dependency, and it is deliberately *only* torch: our
+    # implementation of EfficientAD does not import anomalib, which is what makes the two
+    # a real comparison rather than two views of one library. Declared directly rather
+    # than relied on transitively, so removing anomalib some day does not silently remove
+    # the custom method too.
+    "torch>=2.13",
 ]
 
 [dependency-groups]
@@ -94,6 +100,16 @@ files = ["src", "tests"]
 module = ["anomalib.*", "torch", "torch.*", "torchvision.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
+
+# `efficientad_nets` is the one module that defines real `nn.Module` subclasses rather
+# than holding torch objects as `Any`. In the environment CI type-checks in, torch is not
+# installed, so `nn.Module` resolves to `Any` and `strict`'s `disallow_subclassing_any`
+# rejects every class in the file. The alternative — a `type: ignore` on each class
+# statement — puts five silencers in the source to work around a property of the checking
+# environment rather than of the code.
+[[tool.mypy.overrides]]
+module = ["anomaly_lab.models.efficientad_nets"]
+disallow_subclassing_any = false
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -37,6 +37,7 @@ class JobKind(StrEnum):
     PREWARM = "prewarm"
     TRAIN = "train"
     INFER = "infer"
+    DISTILL = "distill"
 
 
 class JobStatus(StrEnum):
