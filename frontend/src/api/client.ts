@@ -95,6 +95,12 @@ export type PruneScope = Schemas["PruneScope"];
 export type Curve = Schemas["Curve"];
 export type CurveSet = Schemas["CurveSet"];
 
+export type ComparisonReport = Schemas["ComparisonReport"];
+export type ComparedRun = Schemas["ComparedRun"];
+export type ComparedSample = Schemas["ComparedSample"];
+export type OperatingPoint = Schemas["OperatingPoint"];
+export type ConfusionCounts = Schemas["ConfusionCounts"];
+
 /**
  * Turn an openapi-fetch result into a value or an exception.
  *

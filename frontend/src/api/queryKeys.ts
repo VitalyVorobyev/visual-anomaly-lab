@@ -63,4 +63,21 @@ export const queryKeys = {
   diagnostics: (experimentId: number) => ["experiments", experimentId, "diagnostics"] as const,
   curves: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "curves", subset ?? null] as const,
+
+  /**
+   * One comparison, keyed by everything that changes its numbers.
+   *
+   * Deliberately *not* under `["experiments", …]`: it is not a view of one experiment, and
+   * putting it there would make a finished run's invalidation sweep away every comparison
+   * on screen — including ones the run is not part of.
+   *
+   * The operating point is in the key because it is not a display preference: it decides
+   * every confusion matrix in the response.
+   */
+  comparison: (
+    ids: readonly number[],
+    subset: Subset | undefined,
+    at: string,
+    recallTarget: number,
+  ) => ["comparison", [...ids].join(","), subset ?? null, at, recallTarget] as const,
 } as const;

@@ -11,6 +11,8 @@ import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
 import { App, CanvasLayout, ReadingLayout } from "./App";
+import { CompareRoute } from "./routes/CompareRoute";
+import { CompareSampleRoute } from "./routes/compare/CompareSampleRoute";
 import { DatasetRoute } from "./routes/DatasetRoute";
 import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
@@ -55,6 +57,7 @@ createRoot(container).render(
               <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
               <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
               <Route path="experiments" element={<ExperimentsRoute />} />
+              <Route path="compare" element={<CompareRoute />} />
               <Route path="experiments/:experimentId" element={<ExperimentRoute />} />
               <Route path="health" element={<HealthRoute />} />
               {/* Kept as a debugging aid for the WebSocket path, off the navigation. */}
@@ -69,6 +72,8 @@ createRoot(container).render(
                 path="experiments/:experimentId/samples/:sampleId"
                 element={<ExperimentSampleRoute />}
               />
+              {/* The same gesture, N runs wide: one sample under every compared method. */}
+              <Route path="compare/samples/:sampleId" element={<CompareSampleRoute />} />
             </Route>
           </Route>
         </Routes>

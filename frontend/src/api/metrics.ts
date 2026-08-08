@@ -156,6 +156,49 @@ export function timingRows(metrics: MetricValue): MetricRow[] {
   ];
 }
 
+/** One metric across every compared run, index-aligned with the run list. */
+export interface ComparisonRow {
+  key: string;
+  label: string;
+  hint?: string;
+  /** Already formatted. `null` means this run does not have that metric. */
+  values: (string | null)[];
+}
+
+/**
+ * Turn N runs' metric rows into one table read across.
+ *
+ * Built by transposing the *same* row builders the single-run screen uses, rather than by
+ * a second set of accessors. Two consequences worth having: a comparison can never print a
+ * different number from the experiment screen it was reached from, and a metric one run
+ * lacks — no masks, an ungrouped dataset — is a dash in that column instead of a missing
+ * row that would silently shift every other column's meaning.
+ *
+ * Row order follows first appearance across the runs, so a run with pixel metrics
+ * contributes those rows even when the run beside it has none.
+ */
+export function comparisonRows(perRun: MetricRow[][]): ComparisonRow[] {
+  const order: string[] = [];
+  const seen = new Map<string, MetricRow>();
+  for (const rows of perRun) {
+    for (const row of rows) {
+      if (seen.has(row.key)) continue;
+      seen.set(row.key, row);
+      order.push(row.key);
+    }
+  }
+
+  return order.map((key) => {
+    const template = seen.get(key) as MetricRow;
+    return {
+      key,
+      label: template.label,
+      ...(template.hint === undefined ? {} : { hint: template.hint }),
+      values: perRun.map((rows) => rows.find((row) => row.key === key)?.value ?? null),
+    };
+  });
+}
+
 /**
  * Anything the run had to skip, phrased so it reads as a caveat rather than a statistic.
  *
