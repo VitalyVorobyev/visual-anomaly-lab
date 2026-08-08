@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import struct
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -684,6 +685,115 @@ def test_a_grid_frame_beyond_the_payload_is_a_404_naming_the_count(
     missing = client.get(url, params={"key": "cells", "frame": 3})
     assert missing.status_code == 404
     assert "3 frame(s)" in missing.text
+
+
+def _plane(payload: bytes) -> tuple[np.ndarray, int]:
+    """The header the frontend decodes (ADR-0023), returning `(H, W, C)`."""
+    assert payload[:4] == b"VAM1"
+    width, height, stride, channels, _ = struct.unpack("<IIIII", payload[4:24])
+    values = np.frombuffer(payload[24:], dtype="<f4")
+    assert values.size == width * height * channels
+    return np.moveaxis(values.reshape(channels, height, width), 0, -1), stride
+
+
+def test_an_anomaly_map_serves_its_own_numbers_for_a_readout(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """A rendered map cannot be read back: the colormap clips and quantizes (ADR-0023)."""
+    image_id = seeded.defect_image_ids[0]
+    response = client.get(
+        f"/api/images/{image_id}/anomaly-map/values",
+        params={"experiment_id": scored["id"]},
+    )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    plane, stride = _plane(response.content)
+    assert stride == 1
+    assert plane.shape == (SIZE, SIZE, 1)
+
+    # These are the very floats the metrics were computed from, so the readout has to fall
+    # inside the range the viewer prints beside the picture.
+    detail = client.get(f"/api/experiments/{scored['id']}").json()
+    assert detail["map_range"]["low"] <= float(plane.min())
+
+
+def test_a_diagnostic_serves_raw_values_through_the_same_addressing(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """Which is why the per-branch panes inherit the readout with no per-method code."""
+    entry = next(
+        item for item in _array_entries(client, scored["id"]) if item["kind"] in {"map", "grid"}
+    )
+    query: dict[str, Any] = {"key": entry["key"], "format": "raw"}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+
+    response = client.get(f"/api/experiments/{scored['id']}/diagnostics/payload", params=query)
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "application/octet-stream"
+    plane, _ = _plane(response.content)
+    assert plane.shape[-1] == 1
+
+
+def test_the_preprocessed_source_is_served_rather_than_the_display_tier(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """The number the *method* read, at the experiment's own size and colour mode.
+
+    Every colour plane arrives in one response with the count in the header, so a client
+    never has to know how many there are — which would be channel count as schema.
+    """
+    image_id = seeded.defect_image_ids[0]
+    response = client.get(f"/api/experiments/{scored['id']}/images/{image_id}/source-values")
+
+    assert response.status_code == 200
+    plane, _ = _plane(response.content)
+    assert plane.shape[:2] == (SIZE, SIZE)
+    assert plane.shape[-1] >= 1
+    # `load_array` normalizes to [0, 1]; an 8-bit display tier would not.
+    assert float(plane.min()) >= 0.0
+    assert float(plane.max()) <= 1.0
+    # The fixture stamps a 255 square into the defect, so the peak is saturated.
+    assert float(plane.max()) == pytest.approx(1.0)
+
+
+def test_source_values_revalidate_on_the_frozen_preprocessing(
+    client: TestClient, seeded: Fixture, scored: dict[str, Any]
+) -> None:
+    """Immutable in practice — the file is fixed and the config is frozen at creation."""
+    url = f"/api/experiments/{scored['id']}/images/{seeded.defect_image_ids[0]}/source-values"
+    first = client.get(url)
+    again = client.get(url, headers={"if-none-match": first.headers["etag"]})
+    assert again.status_code == 304
+
+
+def test_the_payload_validator_covers_the_scale_it_was_drawn_on(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """The same array over a different span is a different picture.
+
+    The validator hashed size and mtime only, so widening a key's range — re-inference, and
+    now an on-demand diagnostic — left every already-fetched PNG cached at the old scale
+    with nothing on screen to say so.
+    """
+    entry = next(item for item in _array_entries(client, scored["id"]) if item["kind"] == "map")
+    query: dict[str, Any] = {"key": entry["key"]}
+    if entry.get("image_id") is not None:
+        query["image_id"] = entry["image_id"]
+
+    url = f"/api/experiments/{scored['id']}/diagnostics/payload"
+    before = client.get(url, params=query).headers["etag"]
+
+    root = settings.experiment_dir(scored["id"]) / "diagnostics"
+    index = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))
+    index["ranges"][entry["key"]] = {"low": -99.0, "high": 99.0}
+    (root / "diagnostics.json").write_text(json.dumps(index), encoding="utf-8")
+
+    after = client.get(url, params=query)
+    assert after.headers["etag"] != before
+    # And the stale validator no longer wins a 304.
+    assert client.get(url, params=query, headers={"if-none-match": before}).status_code == 200
 
 
 def test_a_payload_revalidates_rather_than_being_cached_forever(

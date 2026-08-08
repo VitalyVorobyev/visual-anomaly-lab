@@ -37,6 +37,7 @@ from anomaly_lab.media.overlay import (
     render_prediction_region,
 )
 from anomaly_lab.media.prewarm import PrewarmParams
+from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -198,6 +199,48 @@ def read_anomaly_map(
         content=payload,
         media_type="image/png",
         headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}-{tag}"'),
+    )
+
+
+@router.get(
+    "/{image_id}/anomaly-map/values",
+    summary="The anomaly map's own numbers, for a readout under the cursor",
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+def read_anomaly_map_values(request: Request, image_id: int, experiment_id: int) -> Response:
+    """The stored map as a float32 plane (ADR-0023).
+
+    Resolved through `image_result` exactly as the PNG above is, so this inherits the same
+    property: no request can name a file. It exists to be **read**, never drawn — the
+    colormap and the run-wide display range stay on this side, in one language.
+    """
+    image, settings = _load_image(request, image_id)
+    with connection(settings.db_path) as conn:
+        stored = results_repo.get_image_result(conn, experiment_id, image_id)
+    if stored is None or not stored.map_path:
+        raise HTTPException(
+            status_code=404,
+            detail=f"experiment {experiment_id} has no anomaly map for image {image_id}",
+        )
+
+    try:
+        array = np.load(stored.map_path, allow_pickle=False)
+    except (OSError, ValueError) as exc:
+        raise HTTPException(
+            status_code=410,
+            detail=f"the anomaly map file for image {image_id} is no longer readable",
+        ) from exc
+
+    return Response(
+        content=encode_plane(array),
+        media_type="application/octet-stream",
+        # Weak, and revalidated: re-running inference overwrites this file in place, so the
+        # same reasoning as the PNG's ETag applies (ADR-0019).
+        headers={
+            "ETag": f'W/"values-{experiment_id}-{image.sha256[:16]}"',
+            "Cache-Control": "no-cache",
+        },
     )
 
 

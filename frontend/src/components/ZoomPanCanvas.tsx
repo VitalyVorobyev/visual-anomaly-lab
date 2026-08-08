@@ -70,6 +70,31 @@ export function zoomAt(
 }
 
 /**
+ * Where a pointer is over the *content*, as fractions of the frame, or `null` outside it.
+ *
+ * The inverse of the transform `zoomAt` maintains, and pure for the same reason: this is
+ * what turns a cursor position into an index into the value planes (ADR-0023), and it is
+ * wrong in a way nothing on screen would reveal — a readout that is confidently off by a
+ * pan offset looks exactly like a readout that works.
+ *
+ * The content fills the frame at zoom 1 by construction (the canvas is laid out with the
+ * source aspect ratio), so `[0, 1)` over the frame *is* `[0, 1)` over the image, with no
+ * letterbox correction to reconstruct.
+ */
+export function contentUnder(
+  view: View,
+  pointer: { clientX: number; clientY: number },
+  rect: { left: number; top: number; width: number; height: number },
+): { u: number; v: number } | null {
+  const px = pointer.clientX - rect.left - rect.width / 2;
+  const py = pointer.clientY - rect.top - rect.height / 2;
+  const u = (px - view.x) / view.zoom / rect.width + 0.5;
+  const v = (py - view.y) / view.zoom / rect.height + 0.5;
+  if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return null;
+  return { u, v };
+}
+
+/**
  * The zoom at which one source pixel covers one CSS pixel.
  *
  * Clamped, so an image smaller than its frame reports 1: there are no further pixels to
@@ -93,6 +118,7 @@ export function ZoomPanCanvas({
   label,
   nativeWidth,
   fitLabel = "Fit",
+  onHover,
 }: {
   view: View;
   onView: (view: View) => void;
@@ -110,6 +136,14 @@ export function ZoomPanCanvas({
   nativeWidth?: number;
   /** Hidden by passing `null` — the dataset browser has its own button beside the canvas. */
   fitLabel?: ReactNode;
+  /**
+   * Where the pointer is over the *content*, as fractions in `[0, 1)`, or `null` when it
+   * is outside. Reported through the same transform the layers use, so the coordinate is
+   * the one the value planes are indexed by however the frame is zoomed or panned.
+   * Suppressed while dragging: during a pan the pointer is holding the image, not
+   * pointing at a pixel.
+   */
+  onHover?: (position: { u: number; v: number } | null) => void;
 }) {
   const dragging = useRef<{ x: number; y: number } | null>(null);
   // Mirrored into state only so the cursor can change — the ref is what the move handler
@@ -171,9 +205,15 @@ export function ZoomPanCanvas({
       }}
       onPointerMove={(event) => {
         const origin = dragging.current;
-        if (!origin) return;
+        if (!origin) {
+          onHover?.(contentUnder(view, event, event.currentTarget.getBoundingClientRect()));
+          return;
+        }
+        // During a pan the pointer is holding the image rather than pointing at a pixel.
+        onHover?.(null);
         onView({ ...view, x: event.clientX - origin.x, y: event.clientY - origin.y });
       }}
+      onPointerLeave={() => onHover?.(null)}
       onPointerUp={endDrag}
       // A drag interrupted by a lost capture — a context menu, a browser gesture, the
       // pointer leaving the window — used to leave `dragging` set, so the next hover

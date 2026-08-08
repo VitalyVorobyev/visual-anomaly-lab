@@ -11,7 +11,9 @@ a filter over a few hundred floats and never a database write (ADR-0011).
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -24,6 +26,7 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
+from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -47,14 +50,16 @@ from anomaly_lab.experiments.infer import InferParams
 from anomaly_lab.experiments.train import TrainParams
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
+from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.base import ModelDescription, evenly_spaced
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
     DiagnosticIndex,
     DiagnosticKind,
+    DisplayRange,
     load_index,
 )
-from anomaly_lab.models.preprocessing import PreprocessingConfig
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -63,6 +68,13 @@ router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 # A ROC curve has one point per distinct score, so a large test set produces more points
 # than a chart has pixels. Capped, and the cap is reported rather than applied silently.
 CURVE_POINT_LIMIT = 2000
+
+
+class PayloadFormat(StrEnum):
+    """Whether a caller wants the picture or the numbers behind it (ADR-0023)."""
+
+    PNG = "png"
+    RAW = "raw"
 
 
 class MethodCatalog(BaseModel):
@@ -780,11 +792,64 @@ def get_diagnostics(request: Request, experiment_id: int) -> DiagnosticIndex:
 
 
 @router.get(
+    "/{experiment_id}/images/{image_id}/source-values",
+    summary="The preprocessed pixels the model actually read",
+    response_class=Response,
+    responses={
+        200: {"content": {"application/octet-stream": {}}},
+        304: {"description": "The client's copy is current."},
+    },
+)
+def read_source_values(request: Request, experiment_id: int, image_id: int) -> Response:
+    """`load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+
+    **The preprocessed array, not the display tier.** A readout taken from the rendered
+    preview would report what the browser is showing — 8-bit, resampled for display — when
+    the question is what the *method* consumed. Every method loads its pixels through this
+    same function, so this is exactly the number that went into the model.
+
+    **Every plane in one response**, with the count in the header. How many there are is a
+    property of the experiment's colour mode, and a client that had to know it in advance
+    would either encode that in the UI or discover it by asking until something 404s.
+
+    Cacheable forever in practice: the source file is immutable and the preprocessing
+    config is frozen at creation, so the ETag over both can never go stale for one
+    experiment. It is one fetch per image, ever.
+    """
+    experiment, settings = _load(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        image = images_repo.get_image(conn, image_id)
+    if image is None:
+        raise HTTPException(status_code=404, detail=f"no image {image_id}")
+
+    config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
+    digest = hashlib.sha256(f"{image.sha256}|{config.model_dump_json()}".encode()).hexdigest()[:16]
+    etag = f'W/"source-{digest}"'
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=_diagnostic_headers(etag))
+
+    try:
+        array = load_array(Path(image.path), config)
+    except (OSError, ValueError) as exc:
+        # The catalog references files in place, so a source file can disappear between
+        # import and now — the same 410 the image tiers give.
+        raise HTTPException(
+            status_code=410, detail=f"the source file for image {image_id} is no longer readable"
+        ) from exc
+
+    return Response(
+        content=encode_plane(array),
+        media_type="application/octet-stream",
+        headers=_diagnostic_headers(etag),
+    )
+
+
+@router.get(
     "/{experiment_id}/diagnostics/payload",
     summary="One diagnostic array, rendered",
     response_class=Response,
     responses={
-        200: {"content": {"image/png": {}}},
+        200: {"content": {"image/png": {}, "application/octet-stream": {}}},
         304: {"description": "The client's copy is current."},
     },
 )
@@ -797,6 +862,12 @@ def read_diagnostic_payload(
         description="For a per-image diagnostic. Omit for a run-scoped one.",
     ),
     frame: int = Query(default=0, ge=0, description="Which cell of a `grid` payload."),
+    # Aliased because `format` is a builtin; the wire name is what a caller writes.
+    payload_format: PayloadFormat = Query(
+        default=PayloadFormat.PNG,
+        alias="format",
+        description="`png` to draw it; `raw` for the float32 values behind it (ADR-0023).",
+    ),
 ) -> Response:
     """Render one stored diagnostic array as a PNG.
 
@@ -835,8 +906,15 @@ def read_diagnostic_payload(
             ),
         )
 
+    # The range is read *before* the validator, because it is part of what decides the
+    # bytes: the same array over a different span is a different picture.
+    recorded = index.ranges.get(key)
+    value_range = None if recorded is None else (recorded.low, recorded.high)
+
     target = root / entry.path
-    etag = _payload_etag(experiment_id, entry, frame, target)
+    etag = _payload_etag(
+        experiment_id, entry, frame, target, value_range=recorded, fmt=payload_format
+    )
     if etag is not None and request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=_diagnostic_headers(etag))
 
@@ -851,8 +929,30 @@ def read_diagnostic_payload(
             detail=f"the payload for diagnostic {key!r} is no longer readable",
         ) from exc
 
-    recorded = index.ranges.get(key)
-    value_range = None if recorded is None else (recorded.low, recorded.high)
+    if payload_format is PayloadFormat.RAW:
+        # The same `(key, image_id)` resolution, so the per-branch panes inherit the hover
+        # readout with no code written per method — which is what ADR-0018 is for.
+        if entry.kind is DiagnosticKind.IMAGE:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"diagnostic {key!r} is of kind image — an (H, W, 3) picture in [0, 1] "
+                    "rather than a field of values, so there is no number to read from it"
+                ),
+            )
+        if entry.kind is DiagnosticKind.GRID and frame >= array.shape[0]:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
+                ),
+            )
+        plane = array[frame] if entry.kind is DiagnosticKind.GRID else array
+        return Response(
+            content=encode_plane(plane),
+            media_type="application/octet-stream",
+            headers={} if etag is None else _diagnostic_headers(etag),
+        )
 
     if entry.kind is DiagnosticKind.IMAGE:
         content = render_rgb_image(array)
@@ -875,7 +975,13 @@ def read_diagnostic_payload(
 
 
 def _payload_etag(
-    experiment_id: int, entry: DiagnosticEntry, frame: int, target: Path
+    experiment_id: int,
+    entry: DiagnosticEntry,
+    frame: int,
+    target: Path,
+    *,
+    value_range: DisplayRange | None = None,
+    fmt: PayloadFormat = PayloadFormat.PNG,
 ) -> str | None:
     """A validator over what actually decides the bytes.
 
@@ -883,14 +989,20 @@ def _payload_etag(
     overwrites an image's error maps in place, so the file's size and modification time
     are part of the identity. Without them a browser would keep showing the previous run's
     picture under the current run's caption.
+
+    **The range is part of the identity too**, and used not to be. The same array drawn
+    over a different `(low, high)` is a different picture, so anything that widened a key's
+    range — re-inference, and now a diagnostic computed on demand (ADR-0027) — left every
+    already-fetched PNG cached at the old scale, with nothing on screen to say so.
     """
     try:
         stat = target.stat()
     except OSError:
         return None
+    span = "none" if value_range is None else f"{value_range.low:.9g}:{value_range.high:.9g}"
     return (
-        f'W/"diag-{experiment_id}-{entry.key}-{entry.image_id}-{frame}'
-        f'-{stat.st_size}-{stat.st_mtime_ns}"'
+        f'W/"diag-{experiment_id}-{entry.key}-{entry.image_id}-{frame}-{fmt.value}'
+        f'-{span}-{stat.st_size}-{stat.st_mtime_ns}"'
     )
 
 

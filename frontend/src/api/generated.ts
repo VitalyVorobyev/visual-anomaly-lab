@@ -416,6 +416,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/images/{image_id}/source-values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The preprocessed pixels the model actually read
+         * @description `load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+         *
+         *     **The preprocessed array, not the display tier.** A readout taken from the rendered
+         *     preview would report what the browser is showing — 8-bit, resampled for display — when
+         *     the question is what the *method* consumed. Every method loads its pixels through this
+         *     same function, so this is exactly the number that went into the model.
+         *
+         *     **Every plane in one response**, with the count in the header. How many there are is a
+         *     property of the experiment's colour mode, and a client that had to know it in advance
+         *     would either encode that in the UI or discover it by asking until something 404s.
+         *
+         *     Cacheable forever in practice: the source file is immutable and the preprocessing
+         *     config is frozen at creation, so the ETag over both can never go stale for one
+         *     experiment. It is one fetch per image, ever.
+         */
+        get: operations["read_source_values_api_experiments__experiment_id__images__image_id__source_values_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/diagnostics/payload": {
         parameters: {
             query?: never;
@@ -518,6 +551,30 @@ export interface paths {
          *     cannot read a response header, and this endpoint exists to be an `img src`.
          */
         get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/anomaly-map/values": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The anomaly map's own numbers, for a readout under the cursor
+         * @description The stored map as a float32 plane (ADR-0023).
+         *
+         *     Resolved through `image_result` exactly as the PNG above is, so this inherits the same
+         *     property: no request can name a file. It exists to be **read**, never drawn — the
+         *     colormap and the run-wide display range stay on this side, in one language.
+         */
+        get: operations["read_anomaly_map_values_api_images__image_id__anomaly_map_values_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1926,6 +1983,12 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * PayloadFormat
+         * @description Whether a caller wants the picture or the numbers behind it (ADR-0023).
+         * @enum {string}
+         */
+        PayloadFormat: "png" | "raw";
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -2963,6 +3026,45 @@ export interface operations {
             };
         };
     };
+    read_source_values_api_experiments__experiment_id__images__image_id__source_values_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
+                };
+            };
+            /** @description The client's copy is current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     read_diagnostic_payload_api_experiments__experiment_id__diagnostics_payload_get: {
         parameters: {
             query: {
@@ -2972,6 +3074,8 @@ export interface operations {
                 image_id?: number | null;
                 /** @description Which cell of a `grid` payload. */
                 frame?: number;
+                /** @description `png` to draw it; `raw` for the float32 values behind it (ADR-0023). */
+                format?: components["schemas"]["PayloadFormat"];
             };
             header?: never;
             path: {
@@ -2988,6 +3092,7 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description The client's copy is current. */
@@ -3090,6 +3195,39 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_anomaly_map_values_api_images__image_id__anomaly_map_values_get: {
+        parameters: {
+            query: {
+                experiment_id: number;
+            };
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */

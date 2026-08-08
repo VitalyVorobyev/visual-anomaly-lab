@@ -43,6 +43,7 @@ import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
 import { FULL_TIER_ZOOM, ZoomPanCanvas, RESET_VIEW } from "../components/ZoomPanCanvas";
 import type { View } from "../components/ZoomPanCanvas";
+import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
 import {
   Badge,
   Button,
@@ -55,6 +56,8 @@ import {
 } from "../components/ui";
 import { useDiagnostics, useExperiment, useSampleImages } from "../hooks/useExperiments";
 import { MapScaleReadout, OverlayControls } from "./experiment/OverlayControls";
+import { ValueReadout } from "./experiment/ValueReadout";
+import type { HoverPosition } from "./experiment/ValueReadout";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "./experiment/ResultsPanel";
 import { useVerdicts } from "./experiment/useVerdicts";
 
@@ -301,6 +304,17 @@ function ChannelView({
   onView: (view: View) => void;
   single: boolean;
 }) {
+  /*
+   * Nothing is fetched until the pointer is actually over this canvas — `hovered` gates
+   * both queries, so a reader who never hovers pays nothing, and one who does pays one
+   * fetch per plane for the whole time the sample is open.
+   */
+  const [hover, setHover] = useState<HoverPosition | null>(null);
+  const mapValues = useAnomalyValues(experimentId, image.image_id, hover !== null && image.has_map);
+  // Every colour plane in one payload, with the count in its header — a mono experiment
+  // and an RGB one are the same code path, and neither is encoded here.
+  const sourceValues = useSourceValues(experimentId, image.image_id, hover !== null);
+
   const layers: { key: string; src: string; className?: string }[] = [];
   if (state.heatmap && image.has_map) {
     layers.push({
@@ -341,6 +355,7 @@ function ChannelView({
           style={{ aspectRatio: aspectOf(image), height: "100%" }}
           label={`${image.channel ?? "single view"} · ${view.zoom.toFixed(1)}×`}
           nativeWidth={image.width}
+          onHover={setHover}
         >
           <img
             src={imageUrl(image.image_id, view.zoom > FULL_TIER_ZOOM ? "full" : "preview")}
@@ -367,9 +382,19 @@ function ChannelView({
         </ZoomPanCanvas>
       </div>
 
-      <div className="flex items-baseline justify-between gap-3">
-        <MapScaleReadout scale={image.map_scale} range={range} />
-        {!image.has_map && <span className="text-xs text-fg-subtle">no anomaly map</span>}
+      <div className="flex flex-col gap-0.5">
+        {/* The measurement, then the scale it sits on. Both are needed to read the map:
+            one says what this pixel is, the other says what "hot" means for this run. */}
+        <ValueReadout
+          position={hover}
+          map={mapValues.data}
+          source={sourceValues.data}
+          range={range}
+        />
+        <div className="flex items-baseline justify-between gap-3">
+          <MapScaleReadout scale={image.map_scale} range={range} />
+          {!image.has_map && <span className="text-xs text-fg-subtle">no anomaly map</span>}
+        </div>
       </div>
     </figure>
   );
