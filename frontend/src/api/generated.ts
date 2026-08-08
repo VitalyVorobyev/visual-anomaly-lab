@@ -1830,7 +1830,7 @@ export interface components {
          * JobKind
          * @enum {string}
          */
-        JobKind: "import" | "verify" | "prewarm" | "train" | "infer";
+        JobKind: "import" | "verify" | "prewarm" | "train" | "infer" | "distill";
         /**
          * JobMetrics
          * @description Every scalar series a job has emitted so far.
