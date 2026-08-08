@@ -78,6 +78,23 @@ with Ctrl-C and the checkpoint is still written.
 Not a default, and not an overnight job on a laptop — measure the step cost from run 2 and
 multiply before starting.
 
+> **ImageNet-1K is not on this machine, and it does not fit.** The training split is ~150 GB
+> uncompressed against 139 GB free, and `image-net.org` requires an account, so this is a
+> deliberate acquisition rather than a download the tool can do for you. The corpus options
+> that are actually reachable, with what each costs:
+>
+> | Corpus | Images | Size | Account? | Note |
+> |---|---|---|---|---|
+> | Imagenette | 13 394 | 1.5 GB | no | **already on disk**; 10 classes, so narrow |
+> | COCO `train2017` | 118 287 | 19 GB | no | full resolution, natural scenes, 9× Imagenette |
+> | ImageNet-1K `val` | 50 000 | 6.7 GB | yes | 1000 classes, the right *distribution* at 4% of the size |
+> | ImageNet-1K `train` | 1 281 167 | ~150 GB | yes | the paper's corpus; needs an external disk here |
+>
+> The teacher learns generic local features, so **breadth of scene content matters more than
+> label coverage** — which makes COCO a credible phase 2 with no account and no external disk,
+> and ImageNet-1K `val` the cheapest way to get the paper's actual distribution. Whichever is
+> used goes in the manifest, so two teachers are never confused for one.
+
 ```bash
 uv run --directory backend python -m anomaly_lab.cli distill \
   --name wrn-imagenet --corpus directory \
