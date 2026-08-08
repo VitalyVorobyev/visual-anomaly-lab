@@ -1412,16 +1412,15 @@ export interface components {
             subsets?: components["schemas"]["Subset"][];
             /**
              * Diagnostics
-             * @description Record per-image diagnostics for the first few images.
+             * @description Record per-image diagnostics, spread evenly across the scored set.
              * @default true
              */
             diagnostics: boolean;
             /**
              * Diagnostic Images
-             * @description How many images keep per-image diagnostics. Each costs a few float32 maps on disk, so the whole test set is rarely worth it.
-             * @default 12
+             * @description How many images keep per-image diagnostics, chosen evenly across the run. Each costs a few float32 maps on disk — measured at about half a megabyte for a two-branch method at 256x256.
              */
-            diagnostic_images: number;
+            diagnostic_images?: number;
         };
         /**
          * JobDetail

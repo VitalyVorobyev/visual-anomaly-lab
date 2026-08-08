@@ -19,6 +19,7 @@ from anomaly_lab.models.base import (
     InferContext,
     NullReporter,
     TrainContext,
+    evenly_spaced,
 )
 from anomaly_lab.models.device import resolve_device
 from anomaly_lab.models.diagnostics import (
@@ -159,6 +160,39 @@ def test_the_image_budget_is_enforced_and_reported(tmp_path: Path) -> None:
     assert len(index.entries) == 2
     assert index.image_budget == 2
     assert index.truncated_images == 2
+
+
+def test_the_kept_images_are_spread_across_the_run_not_taken_from_its_front(
+    tmp_path: Path,
+) -> None:
+    """Twelve neighbours are not a sample of five hundred images.
+
+    The budget used to be filled by arrival order, so on the reference run it kept images
+    151-162 out of a scored range of 151-1249 — twelve consecutive files from one corner
+    of the dataset, presented as what the run recorded. `evenly_spaced` exists for exactly
+    this and is used everywhere else a cost is capped.
+    """
+    scored = list(range(100, 200))
+    chosen = [scored[index] for index in evenly_spaced(len(scored), 5)]
+    writer = DiagnosticWriter(tmp_path / "diag", image_budget=5, keep_images=chosen)
+    for image_id in scored:
+        writer.emit("m", "M", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=image_id)
+
+    index = writer.flush()
+    kept = sorted(entry.image_id for entry in index.entries if entry.image_id is not None)
+    assert kept == [100, 125, 150, 174, 199], "both ends and the middle, not the first five"
+    assert index.truncated_images == 95
+
+
+def test_without_a_chosen_set_the_budget_still_bounds_the_run(tmp_path: Path) -> None:
+    """A caller that cannot know its image list up front still gets a bounded run."""
+    writer = DiagnosticWriter(tmp_path / "diag", image_budget=2)
+    for image_id in (7, 8, 9):
+        writer.emit("m", "M", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=image_id)
+
+    index = writer.flush()
+    assert len(index.entries) == 2
+    assert index.truncated_images == 1
 
 
 def test_an_image_already_within_budget_keeps_all_of_its_diagnostics(tmp_path: Path) -> None:

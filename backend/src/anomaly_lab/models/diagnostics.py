@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -152,12 +153,14 @@ class DiagnosticWriter:
         *,
         enabled: bool = True,
         image_budget: int | None = None,
+        keep_images: Iterable[int] | None = None,
     ) -> None:
         self._root = root
         self._enabled = enabled
         self._image_budget = image_budget
         self._entries: list[DiagnosticEntry] = []
         self._ranges: dict[str, DisplayRange] = {}
+        self._chosen: set[int] | None = None if keep_images is None else set(keep_images)
         self._kept_images: set[int] = set()
         self._dropped_images: set[int] = set()
 
@@ -178,9 +181,23 @@ class DiagnosticWriter:
         `emit_diagnostic` unconditionally and the budget stays one decision in one place.
         What was dropped is counted and written into the index; a silent truncation would
         read as "this is all there was".
+
+        **Which images are kept is chosen up front, not by arrival order.** Filling the
+        budget with the first N the model happens to reach keeps N neighbours from one
+        corner of the dataset: on the reference run that was images 151-162 out of a scored
+        range of 151-1249, twelve consecutive files, presented as a sample of the run. The
+        caller passes the set — `evenly_spaced` over the images it is about to score — and
+        this becomes a membership test. Without a chosen set the old behaviour remains, so
+        a caller that does not know its image list in advance still gets a bounded run.
         """
         if self._image_budget is None or image_id in self._kept_images:
             return True
+        if self._chosen is not None:
+            if image_id in self._chosen:
+                self._kept_images.add(image_id)
+                return True
+            self._dropped_images.add(image_id)
+            return False
         if len(self._kept_images) < self._image_budget:
             self._kept_images.add(image_id)
             return True

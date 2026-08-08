@@ -107,7 +107,9 @@ export function useStartRun(experimentId: number) {
                 experiment_id: experimentId,
                 subsets: subsets ?? ["val", "test"],
                 diagnostics: true,
-                diagnostic_images: 12,
+                // Deliberately not sent. An untouched control contributes nothing, so the
+                // budget is defined in Python alone — a number pinned here would silently
+                // override every later change to it (`api/schemaForm.ts`).
               },
             });
       return unwrap(result, "the queued job");
