@@ -47,6 +47,25 @@ _RESAMPLE_FILTERS = {
 
 _UINT8_MAX = 255.0
 
+IMAGENET_MEAN = (0.485, 0.456, 0.406)
+IMAGENET_STD = (0.229, 0.224, 0.225)
+"""The statistics every ImageNet-pretrained backbone was trained under.
+
+Here, and **not** in this module's job. `load_array` decides decode, resize and colour —
+what every method is made to see — and stops there. Standardizing those pixels for a
+particular pretrained network is a property of *that network*, not of the experiment: a
+method whose backbone wants ImageNet statistics is not seeing different pixels from one
+that does not, it is applying its own first layer to the same ones.
+
+The constants live here anyway because this is the module about what a method is fed, and
+because three plugins now need them. Getting the seam wrong is silent in a specific way:
+an unnormalized ImageNet backbone runs, produces maps, and quietly scores features from
+outside its training distribution. `efficientad_nets.imagenet_normalize` applies them
+inside `forward` for the same reason, which is why that wrapper can hand a `[0, 1]` array
+straight to anomalib's EfficientAD — and why PatchCore, whose module does *not* normalize
+internally, has to do it itself.
+"""
+
 
 class PreprocessingConfig(BaseModel):
     """How source pixels become model input. Frozen into the experiment at creation."""

@@ -219,15 +219,23 @@ def collect(root: Any, probe: Any, *, prefix: str = "") -> list[ModuleRecord]:
 
 
 def _shape_of(value: Any) -> list[int] | None:
-    """A tensor's shape, or the first tensor's shape in a tuple.
+    """A tensor's shape, or the first tensor's shape in a tuple or a mapping.
 
-    A module returning a tuple — two feature maps, a value and a mask — has no single
-    output shape. Recording the first is a stated simplification rather than a guess: the
-    alternative is a shape field that is sometimes a list of lists, which every renderer
-    would then have to handle for the sake of a few modules.
+    A module returning several tensors — two feature maps, a value and a mask — has no
+    single output shape. Recording the first is a stated simplification rather than a
+    guess: the alternative is a shape field that is sometimes a list of lists, which every
+    renderer would then have to handle for the sake of a few modules.
+
+    Mappings are here because a **feature extractor returns one**. anomalib's
+    `TimmFeatureExtractor` hands back `{"layer2": ..., "layer3": ...}`, so without this the
+    root node of PatchCore's architecture tree recorded `executed=True` with no shape — a
+    combination that reads as a failed measurement rather than as a multi-output module.
+    Insertion order is the layer order the caller asked for, so "the first" is the shallowest.
     """
     if value is None:
         return None
+    if isinstance(value, dict):
+        return _shape_of(next(iter(value.values()), None)) if value else None
     if isinstance(value, (tuple, list)):
         return _shape_of(value[0]) if value else None
     shape = getattr(value, "shape", None)

@@ -29,6 +29,8 @@ from anomaly_lab.models.diagnostics import (
     DiagnosticWriter,
     load_index,
 )
+from anomaly_lab.models.feature_view import pca_to_rgb
+from anomaly_lab.models.patchcore_anomalib import plan_bank
 from anomaly_lab.models.pixel_reference import PixelReferenceConfig, PixelReferenceModel
 from anomaly_lab.models.preprocessing import (
     ColorMode,
@@ -601,3 +603,150 @@ def test_a_genuinely_wrong_map_shape_is_reported_at_the_plugin(tmp_path: Path) -
     _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=16, height=16))
     with pytest.raises(ValueError, match="must be 2-D"):
         infer_ctx.write_map(1, np.zeros((3, 16, 16), dtype=np.float32))
+
+
+# ----------------------------------------------------------- patchcore, torch-free parts
+
+# `plan_bank` and `pca_to_rgb` are deliberately pure — plain numbers and numpy in, a plan or
+# an image out — the same split `introspect.build_tree` has from `introspect.collect`. They
+# live here rather than in `test_dl_patchcore.py` so the arithmetic that decides whether a
+# fit exhausts the machine is checked by the CI job that installs *without* the `dl` extra.
+
+
+def test_a_bank_that_fits_under_both_caps_keeps_everything() -> None:
+    plan = plan_bank(
+        images_available=100,
+        patches_per_image=1024,
+        embedding_dim=1536,
+        max_bank_images=512,
+        max_candidate_vectors=1_000_000,
+        coreset_ratio=0.1,
+    )
+    assert plan.images_used == 100
+    assert plan.patches_kept_per_image == 1024
+    assert plan.candidates_kept == plan.candidates_generated == 102_400
+    assert plan.coreset_size == 10_240
+    assert plan.images_dropped == 0 and plan.patches_dropped_per_image == 0
+
+
+def test_the_image_cap_binds_before_the_vector_cap() -> None:
+    """Images are dropped first and patches thinned second, and the order is not arbitrary.
+
+    Patches inside one image overlap through the 3x3 pooling and are largely redundant;
+    two images differ by whatever the process actually varies. So a bank sees as many
+    images as it is allowed and thins within them, never the reverse.
+    """
+    plan = plan_bank(
+        images_available=900,
+        patches_per_image=1024,
+        embedding_dim=1536,
+        max_bank_images=512,
+        max_candidate_vectors=100_000,
+        coreset_ratio=0.1,
+    )
+    assert plan.images_used == 512
+    assert plan.patches_kept_per_image == 195
+    assert plan.candidates_kept == 512 * 195
+    assert plan.candidates_kept <= 100_000
+    assert plan.images_dropped == 388
+
+
+def test_the_vector_cap_is_never_overshot() -> None:
+    """The cap is a ceiling, and a plan that exceeded it would be a cap that does not work."""
+    for images in (1, 7, 64, 513, 5000):
+        plan = plan_bank(
+            images_available=images,
+            patches_per_image=1024,
+            embedding_dim=384,
+            max_bank_images=512,
+            max_candidate_vectors=10_000,
+            coreset_ratio=0.1,
+        )
+        assert plan.candidates_kept <= 10_000
+        assert plan.coreset_size <= plan.candidates_kept
+
+
+def test_a_cap_below_the_image_count_takes_images_off_too() -> None:
+    """One patch per image is the floor, so a tiny vector cap has to reduce images as well.
+
+    Degenerate, and reachable from the form — which is exactly why it must not silently
+    produce a pool larger than the number it was given.
+    """
+    plan = plan_bank(
+        images_available=500,
+        patches_per_image=1024,
+        embedding_dim=384,
+        max_bank_images=500,
+        max_candidate_vectors=40,
+        coreset_ratio=0.5,
+    )
+    assert plan.images_used == 40
+    assert plan.patches_kept_per_image == 1
+    assert plan.candidates_kept == 40
+
+
+def test_a_ratio_that_would_select_nothing_selects_one() -> None:
+    """An empty bank is not a smaller bank, it is a model that cannot score at all."""
+    plan = plan_bank(
+        images_available=1,
+        patches_per_image=4,
+        embedding_dim=16,
+        max_bank_images=1,
+        max_candidate_vectors=1000,
+        coreset_ratio=0.001,
+    )
+    assert plan.coreset_size == 1
+
+
+def test_the_plan_reports_the_footprint_the_caps_avoided() -> None:
+    plan = plan_bank(
+        images_available=900,
+        patches_per_image=1024,
+        embedding_dim=1536,
+        max_bank_images=512,
+        max_candidate_vectors=100_000,
+        coreset_ratio=0.1,
+    )
+    # The 5.66 GB the module docstring quotes, and the reason the caps exist.
+    assert plan.unbounded_candidates == 921_600
+    assert plan.unbounded_candidates * plan.embedding_dim * 4 == pytest.approx(5.66e9, rel=0.01)
+    assert "uncapped" in plan.describe()
+    assert "921,600" in plan.describe()
+
+
+def test_a_plan_refuses_a_grid_it_could_not_have_measured() -> None:
+    with pytest.raises(ValueError, match="patch grid"):
+        plan_bank(
+            images_available=10,
+            patches_per_image=0,
+            embedding_dim=384,
+            max_bank_images=8,
+            max_candidate_vectors=100,
+            coreset_ratio=0.1,
+        )
+
+
+def test_pca_to_rgb_produces_a_renderable_image_payload() -> None:
+    """The `image` kind's contract: rank 3, three trailing channels, already in [0, 1]."""
+    rng = np.random.default_rng(0)
+    features = rng.normal(size=(64, 8, 12)).astype(np.float32)
+
+    composite = pca_to_rgb(features)
+
+    assert composite.shape == (8, 12, 3)
+    assert composite.dtype == np.float32
+    assert float(composite.min()) >= 0.0 and float(composite.max()) <= 1.0
+
+
+def test_pca_to_rgb_survives_a_feature_map_that_does_not_vary() -> None:
+    """A constant component divides by zero, and NaNs reach the renderer as an unexplained
+    black tile rather than as an error."""
+    composite = pca_to_rgb(np.ones((8, 4, 4), dtype=np.float32))
+    assert bool(np.isfinite(composite).all())
+
+
+def test_pca_to_rgb_refuses_a_shape_it_cannot_reduce() -> None:
+    with pytest.raises(ValueError, match="at least 3 channels"):
+        pca_to_rgb(np.zeros((2, 4, 4), dtype=np.float32))
+    with pytest.raises(ValueError, match="\\(C, H, W\\)"):
+        pca_to_rgb(np.zeros((4, 4), dtype=np.float32))

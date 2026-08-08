@@ -62,6 +62,7 @@ from anomaly_lab.models.base import (
     module_available,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
+from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
 from anomaly_lab.models.preprocessing import load_array, to_chw
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -180,26 +181,6 @@ class _BatchStream:
                 # pass filters on it; saying so explicitly keeps that filter meaningful.
                 gt_label=self._torch.zeros(len(chunk), dtype=self._torch.long),
             )
-
-
-def _pca_to_rgb(features: np.ndarray) -> np.ndarray:
-    """Reduce a `(C, H, W)` feature map to `(H, W, 3)` in [0, 1] by PCA.
-
-    384 teacher channels cannot be looked at directly. The three leading components
-    carry what varies spatially, which is what a reader wants to see; the result is a
-    false-colour image and is labelled as one in the UI.
-    """
-    channels, height, width = features.shape
-    flat = features.reshape(channels, height * width).T.astype(np.float64)
-    centred = flat - flat.mean(axis=0, keepdims=True)
-    # SVD rather than an explicit covariance eigendecomposition: 384x384 is small, but
-    # the covariance route squares the condition number for no benefit here.
-    _, _, components = np.linalg.svd(centred, full_matrices=False)
-    projected = centred @ components[:3].T
-    projected = projected.reshape(height, width, 3)
-    low = projected.min(axis=(0, 1), keepdims=True)
-    high = projected.max(axis=(0, 1), keepdims=True)
-    return ((projected - low) / np.maximum(high - low, 1e-9)).astype(np.float32)
 
 
 class EfficientAdAnomalibModel(AnomalyModel):
@@ -729,7 +710,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
             "teacher_features_pca",
             "Teacher features (PCA composite)",
             DiagnosticKind.IMAGE,
-            _pca_to_rgb(features),
+            pca_to_rgb(features),
             description="Three leading principal components of the teacher's 384 channels.",
         )
         ctx.emit_diagnostic(
