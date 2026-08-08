@@ -34,12 +34,19 @@ def _efficientad_anomalib() -> type[AnomalyModel]:
     return EfficientAdAnomalibModel
 
 
-# `patchcore_anomalib` (M7), `efficientad_custom` (M6) and `classical_circular` (optional
-# M8) each cost exactly one more entry here and one more module. If any of them turns out
-# to need a change elsewhere, that is a finding about this boundary (ADR-0007).
+def _efficientad_custom() -> type[AnomalyModel]:
+    from anomaly_lab.models.efficientad_custom import EfficientAdCustomModel
+
+    return EfficientAdCustomModel
+
+
+# `patchcore_anomalib` (M7) and `classical_circular` (optional M8) each cost exactly one
+# more entry here and one more module. `efficientad_custom` cost exactly that in M6 — no
+# route, no schema, no line of TypeScript — which is the prediction ADR-0007 made.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_anomalib": _efficientad_anomalib,
+    "efficientad_custom": _efficientad_custom,
 }
 
 

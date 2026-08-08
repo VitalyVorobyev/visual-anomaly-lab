@@ -76,11 +76,18 @@ jobs:
       - name: Install with the dl extra
         run: uv sync --directory backend --locked --extra dl
 
-      # Named explicitly rather than run as the whole suite: everything else is already
-      # covered above, and this job exists for the files that cannot run there. It runs on
-      # CPU — the MPS path stays local-only, and no assertion here depends on the device.
+      # A glob rather than a list of filenames: M6 added three more files here, and a list
+      # that has to be edited for each one goes stale silently — a `dl`-gated file nobody
+      # added would skip in the job above and run nowhere at all, which is the exact gap
+      # this job was created to close. Everything else is already covered above.
+      #
+      # It runs on CPU — the MPS path stays local-only, and no assertion here depends on
+      # the device. Budget is roughly twelve minutes: about eight for the pre-existing
+      # files, half a minute for the equivalence pins, and a couple of minutes for
+      # `test_efficientad_custom.py`, which trains a real model for 100 steps because a
+      # method that runs without detecting anything is the failure worth catching.
       - name: The dl-gated tests
-        run: uv run --directory backend pytest tests/test_efficientad_resume.py tests/test_efficientad_introspect.py
+        run: uv run --directory backend pytest tests/test_efficientad_*.py
 
   frontend:
     name: Frontend

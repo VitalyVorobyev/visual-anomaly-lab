@@ -541,8 +541,20 @@ class EfficientAdNet(nn.Module):
         """
         map_st, map_stae = self.maps(batch, normalize=True)
         combined = weights[0] * map_st + weights[1] * map_stae
-        flat = combined.flatten(start_dim=1)
-        if reduction == "max":
-            return combined, flat.amax(dim=1)
-        count = max(1, min(top_k, flat.shape[1]))
-        return combined, flat.topk(count, dim=1).values.mean(dim=1)
+        return combined, reduce_score(combined, reduction=reduction, top_k=top_k)
+
+
+def reduce_score(
+    combined: torch.Tensor, *, reduction: ScoreReduction = "max", top_k: int = 64
+) -> torch.Tensor:
+    """A combined map down to one number per image.
+
+    Split out from `score` because `predict` needs the two branch maps for its diagnostics
+    anyway, and recomputing them just to reach this reduction would double the cost of
+    every inference.
+    """
+    flat = combined.flatten(start_dim=1)
+    if reduction == "max":
+        return flat.amax(dim=1)
+    count = max(1, min(top_k, flat.shape[1]))
+    return flat.topk(count, dim=1).values.mean(dim=1)
