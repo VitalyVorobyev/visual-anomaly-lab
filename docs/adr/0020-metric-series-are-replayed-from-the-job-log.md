@@ -1,6 +1,10 @@
 # ADR-0020: Metric series are replayed from the job log, not buffered
 
-**Status:** Accepted (2026-08-07)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-07.
+
+> **Read [`architecture/jobs.md`](../architecture/jobs.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Extends **ADR-0009** and **ADR-0018**. Neither is reversed: the event protocol is unchanged, there is
 still exactly one channel for scalar series, and the server still holds no replay buffer.

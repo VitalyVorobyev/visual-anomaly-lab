@@ -341,7 +341,7 @@ in [measurements-efficientad.md](measurements-efficientad.md) in order.
 
 - Full README: setup from a fresh machine, how to obtain and import each reference dataset, architecture overview, and a **"how to add a new anomaly-detection method"** guide walking through the plugin interface with a working example.
 - UX polish pass: loading and empty states, error surfaces, keyboard navigation, consistent layout across screens — it should read as an engineering tool, not a debug panel.
-- Documentation refresh: `system-design.md` and the ADRs updated where implementation diverged from the decision (with amendments, not silent edits).
+- Documentation refresh: the handbook pages updated where implementation diverged, and ADR amendments where a decision was refined.
 - Backlog re-triage: drop what no longer matters, promote what the work revealed.
 
 **Exit criteria**

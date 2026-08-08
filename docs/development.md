@@ -109,11 +109,16 @@ boundary is wrong — fix the boundary, not the caller.
 
 | Document | Contents |
 | --- | --- |
-| [`system-design.md`](system-design.md) | Architecture, domain model, canonical entity names, API surface, job and evaluation protocols |
+| [`architecture/`](architecture/README.md) | **The handbook** — how the system works now: domain model, import, methods, jobs, diagnostics, evaluation, media, frontend, security |
+| [`adr/`](adr/) | Decision records — why it is shaped this way, and what each choice cost |
 | [`roadmap.md`](roadmap.md) | What is built, what is next, and what each stage has to satisfy |
 | [`backlog.md`](backlog.md) | Task-level breakdown |
-| [`adr/`](adr/) | Architecture decision records — what was decided, why, and what it costs |
+| [`measurements-efficientad.md`](measurements-efficientad.md) | The append-only evidence log behind ADR-0029 |
 
-**ADRs are immutable once accepted.** A significant new decision gets a new numbered record that
-explicitly supersedes the old one; never edit an accepted one in place, and never silently
-contradict it.
+**Read the handbook to learn the system; read a record to learn why.** When the two disagree, the
+handbook is right about what the code does and the record is right about what was chosen.
+
+**Handbook pages are edited freely** — no status, no dates. **An ADR may be amended** when the
+decision it describes is refined, with a dated `## Changelog` entry naming what changed; a
+**reversal** still gets a new number that supersedes the old record explicitly. Numbers are
+permanent: they are cited ~660 times across the backend, the frontend and the docs (ADR-0030).

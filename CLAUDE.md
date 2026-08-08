@@ -45,15 +45,26 @@ comparing them under one evaluation protocol.
 
 ## Where truth lives
 
-- `docs/system-design.md` — architecture, domain model, API surface, job and evaluation protocols. Use its
-  **canonical entity names exactly**: `Dataset`, `Channel`, `Sample`, `Image`, `Split`, `SplitAssignment`,
-  `Experiment`, `Job`, `ImageResult`, `SampleResult`, `MetricSet`.
-- `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
+- `docs/architecture/` — **the handbook: how the system works now.** One page per area — `README.md`
+  (overview + components), `repository.md`, `domain-model.md`, `import.md`, `methods.md`,
+  `diagnostics.md`, `jobs.md`, `evaluation.md`, `media.md`, `frontend.md`, `security.md`. **Read this
+  first**; it replaced `system-design.md`, which no longer exists. Use its **canonical entity names
+  exactly**: `Dataset`, `Channel`, `Sample`, `Image`, `Split`, `SplitAssignment`, `Experiment`, `Job`,
+  `ImageResult`, `SampleResult`, `MetricSet`. Pages carry no status and are **edited freely** when the
+  code changes — updating one is part of the change, not a follow-up.
+- `docs/roadmap.md` — milestones M0–M9 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **28 records (0001–0028); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
-  decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
-  an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
+- `docs/adr/` — **30 records: 18 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
+  reclassified them; `docs/adr/README.md` is the index). A record captures a choice **that had a live
+  alternative**; the bar is *would a competent engineer plausibly have chosen otherwise, and would
+  changing it now cost more than a refactor?* A contract detail, a helper, or a read path for something
+  already decided is **handbook material, not a new ADR** — that granularity is what produced five
+  records for one diagnostics contract. **Records may be amended** with a dated `## Changelog` entry;
+  only a **reversal** gets a new number that supersedes explicitly. Numbers are permanent — they are
+  cited ~660 times in code and docs.
+- When the handbook and a record disagree, the **handbook is right about what the code does** and the
+  **record is right about why it was chosen**.
 - `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
   there and nowhere else. Components name `surface`, `line`, `fg-muted`, `signal`, `normal`,
   `defect`, `warn` — **never a raw Tailwind ramp step** like `slate-500`. A raw colour will compile

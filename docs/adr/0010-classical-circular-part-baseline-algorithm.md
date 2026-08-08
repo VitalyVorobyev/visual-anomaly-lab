@@ -1,6 +1,10 @@
 # ADR-0010: Classical circular-part baseline algorithm
 
-**Status:** Accepted (2026-08-06)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-06.
+
+> **Read [`architecture/methods.md`](../architecture/methods.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 ## Context
 

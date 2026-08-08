@@ -2,7 +2,7 @@
 
 This module is the **single** place permitted to derive a filesystem path from its own
 location. Every other module receives paths from a `Settings` instance — no module builds
-a path from `__file__` or the current working directory (see `docs/system-design.md` §4).
+a path from `__file__` or the current working directory (see `docs/architecture/repository.md`).
 
 All settings are read from the environment with the `ANOMALY_LAB_` prefix, so the same
 package runs identically under `uv run`, under pytest, and as a Tauri sidecar.

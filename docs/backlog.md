@@ -76,7 +76,7 @@ the detail is in the git history and the ADRs.
 ### E12 — README & polish (M9)
 
 - [ ] "How to add a new anomaly-detection method", written against the real interface with a worked example (S) — **ADR-0007**
-- [ ] Docs refresh: `system-design.md` and ADR amendments where the implementation diverged (S)
+- [ ] Docs refresh: handbook pages and ADR amendments where the implementation diverged (S)
 - [ ] Loading and empty states, error surfaces, keyboard navigation, cross-screen layout consistency (M)
 - [ ] Backlog re-triage and a refreshed *Later / ideas* list (S)
 

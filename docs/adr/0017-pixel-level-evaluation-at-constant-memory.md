@@ -1,6 +1,10 @@
 # ADR-0017: Pixel-level evaluation, at constant memory
 
-**Status:** Accepted (2026-08-07)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-07.
+
+> **Read [`architecture/evaluation.md`](../architecture/evaluation.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 Supersedes the "no pixel-level evaluation, possibly ever" consequence of **ADR-0011**, and the
 "image-level metrics only" constraint in its Context. Every other decision in ADR-0011 — the

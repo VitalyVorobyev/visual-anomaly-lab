@@ -1,6 +1,10 @@
 # ADR-0016: Adapters for public datasets, masks in the catalog, imported splits
 
-**Status:** Accepted (2026-08-07)
+**Status:** Folded into the handbook (2026-08-08). Accepted 2026-08-07.
+
+> **Read [`architecture/import.md`](../architecture/import.md) instead** for how this works
+> today. This record is kept for its number — cited in the code — and for its reasoning,
+> which the handbook does not repeat. It is not where to look up current behaviour (ADR-0030).
 
 **Extends:** ADR-0006 (import via pluggable adapters), ADR-0011 (splits are seeded and
 sample-level).
