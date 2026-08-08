@@ -58,6 +58,55 @@ the detail is in the git history and the ADRs.
 - [ ] Measure the hypotheses in `measurements-efficientad.md`, in order: the step-budget curve first (nearly free — one run continues into three points), then `calibration_holdout`, then `score_reduction` (S each, mostly unattended compute)
 - [ ] A walkthrough confirming every M4 view renders for `efficientad_custom` with no frontend change; any that needs a special case is a finding about **ADR-0018** and gets its own record (S)
 
+### E17 — The teacher is ours too (M6)
+
+The teacher turned out to be the largest single effect measured in this milestone — swapping which
+published one is loaded moved AU-PRO 0.560 → 0.916 at a fixed budget. A weight file nobody in this
+repository produced is therefore the most important input we do not control, and this epic is about
+producing it: **distil a frozen source model into the compact PDN ourselves**, so the teacher becomes
+something the workbench measures rather than something it is handed.
+
+Inference cost is unchanged by any of this. The source model is training-only; what ships is the
+same 2.7M-parameter PDN.
+
+- [ ] **Validate the PDN against the reference architecture, not just against its shapes** (S). Build
+      nelson1425's `get_pdn_small`/`get_pdn_medium` as a literal `nn.Sequential`, load the published
+      weights into both it and ours, and assert identical output. Loading foreign weights is already
+      guarded by an order-of-appearance remap and a shape check; neither would catch a network that
+      differs in a way the shapes permit.
+- [ ] **The distillation stage** (L, and it splits): a `distill` job kind and one module.
+      `wide_resnet101_2` (`IMAGENET1K_V1`) frozen, `layer2` + `layer3`, patch-aggregated to 384
+      channels at 64×64, MSE into the PDN, Adam 1e-4 / weight decay 1e-5. Writes the PDN weights,
+      the feature-normalization statistics, and the full configuration into the model cache as one
+      described artifact.
+  - [ ] The **feature source behind a protocol** — `features(batch) -> (N, 384, 64, 64)` plus the
+        preprocessing it requires. This is the whole cost of making DINOv2-S a second implementation
+        later instead of a rewrite, and it is nearly free now.
+  - [ ] **Imagenette as the smoke corpus** (already downloaded for the penalty set — 13 394 images),
+        ImageNet-1K as an opt-in path that is never the default.
+  - [ ] Resumable on the same terms as training (**ADR-0025**), because this is the one job here
+        that is genuinely long.
+- [ ] **Consume a distilled teacher from the student stage** (S): `teacher_source` names it, and the
+      load validates architecture, output channels and recorded preprocessing before it is used.
+- [ ] **Audit the baseline on the official protocol** (M): VisA `candle`'s official `1cls` split
+      imported, training confirmed to see only normals, `efficientad_anomalib` run on it, and
+      per-image labels, scores and maps exported. This is the run that may be compared to a published
+      number; nothing measured so far may be.
+- [ ] **Make the aggregation comparison repeatable** (S). Already measured once, and the answer is
+      that it barely matters — `max`, top-k, p95/p99 and the plain mean all land inside 0.71–0.77 on
+      the same maps. Worth having as an auditable artifact rather than a scratchpad script,
+      **not** worth expecting a win from.
+
+**Two things to be honest about before starting:**
+
+- **An Imagenette-distilled teacher is a pipeline validation, not a competitive teacher.** Imagenette
+  is 13 394 images across 10 classes; the reference recipe distils over ImageNet-1K, 1.28M images
+  across 1000. Expect it to lose to `nelson1425` and report that as the expected result rather than a
+  regression.
+- **A full ImageNet distillation is not an overnight job on this hardware.** The reference recipe is
+  60 000 steps at batch 16 with a WideResNet-101 forward at 512×512. The step cost will be measured
+  and the extrapolation written down before anything long is started.
+
 **Found while building it, not scheduled:**
 
 - [ ] Make the autoencoder resolution-agnostic — replace the hard-coded `//64 - 1` upsample ladder and the 8×8 bottleneck, so the 256 px floor goes away (M). The guard refusing smaller inputs is honest but it refuses a configuration the architecture could support, and this crashes the wrapper outright.

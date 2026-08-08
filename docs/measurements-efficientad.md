@@ -184,26 +184,47 @@ generated split, same seed, same 4000 steps, same 256 px RGB:
 | Date | Teacher | Steps | Seed | Sample ROC-AUC | Pixel ROC-AUC | AU-PRO | peak-in-mask | ms/image |
 |---|---|---|---|---|---|---|---|---|
 | 2026-08-08 | `anomalib` | 4000 | 0 | 0.751 | 0.900 | 0.560 | 16% | 25.8 |
+| 2026-08-08 | `anomalib` | 4000 | 1 | 0.764 | 0.878 | 0.498 | — | 25.7 |
+| 2026-08-08 | `anomalib` | 4000 | 2 | 0.792 | 0.893 | 0.612 | — | 25.9 |
 | 2026-08-08 | `anomalib` | 30 000 | 0 | 0.835 | 0.935 | 0.833 | — | 29.0 |
 | 2026-08-08 | **`nelson1425`** | 4000 | 0 | **0.886** | **0.981** | **0.916** | **43%** | 26.5 |
+| 2026-08-08 | **`nelson1425`** | 4000 | 1 | **0.893** | **0.978** | **0.914** | **40%** | 27.0 |
+| 2026-08-08 | **`nelson1425`** | 4000 | 2 | **0.888** | **0.978** | **0.914** | **43%** | 26.8 |
+
+| Teacher | Sample ROC-AUC, median (span) | AU-PRO, median (span) |
+|---|---|---|
+| `anomalib` | 0.764 (0.041) | 0.560 (0.114) |
+| `nelson1425` | **0.888 (0.007)** | **0.914 (0.002)** |
 
 **The teacher was worth more than 26 000 training steps.** At 4000 steps the reproduction's teacher
-beats the anomalib teacher's *30 000*-step run on every metric, at the same inference cost. AU-PRO
-moves 0.560 → 0.916, which is the largest single effect measured in this file by a wide margin, and
-peak-in-mask moves 16% → 43% — the model is now most surprised by the defect on nearly three times as
-many images.
+beats the anomalib teacher's *30 000*-step run on every metric, at the same inference cost. The
+medians are separated by 0.124 sample ROC-AUC where the wider of the two spans is 0.041 — the ranges
+do not overlap, which is the bar **ADR-0029** set before any of this was run and the first time in
+this file that anything has cleared it. AU-PRO moves 0.560 → 0.914, and peak-in-mask 16% → 43%: the
+model is most surprised by the defect on nearly three times as many images.
+
+**The better teacher is also the more stable one**, by a factor of six on sample ROC-AUC and fifty on
+AU-PRO. That is worth more than the median for a workbench, because it is what decides whether the
+next measurement can see an effect at all — most of the hypotheses queued in this file chase 0.01 to
+0.03, which was invisible under a 0.041 spread and is not under 0.007.
 
 Read against the pictures, the change has two halves that a single metric would have merged: the
 response *at* the defect saturates, and the systematic false positive that had been topping the whole
 test set — a corner artifact on a normal image — drops to a dim wash. Both are what a max-reduced
 image score is made of.
 
-Standing caveats, because this is one seed on one object of one generated split. Seeds 1 and 2 are
-running; the wrapper's own three seeds span 0.019 and ours span 0.041, and an effect of 0.135 is far
-outside both, so the direction is not in doubt — the size is. **The default stays `anomalib` until
-the replication lands**, which also keeps every row above describing the run it says it is. Nothing
-here is comparable to a published number: this is still the exploratory split, not ADR-0029's
-protocol.
+**The default moved to `nelson1425`,** and two things follow that are easy to get wrong:
+
+- **A head-to-head against `efficientad_anomalib` must now pin `teacher_source="anomalib"`**, or it
+  measures the teacher rather than the implementation. ADR-0029 makes the wrapper the baseline; that
+  only means something if both sides see the same teacher.
+- **Every experiment recorded before the field existed was backfilled to `anomalib`** by migration
+  003. An absent field takes the current default, so without the backfill the default change would
+  have silently rewritten what those runs claim to have done — on the comparison screen, and in
+  `fit_more`, which reloads the teacher from configuration.
+
+Nothing here is comparable to a published number: this is still the exploratory split, not
+ADR-0029's protocol.
 
 Worth naming as a process finding rather than a result: this was found because the *shared* inputs
 were enumerated, not the differing ones. "Two independent implementations agree, so the code is not

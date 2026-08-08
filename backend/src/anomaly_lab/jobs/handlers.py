@@ -48,16 +48,27 @@ def _infer() -> JobHandler:
     return run_infer_job
 
 
+def _distill() -> JobHandler:
+    from anomaly_lab.models.distill import run_distill_job
+
+    return run_distill_job
+
+
 # `train` and `infer` arrived in M3 and cost exactly what was predicted: one entry each
 # and one handler function each. The queue, protocol, cancellation and event fan-out
 # needed no change to carry a method that trains a neural network for minutes on a GPU,
 # which is the claim ADR-0009 made and this is the test of it.
+#
+# `distill` in M6 cost the same one entry, plus a migration for the `kind` CHECK — which
+# is the one place the queue's kind-agnosticism stops at the database. It belongs to no
+# experiment, exactly as `import` does, and produces an asset rather than a result row.
 LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.IMPORT: _import_scan,
     JobKind.VERIFY: _verify,
     JobKind.PREWARM: _prewarm,
     JobKind.TRAIN: _train,
     JobKind.INFER: _infer,
+    JobKind.DISTILL: _distill,
 }
 
 

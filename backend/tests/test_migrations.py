@@ -170,3 +170,79 @@ def test_a_migration_file_may_not_manage_its_own_transaction() -> None:
     """An inner COMMIT would end the runner's transaction and leave a partial schema."""
     for migration in discover_migrations():
         assert not _TRANSACTION_CONTROL.search(migration.sql), migration.name
+
+
+def test_a_distill_job_is_accepted_and_a_nonsense_kind_is_not(
+    migrated_db: sqlite3.Connection,
+) -> None:
+    """Migration 002 widened the `kind` CHECK, and the CHECK is what makes it a real list."""
+    migrated_db.execute("INSERT INTO job (kind, params) VALUES ('distill', '{}')")
+    with pytest.raises(sqlite3.IntegrityError):
+        migrated_db.execute("INSERT INTO job (kind, params) VALUES ('ponder', '{}')")
+
+
+def test_rebuilding_the_job_table_kept_its_rows_and_its_foreign_key(
+    settings: Settings,
+) -> None:
+    """002 drops and recreates `job`. A rebuild that loses rows is the classic way to do it.
+
+    Written against a database at version 1 rather than a migrated one, because the thing
+    under test is the *copy*, and a table with no rows in it copies perfectly.
+    """
+    with connect(settings.db_path) as conn:
+        monkeyed = [m for m in discover_migrations() if m.number == 1]
+        for migration in monkeyed:
+            conn.executescript(f"BEGIN;\n{migration.sql}\nPRAGMA user_version = 1;\nCOMMIT;")
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/tmp/d')")
+        conn.execute(
+            "INSERT INTO job (kind, params, status, message) "
+            "VALUES ('import', '{\"a\": 1}', 'succeeded', 'kept')"
+        )
+        conn.commit()
+
+        assert apply_migrations_to(conn) >= 2
+        row = conn.execute("SELECT kind, params, status, message FROM job").fetchone()
+        assert tuple(row) == ("import", '{"a": 1}', "succeeded", "kept")
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        # The index the rebuild recreates, without which every queue read is a table scan.
+        # PRAGMA index_list rows are (seq, name, unique, origin, partial).
+        names = {r[1] for r in conn.execute("PRAGMA index_list('job')")}
+        assert {"idx_job_experiment", "idx_job_status"} <= names
+
+
+def test_the_teacher_backfill_only_touches_records_that_predate_the_field(
+    settings: Settings,
+) -> None:
+    """003 writes history down; it must not rewrite a run that already recorded its teacher.
+
+    The point of the backfill is that a configuration is the record of what was run. An
+    absent field takes the current default, so when the default moved to `nelson1425` every
+    earlier run would have started claiming a teacher it never saw.
+    """
+    with connect(settings.db_path) as conn:
+        first = next(m for m in discover_migrations() if m.number == 1)
+        conn.executescript(f"BEGIN;\n{first.sql}\nPRAGMA user_version = 1;\nCOMMIT;")
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/tmp/d')")
+        conn.execute("INSERT INTO split (dataset_id, name, strategy, seed) VALUES (1, 's', 'x', 0)")
+        for name, model_type, config in (
+            ("old", "efficientad_custom", '{"max_steps": 4000}'),
+            ("new", "efficientad_custom", '{"teacher_source": "nelson1425"}'),
+            ("other", "pixel_reference", '{"score_percentile": 99.0}'),
+        ):
+            conn.execute(
+                "INSERT INTO experiment (name, dataset_id, split_id, model_type, "
+                "model_config, artifact_dir) VALUES (?, 1, 1, ?, ?, '/tmp/a')",
+                (name, model_type, config),
+            )
+        conn.commit()
+
+        apply_migrations_to(conn)
+        found = dict(
+            conn.execute(
+                "SELECT name, json_extract(model_config, '$.teacher_source') FROM experiment"
+            )
+        )
+        assert found["old"] == "anomalib"
+        assert found["new"] == "nelson1425"
+        # A method with no such field must not grow one, or its config stops validating.
+        assert found["other"] is None

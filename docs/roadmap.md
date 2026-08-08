@@ -326,8 +326,30 @@ it has been tested by a method the interface was not designed around.
   a field of the experiment, with both layouts loadable — anomalib names its layers, nelson1425 keys
   by position in an `nn.Sequential`.
 
-**Left to do:** the teacher comparison at fixed budget, then the curve resumed from 30 000 with
-whichever teacher wins, then the hypotheses in
+**The milestone grew a second half, and the measurement is what grew it.** M6 set out to reimplement
+the method. It has now established that the largest lever measured anywhere in this project is not in
+the method at all — it is **the teacher**, a weight file nobody here produced. Reimplementing the
+student while accepting somebody else's teacher leaves the most important input outside the
+workbench. So M6 continues into **distilling the teacher ourselves**:
+
+- **A frozen source model, distilled into the compact PDN.** `wide_resnet101_2` (`IMAGENET1K_V1`),
+  `layer2` + `layer3`, patch-aggregated to 384 channels at 64×64, MSE into the PDN. The source model
+  is **training-only** — what ships is the same 2.7M-parameter PDN, so inference cost does not move.
+- **Staged, and cheap by default.** Imagenette is the smoke corpus and is already on disk; ImageNet-1K
+  is an opt-in path that is never the default. The reference recipe is 60 000 steps at batch 16 with a
+  WideResNet-101 forward at 512×512, which is not an overnight job here — the step cost gets measured
+  and the extrapolation written down before anything long starts.
+- **The feature source is a protocol from the first commit.** `features(batch)` plus the preprocessing
+  it requires. That is the entire cost of making a frozen DINOv2-S a second implementation later
+  rather than a rewrite, and paying it now is nearly free.
+- **The expected result is stated in advance.** Imagenette is 13 394 images across 10 classes against
+  ImageNet's 1.28M across 1000, so a smoke-distilled teacher should *lose* to `nelson1425`. That is
+  the pipeline working, not a regression, and saying so before the run is what makes it evidence.
+- **Nothing gets compared to a published number until the official protocol runs.** Every number in
+  this milestone so far is on a generated split.
+
+**Left to do:** the teacher comparison replicated across seeds, then the curve resumed from 30 000
+with whichever teacher wins, then the distillation stage above, then the hypotheses in
 [measurements-efficientad.md](measurements-efficientad.md) at whatever budget the curve says is
 honest, then the protocol sweep on VisA's official split (`pcb1`, `capsules`).
 

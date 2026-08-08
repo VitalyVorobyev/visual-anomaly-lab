@@ -14,8 +14,17 @@ module's import path is torch.
 **Every improvement is a configuration field.** Options are free here — the method picker
 and every form are generated from this file's JSON Schema — so each one is an ablation the
 workbench itself can run and put beside its own baseline on the comparison screen
-(**ADR-0028**). Their defaults reproduce the published behaviour, so an untouched run is the
-verified core that `test_efficientad_equivalence.py` pins, and a change is one field.
+(**ADR-0028**). Their defaults reproduce the published *algorithm*, so an untouched run is
+the verified core that `test_efficientad_equivalence.py` pins, and a change is one field.
+
+**One default is no longer the wrapper's, and it is the most important one.**
+`teacher_source` defaults to `nelson1425` rather than to the asset anomalib ships, because
+over three seeds on `candle` that teacher measured 0.889 sample ROC-AUC against 0.769, and
+0.914 AU-PRO against 0.539 — an effect larger than any other in this milestone and far
+outside either implementation's seed spread. **A head-to-head against the wrapper must
+therefore pin `teacher_source="anomalib"`**, or it measures the teacher rather than the
+implementation. That is the cost of the change, and it is a real one; the alternative was to
+leave the workbench defaulting to a measurably worse model to protect a comparison.
 
 **What differs from the wrapper, and why:**
 
@@ -115,14 +124,24 @@ class EfficientAdCustomConfig(BaseModel):
             "distillation mechanism works with any fixed feature extractor."
         ),
     )
-    teacher_source: Literal["anomalib", "nelson1425"] = Field(
-        default="anomalib",
+    teacher_source: Literal["anomalib", "nelson1425", "distilled"] = Field(
+        default="nelson1425",
         description=(
-            "Which published teacher to distil against. These are different networks, not "
-            "two copies of one: same architecture, weights differing tensor by tensor. "
-            "'anomalib' is the release asset the wrapper uses, so it is what makes the two "
-            "implementations comparable. 'nelson1425' is the teacher bundled with the "
-            "reproduction that reports the paper's numbers (MVTec AD 99.1, VisA 98.2)."
+            "Which teacher to distil the student against. The two published ones are "
+            "different networks, not two copies of one: same architecture, weights "
+            "differing tensor by tensor. 'nelson1425' is the default because it measured "
+            "far better — 0.889 against 0.769 sample ROC-AUC over three seeds on candle, "
+            "with AU-PRO 0.914 against 0.539. 'anomalib' is the release asset the wrapper "
+            "uses, and is what to pin for a like-for-like comparison against it. "
+            "'distilled' is one this workbench produced — name it in distilled_teacher."
+        ),
+    )
+    distilled_teacher: str = Field(
+        default="",
+        description=(
+            "Name of a teacher produced by a distill job, when teacher_source is "
+            "'distilled'. Its recorded architecture and channel count are checked against "
+            "this experiment before it is loaded."
         ),
     )
     allow_downloads: bool = Field(
@@ -319,7 +338,59 @@ class EfficientAdCustomModel(AnomalyModel):
         """
         if not self.config.pretrained_teacher:
             return f"random:{self.config.seed}"
+        if self.config.teacher_source == "distilled":
+            return f"distilled:{self.config.distilled_teacher}"
         return f"pretrained:{self.config.teacher_source}"
+
+    def _load_distilled_teacher(self, net: Any, ctx: TrainContext, torch_module: Any) -> None:
+        """A teacher this workbench produced, checked against what it says it is.
+
+        The manifest is the point of the check. A distilled teacher is a `.pth` that will
+        load into any PDN of matching shape, and a *wrong* one loads just as quietly as a
+        right one — different width, different output channels, distilled onto a different
+        grid or under a different preprocessing. Each of those is recorded, and each is
+        refused here by name rather than discovered as a bad number three hours later.
+        """
+        from anomaly_lab.models.efficientad_nets import load_pdn_weights
+        from anomaly_lab.models.teacher_distill import (
+            WEIGHTS_FILENAME,
+            load_manifest,
+            teacher_dir,
+        )
+
+        name = self.config.distilled_teacher
+        if not name:
+            msg = (
+                "teacher_source is 'distilled' but distilled_teacher names nothing. "
+                "Set it to the name a distill job was given."
+            )
+            raise RuntimeError(msg)
+
+        manifest = load_manifest(ctx.cache_dir, name)
+        expectations = (
+            ("model_size", manifest.get("model_size"), self.config.model_size),
+            ("out_channels", manifest.get("out_channels"), 384),
+            ("normalization", manifest.get("preprocessing", {}).get("normalization"), "imagenet"),
+        )
+        for field, recorded, wanted in expectations:
+            if recorded != wanted:
+                msg = (
+                    f"the distilled teacher {name!r} records {field}={recorded!r} and this "
+                    f"experiment needs {wanted!r}. Distil one that matches, or change the "
+                    "experiment."
+                )
+                raise RuntimeError(msg)
+
+        path = teacher_dir(ctx.cache_dir, name) / WEIGHTS_FILENAME
+        load_pdn_weights(
+            net.teacher, torch_module.load(path, map_location="cpu", weights_only=True)
+        )
+        net.teacher.to(ctx.device.value)
+        ctx.log(
+            f"distilled teacher {name!r} loaded from {path}: "
+            f"{manifest.get('source')} over {manifest.get('corpus_images')} "
+            f"{manifest.get('corpus')} images for {manifest.get('steps')} steps"
+        )
 
     def _load_teacher(self, net: Any, ctx: TrainContext) -> None:
         """Put the published weights into the teacher, or say that we did not."""
@@ -334,10 +405,14 @@ class EfficientAdCustomModel(AnomalyModel):
             )
             return
 
+        source = self.config.teacher_source
+        if source == "distilled":
+            self._load_distilled_teacher(net, ctx, torch)
+            return
+
         from anomaly_lab.models.efficientad_assets import teacher_weights
         from anomaly_lab.models.efficientad_nets import load_pdn_weights
 
-        source = self.config.teacher_source
         path = teacher_weights(
             ctx.cache_dir,
             self.config.model_size,

@@ -76,10 +76,17 @@ jobs:
       - name: Install with the dl extra
         run: uv sync --directory backend --locked --extra dl
 
-      # A glob rather than a list of filenames: M6 added three more files here, and a list
+      # A glob rather than a list of filenames: M6 added four more files here, and a list
       # that has to be edited for each one goes stale silently — a `dl`-gated file nobody
       # added would skip in the job above and run nowhere at all, which is the exact gap
       # this job was created to close. Everything else is already covered above.
+      #
+      # The glob is therefore a **naming contract**, not a convenience: a `dl`-gated test
+      # file must be called `test_efficientad_*.py` or it runs nowhere. That is a real edge
+      # — `test_teacher_distill.py` was written, matched nothing, and would have gone
+      # untested in CI while passing locally, which is the failure this comment describes
+      # happening to the comment. It was renamed rather than the glob widened, because one
+      # naming rule is easier to keep than a second pattern to remember.
       #
       # It runs on CPU — the MPS path stays local-only, and no assertion here depends on
       # the device. This is by far the slowest job, because `test_efficientad_custom.py`
