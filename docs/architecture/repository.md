@@ -68,3 +68,4 @@ and lets artifacts be deleted or archived by directory (ADR-0004).
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

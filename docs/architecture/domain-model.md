@@ -128,3 +128,4 @@ counts, timing summaries. Nothing that depends on a decision threshold is persis
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

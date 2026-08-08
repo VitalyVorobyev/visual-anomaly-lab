@@ -128,9 +128,7 @@ Defaults target Apple Silicon: `preferred_device = "mps"` for the DL adapters, `
 baseline (ADR-0008). Device is resolved at job start with a graceful fallback to CPU when MPS is unavailable
 or an operator is unimplemented, and the resolved device is recorded in the job log.
 
----
-
-# Classical baseline (summary)
+## Classical baseline
 
 `classical_circular` is the non-neural reference method. It was originally planned as the vertical slice's
 first model, on the grounds that it needs no training infrastructure, no GPU and no external framework. That
@@ -148,3 +146,4 @@ and its failure modes are in **ADR-0010**.
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

@@ -154,3 +154,4 @@ is the work — as `jobs/queue.py`, `jobs/worker.py` and `experiments/infer.py` 
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

@@ -88,3 +88,7 @@ Three cross-cutting UI rules follow from the design above:
    Python would let the two drift. So the threshold endpoint returns the counts **and the classified rows
    together**, and the client renders what it is given. It is a read over a few hundred stored floats and
    writes nothing (ADR-0011).
+
+---
+
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

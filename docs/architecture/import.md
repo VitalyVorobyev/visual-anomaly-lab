@@ -118,3 +118,4 @@ it. ADR-0016 records the gap.
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

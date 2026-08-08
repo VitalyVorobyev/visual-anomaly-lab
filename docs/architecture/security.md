@@ -25,3 +25,4 @@ This is a single-user, local research tool, and the security model is stated pla
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

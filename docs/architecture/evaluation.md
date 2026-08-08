@@ -126,3 +126,4 @@ tolerate an empty subset rather than assume three:
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

@@ -74,10 +74,7 @@ user, one machine, one job at a time.
 
 ---
 
-
----
-
-# Component architecture
+## Component architecture
 
 ```mermaid
 flowchart TB
@@ -201,6 +198,3 @@ CORS is permitted in dev mode only, and covers `http://localhost:*` and `http://
 
 Convenience scripts wrap the three ways to run the system: `scripts/dev-backend.sh` (backend alone, the
 command above), `scripts/dev-frontend.sh` (Vite against it), and `scripts/dev-app.sh` (the full desktop app).
-
----
-

@@ -35,3 +35,4 @@ casing at any call site.
 
 ---
 
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

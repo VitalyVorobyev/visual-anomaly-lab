@@ -178,3 +178,5 @@ each request, so the two writers cannot overlap.
   the delete button.
 
 ---
+
+[← the handbook](README.md) · [why it is shaped this way](../adr/README.md)
