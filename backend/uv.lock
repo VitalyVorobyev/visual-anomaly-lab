@@ -131,6 +131,7 @@ dependencies = [
 [package.optional-dependencies]
 dl = [
     { name = "anomalib" },
+    { name = "torch" },
 ]
 
 [package.dev-dependencies]
@@ -149,6 +150,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pydantic", specifier = ">=2.13" },
     { name = "pydantic-settings", specifier = ">=2.14" },
+    { name = "torch", marker = "extra == 'dl'", specifier = ">=2.13" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.52" },
 ]
 provides-extras = ["dl"]
