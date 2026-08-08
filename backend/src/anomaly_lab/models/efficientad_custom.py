@@ -15,7 +15,7 @@ module's import path is torch.
 and every form are generated from this file's JSON Schema — so each one is an ablation the
 workbench itself can run and put beside its own baseline on the comparison screen
 (**ADR-0028**). Their defaults reproduce the published *algorithm*, so an untouched run is
-the verified core that `test_efficientad_equivalence.py` pins, and a change is one field.
+the verified core that `test_dl_efficientad_equivalence.py` pins, and a change is one field.
 
 **One default is no longer the wrapper's, and it is the most important one.**
 `teacher_source` defaults to `nelson1425` rather than to the asset anomalib ships, because
