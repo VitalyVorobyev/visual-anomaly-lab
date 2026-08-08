@@ -51,7 +51,7 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **22 records (0001–0022); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **27 records (0001–0027); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 - `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
@@ -61,15 +61,16 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M4.6 are done.** The loop closes and its output is reachable: import a directory tree or a
-  public benchmark, browse and label it, split it, train, score, and read image- and pixel-level
-  metrics — then browse every scored sample as a picture, filter to the model's mistakes, and lay its
-  segmentation against the ground truth. Two methods ship: `pixel_reference` (numpy + Pillow, the
-  floor) and `efficientad_anomalib` (MPS).
-- **M4.7 — the workbench you can iterate in — is next**, taken before M5 because running the
-  application showed that training restarts from zero, diagnostics cannot be asked for, and Overview
-  opens on a job log. Read `docs/roadmap.md` before starting work; the completed milestones there are
-  summaries that keep only what still constrains new work.
+- **M0–M4.7 are done.** The loop closes, its output is reachable, and it can be iterated in: import a
+  directory tree or a public benchmark, browse and label it, split it, train, score, and read image-
+  and pixel-level metrics — then browse every scored sample, filter to the model's mistakes, read the
+  values under the cursor, ask the method about any image, continue training for more steps, and see
+  the real module hierarchy. Two methods ship: `pixel_reference` (numpy + Pillow, the floor) and
+  `efficientad_anomalib` (MPS).
+- **M5 — the comparison UI — is next**, and it is the milestone that makes the workbench worth
+  having: several methods, one split, one evaluation protocol, compared directly. Read
+  `docs/roadmap.md` before starting work; the completed milestones there are summaries that keep only
+  what still constrains new work.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
   `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
@@ -111,9 +112,18 @@ comparing them under one evaluation protocol.
   `models.base.evenly_spaced`, never the first N, and log the cap. A silent truncation reads as "this is
   all there was".
 - **The deep-learning dependencies live behind the optional `dl` extra.** `pixel_reference`, the whole
-  evaluation layer and every test but the EfficientAD ones must work without torch installed. Run the
-  MPS smoke test (`scripts/mps-smoke-test.py`) before trusting the accelerator, and before writing wrapper
-  code against a new library (ADR-0008) — it has already paid for itself once.
+  evaluation layer and every test but the EfficientAD ones must work without torch installed. CI has
+  **two** backend jobs for exactly this: `Backend` installs without the extra and is what *measures*
+  the torch-free boundary, and `Backend (dl extra)` runs the two `dl`-gated files. Run the MPS smoke
+  test (`scripts/mps-smoke-test.py`) before trusting the accelerator, and before writing wrapper code
+  against a new library (ADR-0008) — it has already paid for itself once.
+- **Type-check with bare `uv run mypy`, never `mypy --strict src`.** `pyproject` sets
+  `files = ["src", "tests"]`; checking only `src` is how five type errors in a test file reached CI.
+- **Exactly one resident inference worker may exist, and a lock is what keeps it off the device
+  (ADR-0026).** `ResidentWorker.evict` and a request take the same lock, and `JobQueue` awaits
+  `before_spawn` before it starts a worker. A job may therefore be delayed by one in-flight request —
+  that delay *is* the guarantee, so the hook must not be made non-blocking. Wiring stays in
+  `api/app.py`: the queue must never import the resident.
 - **`tests/test_showcase_import.py` runs against the private tree only when
   `ANOMALY_LAB_SHOWCASE_ROOT` is set**, and is skipped everywhere else. It contains no path and no
   directory name; keep it that way.

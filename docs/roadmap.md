@@ -141,51 +141,57 @@ twelve images.
 
 ---
 
-## Next
-
-### M4.7 — The workbench you can iterate in
+### M4.7 — The workbench you can iterate in · complete 2026-08-08
 
 Unplanned, taken before M5 for the third time in a row, and for the same reason each time: looking at
 the running application. M4.6 made the workbench's output *reachable*; running it showed that the
-workbench is not something you can **iterate in**. Training restarts from zero every time. Per-branch
-diagnostics exist only for the images an inference job happened to sample, and there is no way to ask
-for one. The architecture view is three boxes with their input and output shapes. The Overview tab —
-the screen that should say what an experiment achieved — opens on a job list and a log tail, with the
-metrics and the results below the fold.
+workbench was not something you could **iterate in**. Training restarted from zero. Per-branch
+diagnostics existed only for the images an inference job happened to sample. The architecture view
+was three boxes. The Overview tab opened on a job list and a log tail, with the metrics below the
+fold.
 
-A comparison screen built on a workbench you cannot tune compares two runs you could not tune, which
-is why this comes first.
+What shipped: **Overview** rebuilt around results, metrics and configuration, with runs, logs and
+files moved to a **Jobs & files** tab and the run controls to a bar above every tab; precision,
+recall and F1 drawn against the threshold beside its slider; thumbnails instead of paths in the
+verdict table. The sample viewer returns to the tab it came from, reports the **map and source
+values under the cursor** (**ADR-0023**), and zooms anchored on the pointer with a fit toggle. The
+Architecture tab shows the **real module hierarchy** from forward hooks in a shared helper
+(**ADR-0024**). Training can be **continued** for further steps from a checkpoint carrying the
+optimizer, the schedule, the step counter and both RNG streams (**ADR-0025**). And any scored image
+can be **diagnosed on demand** from a resident inference worker (**ADR-0026**), whose output is
+first-class in the index and deletable (**ADR-0027**).
 
-**Scope**
+**Still binds:**
 
-- **Continue training for N further steps**, with an exact resume: optimizer moments, LR-schedule
-  state, step counter and RNG in the checkpoint, `max_steps` staying a per-run budget so the
-  experiment's config is still frozen, and step numbers absolute across an experiment's training.
-  A declared capability, not a special case — `pixel_reference` has no steps.
-- **On-demand per-branch diagnostics for any image**, served from a resident inference worker beside
-  the job queue, persisted into the index and deletable to reclaim disk.
-- **Layer-level architecture** from forward hooks in a shared helper, so any torch method inherits it.
-- **Overview redesign**: config, metrics and results, with the run list, job logs and artifacts moved
-  to their own tab; precision, recall and F1 drawn as functions of the threshold beside its slider;
-  thumbnails instead of file paths in the verdict table.
-- **Sample viewer**: navigation that returns to the tab it came from, a value readout under the
-  cursor, and a cursor-anchored zoom with a fit toggle.
-
-**Exit criteria**
-
-- [ ] A trained experiment can be continued for further steps, and the loss curve reads as one
-      continuous run rather than restarting at zero.
-- [ ] Any scored image can be diagnosed on demand while browsing, the result survives a reload, and
-      per-branch diagnostics can be cleared with the reclaimed bytes reported.
-- [ ] The Architecture tab shows the real module hierarchy with per-layer shapes and parameter
-      counts, for any torch method, with no per-method code.
-- [ ] Overview answers "what did this experiment achieve" above the fold, and nothing about jobs or
-      files appears on it.
-
-**Size:** large — six sub-milestones (see the backlog). The first three are self-contained and are a
-clean stopping point if M5 starts pulling.
+- **A resident inference process is kept off the accelerator by a lock, not by a check.** `evict` and
+  a request take the same lock, and the job queue awaits `before_spawn` before starting a worker, so
+  the two cannot coexist. A job can therefore be delayed by one in-flight request, and that delay
+  *is* the guarantee — do not make the hook non-blocking to avoid it.
+- **`max_steps` is a per-run budget, so the learning rate visibly goes back up at a resume point.**
+  Both facts are deliberate and printed on screen. Continuing through disk is bit-identical to
+  continuing in process; 10 + 10 is *not* 20, and a test asserts that difference so nobody later
+  mistakes it for a bug and removes it.
+- **`named_modules()` sees modules, not wiring.** `F.relu`, `torch.cat` and arithmetic inside
+  `forward` are invisible, so `nodes` is fine-grained while `edges` stays branch-level. The caption
+  says so: the UI must not draw wiring it did not measure.
+- **Two producers write the diagnostics index, and every merge rule is scoped by `origin`.** A run's
+  per-image entries are a *sample* and supersede each other wholesale; an on-demand entry is a
+  question somebody asked. Neither may sweep the other away, and an on-demand emission may only
+  *widen* a display range. Counting the two together yields a number above the stated budget, which
+  reads as a cap that does not work.
+- **A status check is not a check when it runs in a threadpool.** `current_job_id` had to become a
+  claim held across the whole of execution: the window between the pre-spawn hook finishing and the
+  row being written was one in which a request would see an idle queue and start a resident against
+  a worker that was already launching.
+- **`mypy --strict src` is not what CI runs.** `pyproject` sets `files = ["src", "tests"]`, and
+  checking only `src` is how five type errors in a test file reached CI. Run bare `uv run mypy`.
+- **The `dl`-gated tests now run in their own CI job**, at about eight minutes on CPU. ADR-0025
+  recorded their absence as an accepted cost; that cost has been paid off, and the MPS path is still
+  local-only.
 
 ---
+
+## Next
 
 ### M5 — Comparison UI
 

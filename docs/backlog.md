@@ -30,6 +30,7 @@ the detail is in the git history and the ADRs.
 | E13 | M4 | The diagnostic payload route, run-wide display ranges, `GET /jobs/{id}/metrics`, the SVG chart primitives, render-by-kind panels, the experiment tabs, live training charts |
 | E14 | M4.5 | The token layer, light/dark themes, the primitive set, the schema→control mapping fixed so every pydantic shape reaches the right control |
 | E15 | M4.6 | Query invalidation on a finished run, the Samples gallery with outcome filters, the sample page rebuilt around its canvas, the anomaly segmentation overlay, the artifact listing and *Reveal in Finder*, the diagnostics budget spread across the run |
+| E16 | M4.7 | Overview rebuilt around results, the Jobs & files tab and the run bar, threshold curves and verdict thumbnails, tab-preserving sample navigation, the value readout, the layer-level architecture tree, resumable training, and on-demand diagnostics from a resident worker |
 
 ---
 
@@ -43,41 +44,6 @@ the detail is in the git history and the ADRs.
 
 - [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M)
 - [ ] Revisit the training loop against anomalib's Lightning path if their module stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
-
-### E16 — The workbench you can iterate in (M4.7)
-
-Six sub-milestones, ordered so the layout churn lands first and later items arrive *into* the new
-layout instead of being moved twice. **a–c are self-contained**; d–f are the research features.
-
-- [x] **a — Overview redesign, `Jobs & files` tab, the run bar, threshold curves, thumbnails** (M).
-  `pr_curve` returns the cut scores it already computes so `Curve` can carry `t`; precision, recall
-  and F1 drawn against the threshold beside its slider. Run controls move to a persistent bar above
-  the tabs; the run list, job logs and the artifact listing move off Overview entirely.
-- [x] **b — Sample viewer navigation and canvas** (S). `tab` joins `ResultsState`, which fixes the
-  gallery link, the back link and prev/next in one change. Cursor-anchored wheel zoom with a
-  non-passive listener, double-click toggling fit ↔ 1:1, and the duplicated `ZoomPan` in
-  `SampleRoute` deleted in favour of `ZoomPanCanvas`.
-- [x] **c — The value under the cursor** (M) — **ADR-0023**. A fixed-header float32 blob fetched once
-  per image and indexed in the browser; the colormap and the display range stay server-side. Reports
-  the map value in map units and the preprocessed source values, never a colour read back out of a
-  picture.
-- [x] **d — Layer-level architecture** (M) — **ADR-0024**. Forward hooks over `named_modules()` in a
-  shared helper, split so the tree-building half is tested without torch. Bounded by node count, not
-  depth. `edges` stays branch-level because `named_modules()` sees modules, not wiring.
-- [x] **e — Continue training** (L) — **ADR-0025**. `Capabilities.supports_resume` and a
-  `SupportsResume` protocol; `TrainParams.additional_steps`; a format-2 checkpoint; absolute steps.
-  Resolves the collision this backlog flagged between warm-starting and a frozen config.
-- [ ] **f — Resident worker and on-demand diagnostics** (L) — **ADR-0026**, **ADR-0027**. Spike
-  against `pixel_reference` before committing to the design. One resident globally, evicted before
-  any job spawns, keyed by a checkpoint fingerprint so stale weights cannot be served.
-  - [x] The index half: `DiagnosticEntry.origin`, merge and range rules scoped by it, run-level
-    budget carried forward, atomic write. Nothing produces an on-demand entry yet.
-  - [ ] `jobs/resident.py`, `jobs/inspector.py`, `experiments/diagnose.py`, the `before_spawn` hook
-    on the queue, `POST /{id}/diagnose`, `DELETE /{id}/diagnostics`, the health block, and the
-    frontend's diagnose button and clear action. **ADR-0026 and ADR-0027 are not yet written.**
-
-*Items d, e and f are research features M5 does not need, and M6's `efficientad_custom` would
-exercise all three anyway. Ordered last for that reason.*
 
 ### E10 — Comparison UI (M5)
 
@@ -125,6 +91,8 @@ Not scheduled. Revisit at each re-triage; promote when there is a concrete reaso
 - **`mask.sha256`, as a numbered migration.** `verify` can check a mask file is still there, not that it is still the same file, so a mask re-exported in place silently changes a pixel metric. Worth doing before pixel numbers are relied on (ADR-0016, ADR-0017).
 - **Warn when an imported split's train subset contains defects.** The `imported` strategy trusts the source completely, which is the point, but a bad benchmark file produces a bad experiment quietly. The training handler excludes them and logs it; the split screen says nothing.
 - **Show the pixel-metric protocol on the results screen.** "Normal images count, with an empty mask" moves the number substantially and is documented nowhere the reader will look.
+- **Type-check under the `dl` extra too.** The `backend-dl` CI job runs the gated tests but not mypy, so torch's real types are never followed. It is a different check from the torch-free one and could surface a pile of findings at once, which is why it was not bundled into the fix that created the job.
+- **Warn when the diagnostics directory gets large.** The clear button reports what it freed, but nothing says when there is something to free; on-demand entries are deliberately uncapped (ADR-0027) and the artifact listing's byte count is the only signal.
 - Per-channel score quantile normalization before aggregation, so one illumination channel cannot dominate a sample score by scale alone.
 - Per-image inference batching for the deep methods — one image per forward pass today, which is simple and leaves throughput on the table.
 - Uninformed Students ([papers.md](papers.md) #4) as a fourth method.
