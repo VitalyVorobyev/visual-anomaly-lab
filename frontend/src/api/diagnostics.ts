@@ -122,3 +122,28 @@ export function onDemandNote(index: DiagnosticIndex | undefined): string | null 
   if (asked === 0) return null;
   return `${asked} image(s) diagnosed on demand, kept until you clear them.`;
 }
+
+/**
+ * Why *this* image has no panes — the best explanation the index supports.
+ *
+ * Three genuinely different facts, and the panel used to say only the last one. Beside a
+ * button offering to record diagnostics, "this method records nothing" is not merely
+ * imprecise, it contradicts what is on screen: the common case is a run that recorded
+ * plenty, for other images.
+ */
+export function missingNote(index: DiagnosticIndex | undefined): string {
+  const budget = budgetNote(index);
+  if (budget !== null) return budget;
+
+  const elsewhere = diagnosedImageIds(index).length;
+  if (elsewhere > 0) {
+    return (
+      `This run recorded per-image diagnostics for ${elsewhere} other image(s), ` +
+      "chosen across the run rather than by what you opened."
+    );
+  }
+  return (
+    "This run recorded no per-image diagnostics. A method reports them by calling " +
+    "ctx.emit_diagnostic during predict."
+  );
+}

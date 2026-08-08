@@ -35,7 +35,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Microscope } from "lucide-react";
 
-import { budgetNote, imageScoped, isOnDemand, ofKinds } from "../api/diagnostics";
+import { imageScoped, isOnDemand, missingNote, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../api/imageUrl";
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
@@ -140,7 +140,7 @@ export function ExperimentSampleRoute() {
   const anyDiagnostic = images.data.some(
     (image) => imageScoped(diagnostics.data, image.image_id).length > 0,
   );
-  const note = budgetNote(diagnostics.data);
+  const note = missingNote(diagnostics.data);
   const range = experiment.data?.map_range;
   const cut = cutValue(state, range);
   const verdict = verdicts.shown.find((entry) => entry.sample_id === sampleId);
@@ -250,10 +250,8 @@ export function ExperimentSampleRoute() {
                 </>
               ) : (
                 /* "That image was not one of the ones kept" is a different fact from "this
-                   model records nothing", and a blank panel says neither. */
-                (note ??
-                  "This run recorded no per-image diagnostics. A method reports them by " +
-                    "calling ctx.emit_diagnostic during predict.")
+                   model records nothing", and a blank panel said neither. */
+                note
               )}
             </p>
             {experiment.data?.produces_diagnostics === true && (
