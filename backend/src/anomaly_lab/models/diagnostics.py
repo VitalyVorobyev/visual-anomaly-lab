@@ -64,6 +64,20 @@ class DiagnosticKind(StrEnum):
     """JSON `{columns, rows}` — anything that is honestly a table, e.g. layer shapes."""
 
 
+class DiagnosticOrigin(StrEnum):
+    """Whether an entry came from a run, or from someone asking about one image.
+
+    Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made for
+    `ranges`. It exists because the two have genuinely different lifetimes and different
+    supersession rules: a run's per-image entries are a *sample* of that run and replace
+    each other wholesale, while an on-demand entry is a question somebody asked and must
+    not be swept away by the next run of inference, nor sweep one away (ADR-0027).
+    """
+
+    RUN = "run"
+    ON_DEMAND = "on_demand"
+
+
 class DiagnosticScope(StrEnum):
     """What a diagnostic is *about*, which decides where the UI can offer it."""
 
@@ -98,6 +112,12 @@ class DiagnosticEntry(BaseModel):
     title: str
     kind: DiagnosticKind
     scope: DiagnosticScope
+    origin: DiagnosticOrigin = DiagnosticOrigin.RUN
+    """Where this entry came from (ADR-0027).
+
+    A literal default is correct here, unlike on a request body: this is a *response*
+    model, so "required in TypeScript" means the client reads it without a null check.
+    """
     image_id: int | None = None
     path: str | None = Field(
         default=None,
@@ -154,9 +174,11 @@ class DiagnosticWriter:
         enabled: bool = True,
         image_budget: int | None = None,
         keep_images: Iterable[int] | None = None,
+        origin: DiagnosticOrigin = DiagnosticOrigin.RUN,
     ) -> None:
         self._root = root
         self._enabled = enabled
+        self._origin = origin
         self._image_budget = image_budget
         self._entries: list[DiagnosticEntry] = []
         self._ranges: dict[str, DisplayRange] = {}
@@ -238,6 +260,7 @@ class DiagnosticWriter:
                     title=title,
                     kind=kind,
                     scope=scope,
+                    origin=self._origin,
                     image_id=image_id,
                     payload=payload,
                     description=description,
@@ -254,6 +277,10 @@ class DiagnosticWriter:
         self._widen_range(key, kind, array)
 
         relative = f"{key}.npy" if image_id is None else f"image-{image_id}/{key}.npy"
+        if self._origin is DiagnosticOrigin.ON_DEMAND and image_id is not None:
+            # Its own tree, so "clear what I asked for" is a directory removal rather than
+            # a walk that has to tell two runs' files apart by reading the index.
+            relative = f"on-demand/image-{image_id}/{key}.npy"
         target = self._root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         np.save(target, array)
@@ -264,6 +291,7 @@ class DiagnosticWriter:
                 title=title,
                 kind=kind,
                 scope=scope,
+                origin=self._origin,
                 image_id=image_id,
                 path=relative,
                 shape=list(array.shape),
@@ -295,6 +323,39 @@ class DiagnosticWriter:
             high=max(current.high, high),
         )
 
+    def _merged_ranges(self, existing: DiagnosticIndex) -> dict[str, DisplayRange]:
+        """How a key's display scale survives another emission.
+
+        A **run** replaces the keys it emitted and carries the rest forward: a key belongs
+        to whichever run emitted it, and recomputing a union across both would widen
+        `predict`'s per-image error maps to include `fit`'s teacher magnitudes, which are
+        a different quantity.
+
+        An **on-demand** emission may only *widen*. It is one array, and letting one array
+        re-fix a run-wide scale is exactly the failure ADR-0019 already warns about for a
+        cancelled run — except that here it would happen every time somebody browsed a hot
+        image. Widening keeps every previously drawn picture correct, which is only true
+        because the payload ETag now covers the range (ADR-0023).
+        """
+        if self._origin is DiagnosticOrigin.RUN:
+            merged = {
+                key: value for key, value in existing.ranges.items() if key not in self._ranges
+            }
+            merged.update(self._ranges)
+            return merged
+
+        merged = dict(existing.ranges)
+        for key, value in self._ranges.items():
+            current = merged.get(key)
+            merged[key] = (
+                value
+                if current is None
+                else DisplayRange(
+                    low=min(current.low, value.low), high=max(current.high, value.high)
+                )
+            )
+        return merged
+
     def flush(self) -> DiagnosticIndex:
         """Write the index. Called once, by the job handler, after the model returns.
 
@@ -308,6 +369,11 @@ class DiagnosticWriter:
 
         A model that crashed halfway has written its arrays but no index entry for them,
         which reads correctly as "that run produced no usable diagnostics".
+
+        **The rules below are scoped by origin (ADR-0027).** A run's per-image entries are
+        that run's *sample* and supersede each other wholesale; an on-demand entry is a
+        question somebody asked about one image. Neither may sweep the other away, so
+        every rule here applies within an origin and never across one.
         """
         if not self._enabled:
             return DiagnosticIndex(
@@ -318,7 +384,7 @@ class DiagnosticWriter:
             )
 
         existing = load_index(self._root)
-        superseded = {(entry.key, entry.image_id) for entry in self._entries}
+        superseded = {(entry.key, entry.image_id, entry.origin) for entry in self._entries}
         # A key emitted per-image this run replaces **every** per-image entry under that
         # key, not merely the images this run happened to sample.
         #
@@ -328,29 +394,44 @@ class DiagnosticWriter:
         # index became their union — 74 images under a stated budget of 64, which reads as
         # a cap that does not work. A union is also nobody's sample: half of it describes a
         # selection the current run did not make.
+        #
+        # It applies to run entries only, and only when *this* writer is a run: an
+        # on-demand emission is not a sample of anything, so it must neither wipe a run's
+        # sample nor be wiped by the next one.
+        run_writer = self._origin is DiagnosticOrigin.RUN
         resampled = {entry.key for entry in self._entries if entry.image_id is not None}
         kept = [
             entry
             for entry in existing.entries
-            if (entry.key, entry.image_id) not in superseded
-            and not (entry.image_id is not None and entry.key in resampled)
+            if (entry.key, entry.image_id, entry.origin) not in superseded
+            and not (
+                run_writer
+                and entry.origin is DiagnosticOrigin.RUN
+                and entry.image_id is not None
+                and entry.key in resampled
+            )
         ]
-        # Ranges merge by the same rule, one level coarser: a key belongs to whichever run
-        # emitted it, so this run's keys replace outright and the other run's are carried
-        # forward. Recomputing a union across both would widen `predict`'s per-image error
-        # maps to include `fit`'s teacher magnitudes, which are a different quantity.
-        ranges = {key: value for key, value in existing.ranges.items() if key not in self._ranges}
-        ranges.update(self._ranges)
+        ranges = self._merged_ranges(existing)
         index = DiagnosticIndex(
             entries=[*kept, *self._entries],
             ranges=ranges,
-            image_budget=self._image_budget,
-            truncated_images=len(self._dropped_images),
+            # Run-level facts, so an on-demand flush carries them forward rather than
+            # rewriting them to describe a request that had no budget in the first place.
+            image_budget=self._image_budget if run_writer else existing.image_budget,
+            truncated_images=(
+                len(self._dropped_images) if run_writer else existing.truncated_images
+            ),
         )
 
         self._root.mkdir(parents=True, exist_ok=True)
+        # Written to a sibling and renamed. `load_index` swallows a `JSONDecodeError` and
+        # returns an *empty* index, so a write truncated by a crash used to read as "this
+        # run produced no diagnostics" — the most misleading failure available here.
+        # `Path.replace` is atomic within a filesystem, which this always is.
         path = self._root / INDEX_FILENAME
-        path.write_text(index.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+        staging = path.with_suffix(".json.tmp")
+        staging.write_text(index.model_dump_json(indent=2, exclude_none=True), encoding="utf-8")
+        staging.replace(path)
         return index
 
 

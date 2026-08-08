@@ -1288,6 +1288,8 @@ export interface components {
             title: string;
             kind: components["schemas"]["DiagnosticKind"];
             scope: components["schemas"]["DiagnosticScope"];
+            /** @default run */
+            origin: components["schemas"]["DiagnosticOrigin"];
             /** Image Id */
             image_id: number | null;
             /**
@@ -1341,6 +1343,18 @@ export interface components {
          * @enum {string}
          */
         DiagnosticKind: "map" | "image" | "grid" | "graph" | "table";
+        /**
+         * DiagnosticOrigin
+         * @description Whether an entry came from a run, or from someone asking about one image.
+         *
+         *     Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made for
+         *     `ranges`. It exists because the two have genuinely different lifetimes and different
+         *     supersession rules: a run's per-image entries are a *sample* of that run and replace
+         *     each other wholesale, while an on-demand entry is a question somebody asked and must
+         *     not be swept away by the next run of inference, nor sweep one away (ADR-0027).
+         * @enum {string}
+         */
+        DiagnosticOrigin: "run" | "on_demand";
         /**
          * DiagnosticScope
          * @description What a diagnostic is *about*, which decides where the UI can offer it.
