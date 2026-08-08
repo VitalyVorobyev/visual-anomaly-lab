@@ -209,9 +209,18 @@ class Fixture:
     normal_image_ids: list[int]
 
 
-def seed_synthetic_split(conn: sqlite3.Connection, root: Path) -> Fixture:
-    """A dataset of single-image samples with an explicit train/test split and masks."""
-    dataset = datasets.create_dataset(conn, name="synthetic", root_path=str(root))
+def seed_synthetic_split(
+    conn: sqlite3.Connection,
+    root: Path,
+    *,
+    name: str = "synthetic",
+) -> Fixture:
+    """A dataset of single-image samples with an explicit train/test split and masks.
+
+    `name` is a parameter because dataset names are unique and the comparison tests need a
+    *second*, unrelated dataset to prove that runs on different data are refused.
+    """
+    dataset = datasets.create_dataset(conn, name=name, root_path=str(root))
     assignments: dict[int, Subset] = {}
     defect_image_ids: list[int] = []
     normal_image_ids: list[int] = []

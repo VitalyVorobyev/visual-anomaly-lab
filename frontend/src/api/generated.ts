@@ -4,6 +4,23 @@
  */
 
 export interface paths {
+    "/api/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Several experiments side by side, at one operating-point rule */
+        get: operations["compare_experiments_api_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets": {
         parameters: {
             query?: never;
@@ -1150,6 +1167,131 @@ export interface components {
              */
             missing_paths: string[];
         };
+        /**
+         * ComparedRun
+         * @description One experiment as a column of the comparison.
+         *
+         *     `metrics` is the stored metric set for the chosen subset, verbatim and open-ended, for
+         *     the same reason `MetricSummary` is: what is computable depends on the data, and a fixed
+         *     set of columns would have to invent the ones that are missing.
+         */
+        ComparedRun: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Model Type */
+            model_type: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /** Created At */
+            created_at: string;
+            /**
+             * Scored
+             * @description Whether this run has results for the chosen subset.
+             */
+            scored: boolean;
+            /** Metrics */
+            metrics: {
+                [key: string]: unknown;
+            };
+            /** @description This run's own display range. Never reconciled with another run's — what transfers across runs is a fraction of the range, not a value (ADR-0028). */
+            map_range: components["schemas"]["MapScale"] | null;
+            /**
+             * Threshold
+             * @description The operating point in **this run's** units, or null when the rule cannot apply.
+             */
+            threshold: number | null;
+            /**
+             * Threshold Rationale
+             * @description How that number was arrived at, to be printed beside it.
+             * @default
+             */
+            threshold_rationale: string;
+            confusion: components["schemas"]["ConfusionCounts"] | null;
+            /** Precision */
+            precision: number | null;
+            /** Recall */
+            recall: number | null;
+            /** F1 */
+            f1: number | null;
+            /** Accuracy */
+            accuracy: number | null;
+            /** Config */
+            config: {
+                [key: string]: unknown;
+            };
+            /** Preprocessing */
+            preprocessing: {
+                [key: string]: unknown;
+            };
+            /** Evaluation */
+            evaluation: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * ComparedSample
+         * @description One sample as every run judged it, index-aligned with `ComparisonReport.runs`.
+         *
+         *     Aligned lists rather than a map keyed by experiment id: the screen draws one column per
+         *     run in the order it asked for them, and the alignment is the response's contract.
+         */
+        ComparedSample: {
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            label: components["schemas"]["Label"];
+            /** Scores */
+            scores: (number | null)[];
+            /** Predicted */
+            predicted: (boolean | null)[];
+            /**
+             * Outcomes
+             * @description tp, fp, tn, fn, or 'unlabeled' — null where a run has no verdict.
+             */
+            outcomes: (string | null)[];
+            /**
+             * Agree
+             * @description Whether every run that could judge this sample predicted the same thing.
+             */
+            agree: boolean;
+        };
+        /**
+         * ComparisonReport
+         * @description N runs on one split, at one operating-point rule.
+         */
+        ComparisonReport: {
+            /** Dataset Id */
+            dataset_id: number;
+            /** Dataset Name */
+            dataset_name: string | null;
+            /** Split Id */
+            split_id: number;
+            /** Split Name */
+            split_name: string | null;
+            /** @description The subset actually compared, which may not be the one requested. */
+            subset: components["schemas"]["Subset"] | null;
+            /**
+             * Subsets
+             * @description Every subset at least one of these runs has scored.
+             */
+            subsets: components["schemas"]["Subset"][];
+            operating_point: components["schemas"]["OperatingPoint"];
+            /** Recall Target */
+            recall_target: number;
+            /** Runs */
+            runs: components["schemas"]["ComparedRun"][];
+            /** Samples */
+            samples: components["schemas"]["ComparedSample"][];
+            /**
+             * Warnings
+             * @description Reasons to read the table with care. A comparison across datasets or splits is refused outright; these are the differences that are legitimate but change what the numbers mean.
+             */
+            warnings: string[];
+        };
         /** ConfusionCounts */
         ConfusionCounts: {
             /**
@@ -2080,6 +2222,12 @@ export interface components {
             };
         };
         /**
+         * OperatingPoint
+         * @description How each run's own threshold is chosen from its own scores.
+         * @enum {string}
+         */
+        OperatingPoint: "f1" | "recall";
+        /**
          * PayloadFormat
          * @description Whether a caller wants the picture or the numbers behind it (ADR-0023).
          * @enum {string}
@@ -2514,6 +2662,44 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    compare_experiments_api_compare_get: {
+        parameters: {
+            query: {
+                /** @description Experiment ids, in the order the columns should appear. */
+                ids: number[];
+                /** @description Omitted means the most test-like subset every selected run has scored. */
+                subset?: components["schemas"]["Subset"] | null;
+                /** @description The rule applied to each run's own scores to choose its threshold. */
+                at?: components["schemas"]["OperatingPoint"];
+                /** @description Only used by the `recall` rule. */
+                recall_target?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ComparisonReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_datasets_api_datasets_get: {
         parameters: {
             query?: never;

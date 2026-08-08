@@ -17,6 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from anomaly_lab import __version__
 from anomaly_lab.api.routers import (
+    compare,
     datasets,
     experiments,
     health,
@@ -113,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_headers=["*"],
         )
 
+    app.include_router(compare.router)
     app.include_router(datasets.router)
     app.include_router(experiments.router)
     app.include_router(health.router)

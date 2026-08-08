@@ -69,7 +69,10 @@ class ThresholdReport(BaseModel):
     samples: list[SampleVerdict] = Field(default_factory=list)
 
 
-def _outcome(label: Label, predicted_defect: bool) -> str:
+def outcome_of(label: Label, predicted_defect: bool) -> str:
+    """The bucket one sample falls in. Public because the comparison layer tags rows
+    with the same four names at N thresholds, and two copies of this rule would be free
+    to drift (ADR-0028)."""
     if label is Label.UNLABELED:
         return "unlabeled"
     if label is Label.DEFECT:
@@ -88,7 +91,7 @@ def classify(samples: Sequence[ScoredSample], threshold: float) -> list[SampleVe
             notes=sample.notes,
             score=sample.agg_score,
             predicted_defect=sample.agg_score >= threshold,
-            outcome=_outcome(sample.label, sample.agg_score >= threshold),
+            outcome=outcome_of(sample.label, sample.agg_score >= threshold),
         )
         for sample in samples
     ]
@@ -105,7 +108,7 @@ def report(
     """Confusion matrix, the rates derived from it, and optionally every classified row."""
     tallies = dict.fromkeys(("tp", "fp", "tn", "fn", "unlabeled"), 0)
     for sample in samples:
-        tallies[_outcome(sample.label, sample.agg_score >= threshold)] += 1
+        tallies[outcome_of(sample.label, sample.agg_score >= threshold)] += 1
 
     counts = ConfusionCounts(
         true_positive=tallies["tp"],
