@@ -286,6 +286,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One representative image per scored sample
+         * @description What a gallery needs to draw a tile per sample, without one request per tile.
+         *
+         *     Deliberately not part of the threshold report. That response is recomputed on every
+         *     slider tick, and none of this changes when the threshold moves — folding it in would
+         *     resend a few hundred unchanging rows per tick. Here it is one request per subset,
+         *     cached by the client for as long as the run's results stand.
+         *
+         *     One image per sample, the first by channel order. A grouped sample is several
+         *     photographs of one part and a tile is one thumbnail; which channel it shows is a
+         *     presentation choice, and the sample page is where all of them are.
+         */
+        get: operations["get_sample_previews_api_experiments__experiment_id__previews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/curves": {
         parameters: {
             query?: never;
@@ -1867,6 +1896,36 @@ export interface components {
             /** Items */
             items: components["schemas"]["SampleSummary"][];
         };
+        /**
+         * SamplePreview
+         * @description One image standing for one sample, so a gallery tile needs no request of its own.
+         */
+        SamplePreview: {
+            /** Sample Id */
+            sample_id: number;
+            /** Image Id */
+            image_id: number;
+            /**
+             * Has Map
+             * @default false
+             */
+            has_map: boolean;
+            /**
+             * Has Mask
+             * @default false
+             */
+            has_mask: boolean;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+        };
         /** SampleSummary */
         SampleSummary: {
             /** Id */
@@ -2655,6 +2714,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ThresholdReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_previews_api_experiments__experiment_id__previews_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SamplePreview"][];
                 };
             };
             /** @description Validation Error */

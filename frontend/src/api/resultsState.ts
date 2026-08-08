@@ -33,6 +33,15 @@ export interface ResultsState {
   subset: Subset | undefined;
   /** `undefined` means every outcome. */
   outcome: Outcome | undefined;
+  /**
+   * False positives and false negatives together — the filter anyone reaches for first,
+   * and the one a ranked list makes hardest to assemble by hand.
+   *
+   * A separate flag rather than letting `outcome` hold a set: every other filter is one
+   * bucket, and widening the stored shape to express the single case that is two of them
+   * would make every reader handle a list where a value will do. When set it wins.
+   */
+  mistakesOnly: boolean;
   /** `undefined` means "whatever the server suggested", which is the honest default. */
   threshold: number | undefined;
   sort: SortOrder;
@@ -69,6 +78,7 @@ export const DEFAULT_CUT = 0.3;
 export const EMPTY_RESULTS: ResultsState = {
   subset: undefined,
   outcome: undefined,
+  mistakesOnly: false,
   threshold: undefined,
   sort: "score-desc",
   heatmap: true,
@@ -81,6 +91,7 @@ export function readResultsState(params: URLSearchParams): ResultsState {
   return {
     subset: readOneOf(params.get("subset"), SUBSETS),
     outcome: readOneOf(params.get("outcome"), OUTCOMES),
+    mistakesOnly: params.get("outcome") === "mistakes",
     threshold: readFloat(params.get("t")),
     sort: params.get("sort") === "score-asc" ? "score-asc" : "score-desc",
     heatmap: readFlag(params.get("map"), EMPTY_RESULTS.heatmap),
@@ -94,7 +105,8 @@ export function readResultsState(params: URLSearchParams): ResultsState {
 export function writeResultsState(state: ResultsState): URLSearchParams {
   const params = new URLSearchParams();
   if (state.subset !== undefined) params.set("subset", state.subset);
-  if (state.outcome !== undefined) params.set("outcome", state.outcome);
+  if (state.mistakesOnly) params.set("outcome", "mistakes");
+  else if (state.outcome !== undefined) params.set("outcome", state.outcome);
   if (state.threshold !== undefined) params.set("t", String(state.threshold));
   if (state.sort !== EMPTY_RESULTS.sort) params.set("sort", state.sort);
   if (state.heatmap !== EMPTY_RESULTS.heatmap) params.set("map", state.heatmap ? "1" : "0");

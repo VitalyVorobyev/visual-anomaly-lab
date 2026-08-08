@@ -15,27 +15,44 @@
  * watching, not on the front page of the experiment.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 
 import type { Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
+import type { ResultsState } from "../api/resultsState";
+import { readResultsState, writeResultsState } from "../api/resultsState";
 import { Tabs } from "../components/Tabs";
 import { Badge, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows } from "../components/ui";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment } from "../hooks/useExperiments";
 import { BenchmarkTab } from "./experiment/BenchmarkTab";
+import { GalleryTab } from "./experiment/GalleryTab";
+import { useVerdicts } from "./experiment/useVerdicts";
 import { ArchitectureTab, InspectorTab, PICTURE_KINDS, STRUCTURE_KINDS } from "./experiment/DiagnosticsTabs";
 import { Configuration, Console, Metrics, Runs } from "./experiment/OverviewTab";
 import { Results } from "./experiment/ResultsPanel";
 import { TrainingTab } from "./experiment/TrainingTab";
 
-const TAB_IDS = ["overview", "training", "benchmark", "architecture", "inspector"] as const;
+const TAB_IDS = [
+  "overview",
+  "samples",
+  "training",
+  "benchmark",
+  "architecture",
+  "inspector",
+] as const;
 type TabId = (typeof TAB_IDS)[number];
 
 function parseTab(raw: string | null): TabId {
   return TAB_IDS.includes(raw as TabId) ? (raw as TabId) : "overview";
 }
+
+/* A disabled tab used to give no reason at all, which reads as broken rather than as
+   not-yet. Each says what would fill it. */
+const NOT_SCORED = "Nothing has been scored yet — run 'Score & evaluate' first.";
+const NO_STRUCTURE = "This method recorded no architecture or score-normalization table.";
+const NO_PICTURES = "This method recorded no run-scoped pictures of itself.";
 
 export function ExperimentRoute() {
   const { experimentId: raw } = useParams();
@@ -59,6 +76,27 @@ export function ExperimentRoute() {
   const chartedJobId = followingJobId ?? lastTrainJob?.id;
   const charted = useJob(chartedJobId, { experimentId });
 
+  /*
+   * When a scoring run lands while its own screen is open, go and look at what it found.
+   *
+   * The point of a run is the pictures it produced, and the previous behaviour was to
+   * leave the reader on a console showing three lines of `[done]` with the results one
+   * undiscovered tab away. Only from the Overview tab and only once per arrival: a reader
+   * who has chosen a tab has said where they want to be, and yanking them out of it would
+   * be a worse bug than the one this fixes.
+   */
+  const watchedJob = charted.job;
+  const landedOn = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (!watchedJob || watchedJob.kind !== "infer" || watchedJob.status !== "succeeded") return;
+    if (landedOn.current === watchedJob.id) return;
+    landedOn.current = watchedJob.id;
+    if (params.get("tab") !== null) return;
+    const updated = new URLSearchParams(params);
+    updated.set("tab", "samples");
+    setParams(updated, { replace: true });
+  }, [watchedJob, params, setParams]);
+
   const tab = parseTab(params.get("tab"));
   const selectTab = (next: TabId) => {
     const updated = new URLSearchParams(params);
@@ -66,6 +104,17 @@ export function ExperimentRoute() {
     else updated.set("tab", next);
     setParams(updated, { replace: true });
   };
+
+  // The results view's own state — subset, filter, layers — lives in the same query string
+  // so the gallery hands it to the sample page and gets it back on the way out.
+  const results = readResultsState(params);
+  const updateResults = (next: Partial<ResultsState>) => {
+    const updated = writeResultsState({ ...results, ...next });
+    const tabParam = params.get("tab");
+    if (tabParam !== null) updated.set("tab", tabParam);
+    setParams(updated, { replace: true });
+  };
+  const verdicts = useVerdicts(experimentId, results);
 
   if (experiment.isPending) return <SkeletonRows rows={5} />;
   if (experiment.error) return <ErrorBox>{experiment.error.message}</ErrorBox>;
@@ -110,10 +159,36 @@ export function ExperimentRoute() {
         onSelect={selectTab}
         items={[
           { id: "overview", label: "Overview" },
-          { id: "training", label: "Training", disabled: !hasTrained },
-          { id: "benchmark", label: "Benchmark", disabled: !hasScores },
-          { id: "architecture", label: "Architecture", disabled: !hasStructure },
-          { id: "inspector", label: "Inspector", disabled: !hasPictures },
+          {
+            id: "samples",
+            label: "Samples",
+            disabled: !hasScores,
+            title: hasScores ? undefined : NOT_SCORED,
+          },
+          {
+            id: "training",
+            label: "Training",
+            disabled: !hasTrained,
+            title: hasTrained ? undefined : "Nothing has been trained yet.",
+          },
+          {
+            id: "benchmark",
+            label: "Benchmark",
+            disabled: !hasScores,
+            title: hasScores ? undefined : NOT_SCORED,
+          },
+          {
+            id: "architecture",
+            label: "Architecture",
+            disabled: !hasStructure,
+            title: hasStructure ? undefined : NO_STRUCTURE,
+          },
+          {
+            id: "inspector",
+            label: "Inspector",
+            disabled: !hasPictures,
+            title: hasPictures ? undefined : NO_PICTURES,
+          },
         ]}
       />
 
@@ -142,6 +217,16 @@ export function ExperimentRoute() {
 
           {hasScores && <OverviewResults experimentId={experimentId} subsets={detail.scored_subsets} />}
         </>
+      )}
+
+      {tab === "samples" && (
+        <GalleryTab
+          experimentId={experimentId}
+          state={results}
+          onChange={updateResults}
+          verdicts={verdicts}
+          range={detail.map_range}
+        />
       )}
 
       {tab === "training" && (

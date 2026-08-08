@@ -198,6 +198,19 @@ class CurveSet(BaseModel):
     image_pr: Curve | None = None
 
 
+class SamplePreview(BaseModel):
+    """One image standing for one sample, so a gallery tile needs no request of its own."""
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    image_id: int
+    has_map: bool = False
+    has_mask: bool = False
+    width: int = 0
+    height: int = 0
+
+
 class ImageScore(BaseModel):
     """One image of one sample, as the result viewer draws it."""
 
@@ -500,6 +513,43 @@ def get_threshold(
     with connection(settings.db_path) as conn:
         samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
     return report(samples, value, include_samples=True)
+
+
+@router.get("/{experiment_id}/previews", summary="One representative image per scored sample")
+def get_sample_previews(
+    request: Request,
+    experiment_id: int,
+    subset: Subset | None = Query(default=None),
+) -> list[SamplePreview]:
+    """What a gallery needs to draw a tile per sample, without one request per tile.
+
+    Deliberately not part of the threshold report. That response is recomputed on every
+    slider tick, and none of this changes when the threshold moves — folding it in would
+    resend a few hundred unchanging rows per tick. Here it is one request per subset,
+    cached by the client for as long as the run's results stand.
+
+    One image per sample, the first by channel order. A grouped sample is several
+    photographs of one part and a tile is one thumbnail; which channel it shows is a
+    presentation choice, and the sample page is where all of them are.
+    """
+    experiment, settings = _load(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        scored = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+        masks = results_repo.masks_for_images(conn, [image.image_id for image in scored])
+
+    seen: dict[int, SamplePreview] = {}
+    for image in scored:
+        if image.sample_id in seen:
+            continue
+        seen[image.sample_id] = SamplePreview(
+            sample_id=image.sample_id,
+            image_id=image.image_id,
+            has_map=image.map_path is not None,
+            has_mask=image.image_id in masks,
+            width=image.width,
+            height=image.height,
+        )
+    return list(seen.values())
 
 
 @router.get("/{experiment_id}/curves", summary="ROC and PR curves for one subset")

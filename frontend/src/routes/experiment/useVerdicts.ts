@@ -14,7 +14,8 @@
 import { useMemo } from "react";
 
 import type { SampleVerdict } from "../../api/client";
-import type { ResultsState } from "../../api/resultsState";
+import type { Outcome, ResultsState } from "../../api/resultsState";
+import { MISTAKE_OUTCOMES } from "../../api/resultsState";
 import { useResults, useThreshold } from "../../hooks/useExperiments";
 
 export interface Verdicts {
@@ -53,23 +54,38 @@ export function useVerdicts(
 
   const all = useMemo(() => report.data?.samples ?? [], [report.data]);
 
+  // Filtering and ordering happen once, here, so the gallery's grid and the sample page's
+  // prev/next cannot disagree about what "the next one" means.
   const shown = useMemo(() => {
-    const filtered =
-      state.outcome === undefined ? all : all.filter((entry) => entry.outcome === state.outcome);
-    const direction = state.sort === "score-asc" ? 1 : -1;
-    return [...filtered].sort((left, right) => direction * (right.score - left.score));
-  }, [all, state.outcome, state.sort]);
+    const filtered = all.filter((entry) => matches(entry.outcome, state));
+    // `right - left` is descending; negate it for ascending. Getting this backwards puts
+    // the *least* anomalous samples under a control that says "most anomalous", which is
+    // a wrong answer wearing a correct label.
+    const descending = state.sort !== "score-asc";
+    return [...filtered].sort((left, right) =>
+      descending ? right.score - left.score : left.score - right.score,
+    );
+  }, [all, state.outcome, state.mistakesOnly, state.sort]);
 
   return {
     shown,
     all,
     threshold,
     rationale: state.threshold === undefined ? results.data?.threshold_rationale : undefined,
-    label:
-      state.outcome === undefined
-        ? `${all.length} samples`
-        : (OUTCOME_PLURAL[state.outcome] ?? state.outcome),
+    label: describeFilter(state, all.length),
     isPending: results.isPending || report.isPending,
     error: results.error ?? report.error,
   };
+}
+
+/** The one place an outcome is tested against the current filter. */
+export function matches(outcome: string, state: ResultsState): boolean {
+  if (state.mistakesOnly) return MISTAKE_OUTCOMES.includes(outcome as Outcome);
+  return state.outcome === undefined || outcome === state.outcome;
+}
+
+function describeFilter(state: ResultsState, total: number): string {
+  if (state.mistakesOnly) return "mistakes";
+  if (state.outcome === undefined) return `${total} samples`;
+  return OUTCOME_PLURAL[state.outcome] ?? state.outcome;
 }

@@ -79,6 +79,7 @@ export type SampleVerdict = Schemas["SampleVerdict"];
 export type ThresholdReport = Schemas["ThresholdReport"];
 export type ImageScore = Schemas["ImageScore"];
 export type MapScale = Schemas["MapScale"];
+export type SamplePreview = Schemas["SamplePreview"];
 export type MapRender = Schemas["MapRender"];
 export type DiagnosticIndex = Schemas["DiagnosticIndex"];
 export type DiagnosticEntry = Schemas["DiagnosticEntry"];
