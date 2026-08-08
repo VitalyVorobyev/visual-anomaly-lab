@@ -86,8 +86,13 @@ jobs:
       # files, half a minute for the equivalence pins, and a couple of minutes for
       # `test_efficientad_custom.py`, which trains a real model for 100 steps because a
       # method that runs without detecting anything is the failure worth catching.
+      #
+      # `cd backend` rather than `uv run --directory backend`, because the shell expands
+      # the glob before uv changes directory: from the repository root the pattern matches
+      # nothing, and pytest exits 4 having run no tests. Caught by this job failing on the
+      # commit that introduced it, which is the job working.
       - name: The dl-gated tests
-        run: uv run --directory backend pytest tests/test_efficientad_*.py
+        run: cd backend && uv run pytest tests/test_efficientad_*.py
 
   frontend:
     name: Frontend
