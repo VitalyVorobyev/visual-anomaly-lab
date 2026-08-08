@@ -49,27 +49,32 @@ the detail is in the git history and the ADRs.
 Six sub-milestones, ordered so the layout churn lands first and later items arrive *into* the new
 layout instead of being moved twice. **a–c are self-contained**; d–f are the research features.
 
-- [ ] **a — Overview redesign, `Jobs & files` tab, the run bar, threshold curves, thumbnails** (M).
+- [x] **a — Overview redesign, `Jobs & files` tab, the run bar, threshold curves, thumbnails** (M).
   `pr_curve` returns the cut scores it already computes so `Curve` can carry `t`; precision, recall
   and F1 drawn against the threshold beside its slider. Run controls move to a persistent bar above
   the tabs; the run list, job logs and the artifact listing move off Overview entirely.
-- [ ] **b — Sample viewer navigation and canvas** (S). `tab` joins `ResultsState`, which fixes the
+- [x] **b — Sample viewer navigation and canvas** (S). `tab` joins `ResultsState`, which fixes the
   gallery link, the back link and prev/next in one change. Cursor-anchored wheel zoom with a
   non-passive listener, double-click toggling fit ↔ 1:1, and the duplicated `ZoomPan` in
   `SampleRoute` deleted in favour of `ZoomPanCanvas`.
-- [ ] **c — The value under the cursor** (M) — **ADR-0023**. A fixed-header float32 blob fetched once
+- [x] **c — The value under the cursor** (M) — **ADR-0023**. A fixed-header float32 blob fetched once
   per image and indexed in the browser; the colormap and the display range stay server-side. Reports
   the map value in map units and the preprocessed source values, never a colour read back out of a
   picture.
-- [ ] **d — Layer-level architecture** (M) — **ADR-0024**. Forward hooks over `named_modules()` in a
+- [x] **d — Layer-level architecture** (M) — **ADR-0024**. Forward hooks over `named_modules()` in a
   shared helper, split so the tree-building half is tested without torch. Bounded by node count, not
   depth. `edges` stays branch-level because `named_modules()` sees modules, not wiring.
-- [ ] **e — Continue training** (L) — **ADR-0025**. `Capabilities.supports_resume` and a
+- [x] **e — Continue training** (L) — **ADR-0025**. `Capabilities.supports_resume` and a
   `SupportsResume` protocol; `TrainParams.additional_steps`; a format-2 checkpoint; absolute steps.
   Resolves the collision this backlog flagged between warm-starting and a frozen config.
 - [ ] **f — Resident worker and on-demand diagnostics** (L) — **ADR-0026**, **ADR-0027**. Spike
   against `pixel_reference` before committing to the design. One resident globally, evicted before
   any job spawns, keyed by a checkpoint fingerprint so stale weights cannot be served.
+  - [x] The index half: `DiagnosticEntry.origin`, merge and range rules scoped by it, run-level
+    budget carried forward, atomic write. Nothing produces an on-demand entry yet.
+  - [ ] `jobs/resident.py`, `jobs/inspector.py`, `experiments/diagnose.py`, the `before_spawn` hook
+    on the queue, `POST /{id}/diagnose`, `DELETE /{id}/diagnostics`, the health block, and the
+    frontend's diagnose button and clear action. **ADR-0026 and ADR-0027 are not yet written.**
 
 *Items d, e and f are research features M5 does not need, and M6's `efficientad_custom` would
 exercise all three anyway. Ordered last for that reason.*
