@@ -311,8 +311,31 @@ a second object to answer.
 | 8 000 | 0.715 | 0.904 | 0.573 | 26.0 | 9.3 min |
 | 16 000 | 0.723 | 0.915 | 0.680 | 27.3 | 19.2 min |
 | **30 000** | **0.835** | **0.935** | **0.833** | 29.0 | 33.6 min |
-| 50 000 | | | | | *paused* |
-| 70 000 | | | | | *paused* |
+| 50 000 | | | | | *abandoned* |
+| 70 000 | | | | | *abandoned* |
+
+And the same trajectory with the teacher that replaced it, forked from the seed-0 4000-step
+run in the table above:
+
+| Steps | Sample ROC-AUC | Pixel ROC-AUC | AU-PRO | ms/image |
+|---|---|---|---|---|
+| 4 000 | 0.886 | 0.981 | 0.916 | 26.5 |
+| 8 000 | 0.916 | 0.989 | 0.936 | 26.6 |
+| 16 000 | **0.943** | **0.992** | **0.944** | 25.5 |
+| 30 000 | | | | |
+| 50 000 | | | | |
+| 70 000 | | | | |
+
+**The two curves do not converge, they diverge.** At every budget measured the better teacher
+is ahead by more than the anomalib-teacher curve gains over its whole span: 16 000 steps with
+`nelson1425` (0.943) beats 30 000 with `anomalib` (0.835) by 0.108, and the anomalib curve
+only moved 0.084 across 26 000 steps to get there. Training budget and teacher quality are not
+substitutes — the teacher sets the ceiling and the budget approaches it.
+
+The `anomalib` curve is **abandoned at 30 000 rather than paused**. Its remaining two legs
+would cost two hours to finish measuring a model the workbench no longer defaults to, and the
+question it was asked — *is 4000 steps a judgeable budget* — was answered at 30 000. Its
+checkpoint is on disk if that changes.
 
 **4000 steps was not a weak measurement of this method; it was a measurement of a different
 model.** Between 16 000 and 30 000 steps sample ROC-AUC moves 0.723 → 0.835 and AU-PRO moves 0.680 →
@@ -321,11 +344,6 @@ explain it. Every number in this file recorded at 4000 steps describes a model t
 learning what a normal candle looks like, including the comparison against `pixel_reference`'s floor,
 which EfficientAD now clears on both AU-PRO (0.833 against 0.819) and sample ROC-AUC (0.835 against
 0.790).
-
-The curve is **paused at 30 000, not abandoned.** The teacher below turned out to be a variable
-rather than a constant, and finishing a trajectory that might be distilling against the wrong teacher
-would spend two hours measuring the wrong model. The 30 000-step checkpoint is on disk, so the
-remaining two legs resume rather than restart.
 
 **What the schedule does along this chain, stated rather than hidden.** `fit_more` rebuilds the
 `StepLR` against the *new* total, so each leg anneals over its own last 5% and returns to base rate
