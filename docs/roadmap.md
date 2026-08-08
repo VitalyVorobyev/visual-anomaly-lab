@@ -370,7 +370,7 @@ is tracked against run by run.
 
 ---
 
-### M7 — PatchCore · in progress
+### M7 — PatchCore · complete 2026-08-09
 
 **Goal.** A third method, and the first one whose resource profile is genuinely awkward.
 
@@ -385,9 +385,30 @@ defaults rather than confirming them.
 - [x] PatchCore trains and infers without exhausting memory, and its memory-bank configuration is
       documented. Two independent caps resolved by a pure `plan_bank` **before** the pass, its numbers
       in the log and in a `memory_bank` diagnostic table.
-- [ ] It appears in the comparison view alongside the others with no changes outside the plugin.
-      *Plugin and registry entry are done and `generated.ts` is unchanged; the run against
-      `efficientad_custom` on the official split is outstanding.*
+- [x] It appears in the comparison view alongside the others with no changes outside the plugin.
+      Verified against a real run: regenerating the API contract after adding the method produces
+      **no diff at all**.
+
+**The first real run, on `candle`, split `default`, defaults untouched.** Both caps bound as planned —
+512 of 600 images, 195 of 1024 patches each, a 99 840-vector pool at 613 MB, a **9 984-vector bank at
+61 MB**, selected in 21 s on the CPU while the embedding pass ran on MPS. Every figure the probe
+predicted held to within a few percent, which is what makes the sizing a measurement rather than a
+guess. Inference is 27.7 ms/image against `efficientad_custom`'s 26.3 on the same images.
+
+| test subset | `patchcore_anomalib` | `efficientad_custom` (`candle-nelson-curve-s0`) |
+| --- | --- | --- |
+| sample ROC-AUC | 0.908 | **0.955** |
+| AU-PRO | 0.912 | **0.943** |
+| pixel ROC-AUC | 0.974 | **0.994** |
+| resolved threshold (`f1`) | 37.23 | 0.236 |
+
+**EfficientAD wins on this split, and the comparison is not yet a fair one.** PatchCore ran at
+untouched defaults on its first attempt; the EfficientAD run beside it is the product of a milestone
+of tuning, on a teacher chosen because it measured better. What the pair establishes is that the
+screen works with a structurally different method in it — 26 of 270 samples disagree, and the two
+thresholds differ by a factor of 158, which is exactly the situation ADR-0028 exists for. Reading the
+0.047 sample ROC-AUC gap as a result about the *methods* would repeat the mistake ADR-0029 was written
+to prevent.
 
 **Still binds:**
 
