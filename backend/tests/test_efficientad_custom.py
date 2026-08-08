@@ -518,6 +518,54 @@ def test_the_continuation_actually_trains(saved: Saved) -> None:
     )
 
 
+def test_a_continuation_does_not_inherit_the_previous_leg_s_decayed_rate() -> None:
+    """The bug that made a step-budget curve measure the wrong thing.
+
+    `StepLR.get_lr` multiplies the param group's *current* rate, and
+    `Adam.load_state_dict` restores the rate the previous leg ended on — which is always
+    the decayed one, because every leg anneals over its own last 5%. So a naive resume
+    starts a tenth low and drops again at the next boundary: 1e-5 on the first
+    continuation, 1e-9 by the fifth, with nothing on screen to say so.
+
+    Checked on the scheduler alone rather than through `fit_more`, because the arithmetic
+    is the whole claim and a training run would cost a minute to say the same thing.
+    """
+    model = EfficientAdCustomModel(_config(max_steps=4000))
+    parameter = torch.nn.Parameter(torch.zeros(1))
+    optimizer = torch.optim.Adam([parameter], lr=1e-4)
+
+    scheduler = model._build_scheduler(optimizer, 4000, torch)
+    for _ in range(4000):
+        optimizer.step()  # before the scheduler, which is the order the loop uses
+        scheduler.step()
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-5), "leg one should anneal"
+
+    # Exactly what `fit_more` does: a fresh optimizer, the previous leg's state on top of
+    # it, then the schedule rebuilt against the new total.
+    resumed = torch.optim.Adam([parameter], lr=1e-4)
+    resumed.load_state_dict(optimizer.state_dict())
+    model._build_scheduler(resumed, 8000, torch, last_epoch=3999)
+    assert resumed.param_groups[0]["lr"] == pytest.approx(1e-4), (
+        "the continuation inherited the previous leg's decayed rate instead of the one "
+        "its own schedule calls for"
+    )
+
+
+def test_a_continuation_past_the_new_drop_point_stays_decayed() -> None:
+    """The other half of the closed form, which a base-rate reset alone would get wrong.
+
+    Resuming at step 8000 into a total of 8100 puts the drop at 7695 — already behind us.
+    The rate belongs at 1e-5 there, and a fix that simply restored the base rate on every
+    resume would hand back 1e-4 and quietly undo the anneal.
+    """
+    model = EfficientAdCustomModel(_config(max_steps=8100))
+    parameter = torch.nn.Parameter(torch.zeros(1))
+    optimizer = torch.optim.Adam([parameter], lr=1e-4)
+
+    model._build_scheduler(optimizer, 8100, torch, last_epoch=7999)
+    assert optimizer.param_groups[0]["lr"] == pytest.approx(1e-5)
+
+
 def test_a_continuation_at_a_different_input_size_is_refused(saved: Saved, tmp_path: Path) -> None:
     """The normalization was fitted at one resolution and does not transfer to another.
 

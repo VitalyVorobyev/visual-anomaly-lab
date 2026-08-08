@@ -77,6 +77,9 @@ and it costs accuracy against the published number — which the field descripti
 _LOSS_LOG_EVERY = 20
 _QUANTILE_LOW = 0.9
 _QUANTILE_HIGH = 0.995
+_LR_GAMMA = 0.1
+"""The paper's single tenfold drop. Named because `_build_scheduler` applies it twice —
+once through `StepLR` and once in the closed form that positions a resumed run."""
 
 
 class EfficientAdCustomConfig(BaseModel):
@@ -427,12 +430,15 @@ class EfficientAdCustomModel(AnomalyModel):
             optimizer.load_state_dict(self._optimizer_state)
         # Recomputed against the **new** total, which is what makes 4000 + 4000 close to
         # what one 8000-step run would have done — and it means the learning rate returns
-        # to base at the resume point, since the drop moves with it. Printed, not hidden.
+        # to base at the resume point, since the drop moves with it. That is only true
+        # because `_build_scheduler` sets the rate rather than letting the restored
+        # optimizer's decayed one stand; see its docstring. Printed, not hidden.
         scheduler = self._build_scheduler(optimizer, total, torch, last_epoch=done - 1)
 
         ctx.log(
             f"continuing from step {done} for {additional_steps} more, to {total}; "
-            f"the learning-rate drop moves to step {int(0.95 * total)}"
+            f"the learning rate resumes at {optimizer.param_groups[0]['lr']:.2e} and drops "
+            f"tenfold at step {int(0.95 * total)}"
         )
         self._run_steps(
             net, optimizer, scheduler, penalty, fitting, ctx, steps=additional_steps, total=total
@@ -506,15 +512,26 @@ class EfficientAdCustomModel(AnomalyModel):
     ) -> Any:
         """The paper's schedule: one tenfold drop near the end of training.
 
-        `last_epoch` other than -1 makes PyTorch read `initial_lr` off every param group,
-        which `Adam` does not set — so it is seeded here rather than raising a `KeyError` a
-        long way from its cause.
+        Resuming makes this harder than it looks, and getting it wrong is invisible.
+        `StepLR.get_lr` is *multiplicative on the group's current learning rate*, and
+        `Adam.load_state_dict` restores the rate the previous leg ended on — which, since
+        every leg anneals over its own last 5%, is the decayed one. Left to itself each
+        continuation would start where the last drop left it and then drop again: measured
+        at 1e-5 instead of 1e-4 on the first resume, reaching 1e-9 by the fifth. So the rate
+        is *computed* from the schedule's closed form at the resume point rather than
+        inherited from the restored optimizer.
+
+        `last_epoch` other than -1 also makes PyTorch read `initial_lr` off every param
+        group, which `Adam` does not set — so it is seeded here rather than raising a
+        `KeyError` a long way from its cause.
         """
+        step_size = max(1, int(0.95 * total))
         if last_epoch >= 0:
             for group in optimizer.param_groups:
-                group.setdefault("initial_lr", self.config.learning_rate)
+                group["initial_lr"] = self.config.learning_rate
+                group["lr"] = self.config.learning_rate * _LR_GAMMA ** (last_epoch // step_size)
         return torch_module.optim.lr_scheduler.StepLR(
-            optimizer, step_size=max(1, int(0.95 * total)), gamma=0.1, last_epoch=last_epoch
+            optimizer, step_size=step_size, gamma=_LR_GAMMA, last_epoch=last_epoch
         )
 
     def _run_steps(
