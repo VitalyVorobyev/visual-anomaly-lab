@@ -512,6 +512,22 @@ def test_curves_are_served_for_the_benchmark_charts(
     assert (roc["x"][-1], roc["y"][-1]) == (1.0, 1.0)
 
 
+def test_only_the_pr_curve_carries_thresholds(client: TestClient, scored: dict[str, Any]) -> None:
+    """PR is drawn against the slider; ROC's synthetic endpoints have no finite score."""
+    payload = client.get(
+        f"/api/experiments/{scored['id']}/curves", params={"subset": "test"}
+    ).json()
+
+    for key in ("sample_pr", "image_pr"):
+        curve = payload[key]
+        assert len(curve["t"]) == len(curve["x"]), key
+        # Descending, because the curve walks the score downwards one cut at a time.
+        assert curve["t"] == sorted(curve["t"], reverse=True), key
+
+    for key in ("sample_roc", "image_roc"):
+        assert payload[key]["t"] == [], key
+
+
 def test_a_curve_agrees_with_the_metric_it_is_drawn_beside(
     client: TestClient, scored: dict[str, Any]
 ) -> None:

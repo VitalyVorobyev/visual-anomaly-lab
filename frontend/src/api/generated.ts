@@ -1120,6 +1120,11 @@ export interface components {
              */
             y: number[];
             /**
+             * T
+             * @description The score at each point, so precision and recall can be drawn against the threshold rather than only against each other. Empty for ROC: that curve carries two synthetic endpoints whose thresholds are infinite, and JSON has no way to say so.
+             */
+            t: number[];
+            /**
              * Total
              * @description Points before downsampling.
              */

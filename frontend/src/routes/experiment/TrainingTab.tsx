@@ -6,6 +6,12 @@
  * the moment the page opened — which is the difference between a chart and a decoration,
  * and the reason ADR-0020 exists.
  *
+ * The console lives here too, beside the chart it belongs to. It used to be on Overview,
+ * one tab away from the curves describing the same run — so watching a training run meant
+ * choosing between seeing the loss fall and seeing what the process was saying. Everything
+ * arrives as props from the one `useJob` the route already holds: **this tab issues no
+ * requests of its own**, which is what keeps a second socket from opening when it mounts.
+ *
  * Losses go on a log axis by default. The three EfficientAD terms differ by more than an
  * order of magnitude for most of a run, and on a linear axis two of them are a flat line
  * along the bottom.
@@ -13,10 +19,11 @@
 
 import { useState } from "react";
 
-import type { JobSummary } from "../../api/client";
+import type { JobDetail, JobSummary } from "../../api/client";
 import { LineChart } from "../../components/charts/LineChart";
+import { JobProgress } from "../../components/JobProgress";
 import type { Series } from "../../hooks/useJob";
-import { Empty, Panel, Switch } from "../../components/ui";
+import { Disclosure, Empty, Panel, Switch } from "../../components/ui";
 
 /** Anything not obviously a loss goes on its own linear chart — a rate, a count. */
 function isLoss(name: string): boolean {
@@ -30,14 +37,23 @@ function formatScalar(value: number | undefined): string {
   return value.toPrecision(6).replace(/0+$/, "").replace(/\.$/, "");
 }
 
+export interface TrainingConsole {
+  jobId: number | undefined;
+  job: JobDetail | undefined;
+  lines: string[];
+  error: Error | null;
+}
+
 export function TrainingTab({
   jobs,
   series,
   followingJobId,
+  console: live,
 }: {
   jobs: JobSummary[];
   series: Series[];
   followingJobId: number | undefined;
+  console: TrainingConsole;
 }) {
   const [logScale, setLogScale] = useState(true);
 
@@ -52,12 +68,16 @@ export function TrainingTab({
 
   if (series.length === 0) {
     return (
-      <Panel title="Training">
-        <Empty>
-          This run recorded no scalar series. A method reports them by calling{" "}
-          <span className="font-mono">ctx.metric</span> during <span className="font-mono">fit</span>.
-        </Empty>
-      </Panel>
+      <div className="flex flex-col gap-6">
+        <Panel title="Training">
+          <Empty>
+            This run recorded no scalar series. A method reports them by calling{" "}
+            <span className="font-mono">ctx.metric</span> during{" "}
+            <span className="font-mono">fit</span>.
+          </Empty>
+        </Panel>
+        <ConsolePanel console={live} />
+      </div>
     );
   }
 
@@ -141,9 +161,35 @@ export function TrainingTab({
 
       {followingJobId === undefined && (
         <p className="text-xs text-fg-muted">
-          Showing the most recent training run. Pick another from the Runs list on Overview.
+          Showing the most recent training run. Pick another from the Runs list on the Jobs
+          &amp; files tab.
         </p>
       )}
+
+      <ConsolePanel console={live} />
     </div>
+  );
+}
+
+/**
+ * The run's own output, folded away.
+ *
+ * Collapsed by default because the chart is the answer and the log is the follow-up
+ * question — but it is on this tab, one click from the curve, rather than on the screen
+ * that is supposed to be about results.
+ */
+function ConsolePanel({ console: live }: { console: TrainingConsole }) {
+  if (live.jobId === undefined) return null;
+  return (
+    <Panel title={`Job #${live.jobId}`}>
+      <Disclosure summary="Console">
+        <JobProgress
+          jobId={live.jobId}
+          job={live.job}
+          lines={live.lines}
+          error={live.error}
+        />
+      </Disclosure>
+    </Panel>
   );
 }

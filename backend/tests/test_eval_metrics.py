@@ -10,8 +10,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from anomaly_lab.db.repositories.results import ScoredImage
-from anomaly_lab.domain.entities import Aggregation, Label
+from anomaly_lab.db.repositories.results import ScoredImage, ScoredSample
+from anomaly_lab.domain.entities import Aggregation, Label, Subset
 from anomaly_lab.eval.aggregate import aggregate_scores
 from anomaly_lab.eval.metrics import (
     average_precision,
@@ -20,6 +20,7 @@ from anomaly_lab.eval.metrics import (
     roc_curve,
     timing_summary,
 )
+from anomaly_lab.eval.threshold import report
 
 
 def test_perfect_separation_is_one() -> None:
@@ -110,14 +111,51 @@ def test_the_pr_curve_carries_the_points_average_precision_sums() -> None:
 
     curve = pr_curve(labels, scores)
     assert curve is not None
-    recall, precision = curve
+    recall, precision, threshold = curve
     assert recall == pytest.approx([0.5, 0.5, 1.0, 1.0])
     assert precision == pytest.approx([1.0, 0.5, 2 / 3, 0.5])
+    assert threshold == pytest.approx([0.9, 0.8, 0.7, 0.6])
 
     steps = np.r_[0.0, recall[:-1]]
     assert float(np.sum((recall - steps) * precision)) == pytest.approx(
         average_precision(labels, scores)
     )
+
+
+def test_the_pr_thresholds_are_the_ones_the_threshold_report_would_use() -> None:
+    """The curve is drawn under a slider that reports the same numbers, so they must agree.
+
+    `classify` calls a sample defective at `score >= threshold`; `_cut_points` cuts at the
+    *last* index carrying each distinct score. Those two rules coincide, and this is the
+    test that says so — if either moves, the chart under the slider stops describing the
+    confusion matrix beside it, and nothing else would notice.
+    """
+    generator = np.random.default_rng(11)
+    labels = generator.integers(0, 2, size=120).astype(bool)
+    scores = generator.normal(labels * 0.8, 1.0)
+
+    curve = pr_curve(labels, scores)
+    assert curve is not None
+    recall, precision, threshold = curve
+
+    samples = [
+        ScoredSample(
+            sample_id=index,
+            group_key="g",
+            external_id=str(index),
+            label=Label.DEFECT if bool(label) else Label.NORMAL,
+            notes=None,
+            agg_score=float(score),
+            aggregation=Aggregation.MAX,
+            subset=Subset.TEST,
+        )
+        for index, (label, score) in enumerate(zip(labels, scores, strict=True))
+    ]
+
+    for index, cut in enumerate(threshold):
+        at_cut = report(samples, float(cut))
+        assert at_cut.precision == pytest.approx(float(precision[index]))
+        assert at_cut.recall == pytest.approx(float(recall[index]))
 
 
 def test_curves_ignore_tie_order_the_way_the_scalars_do() -> None:

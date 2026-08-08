@@ -66,8 +66,10 @@ comparing them under one evaluation protocol.
   metrics — then browse every scored sample as a picture, filter to the model's mistakes, and lay its
   segmentation against the ground truth. Two methods ship: `pixel_reference` (numpy + Pillow, the
   floor) and `efficientad_anomalib` (MPS).
-- **M5 — the comparison UI — is next.** Read `docs/roadmap.md` before starting work; the completed
-  milestones there are summaries that keep only what still constrains new work.
+- **M4.7 — the workbench you can iterate in — is next**, taken before M5 because running the
+  application showed that training restarts from zero, diagnostics cannot be asked for, and Overview
+  opens on a job log. Read `docs/roadmap.md` before starting work; the completed milestones there are
+  summaries that keep only what still constrains new work.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
   `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare

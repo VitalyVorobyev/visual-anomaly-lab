@@ -1,83 +1,22 @@
 /**
- * The experiment's own state: what has run, what it was configured with, and the
- * threshold-free numbers it produced.
+ * What this experiment achieved.
  *
- * This is M3's screen, moved intact. The M4 tabs sit beside it rather than replacing it —
- * a run's log and its metric table are what someone opens the page for most of the time,
- * and burying them under a tab that is not the default would be a regression dressed as a
- * feature.
+ * Overview used to open on a run list and a job log, with the metrics and the results
+ * below the fold — the screen that should answer "did this work" answered "what did the
+ * last process print". The runs, the logs and the artifact listing are now a tab of their
+ * own; the run controls are in the bar above the tabs. What is left here is the headline
+ * numbers, the results at a threshold, the full metric tables, and the frozen configuration
+ * that makes all of it reproducible — in that order, because the reader wants the finding
+ * before the record of how it was obtained.
  */
 
 import type { MetricValue } from "../../api/metrics";
 import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
-import type { JobSummary, Subset } from "../../api/client";
-import { JobProgress } from "../../components/JobProgress";
-import { Badge, Button, CountRun, Disclosure, Empty, ErrorBox, Panel } from "../../components/ui";
+import type { MetricSummary, Subset } from "../../api/client";
+import { Button, CountRun, Disclosure, Panel } from "../../components/ui";
 import type { Tone } from "../../components/ui";
-import { useJob, isTerminal } from "../../hooks/useJob";
-import { useReevaluate, useStartRun } from "../../hooks/useExperiments";
-
-export function Runs({
-  experimentId,
-  jobs,
-  onFollow,
-  followingJobId,
-}: {
-  experimentId: number;
-  jobs: JobSummary[];
-  onFollow: (jobId: number) => void;
-  followingJobId: number | undefined;
-}) {
-  const start = useStartRun(experimentId);
-  const busy = jobs.some((job) => !isTerminal(job.status));
-
-  const run = (kind: "train" | "infer") =>
-    start.mutate({ kind }, { onSuccess: (job) => onFollow(job.id) });
-
-  return (
-    <Panel
-      title="Runs"
-      actions={
-        <div className="flex gap-2">
-          <Button variant="primary" disabled={busy || start.isPending} onClick={() => run("train")}>
-            Train
-          </Button>
-          <Button disabled={busy || start.isPending} onClick={() => run("infer")}>
-            Score &amp; evaluate
-          </Button>
-        </div>
-      }
-    >
-      {start.error && <ErrorBox>{start.error.message}</ErrorBox>}
-      {jobs.length === 0 && <Empty>Nothing has run yet. Train first, then score.</Empty>}
-
-      {jobs.length > 0 && (
-        <ul className="divide-y divide-line text-sm ">
-          {jobs.map((job) => (
-            <li key={job.id} className="flex items-center gap-3 py-2">
-              <span className="font-mono text-xs text-fg-muted">#{job.id}</span>
-              <span className="w-16">{job.kind}</span>
-              <Badge tone={jobTone(job.status)}>{job.status}</Badge>
-              <span className="truncate text-xs text-fg-muted">
-                {job.message ?? job.error ?? ""}
-              </span>
-              {job.id !== followingJobId && (
-                <button
-                  type="button"
-                  className="ml-auto text-xs text-fg-muted hover:underline"
-                  onClick={() => onFollow(job.id)}
-                >
-                  show log
-                </button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-    </Panel>
-  );
-}
+import { useReevaluate } from "../../hooks/useExperiments";
 
 export function jobTone(status: string): Tone {
   if (status === "succeeded") return "normal";
@@ -86,15 +25,54 @@ export function jobTone(status: string): Tone {
   return "neutral";
 }
 
-export function Console({ jobId, experimentId }: { jobId: number; experimentId: number }) {
-  // The experiment id is what makes the screen refresh itself when this job ends: the
-  // console is the one thing following the socket, so its terminal frame is the only
-  // moment anything here knows the run is over.
-  const { job, lines, error } = useJob(jobId, { experimentId });
+/**
+ * The four numbers someone opens this screen for, above everything else.
+ *
+ * Deliberately a *subset* of the metric tables below rather than a different computation —
+ * the same values, promoted. Absent ones render as a dash and keep their slot, because a
+ * missing pixel ROC-AUC (no masks in this dataset) is a fact about the run and hiding the
+ * row would make two experiments' headlines silently different shapes.
+ */
+const HEADLINE: { key: string; label: string }[] = [
+  { key: "sample_roc_auc", label: "sample ROC-AUC" },
+  { key: "sample_average_precision", label: "sample AP" },
+  { key: "pixel_roc_auc", label: "pixel ROC-AUC" },
+  { key: "pixel_au_pro", label: "AU-PRO" },
+];
+
+export function Headline({
+  metrics,
+  subset,
+}: {
+  metrics: MetricSummary[];
+  subset: Subset | undefined;
+}) {
+  const entry = metrics.find((row) => row.subset === subset) ?? metrics[metrics.length - 1];
+  if (!entry) return null;
+  const values = (entry.metrics ?? {}) as Record<string, unknown>;
+
   return (
-    <Panel title={`Job #${jobId}`}>
-      <JobProgress jobId={jobId} job={job} lines={lines} error={error} />
-    </Panel>
+    <div className="flex flex-wrap gap-x-10 gap-y-4 rounded-lg border border-line bg-surface px-4 py-3">
+      {HEADLINE.map(({ key, label }) => {
+        const value = values[key];
+        return (
+          <div key={key} className="flex flex-col gap-0.5">
+            <span className="text-xs text-fg-muted">{label}</span>
+            <span className="font-mono text-xl tabular-nums">
+              {typeof value === "number" ? (
+                value.toFixed(4)
+              ) : (
+                <span className="text-fg-subtle">—</span>
+              )}
+            </span>
+          </div>
+        );
+      })}
+      <div className="flex flex-col gap-0.5">
+        <span className="text-xs text-fg-muted">subset</span>
+        <span className="font-mono text-xl">{entry.subset}</span>
+      </div>
+    </div>
   );
 }
 
@@ -144,7 +122,7 @@ export function Metrics({
   aggregation,
 }: {
   experimentId: number;
-  metrics: { subset: Subset; metrics: Record<string, unknown> }[];
+  metrics: MetricSummary[];
   aggregation: string;
 }) {
   const reevaluate = useReevaluate(experimentId);

@@ -277,6 +277,32 @@ export function useReevaluate(experimentId: number) {
   });
 }
 
+/**
+ * Cancel a running job.
+ *
+ * Lifted out of `JobProgress` so the run bar can offer the same action without the console
+ * being on screen — the reason the bar exists is that starting and stopping a run should
+ * not depend on which tab you are looking at.
+ */
+export function useCancelJob(experimentId?: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (jobId: number) => {
+      const { error } = await api.POST("/api/jobs/{job_id}/cancel", {
+        params: { path: { job_id: jobId } },
+      });
+      if (error !== undefined) throw new Error("The job could not be cancelled.");
+      return jobId;
+    },
+    onSuccess: (jobId) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
+      if (experimentId !== undefined) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+      }
+    },
+  });
+}
+
 export function useDeleteExperiment() {
   const queryClient = useQueryClient();
   return useMutation({

@@ -176,6 +176,15 @@ class Curve(BaseModel):
 
     x: list[float] = Field(description="False-positive rate for ROC; recall for PR.")
     y: list[float] = Field(description="True-positive rate for ROC; precision for PR.")
+    t: list[float] = Field(
+        default_factory=list,
+        description=(
+            "The score at each point, so precision and recall can be drawn against the "
+            "threshold rather than only against each other. Empty for ROC: that curve "
+            "carries two synthetic endpoints whose thresholds are infinite, and JSON has "
+            "no way to say so."
+        ),
+    )
     total: int = Field(description="Points before downsampling.")
     dropped: int = Field(default=0, description="Points not returned, so a cap is visible.")
 
@@ -693,15 +702,23 @@ def _labelled(rows: list[tuple[Label, float]]) -> tuple[np.ndarray, np.ndarray]:
     )
 
 
-def _curve(arrays: tuple[np.ndarray, np.ndarray] | None) -> Curve | None:
-    """Downsample one curve to a drawable number of points, saying what was dropped."""
+def _curve(
+    arrays: tuple[np.ndarray, np.ndarray] | tuple[np.ndarray, np.ndarray, np.ndarray] | None,
+) -> Curve | None:
+    """Downsample one curve to a drawable number of points, saying what was dropped.
+
+    A third array, where the curve has one, is the score at each point and rides the
+    **same** `kept` indices — a `t` sampled independently would label the wrong points.
+    """
     if arrays is None:
         return None
-    x, y = arrays
+    x, y = arrays[0], arrays[1]
+    threshold = arrays[2] if len(arrays) == 3 else None
     kept = evenly_spaced(x.size, CURVE_POINT_LIMIT)
     return Curve(
         x=[float(x[index]) for index in kept],
         y=[float(y[index]) for index in kept],
+        t=[] if threshold is None else [float(threshold[index]) for index in kept],
         total=int(x.size),
         dropped=int(x.size) - len(kept),
     )

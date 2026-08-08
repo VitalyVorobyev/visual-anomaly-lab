@@ -143,6 +143,50 @@ twelve images.
 
 ## Next
 
+### M4.7 — The workbench you can iterate in
+
+Unplanned, taken before M5 for the third time in a row, and for the same reason each time: looking at
+the running application. M4.6 made the workbench's output *reachable*; running it showed that the
+workbench is not something you can **iterate in**. Training restarts from zero every time. Per-branch
+diagnostics exist only for the images an inference job happened to sample, and there is no way to ask
+for one. The architecture view is three boxes with their input and output shapes. The Overview tab —
+the screen that should say what an experiment achieved — opens on a job list and a log tail, with the
+metrics and the results below the fold.
+
+A comparison screen built on a workbench you cannot tune compares two runs you could not tune, which
+is why this comes first.
+
+**Scope**
+
+- **Continue training for N further steps**, with an exact resume: optimizer moments, LR-schedule
+  state, step counter and RNG in the checkpoint, `max_steps` staying a per-run budget so the
+  experiment's config is still frozen, and step numbers absolute across an experiment's training.
+  A declared capability, not a special case — `pixel_reference` has no steps.
+- **On-demand per-branch diagnostics for any image**, served from a resident inference worker beside
+  the job queue, persisted into the index and deletable to reclaim disk.
+- **Layer-level architecture** from forward hooks in a shared helper, so any torch method inherits it.
+- **Overview redesign**: config, metrics and results, with the run list, job logs and artifacts moved
+  to their own tab; precision, recall and F1 drawn as functions of the threshold beside its slider;
+  thumbnails instead of file paths in the verdict table.
+- **Sample viewer**: navigation that returns to the tab it came from, a value readout under the
+  cursor, and a cursor-anchored zoom with a fit toggle.
+
+**Exit criteria**
+
+- [ ] A trained experiment can be continued for further steps, and the loss curve reads as one
+      continuous run rather than restarting at zero.
+- [ ] Any scored image can be diagnosed on demand while browsing, the result survives a reload, and
+      per-branch diagnostics can be cleared with the reclaimed bytes reported.
+- [ ] The Architecture tab shows the real module hierarchy with per-layer shapes and parameter
+      counts, for any torch method, with no per-method code.
+- [ ] Overview answers "what did this experiment achieve" above the fold, and nothing about jobs or
+      files appears on it.
+
+**Size:** large — six sub-milestones (see the backlog). The first three are self-contained and are a
+clean stopping point if M5 starts pulling.
+
+---
+
 ### M5 — Comparison UI
 
 **Goal.** Several methods, one split, one evaluation protocol, compared directly. This is what makes the workbench worth having.
