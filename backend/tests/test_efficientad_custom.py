@@ -601,6 +601,91 @@ def test_a_sequential_teacher_checkpoint_loads_in_the_published_order(
         assert torch.equal(target(probe), source(probe))
 
 
+def _reference_pdn(out_channels: int, size: str, padding: bool) -> Any:
+    """nelson1425/EfficientAD's `get_pdn_small`/`get_pdn_medium`, transcribed verbatim.
+
+    Copied structure-for-structure from that repository's `common.py` rather than generated
+    from our own table, because the whole point is to be a second opinion about what the
+    network *is*.
+    """
+    from torch import nn
+
+    pad_mult = 1 if padding else 0
+    if size == "small":
+        return nn.Sequential(
+            nn.Conv2d(3, 128, kernel_size=4, padding=3 * pad_mult),
+            nn.ReLU(inplace=True),
+            nn.AvgPool2d(kernel_size=2, stride=2, padding=1 * pad_mult),
+            nn.Conv2d(128, 256, kernel_size=4, padding=3 * pad_mult),
+            nn.ReLU(inplace=True),
+            nn.AvgPool2d(kernel_size=2, stride=2, padding=1 * pad_mult),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1 * pad_mult),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, out_channels, kernel_size=4),
+        )
+    return nn.Sequential(
+        nn.Conv2d(3, 256, kernel_size=4, padding=3 * pad_mult),
+        nn.ReLU(inplace=True),
+        nn.AvgPool2d(kernel_size=2, stride=2, padding=1 * pad_mult),
+        nn.Conv2d(256, 512, kernel_size=4, padding=3 * pad_mult),
+        nn.ReLU(inplace=True),
+        nn.AvgPool2d(kernel_size=2, stride=2, padding=1 * pad_mult),
+        nn.Conv2d(512, 512, kernel_size=1),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(512, 512, kernel_size=3, padding=1 * pad_mult),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(512, out_channels, kernel_size=4),
+        nn.ReLU(inplace=True),
+        nn.Conv2d(out_channels, out_channels, kernel_size=1),
+    )
+
+
+@pytest.mark.parametrize("size", ["small", "medium"])
+@pytest.mark.parametrize("padding", [False, True])
+def test_our_pdn_is_the_reference_pdn(size: Literal["small", "medium"], padding: bool) -> None:
+    """Foreign weights may only be loaded into the network they were trained in.
+
+    Shapes agreeing is not that claim: two networks can share every parameter shape and
+    differ in where the ReLUs and the pools sit, and the mistake would be invisible — the
+    weights load, the run finishes, and the teacher is quietly a different function. This
+    builds the reference's `nn.Sequential` from its own source, puts one set of weights in
+    both, and compares outputs.
+
+    **The one real difference is preprocessing, and it is why the reference gets a
+    pre-normalized input here.** Our PDN standardizes with ImageNet statistics inside its
+    `forward`; the reference does it in the dataset transform. Same function, different
+    seam — and worth pinning, because a teacher fed unnormalized pixels would also load
+    without complaint.
+    """
+    from anomaly_lab.models.efficientad_nets import (
+        PatchDescriptionNetwork,
+        imagenet_normalize,
+        load_pdn_weights,
+    )
+
+    ours = PatchDescriptionNetwork(out_channels=384, size=size, padding=padding).eval()
+    theirs = _reference_pdn(384, size, padding).eval()
+
+    # The reference keys by position in its Sequential; ours by name. This is the mapping
+    # `load_pdn_weights` performs, built here from the reference's own module list.
+    sequential = {}
+    convolutions = [i for i, m in enumerate(theirs) if isinstance(m, torch.nn.Conv2d)]
+    for index, position in enumerate(convolutions, start=1):
+        sequential[f"{position}.weight"] = ours.state_dict()[f"conv{index}.weight"]
+        sequential[f"{position}.bias"] = ours.state_dict()[f"conv{index}.bias"]
+    theirs.load_state_dict({str(k): v for k, v in sequential.items()})
+
+    pixels = torch.rand(1, 3, SIZE, SIZE)
+    with torch.no_grad():
+        assert torch.allclose(ours(pixels), theirs(imagenet_normalize(pixels)), atol=1e-6)
+
+    # And the remap under test agrees with the mapping built from the reference's own layout.
+    target = PatchDescriptionNetwork(out_channels=384, size=size, padding=padding).eval()
+    load_pdn_weights(target, sequential)
+    with torch.no_grad():
+        assert torch.equal(target(pixels), ours(pixels))
+
+
 def test_a_named_teacher_checkpoint_still_loads_unchanged() -> None:
     """anomalib's layout must keep working — it is the default and the shared baseline."""
     from anomaly_lab.models.efficientad_nets import PatchDescriptionNetwork, load_pdn_weights

@@ -118,6 +118,14 @@ either without a refetch. Two consequences worth stating:
   pools). `load_pdn_weights` maps the positional layout **by order of appearance**, never by parsing
   the indices, and validates every shape before loading. A shuffled mapping would load without
   complaint and produce a plausible, wrong teacher.
+- **Matching shapes is not the same claim as being the same network**, so the architecture itself is
+  pinned: `test_our_pdn_is_the_reference_pdn` builds the reference's `nn.Sequential` from its own
+  source, loads one set of weights into both, and compares outputs — for both widths and with
+  padding on and off. Two networks can share every parameter shape and differ in where the ReLUs and
+  pools sit, and that mistake is invisible from the outside. The same test pins the one genuine
+  difference: **ours standardizes with ImageNet statistics inside `forward` and the reference does it
+  in its dataset transform**. Same function, different seam — and a teacher fed unnormalized pixels
+  would also load without complaint.
 - **The reproduction's URL is pinned to a commit**, not to `main`. An asset that changes upstream
   must be a checksum failure naming the file, not a silent change of teacher between two runs that
   read as comparable.
