@@ -77,16 +77,29 @@ comparing them under one evaluation protocol.
   and label it, split it, train, score, read image- and pixel-level metrics, browse every scored
   sample and filter to the model's mistakes, ask the method about any image, continue training — then
   put N runs of one split side by side, find the samples they disagree on, and open one of them with
-  every method's map in its own pane. Two methods ship: `pixel_reference` (numpy + Pillow, the floor)
-  and `efficientad_anomalib` (MPS).
+  every method's map in its own pane. Four methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  `efficientad_anomalib` and `efficientad_custom` (MPS), and `patchcore_anomalib` (a coreset memory
+  bank; nothing is trained).
 - **Nothing is compared in score units (ADR-0028).** A score has no meaning outside its own run —
   `pixel_reference` operates around 14 and `efficientad_anomalib` around 0.065 on the same data.
   Threshold-independent metrics compare directly; anything threshold-dependent is resolved **per run
   by one shared rule** whose name and resolved value are printed on screen, and a cut carried between
   runs is a *fraction of each range*, never a value. A single slider over a comparison would be
   wrong in a way that looks exactly like being right.
-- **M6 — the custom EfficientAD — is next.** Read `docs/roadmap.md` before starting work; the
-  completed milestones there are summaries that keep only what still constrains new work.
+- **M6 (custom EfficientAD) and M7 (PatchCore) are both in flight.** Read `docs/roadmap.md` before
+  starting work; the completed milestones there are summaries that keep only what still constrains new
+  work, and the in-flight ones say what is deliberately postponed rather than forgotten.
+- **A `dl`-gated test file must be named `test_dl_*.py`.** CI's `Backend (dl extra)` job globs exactly
+  that, and a file outside the pattern is collected-and-skipped in the torch-free job and run in no
+  job at all. A test that is merely *about* a deep method but needs no torch does not take the prefix.
+- **Bound a memory-bank method before it runs, not after.** PatchCore's candidate pool is 5.66 GB on a
+  full VisA class and its coreset selection is quadratic in that pool, so `plan_bank` resolves both
+  caps and prints the footprint before the pass begins. Anything with that shape gets the same
+  treatment.
+- **A seed has to reach every random stream, and libraries hide some.** anomalib's coreset draws
+  through scikit-learn's numpy RNG, which `torch.manual_seed` does not touch, so its bank is not
+  reproducible; M6 found the same shape in torch's global stream for weight init. When adding a
+  method, assert reproducibility in *both* directions — same seed identical, different seed different.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
   `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
@@ -106,9 +119,11 @@ comparing them under one evaluation protocol.
   import has now landed, so every further change is a new numbered migration (ADR-0004).
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
   fails on a stale file.
-- **Follow the milestone order** in the roadmap: M1 walking skeleton → M2 import + browse → M3 vertical
-  slice on the classical baseline → M4 EfficientAD → M5 PatchCore + comparison → M6 custom EfficientAD →
-  M7 polish + full README. Do not build M4 machinery while M3 is unfinished.
+- **Follow the milestone order** in the roadmap, which is where the numbering is authoritative: M1
+  walking skeleton → M2 import + browse → M3 universal vertical slice → M4 workbench UI (+ M4.5 UI/UX,
+  M4.6 reachability, M4.7 iteration) → M5 comparison UI → M6 custom EfficientAD → **M7 PatchCore** →
+  M8 `classical_circular` (optional) → **M9 polish + full README**. Do not build a later milestone's
+  machinery while an earlier one is unfinished.
 - **A new job kind costs one entry** in `jobs/handlers.py` and one handler function. The queue, the
   JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
   needs a change in any of them, that is a finding about the boundary. `train` and `infer` cost exactly

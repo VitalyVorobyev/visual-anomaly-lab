@@ -84,6 +84,7 @@ rather than drawn by hand, so it cannot go stale against the model it describes,
 | `pixel_reference` | Per-pixel median + MAD over the training normals → z-map → smoothing → high-percentile score. Trains in seconds and gives every deep result something to beat. | numpy, Pillow |
 | `efficientad_anomalib` | EfficientAD via Intel's [anomalib](https://github.com/open-edge-platform/anomalib). Trains on Apple Silicon through MPS. | `--extra dl` |
 | `efficientad_custom` | The same paper ([arXiv:2303.14535](https://arxiv.org/abs/2303.14535)), implemented here. The wrapper above is the baseline it is measured against, not a specification it copies — see [ADR-0029](docs/adr/0029-anomalib-is-the-baseline-not-the-specification.md). Needs torch alone, not anomalib. | `--extra dl` |
+| `patchcore_anomalib` | PatchCore ([arXiv:2106.08265](https://arxiv.org/abs/2106.08265)) via anomalib. Nothing is trained: a frozen backbone's patch features are greedily reduced to a coreset memory bank, and a test patch is scored by its distance to the nearest vector in it. | `--extra dl` |
 
 Running the two EfficientADs against each other on one split is the point of having both: every
 improvement in the custom one is a configuration field, so it is an ablation the comparison screen
@@ -101,9 +102,16 @@ larger than the effect of seven times more training. So `teacher_source` picks b
 Distillation changes nothing about inference: the large model is training-only, and what a trained
 experiment loads and runs is the same 2.7M-parameter network it always was.
 
-PatchCore is designed and not yet built. A method is a Python module and a registry entry — no
-routes, no schemas, and no TypeScript, because the configuration form is generated from the method's
-own schema.
+**PatchCore is the one whose cost is memory rather than time**, and its defaults were measured rather
+than guessed. A ~900-image class generates 5.66 GB of patch embeddings before any selection, so the
+bank is bounded by two caps — one on images read, one on vectors held — resolved and printed *before*
+the pass rather than discovered by a machine that has started swapping. `scripts/patchcore-smoke-test.py`
+is what produced the numbers, and re-running it on a different machine is how you check them.
+
+A method is a Python module and a registry entry — no routes, no schemas, and no TypeScript, because
+the configuration form is generated from the method's own schema. PatchCore is the strongest evidence
+for that claim so far: it has no training steps, no gradients and nothing to resume, and it still cost
+exactly one entry.
 
 ## Reference datasets
 
