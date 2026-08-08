@@ -12,6 +12,7 @@ route back to settings, to SQLite, or to the queue.
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -19,7 +20,7 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories.images import SplitImage
 from anomaly_lab.domain.entities import Experiment
-from anomaly_lab.models.base import AnomalyModel, ImageRecord
+from anomaly_lab.models.base import AnomalyModel, ImageRecord, evenly_spaced
 from anomaly_lab.models.device import ResolvedDevice, resolve_device
 from anomaly_lab.models.diagnostics import DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -78,12 +79,23 @@ def diagnostics_writer(
     *,
     enabled: bool,
     image_budget: int | None = None,
+    over_images: Sequence[int] | None = None,
 ) -> DiagnosticWriter:
-    """A writer that is enabled only when the model actually produces diagnostics."""
+    """A writer that is enabled only when the model actually produces diagnostics.
+
+    `over_images` is the full set the run is about to touch, in order. When given, the
+    budget is spent on an **evenly spaced** selection of it rather than on whichever
+    images the model reaches first — otherwise the kept set is N neighbours from one
+    corner of the dataset presented as a sample of the run.
+    """
+    keep = None
+    if over_images is not None and image_budget is not None:
+        keep = [over_images[index] for index in evenly_spaced(len(over_images), image_budget)]
     return DiagnosticWriter(
         loaded.artifact_dir / "diagnostics",
         enabled=enabled and loaded.model_class.capabilities().produces_diagnostics,
         image_budget=image_budget,
+        keep_images=keep,
     )
 
 

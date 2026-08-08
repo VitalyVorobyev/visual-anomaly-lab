@@ -11,6 +11,7 @@ of fact rather than a hope: a client that has the bytes never needs to ask for t
 
 from __future__ import annotations
 
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -29,7 +30,12 @@ from anomaly_lab.domain.entities import Image, JobKind
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.media.cache import TIERS, ImageTier, ensure_cached, etag_for, render
 from anomaly_lab.media.decode import UnreadableImageError
-from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_mask_contour
+from anomaly_lab.media.overlay import (
+    read_display_range,
+    render_anomaly_map,
+    render_mask_contour,
+    render_prediction_region,
+)
 from anomaly_lab.media.prewarm import PrewarmParams
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -39,6 +45,19 @@ router = APIRouter(prefix="/api/images", tags=["images"])
 # A year, which is as close to "forever" as the header allows. Safe because the cache key
 # is the content hash: different bytes are a different URL response, never a stale one.
 IMMUTABLE_CACHE_CONTROL = "public, max-age=31536000, immutable"
+
+
+class MapRender(StrEnum):
+    """How an anomaly map should be drawn.
+
+    A heatmap answers "how anomalous, everywhere"; a segmentation answers "where, exactly".
+    Only the second has an edge, and only something with an edge can be laid against a
+    ground-truth outline and read as agreement or disagreement.
+    """
+
+    HEATMAP = "heatmap"
+    REGION = "region"
+    CONTOUR = "contour"
 
 
 class PrewarmRequest(BaseModel):
@@ -97,6 +116,20 @@ def read_anomaly_map(
             "for a standalone panel, where a low-scoring map would otherwise be invisible."
         ),
     ),
+    render: MapRender = Query(
+        default=MapRender.HEATMAP,
+        description=(
+            "`heatmap` colormaps the whole map. `region` and `contour` draw only where it "
+            "crosses `threshold`, which is the model's own segmentation."
+        ),
+    ),
+    threshold: float | None = Query(
+        default=None,
+        description=(
+            "Cut in **map units**, required by `region` and `contour`. A display decision "
+            "only: no metric is computed from it."
+        ),
+    ),
 ) -> Response:
     """Render a stored float32 map as a PNG (ADR-0007).
 
@@ -110,7 +143,21 @@ def read_anomaly_map(
     a diagnostics panel beside an opaque per-branch map, it makes a clean image look
     blank and puts the two panes on visibly different scales — which defeats the
     comparison the panel exists for.
+
+    `render` chooses between a heatmap and a **segmentation**. The heatmap shows how much,
+    everywhere; the segmentation shows where, with an edge — which is the only form that
+    can be laid against a ground-truth outline and read as agreement or disagreement.
+
+    The numbers behind the picture — this map's extremes and the run's range — are served
+    as JSON on the experiment's per-sample image route, not as headers here. An `<img>` tag
+    cannot read a response header, and this endpoint exists to be an `img src`.
     """
+    if render is not MapRender.HEATMAP and threshold is None:
+        raise HTTPException(
+            status_code=422,
+            detail=f"render={render.value} needs a threshold, in the map's own units",
+        )
+
     image, settings = _load_image(request, image_id)
     with connection(settings.db_path) as conn:
         stored = results_repo.get_image_result(conn, experiment_id, image_id)
@@ -131,16 +178,26 @@ def read_anomaly_map(
         ) from exc
 
     maps_dir = settings.experiment_dir(experiment_id) / "maps"
-    payload = render_anomaly_map(
-        array,
-        value_range=read_display_range(maps_dir),
-        size=(image.width, image.height) if native else None,
-        alpha_follows_score=alpha,
-    )
+    value_range = read_display_range(maps_dir)
+    size = (image.width, image.height) if native else None
+
+    if render is MapRender.HEATMAP:
+        payload = render_anomaly_map(
+            array, value_range=value_range, size=size, alpha_follows_score=alpha
+        )
+    else:
+        payload = render_prediction_region(
+            array,
+            float(threshold or 0.0),
+            size=size,
+            outline=render is MapRender.CONTOUR,
+        )
+
+    tag = f"{render.value}-{threshold}" if render is not MapRender.HEATMAP else f"h{int(alpha)}"
     return Response(
         content=payload,
         media_type="image/png",
-        headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}-{int(alpha)}"'),
+        headers=_headers(f'W/"map-{experiment_id}-{image.sha256[:16]}-{int(native)}-{tag}"'),
     )
 
 

@@ -10,7 +10,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 
 | # | Title | Status |
 |---|---|---|
-| [0001](0001-private-data-never-leaves-the-machine.md) | Private data never leaves the machine | Accepted |
+| [0001](0001-private-data-never-leaves-the-machine.md) | Private data never leaves the machine | **Superseded by [0022](0022-private-source-data-lives-outside-the-working-tree.md)** |
 | [0002](0002-monorepo-layout.md) | Monorepo layout | Accepted |
 | [0003](0003-tauri-to-python-boundary-is-a-fastapi-sidecar.md) | Tauri-to-Python boundary is a FastAPI sidecar | Accepted |
 | [0004](0004-persistence-with-sqlite-and-filesystem-artifacts.md) | Persistence with SQLite and filesystem artifacts | Accepted |
@@ -31,6 +31,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0019](0019-serving-diagnostic-payloads-through-the-index.md) | Serving diagnostic payloads through the index, on a recorded scale | Accepted |
 | [0020](0020-metric-series-are-replayed-from-the-job-log.md) | Metric series are replayed from the job log, not buffered | Accepted |
 | [0021](0021-design-token-layer-and-primitive-set.md) | A design token layer, and primitives for the controls Tailwind does not have | Accepted |
+| [0022](0022-private-source-data-lives-outside-the-working-tree.md) | Private source data lives outside the repository working tree | Accepted |
 
 ## Conventions
 

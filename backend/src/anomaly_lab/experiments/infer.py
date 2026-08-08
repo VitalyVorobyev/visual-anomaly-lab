@@ -50,17 +50,36 @@ class InferParams(BaseModel):
     )
     diagnostics: bool = Field(
         default=True,
-        description="Record per-image diagnostics for the first few images.",
+        description="Record per-image diagnostics, spread evenly across the scored set.",
     )
     diagnostic_images: int = Field(
-        default=12,
+        # `default_factory`, like `subsets` above, so the JSON Schema carries no `default`
+        # and the field is *optional* in the generated client. A literal default is emitted
+        # into the schema, which makes the property required in TypeScript and forces every
+        # caller to restate the number — which is how the frontend came to pin 12 and
+        # silently override this line.
+        default_factory=lambda: 64,
         ge=0,
-        le=200,
+        le=500,
         description=(
-            "How many images keep per-image diagnostics. Each costs a few float32 maps "
-            "on disk, so the whole test set is rarely worth it."
+            "How many images keep per-image diagnostics, chosen evenly across the run. "
+            "Each costs a few float32 maps on disk — measured at about half a megabyte "
+            "for a two-branch method at 256x256."
         ),
     )
+    """
+    Raised from 12, which was too tight to be useful and was justified by an estimate
+    rather than a measurement.
+
+    Measured on the reference run: two branch maps per image at 256x256 float32 is 512 KB,
+    so 64 images is ~33 MB against the 127 MB of combined anomaly maps the same run already
+    writes. The default answer to "show me what the branches did on this image" was "that
+    image was not one of the first twelve", which made the decomposition — the thing that
+    makes a two-branch method legible at all — effectively unreachable.
+
+    Still bounded, and still reported. A run over a few thousand images at the ceiling is
+    real disk, and the index says what it dropped.
+    """
 
 
 def run_infer_job(ctx: JobContext) -> dict[str, Any]:
@@ -105,6 +124,9 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         loaded,
         enabled=params.diagnostics,
         image_budget=params.diagnostic_images,
+        # The handler knows the whole scored set before the model sees any of it, so the
+        # budget is spent across the run rather than on whichever images arrive first.
+        over_images=[image.image_id for image in selected],
     )
     infer_ctx = InferContext(
         artifact_dir=loaded.artifact_dir,

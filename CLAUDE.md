@@ -9,7 +9,7 @@ comparing them under one evaluation protocol.
 ## Steering: the goal is universal
 
 - The target is a **universal anomaly-detection explorer for arbitrary image datasets**. The private
-  showcase dataset under `privatedata/` is one reference dataset, not the scope.
+  showcase dataset is one reference dataset, not the scope.
 - **Only** the `classical_circular` plugin may assume anything about the showcase dataset's geometry. Domain
   model, import layer, DL methods (`efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom`),
   evaluation layer, and UI must stay dataset-agnostic.
@@ -22,8 +22,10 @@ comparing them under one evaluation protocol.
 
 ## Private data — highest priority
 
-- **Never read, open, copy, move, or commit anything under `privatedata/`.** It is a read-only mount of
-  proprietary images, referenced in place. Do not sample it "just to check the format".
+- **The private showcase images live outside this repository entirely (ADR-0022).** Never read, open,
+  copy, or move them; never create a `privatedata/` directory or a symlink to one, which would put
+  them back inside the tree where `git add -A` can reach them. They are referenced in place by
+  absolute path. Do not sample them "just to check the format".
 - **Never `git add -A` or `git add .`** — stage explicit paths, always.
 - **Run `scripts/check-repo-safety.sh` after staging and before any commit or push.** It must exit 0.
 - Test fixtures are **small synthetic images (PNG)** generated in code or checked in at trivial size.
@@ -49,7 +51,7 @@ comparing them under one evaluation protocol.
 - `docs/roadmap.md` — milestones M0–M7 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **21 accepted ADRs (0001–0021)**. Records are immutable once accepted. A significant new
+- `docs/adr/` — **22 records (0001–0022); 0001 is superseded by 0022**. Records are immutable once accepted. A significant new
   decision gets a **new numbered ADR** that explicitly supersedes the old one — never silently contradict
   an existing record, and never edit an accepted one in place. Follow the format in `docs/adr/README.md`.
 - `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
@@ -59,19 +61,16 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M3 are done: the loop closes.** The app imports a directory tree — or a public benchmark, through
-  `folder_classes` or `csv_table` — into a catalog of grouped samples with masks and an optional published
-  split; browses and labels them in bulk; creates splits either seeded or adopted from the source; then
-  creates an experiment, trains a method, scores it, and reports image- **and** pixel-level metrics with a
-  working anomaly-map overlay. Two methods ship: `pixel_reference` (numpy + Pillow, the floor) and
-  `efficientad_anomalib` (MPS).
-- **M4 is complete**, and was followed by a UI/UX pass that gave the app a visual system: a semantic
-  token layer, a primitive set under `frontend/src/components/ui/`, light and dark themes with a
-  toggle, and the schema→control mapping fixed so a closed set renders as a picker (**ADR-0021**).
-  **M5 — the comparison UI — is next.** Check `docs/roadmap.md` before starting work.
+- **M0–M4.6 are done.** The loop closes and its output is reachable: import a directory tree or a
+  public benchmark, browse and label it, split it, train, score, and read image- and pixel-level
+  metrics — then browse every scored sample as a picture, filter to the model's mistakes, and lay its
+  segmentation against the ground truth. Two methods ship: `pixel_reference` (numpy + Pillow, the
+  floor) and `efficientad_anomalib` (MPS).
+- **M5 — the comparison UI — is next.** Read `docs/roadmap.md` before starting work; the completed
+  milestones there are summaries that keep only what still constrains new work.
 - **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
-  `Skeleton`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
+  `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
   `<select>`, `<input type="range">` or `<table>` — those are what the pass removed. A raw
   `<details>` in particular now renders **with no caret**, because the base layer drops the UA
   marker; use `Disclosure`.

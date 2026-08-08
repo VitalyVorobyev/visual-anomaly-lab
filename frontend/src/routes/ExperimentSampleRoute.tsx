@@ -1,51 +1,113 @@
 /**
- * One sample, as one experiment saw it: the source image, the anomaly map over it, the
- * ground-truth outline where a mask exists, and whatever per-image diagnostics the method
- * recorded beside them.
+ * One sample, as one experiment saw it — built around the image rather than around its
+ * chrome.
  *
- * The overlay is stacked `<img>` elements at the same size, with opacity applied in CSS.
- * That is deliberate and is what ADR-0007 asks for: the map is stored raw, the server
- * colormaps it against the *run's* range so two images are comparable, and the blend
- * happens at view time — so moving the slider is instant and costs no round trip.
+ * The previous version spent three stacked rows and a titled panel on a single opacity
+ * slider before the photograph started, then drew it at half width in a two-column grid
+ * that a one-image dataset never fills. The image is the content here; anything that
+ * pushes it below the fold is a defect. So: one header line, one toolbar line, and the
+ * canvas takes what is left of the viewport.
  *
- * The map's PNG carries alpha that already follows the score, so the source image shows
- * through untouched wherever the model found nothing. An opaque colormap over a
- * photograph tints the whole frame and makes the quiet regions look as processed as the
- * loud one — which is the opposite of what an overlay is for.
+ * **Three things are drawn over the source, and they answer different questions.** The
+ * heatmap says *how anomalous, everywhere* and has no edge. The segmentation says *where*,
+ * with an edge, and is the only form that can be laid against the ground-truth outline and
+ * read as agreement or disagreement — which is the comparison this page exists for. The
+ * ground truth says what was annotated. All three are rendered server-side against the
+ * run's own range, so nothing about colormap or threshold is baked into the stored map
+ * (ADR-0007).
  *
- * Alignment comes for free from the preprocessing bridge. Every method resizes straight
- * to the configured size without preserving aspect ratio, so the map is a plain stretch
- * back onto the source and there are no letterbox offsets to reconstruct here.
+ * Layers stack as absolutely-positioned `<img>` elements inside **one** zoom/pan transform,
+ * so they cannot drift apart at the zoom level where a reader is judging whether the
+ * prediction lands on the defect.
+ *
+ * Alignment comes for free from the preprocessing bridge. Every method resizes straight to
+ * the configured size without preserving aspect ratio, so the map is a plain stretch back
+ * onto the source and there are no letterbox offsets to reconstruct here.
  *
  * **The diagnostic panes are generic over the index (ADR-0018).** For
  * `efficientad_anomalib` they happen to be the student-teacher and autoencoder errors,
- * which is the comparison that makes the method legible — a hit in one branch means
- * something different from a hit in the other. Nothing here knows that: it draws every
- * image-scoped `map` the run recorded, so `pixel_reference` gets its unsmoothed z-map and
- * M6's method gets whatever it emits, with no code written here.
+ * which is the comparison that makes the method legible. Nothing here knows that: it draws
+ * every image-scoped `map` the run recorded, so `pixel_reference` gets its unsmoothed
+ * z-map and M6's method gets whatever it emits, with no code written here.
  */
 
-import { useState } from "react";
-import { useParams } from "react-router";
+import { useEffect, useState } from "react";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 
 import { budgetNote, imageScoped, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
-import { anomalyMapUrl, imageUrl, maskUrl } from "../api/imageUrl";
-import type { DiagnosticEntry, ImageScore } from "../api/client";
-import { Badge, Empty, ErrorBox, PageHeader, Panel, ReadoutStrip, SkeletonRows, Slider, Switch } from "../components/ui";
+import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../api/imageUrl";
+import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
+import type { ResultsState } from "../api/resultsState";
+import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
+import { ZoomPanCanvas, RESET_VIEW } from "../components/ZoomPanCanvas";
+import type { View } from "../components/ZoomPanCanvas";
+import {
+  Badge,
+  Button,
+  Disclosure,
+  Empty,
+  ErrorBox,
+  SkeletonRows,
+  Tooltip,
+  cn,
+} from "../components/ui";
 import { useDiagnostics, useExperiment, useSampleImages } from "../hooks/useExperiments";
+import { MapScaleReadout, OverlayControls } from "./experiment/OverlayControls";
+import { OUTCOME_LABEL, OUTCOME_TONE } from "./experiment/ResultsPanel";
+import { useVerdicts } from "./experiment/useVerdicts";
 
 export function ExperimentSampleRoute() {
   const { experimentId: rawExperiment, sampleId: rawSample } = useParams();
   const experimentId = rawExperiment === undefined ? undefined : Number(rawExperiment);
   const sampleId = rawSample === undefined ? undefined : Number(rawSample);
 
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const state = readResultsState(params);
+
   const experiment = useExperiment(experimentId);
   const images = useSampleImages(experimentId, sampleId);
   const diagnostics = useDiagnostics(experimentId);
 
-  const [opacity, setOpacity] = useState(0.6);
-  const [showMask, setShowMask] = useState(true);
+  // The same query the gallery ran, rebuilt from the URL — a cache hit rather than a
+  // second fetch, and the reason this page knows which sample comes next *under the
+  // filter that is on screen* rather than in raw id order.
+  const verdicts = useVerdicts(experimentId, state);
+
+  const [view, setView] = useState<View>(RESET_VIEW);
+
+  const update = (next: Partial<ResultsState>) =>
+    setParams(writeResultsState({ ...state, ...next }), { replace: true });
+
+  const neighbours = stepThrough(verdicts.shown, sampleId);
+  const goTo = (target: SampleVerdict | undefined) => {
+    if (!target || experimentId === undefined) return;
+    navigate({
+      pathname: `/experiments/${experimentId}/samples/${target.sample_id}`,
+      search: writeResultsState(state).toString(),
+    });
+  };
+
+  // Arrow keys step through the filtered set, matching the labelling keys the dataset
+  // browser already binds. Reset the zoom on arrival: carrying a 6x pan onto a different
+  // part shows a corner of it with no way to tell that is what happened.
+  useEffect(() => {
+    setView(RESET_VIEW);
+  }, [sampleId]);
+
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+      if (event.key === "ArrowLeft") goTo(neighbours.previous);
+      if (event.key === "ArrowRight") goTo(neighbours.next);
+    };
+    globalThis.addEventListener("keydown", onKey);
+    return () => globalThis.removeEventListener("keydown", onKey);
+  });
 
   if (images.error) return <ErrorBox>{images.error.message}</ErrorBox>;
   if (images.isPending) return <SkeletonRows rows={5} />;
@@ -54,76 +116,109 @@ export function ExperimentSampleRoute() {
   }
 
   const anyMask = images.data.some((image) => image.has_mask);
+  const anyMap = images.data.some((image) => image.has_map);
   const anyDiagnostic = images.data.some(
     (image) => imageScoped(diagnostics.data, image.image_id).length > 0,
   );
   const note = budgetNote(diagnostics.data);
+  const range = experiment.data?.map_range;
+  const cut = cutValue(state, range);
+  const verdict = verdicts.shown.find((entry) => entry.sample_id === sampleId);
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader
-        back={{ to: `/experiments/${experimentId}`, label: "Back to results" }}
-        title={`Sample ${sampleId}`}
-        meta={
-          <ReadoutStrip
-            items={[
-              {
-                label: "experiment",
-                value: experiment.data?.name,
-                to: `/experiments/${experimentId}`,
-              },
-              { label: "method", value: experiment.data?.model_type },
-              { label: "channels", value: images.data.length },
-            ]}
-          />
-        }
+    // `min-h-0` all the way down, or the canvas's `flex-1` is computed against content
+    // height and the image grows the page instead of filling it.
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {/* One line. Everything that was three rows of chrome, in the order it is read:
+          where you are, what this sample is, and how to get to the next one. */}
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <Link
+          to={{
+            pathname: `/experiments/${experimentId}`,
+            search: writeResultsState(state).toString(),
+          }}
+          className="text-sm text-fg-muted hover:text-fg hover:underline"
+        >
+          ← Results
+        </Link>
+        <h1 className="text-base font-semibold">Sample {sampleId}</h1>
+        {verdict && (
+          <>
+            <Badge tone={verdict.label === "defect" ? "defect" : "normal"}>{verdict.label}</Badge>
+            <Badge tone={OUTCOME_TONE[verdict.outcome] ?? "neutral"}>
+              {OUTCOME_LABEL[verdict.outcome] ?? verdict.outcome}
+            </Badge>
+          </>
+        )}
+        <span className="font-mono text-xs text-fg-muted">
+          score {images.data[0]?.score.toFixed(4)}
+          {" · "}
+          {images.data[0]?.inference_ms.toFixed(1)} ms
+        </span>
+
+        <span className="ml-auto flex items-center gap-2">
+          <span className="font-mono text-[11px] text-fg-subtle">
+            {neighbours.position === null
+              ? verdicts.label
+              : `${neighbours.position} of ${verdicts.shown.length} · ${verdicts.label}`}
+          </span>
+          <Tooltip content="Previous (←)">
+            <Button
+              variant="ghost"
+              disabled={!neighbours.previous}
+              onClick={() => goTo(neighbours.previous)}
+              aria-label="Previous sample"
+            >
+              <ChevronLeft className="size-4" />
+            </Button>
+          </Tooltip>
+          <Tooltip content="Next (→)">
+            <Button
+              variant="ghost"
+              disabled={!neighbours.next}
+              onClick={() => goTo(neighbours.next)}
+              aria-label="Next sample"
+            >
+              <ChevronRight className="size-4" />
+            </Button>
+          </Tooltip>
+        </span>
+      </header>
+
+      <OverlayControls
+        state={state}
+        onChange={update}
+        range={range}
+        hasMask={anyMask}
+        hasMap={anyMap}
       />
 
-      <Panel title="Overlay">
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-4">
-          <div className="flex min-w-64 flex-1 items-center gap-3">
-            <span className="shrink-0 text-xs font-medium text-fg">Anomaly map</span>
-            <Slider
-              aria-label="Anomaly map opacity"
-              min={0}
-              max={1}
-              step={0.02}
-              value={opacity}
-              onValueChange={setOpacity}
-              readout={
-                <span className="inline-block w-9 text-right">
-                  {Math.round(opacity * 100)}%
-                </span>
-              }
-            />
-          </div>
-
-          <Switch
-            checked={showMask}
-            disabled={!anyMask}
-            onCheckedChange={setShowMask}
-            label={
-              <span className={anyMask ? undefined : "text-fg-subtle"}>
-                Ground-truth outline{anyMask ? "" : " — none for this sample"}
-              </span>
-            }
-          />
-        </div>
-      </Panel>
-
-      <div className="grid gap-6 md:grid-cols-2">
+      {/* Columns from the image count, never from a constant: a one-image sample is one
+          full-width canvas, and the old `md:grid-cols-2` is why it was half of one. */}
+      <div
+        className="grid min-h-0 flex-1 gap-3"
+        style={{
+          gridTemplateColumns: `repeat(${Math.min(images.data.length, 3)}, minmax(0, 1fr))`,
+        }}
+      >
         {images.data.map((image) => (
           <ChannelView
             key={image.image_id}
             image={image}
             experimentId={experimentId as number}
-            opacity={opacity}
-            showMask={showMask}
+            state={state}
+            cut={cut}
+            range={range}
+            view={view}
+            onView={setView}
+            single={images.data.length === 1}
           />
         ))}
       </div>
 
-      <Panel title="Diagnostics">
+      {/* Below the fold by design. These decompose the map above; they must not compete
+          with it for the first screen. */}
+      <Disclosure summary="Per-branch diagnostics" count={anyDiagnostic ? undefined : 0}>
         {anyDiagnostic ? (
           <div className="flex flex-col gap-6">
             <p className="text-xs text-fg-muted">
@@ -137,77 +232,140 @@ export function ExperimentSampleRoute() {
                 image={image}
                 experimentId={experimentId as number}
                 entries={ofKinds(imageScoped(diagnostics.data, image.image_id), ["map", "image"])}
-                showMask={showMask}
+                showMask={state.truth}
               />
             ))}
           </div>
         ) : (
           <Empty>
-            {/* "That image was not one of the first twelve" is a different fact from "this
+            {/* "That image was not one of the ones kept" is a different fact from "this
                 model records nothing", and a blank panel says neither. */}
             {note ??
               "This run recorded no per-image diagnostics. A method reports them by calling " +
                 "ctx.emit_diagnostic during predict."}
           </Empty>
         )}
-      </Panel>
+      </Disclosure>
     </div>
   );
+}
+
+/**
+ * Where this sample sits in the filtered set, and what is either side of it.
+ *
+ * `null` position for a sample that is not in the set at all — reached by a direct link,
+ * or filtered out by a change made while it was open. It still renders; it just has no
+ * neighbours, which is honest rather than a silent jump to somewhere else in the list.
+ */
+export function stepThrough(
+  ordered: SampleVerdict[],
+  sampleId: number | undefined,
+): { previous: SampleVerdict | undefined; next: SampleVerdict | undefined; position: number | null } {
+  const index = ordered.findIndex((entry) => entry.sample_id === sampleId);
+  if (index < 0) return { previous: undefined, next: undefined, position: null };
+  return {
+    previous: ordered[index - 1],
+    next: ordered[index + 1],
+    position: index + 1,
+  };
 }
 
 function ChannelView({
   image,
   experimentId,
-  opacity,
-  showMask,
+  state,
+  cut,
+  range,
+  view,
+  onView,
+  single,
 }: {
   image: ImageScore;
   experimentId: number;
-  opacity: number;
-  showMask: boolean;
+  state: ResultsState;
+  cut: number | null;
+  range: MapScale | null | undefined;
+  view: View;
+  onView: (view: View) => void;
+  single: boolean;
 }) {
-  return (
-    <figure className="flex flex-col gap-2">
-      <figcaption className="flex items-center gap-2 text-sm">
-        <span className="font-medium">{image.channel ?? "single view"}</span>
-        {image.has_mask && <Badge tone="info">annotated</Badge>}
-        <span className="ml-auto font-mono text-xs">score {image.score.toFixed(4)}</span>
-      </figcaption>
+  const layers: { key: string; src: string; className?: string }[] = [];
+  if (state.heatmap && image.has_map) {
+    layers.push({
+      key: "heatmap",
+      src: anomalyMapUrl(image.image_id, experimentId),
+      // The PNG's own alpha already follows the score, so the photograph shows through
+      // untouched wherever the model found nothing. A fixed opacity scales that rather
+      // than fighting it — which is all the old 0–100 slider ever did.
+      className: "opacity-80",
+    });
+  }
+  if (state.region && image.has_map && cut !== null) {
+    layers.push({ key: "region", src: predictionUrl(image.image_id, experimentId, cut) });
+  }
+  if (state.truth && image.has_mask) {
+    layers.push({ key: "truth", src: maskUrl(image.image_id) });
+  }
 
-      <div className="relative overflow-hidden rounded border border-line bg-[#08090a] ">
-        <img
-          src={imageUrl(image.image_id, "preview")}
-          alt={`Channel ${image.channel ?? "single view"}`}
-          className="block w-full"
-        />
-        {image.has_map && (
+  return (
+    <figure className="flex min-h-0 flex-col gap-1.5">
+      {!single && (
+        <figcaption className="flex items-center gap-2 text-xs">
+          <span className="font-medium">{image.channel ?? "single view"}</span>
+          {image.has_mask && <Badge tone="info">annotated</Badge>}
+          <span className="ml-auto font-mono">{image.score.toFixed(4)}</span>
+        </figcaption>
+      )}
+
+      {/* The frame is shaped like the picture, not like the column. `object-contain` in a
+          full-width box centres the image between two black bars and spends the window on
+          them; an aspect-ratio box with `min-h-0` fits the image to whichever of height or
+          width runs out first and takes no more room than that. */}
+      <div className="flex min-h-0 flex-1 items-center justify-center">
+        <ZoomPanCanvas
+          view={view}
+          onView={onView}
+          className="max-h-full max-w-full"
+          style={{ aspectRatio: aspectOf(image), height: "100%" }}
+          label={`${image.channel ?? "single view"} · ${view.zoom.toFixed(1)}×`}
+        >
           <img
-            src={anomalyMapUrl(image.image_id, experimentId)}
-            alt=""
-            aria-hidden
-            // Plain alpha compositing. The map arrives as RGBA with its *own* alpha
-            // already following the score, so it is transparent wherever the model found
-            // nothing; this slider scales that, rather than fighting it with a blend mode.
-            className="pointer-events-none absolute inset-0 h-full w-full"
-            style={{ opacity }}
+            src={imageUrl(image.image_id, view.zoom > 2 ? "full" : "preview")}
+            alt={`Channel ${image.channel ?? "single view"}`}
+            draggable={false}
+            className="absolute inset-0 h-full w-full object-fill"
           />
-        )}
-        {showMask && image.has_mask && (
-          <img
-            src={maskUrl(image.image_id)}
-            alt=""
-            aria-hidden
-            className="pointer-events-none absolute inset-0 h-full w-full"
-          />
-        )}
+          {/* Every layer fills the identical box, so alignment is structural rather than
+              something to reconstruct: the preprocessing bridge resizes without preserving
+              aspect ratio, so a map is a plain stretch back onto its source. */}
+          {layers.map((layer) => (
+            <img
+              key={layer.key}
+              src={layer.src}
+              alt=""
+              aria-hidden
+              draggable={false}
+              className={cn(
+                "pointer-events-none absolute inset-0 h-full w-full object-fill",
+                layer.className,
+              )}
+            />
+          ))}
+        </ZoomPanCanvas>
       </div>
 
-      <p className="font-mono text-xs text-fg-muted">
-        {image.inference_ms.toFixed(1)} ms
-        {image.has_map ? "" : " · no anomaly map"}
-      </p>
+      <div className="flex items-baseline justify-between gap-3">
+        <MapScaleReadout scale={image.map_scale} range={range} />
+        {!image.has_map && <span className="text-xs text-fg-subtle">no anomaly map</span>}
+      </div>
     </figure>
   );
+}
+
+/** The frame's shape, from the source's own pixels. Square until the API says otherwise. */
+function aspectOf(image: ImageScore): string {
+  if (image.width > 0 && image.height > 0) return `${image.width} / ${image.height}`;
+  return "1 / 1";
 }
 
 /**

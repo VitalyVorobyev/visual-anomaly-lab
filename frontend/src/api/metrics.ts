@@ -43,15 +43,49 @@ export function formatCount(value: unknown): string | null {
   return numeric === null ? null : String(Math.round(numeric));
 }
 
+function countIn(container: unknown, key: string): number | null {
+  if (container === null || typeof container !== "object") return null;
+  return asNumber((container as MetricValue)[key]);
+}
+
+/**
+ * Whether a sample in this run holds more than one image.
+ *
+ * Read from the counts the evaluation layer recorded, never from a channel count or any
+ * other structural fact — channel count is data, not schema, and a run over a dataset with
+ * no `Channel` rows at all must answer this correctly.
+ *
+ * It matters because when a sample *is* one image, aggregating with `max` over a single
+ * value returns that value: sample- and image-level metrics are then the same number by
+ * construction, and reporting both is one finding printed twice. Only the aggregation
+ * step distinguishes them, and here there is none.
+ *
+ * Unknown counts answer `true`. Showing a duplicate is a smaller failure than hiding a
+ * metric that was genuinely computed.
+ */
+export function isGrouped(metrics: MetricValue): boolean {
+  const images = countIn(metrics.images, "total");
+  const samples = countIn(metrics.samples, "total");
+  if (images === null || samples === null) return true;
+  return images > samples;
+}
+
+/** Why the image-level rows are absent, or `null` when they are present. */
+export function groupingNote(metrics: MetricValue): string | null {
+  if (isGrouped(metrics)) return null;
+  return "Each sample here is a single image, so image-level and sample-level are the same number. Only the sample-level figures are shown.";
+}
+
 /**
  * The headline rows, in the order ADR-0011 ranks them.
  *
  * Sample-level first: it is the unit that matters, a physical part. Image-level next,
  * because it isolates raw model quality from the aggregation choice — the two diverging
- * is a specific, diagnosable finding rather than noise.
+ * is a specific, diagnosable finding rather than noise. On an ungrouped dataset they
+ * cannot diverge, so the image rows are dropped rather than duplicated.
  */
 export function detectionRows(metrics: MetricValue): MetricRow[] {
-  return [
+  const rows: MetricRow[] = [
     {
       key: "sample_roc_auc",
       label: "Sample ROC-AUC",
@@ -59,16 +93,22 @@ export function detectionRows(metrics: MetricValue): MetricRow[] {
       hint: "The headline number, on the unit that matters — one physical part.",
     },
     {
+      key: "sample_average_precision",
+      label: "Sample AP",
+      value: formatScore(metrics.sample_average_precision),
+    },
+  ];
+  if (!isGrouped(metrics)) return rows;
+
+  return [
+    rows[0] as MetricRow,
+    {
       key: "image_roc_auc",
       label: "Image ROC-AUC",
       value: formatScore(metrics.image_roc_auc),
       hint: "Raw model quality, before channels are aggregated into a part.",
     },
-    {
-      key: "sample_average_precision",
-      label: "Sample AP",
-      value: formatScore(metrics.sample_average_precision),
-    },
+    rows[1] as MetricRow,
     {
       key: "image_average_precision",
       label: "Image AP",

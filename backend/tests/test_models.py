@@ -19,6 +19,7 @@ from anomaly_lab.models.base import (
     InferContext,
     NullReporter,
     TrainContext,
+    evenly_spaced,
 )
 from anomaly_lab.models.device import resolve_device
 from anomaly_lab.models.diagnostics import (
@@ -161,6 +162,39 @@ def test_the_image_budget_is_enforced_and_reported(tmp_path: Path) -> None:
     assert index.truncated_images == 2
 
 
+def test_the_kept_images_are_spread_across_the_run_not_taken_from_its_front(
+    tmp_path: Path,
+) -> None:
+    """Twelve neighbours are not a sample of five hundred images.
+
+    The budget used to be filled by arrival order, so on the reference run it kept images
+    151-162 out of a scored range of 151-1249 — twelve consecutive files from one corner
+    of the dataset, presented as what the run recorded. `evenly_spaced` exists for exactly
+    this and is used everywhere else a cost is capped.
+    """
+    scored = list(range(100, 200))
+    chosen = [scored[index] for index in evenly_spaced(len(scored), 5)]
+    writer = DiagnosticWriter(tmp_path / "diag", image_budget=5, keep_images=chosen)
+    for image_id in scored:
+        writer.emit("m", "M", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=image_id)
+
+    index = writer.flush()
+    kept = sorted(entry.image_id for entry in index.entries if entry.image_id is not None)
+    assert kept == [100, 125, 150, 174, 199], "both ends and the middle, not the first five"
+    assert index.truncated_images == 95
+
+
+def test_without_a_chosen_set_the_budget_still_bounds_the_run(tmp_path: Path) -> None:
+    """A caller that cannot know its image list up front still gets a bounded run."""
+    writer = DiagnosticWriter(tmp_path / "diag", image_budget=2)
+    for image_id in (7, 8, 9):
+        writer.emit("m", "M", DiagnosticKind.MAP, np.zeros((2, 2), np.float32), image_id=image_id)
+
+    index = writer.flush()
+    assert len(index.entries) == 2
+    assert index.truncated_images == 1
+
+
 def test_an_image_already_within_budget_keeps_all_of_its_diagnostics(tmp_path: Path) -> None:
     """The budget counts images, not emissions — half a diagnostic set is worse than none."""
     writer = DiagnosticWriter(tmp_path / "diag", image_budget=1)
@@ -219,6 +253,38 @@ def test_a_kind_rendered_without_a_colormap_records_no_range(tmp_path: Path) -> 
     writer.emit("arch", "Arch", DiagnosticKind.GRAPH, {"nodes": []})
 
     assert writer.flush().ranges == {}
+
+
+def test_re_running_inference_replaces_its_whole_per_image_sample(tmp_path: Path) -> None:
+    """A second run's index is that run's sample, not the union of two.
+
+    Invisible while the budget kept the first N: every run chose the same images, so every
+    entry was superseded by id. Once the budget spread across the run, two runs sampled
+    different images and the index became 74 images under a stated budget of 64 — a cap
+    that reads as broken, over a selection neither run made.
+    """
+    root = tmp_path / "diag"
+
+    training = DiagnosticWriter(root)
+    training.emit("teacher", "T", DiagnosticKind.MAP, np.zeros((4, 4), np.float32))
+    training.flush()
+
+    first = DiagnosticWriter(root, image_budget=2, keep_images=[1, 2])
+    for image_id in (1, 2):
+        first.emit("err", "E", DiagnosticKind.MAP, np.zeros((4, 4), np.float32), image_id=image_id)
+    first.flush()
+
+    second = DiagnosticWriter(root, image_budget=2, keep_images=[3, 4])
+    for image_id in (3, 4):
+        second.emit("err", "E", DiagnosticKind.MAP, np.zeros((4, 4), np.float32), image_id=image_id)
+    merged = second.flush()
+
+    per_image = sorted(entry.image_id for entry in merged.entries if entry.image_id is not None)
+    assert per_image == [3, 4], "the earlier run's images are gone, not merged in"
+    assert len(per_image) <= (merged.image_budget or 0), "the stated budget is the real one"
+    # The training run's own diagnostic is untouched — that is the M3 bug this merge exists
+    # to prevent, and narrowing the rule must not reintroduce it.
+    assert any(entry.key == "teacher" for entry in merged.entries)
 
 
 def test_a_later_run_keeps_the_earlier_run_s_ranges_and_replaces_its_own(

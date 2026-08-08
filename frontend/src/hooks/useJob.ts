@@ -114,7 +114,50 @@ export function bothSnapshotsSettled(hasJob: boolean, metricsPending: boolean): 
   return hasJob && !metricsPending;
 }
 
-export function useJob(jobId: number | undefined): UseJobResult {
+export interface UseJobOptions {
+  /**
+   * The experiment this job belongs to, when it has one.
+   *
+   * A job's own row is not the only thing its terminal frame changes: a `train` run flips
+   * `Experiment.status`, an `infer` run fills `scored_subsets` and writes the metric sets,
+   * and both append to the job history the screen is listing. None of that was refetched,
+   * so a run that finished while its own screen was open left the Benchmark tab disabled
+   * and the run list showing `queued` until the user navigated away and came back.
+   */
+  experimentId?: number | undefined;
+}
+
+/**
+ * What one event makes stale.
+ *
+ * A named function rather than two conditions inline, for the reason `bothSnapshotsSettled`
+ * is one: getting this wrong produces a screen that looks like it is working. Until M4.6
+ * every frame invalidated the job row and nothing else, so a run that finished while its
+ * own screen was open left `ExperimentDetail` untouched — `scored_subsets` stayed empty and
+ * the Benchmark tab stayed disabled, the job list still read `queued`, and navigating away
+ * and back "fixed" it. Nothing was broken except what the client had bothered to re-ask.
+ *
+ * `progress` is deliberately narrow. It arrives up to four times a second (the queue
+ * persists it at a 0.25 s interval) and refetching the whole experiment at that rate would
+ * be a poll wearing an event's clothes; the job row alone carries what the bar draws.
+ *
+ * `queryKeys` is hierarchical, so the experiment key also covers its results, threshold
+ * report, curves, per-sample images and diagnostics index.
+ */
+export function invalidatedBy(
+  ev: JobEvent["ev"],
+  jobId: number,
+  experimentId: number | undefined,
+): readonly (readonly unknown[])[] {
+  const job = [queryKeys.job(jobId)];
+  if (ev === "progress") return job;
+  if (ev !== "done" && ev !== "error" && ev !== "end") return [];
+  if (experimentId === undefined) return job;
+  return [...job, queryKeys.experiment(experimentId), queryKeys.experimentLists()];
+}
+
+export function useJob(jobId: number | undefined, options: UseJobOptions = {}): UseJobResult {
+  const { experimentId } = options;
   const queryClient = useQueryClient();
   const [live, setLive] = useState<Console | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
@@ -165,6 +208,12 @@ export function useJob(jobId: number | undefined): UseJobResult {
     });
     const socket = new WebSocket(websocketUrl(`/ws/jobs/${jobId}`));
 
+    const invalidate = (ev: JobEvent["ev"]) => {
+      for (const queryKey of invalidatedBy(ev, jobId, experimentId)) {
+        void queryClient.invalidateQueries({ queryKey });
+      }
+    };
+
     socket.onmessage = (event: MessageEvent<string>) => {
       let parsed: JobEvent;
       try {
@@ -177,7 +226,7 @@ export function useJob(jobId: number | undefined): UseJobResult {
       if (parsed.ev === "end") {
         // Refetch rather than trusting the frame: the snapshot carries the result payload
         // and the terminal status, which the stream does not.
-        void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
+        invalidate(parsed.ev);
         return;
       }
 
@@ -198,13 +247,11 @@ export function useJob(jobId: number | undefined): UseJobResult {
           current === null ? current : { ...current, streamed: [...current.streamed, line] },
         );
       }
-      if (parsed.ev === "progress" || parsed.ev === "done" || parsed.ev === "error") {
-        void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
-      }
+      invalidate(parsed.ev);
     };
 
     return () => socket.close();
-  }, [jobId, snapshotted, finished, queryClient]);
+  }, [jobId, snapshotted, finished, queryClient, experimentId]);
 
   return {
     job: snapshot.data,

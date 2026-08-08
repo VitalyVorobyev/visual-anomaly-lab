@@ -13,6 +13,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import type {
+  ArtifactListing,
   CurveSet,
   ExperimentDetail,
   ExperimentSummary,
@@ -21,6 +22,7 @@ import type {
   MethodCatalog,
   MetricSummary,
   ResultsPage,
+  SamplePreview,
   Subset,
   ThresholdReport,
 } from "../api/client";
@@ -106,7 +108,9 @@ export function useStartRun(experimentId: number) {
                 experiment_id: experimentId,
                 subsets: subsets ?? ["val", "test"],
                 diagnostics: true,
-                diagnostic_images: 12,
+                // Deliberately not sent. An untouched control contributes nothing, so the
+                // budget is defined in Python alone — a number pinned here would silently
+                // override every later change to it (`api/schemaForm.ts`).
               },
             });
       return unwrap(result, "the queued job");
@@ -177,6 +181,46 @@ export function useSampleImages(experimentId: number | undefined, sampleId: numb
         "the per-image scores",
       ),
     enabled: experimentId !== undefined && sampleId !== undefined,
+  });
+}
+
+/**
+ * One image per scored sample, so a gallery can draw a tile per row.
+ *
+ * Kept out of the threshold report on purpose: that response is recomputed on every slider
+ * tick and none of this changes when the threshold moves. One request per subset, held for
+ * as long as the run's results stand.
+ */
+export function useSamplePreviews(experimentId: number | undefined, subset: Subset | undefined) {
+  return useQuery<SamplePreview[]>({
+    queryKey: queryKeys.previews(experimentId ?? -1, subset),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/previews", {
+          params: {
+            path: { experiment_id: experimentId as number },
+            query: subset === undefined ? {} : { subset },
+          },
+        }),
+        "the sample previews",
+      ),
+    enabled: experimentId !== undefined,
+    staleTime: Infinity,
+  });
+}
+
+/** What the run left on disk, and where. A listing — nothing here downloads anything. */
+export function useArtifacts(experimentId: number | undefined) {
+  return useQuery<ArtifactListing>({
+    queryKey: queryKeys.artifacts(experimentId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/artifacts", {
+          params: { path: { experiment_id: experimentId as number } },
+        }),
+        "the artifact listing",
+      ),
+    enabled: experimentId !== undefined,
   });
 }
 

@@ -32,4 +32,5 @@ export { Select, type SelectOption } from "./Select";
 export { Slider } from "./Slider";
 export { Table, type Column } from "./Table";
 export { Checkbox, Switch } from "./Toggle";
+export { ToggleChip } from "./ToggleChip";
 export { InfoHint, Tooltip, TooltipProvider } from "./Tooltip";

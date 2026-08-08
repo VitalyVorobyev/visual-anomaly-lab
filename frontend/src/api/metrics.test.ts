@@ -5,6 +5,8 @@ import {
   detectionRows,
   formatMilliseconds,
   formatScore,
+  groupingNote,
+  isGrouped,
   pixelRows,
   timingRows,
 } from "./metrics";
@@ -45,6 +47,54 @@ describe("detection rows", () => {
     const imageAuc = rows.find((row) => row.key === "image_roc_auc");
     expect(imageAuc).toBeDefined();
     expect(imageAuc?.value).toBeNull();
+  });
+
+  it("drops the image rows when a sample is one image", () => {
+    // 500 images over 500 samples: `max` over a single value is that value, so the two
+    // levels are the same number by construction. Printing both is one finding twice.
+    const rows = detectionRows({
+      sample_roc_auc: 0.727,
+      image_roc_auc: 0.727,
+      images: { total: 270 },
+      samples: { total: 270 },
+    });
+    expect(rows.map((row) => row.key)).toEqual(["sample_roc_auc", "sample_average_precision"]);
+  });
+
+  it("keeps both levels when a sample groups several images", () => {
+    const rows = detectionRows({
+      sample_roc_auc: 0.9,
+      image_roc_auc: 0.84,
+      images: { total: 800 },
+      samples: { total: 200 },
+    });
+    expect(rows.map((row) => row.key)).toEqual([
+      "sample_roc_auc",
+      "image_roc_auc",
+      "sample_average_precision",
+      "image_average_precision",
+    ]);
+  });
+});
+
+describe("grouping", () => {
+  it("reads the counts the evaluation layer recorded, not a channel count", () => {
+    // Channel count is data, not schema. The showcase dataset has channels; VisA has no
+    // `Channel` rows at all, and both must answer this from the same two numbers.
+    expect(isGrouped({ images: { total: 800 }, samples: { total: 200 } })).toBe(true);
+    expect(isGrouped({ images: { total: 270 }, samples: { total: 270 } })).toBe(false);
+  });
+
+  it("shows both levels when the counts are unknown", () => {
+    // Hiding a metric that was genuinely computed is the worse failure of the two.
+    expect(isGrouped({ sample_roc_auc: 0.9 })).toBe(true);
+    expect(groupingNote({ sample_roc_auc: 0.9 })).toBeNull();
+  });
+
+  it("explains the absence rather than leaving two rows unaccounted for", () => {
+    expect(groupingNote({ images: { total: 270 }, samples: { total: 270 } })).toContain(
+      "single image",
+    );
   });
 });
 

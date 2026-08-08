@@ -286,6 +286,65 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/artifacts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What this run left on disk
+         * @description Everything under the experiment's directory, grouped and sized.
+         *
+         *     A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
+         *     directory statically, and one of its stated reasons was that doing so exposes the
+         *     checkpoints; nothing here changes that. What it fixes is the other half of the
+         *     problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
+         *     and then not say where it was — the path was in `ExperimentDetail` all along and no
+         *     screen showed it.
+         *
+         *     Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+         *     path as text, which is a different affordance rather than a broken one.
+         */
+        get: operations["get_artifacts_api_experiments__experiment_id__artifacts_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/previews": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One representative image per scored sample
+         * @description What a gallery needs to draw a tile per sample, without one request per tile.
+         *
+         *     Deliberately not part of the threshold report. That response is recomputed on every
+         *     slider tick, and none of this changes when the threshold moves — folding it in would
+         *     resend a few hundred unchanging rows per tick. Here it is one request per subset,
+         *     cached by the client for as long as the run's results stand.
+         *
+         *     One image per sample, the first by channel order. A grouped sample is several
+         *     photographs of one part and a tile is one thumbnail; which channel it shows is a
+         *     presentation choice, and the sample page is where all of them are.
+         */
+        get: operations["get_sample_previews_api_experiments__experiment_id__previews_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/curves": {
         parameters: {
             query?: never;
@@ -449,6 +508,14 @@ export interface paths {
          *     a diagnostics panel beside an opaque per-branch map, it makes a clean image look
          *     blank and puts the two panes on visibly different scales — which defeats the
          *     comparison the panel exists for.
+         *
+         *     `render` chooses between a heatmap and a **segmentation**. The heatmap shows how much,
+         *     everywhere; the segmentation shows where, with an edge — which is the only form that
+         *     can be laid against a ground-truth outline and read as agreement or disagreement.
+         *
+         *     The numbers behind the picture — this map's extremes and the run's range — are served
+         *     as JSON on the experiment's per-sample image route, not as headers here. An `<img>` tag
+         *     cannot read a response header, and this endpoint exists to be an `img src`.
          */
         get: operations["read_anomaly_map_api_images__image_id__anomaly_map_get"];
         put?: never;
@@ -770,6 +837,48 @@ export interface components {
             options_schema: {
                 [key: string]: unknown;
             };
+        };
+        /** ArtifactFile */
+        ArtifactFile: {
+            /** Name */
+            name: string;
+            /** Bytes */
+            bytes: number;
+        };
+        /**
+         * ArtifactGroup
+         * @description One subdirectory of a run's output.
+         */
+        ArtifactGroup: {
+            /** Name */
+            name: string;
+            /** Title */
+            title: string;
+            /** Path */
+            path: string;
+            /** File Count */
+            file_count: number;
+            /** Total Bytes */
+            total_bytes: number;
+            /**
+             * Files
+             * @description Empty when the group is large enough that only its count is useful.
+             */
+            files: components["schemas"]["ArtifactFile"][];
+        };
+        /**
+         * ArtifactListing
+         * @description Where a run's output is, and what it weighs.
+         */
+        ArtifactListing: {
+            /** Root */
+            root: string;
+            /** Exists */
+            exists: boolean;
+            /** Total Bytes */
+            total_bytes: number;
+            /** Groups */
+            groups: components["schemas"]["ArtifactGroup"][];
         };
         /**
          * Availability
@@ -1242,6 +1351,7 @@ export interface components {
              * @default false
              */
             produces_diagnostics: boolean;
+            map_range: components["schemas"]["MapScale"] | null;
         };
         /**
          * ExperimentStatus
@@ -1320,6 +1430,17 @@ export interface components {
              * @default false
              */
             has_mask: boolean;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
+            map_scale: components["schemas"]["MapScale"] | null;
         };
         /**
          * ImageSummary
@@ -1363,16 +1484,15 @@ export interface components {
             subsets?: components["schemas"]["Subset"][];
             /**
              * Diagnostics
-             * @description Record per-image diagnostics for the first few images.
+             * @description Record per-image diagnostics, spread evenly across the scored set.
              * @default true
              */
             diagnostics: boolean;
             /**
              * Diagnostic Images
-             * @description How many images keep per-image diagnostics. Each costs a few float32 maps on disk, so the whole test set is rarely worth it.
-             * @default 12
+             * @description How many images keep per-image diagnostics, chosen evenly across the run. Each costs a few float32 maps on disk — measured at about half a megabyte for a two-branch method at 256x256.
              */
-            diagnostic_images: number;
+            diagnostic_images?: number;
         };
         /**
          * JobDetail
@@ -1696,6 +1816,31 @@ export interface components {
             paths: string[];
         };
         /**
+         * MapRender
+         * @description How an anomaly map should be drawn.
+         *
+         *     A heatmap answers "how anomalous, everywhere"; a segmentation answers "where, exactly".
+         *     Only the second has an edge, and only something with an edge can be laid against a
+         *     ground-truth outline and read as agreement or disagreement.
+         * @enum {string}
+         */
+        MapRender: "heatmap" | "region" | "contour";
+        /**
+         * MapScale
+         * @description The numbers a rendered map is drawn against.
+         *
+         *     Served as JSON because an `<img>` tag cannot read a response header, and the map
+         *     endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
+         *     cold looks exactly like one that failed to render — which is what score-driven alpha
+         *     does to every low-scoring image (ADR-0019).
+         */
+        MapScale: {
+            /** Low */
+            low: number;
+            /** High */
+            high: number;
+        };
+        /**
          * MethodCatalog
          * @description Everything the create screen needs, in one round trip.
          */
@@ -1821,6 +1966,36 @@ export interface components {
             offset: number;
             /** Items */
             items: components["schemas"]["SampleSummary"][];
+        };
+        /**
+         * SamplePreview
+         * @description One image standing for one sample, so a gallery tile needs no request of its own.
+         */
+        SamplePreview: {
+            /** Sample Id */
+            sample_id: number;
+            /** Image Id */
+            image_id: number;
+            /**
+             * Has Map
+             * @default false
+             */
+            has_map: boolean;
+            /**
+             * Has Mask
+             * @default false
+             */
+            has_mask: boolean;
+            /**
+             * Width
+             * @default 0
+             */
+            width: number;
+            /**
+             * Height
+             * @default 0
+             */
+            height: number;
         };
         /** SampleSummary */
         SampleSummary: {
@@ -2623,6 +2798,70 @@ export interface operations {
             };
         };
     };
+    get_artifacts_api_experiments__experiment_id__artifacts_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ArtifactListing"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_previews_api_experiments__experiment_id__previews_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SamplePreview"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_curves_api_experiments__experiment_id__curves_get: {
         parameters: {
             query?: {
@@ -2826,6 +3065,10 @@ export interface operations {
                 native?: boolean;
                 /** @description Scale opacity with the score, for laying over the source image. Set false for a standalone panel, where a low-scoring map would otherwise be invisible. */
                 alpha?: boolean;
+                /** @description `heatmap` colormaps the whole map. `region` and `contour` draw only where it crosses `threshold`, which is the model's own segmentation. */
+                render?: components["schemas"]["MapRender"];
+                /** @description Cut in **map units**, required by `region` and `contour`. A display decision only: no metric is computed from it. */
+                threshold?: number | null;
             };
             header?: never;
             path: {

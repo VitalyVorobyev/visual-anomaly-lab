@@ -46,7 +46,7 @@ from anomaly_lab.eval.threshold import (
 from anomaly_lab.experiments.infer import InferParams
 from anomaly_lab.experiments.train import TrainParams
 from anomaly_lab.jobs.queue import JobQueue
-from anomaly_lab.media.overlay import render_anomaly_map, render_rgb_image
+from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
 from anomaly_lab.models.base import ModelDescription, evenly_spaced
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
@@ -117,6 +117,21 @@ class ExperimentSummary(BaseModel):
     )
 
 
+class MapScale(BaseModel):
+    """The numbers a rendered map is drawn against.
+
+    Served as JSON because an `<img>` tag cannot read a response header, and the map
+    endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
+    cold looks exactly like one that failed to render — which is what score-driven alpha
+    does to every low-scoring image (ADR-0019).
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    low: float
+    high: float
+
+
 class ExperimentDetail(ExperimentSummary):
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
@@ -129,6 +144,15 @@ class ExperimentDetail(ExperimentSummary):
     jobs: list[JobSummary] = Field(default_factory=list)
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
+    map_range: MapScale | None = None
+    """
+    The run-wide display range every one of this run's maps is drawn against (ADR-0019).
+
+    A segmentation threshold has to come from *this*, not from the image on screen: a cut
+    derived per image is a different cut on every image, so two samples' predicted regions
+    would not be comparable — the same mistake the run-wide range exists to prevent for the
+    heatmap.
+    """
 
 
 class ResultsPage(BaseModel):
@@ -174,6 +198,53 @@ class CurveSet(BaseModel):
     image_pr: Curve | None = None
 
 
+class ArtifactFile(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    name: str
+    bytes: int
+
+
+class ArtifactGroup(BaseModel):
+    """One subdirectory of a run's output."""
+
+    model_config = API_MODEL_CONFIG
+
+    name: str
+    title: str
+    path: str
+    file_count: int
+    total_bytes: int
+    files: list[ArtifactFile] = Field(
+        default_factory=list,
+        description="Empty when the group is large enough that only its count is useful.",
+    )
+
+
+class ArtifactListing(BaseModel):
+    """Where a run's output is, and what it weighs."""
+
+    model_config = API_MODEL_CONFIG
+
+    root: str
+    exists: bool
+    total_bytes: int
+    groups: list[ArtifactGroup] = Field(default_factory=list)
+
+
+class SamplePreview(BaseModel):
+    """One image standing for one sample, so a gallery tile needs no request of its own."""
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    image_id: int
+    has_map: bool = False
+    has_mask: bool = False
+    width: int = 0
+    height: int = 0
+
+
 class ImageScore(BaseModel):
     """One image of one sample, as the result viewer draws it."""
 
@@ -185,6 +256,16 @@ class ImageScore(BaseModel):
     inference_ms: float
     has_map: bool = False
     has_mask: bool = False
+    width: int = 0
+    height: int = 0
+    """
+    The source image's pixel dimensions, so a viewer can shape its frame before the
+    picture arrives. Without them the canvas is laid out square and reflows on load, or —
+    worse — is drawn full-width with the image letterboxed inside it, which spends the
+    window on black bars on exactly the screen that exists to show a photograph.
+    """
+    map_scale: MapScale | None = None
+    """This image's own extremes. `None` when the map file could not be read."""
 
 
 def _headline(metric_sets: list[MetricSummary]) -> float | None:
@@ -246,7 +327,14 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         jobs=[summary_of(job) for job in jobs_repo.list_jobs_for_experiment(conn, experiment.id)],
         produces_anomaly_map=produces_map,
         produces_diagnostics=produces_diagnostics,
+        map_range=_run_map_range(experiment.artifact_dir),
     )
+
+
+def _run_map_range(artifact_dir: str) -> MapScale | None:
+    """The run-wide range from `maps/range.json`, or `None` before anything is scored."""
+    found = read_display_range(Path(artifact_dir) / "maps")
+    return None if found is None else MapScale(low=found[0], high=found[1])
 
 
 def _load(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
@@ -461,6 +549,100 @@ def get_threshold(
     return report(samples, value, include_samples=True)
 
 
+@router.get("/{experiment_id}/artifacts", summary="What this run left on disk")
+def get_artifacts(request: Request, experiment_id: int) -> ArtifactListing:
+    """Everything under the experiment's directory, grouped and sized.
+
+    A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
+    directory statically, and one of its stated reasons was that doing so exposes the
+    checkpoints; nothing here changes that. What it fixes is the other half of the
+    problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
+    and then not say where it was — the path was in `ExperimentDetail` all along and no
+    screen showed it.
+
+    Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+    path as text, which is a different affordance rather than a broken one.
+    """
+    experiment, _ = _load(request, experiment_id)
+    root = Path(experiment.artifact_dir)
+
+    groups = [
+        _artifact_group(root, "model", "Trained weights"),
+        _artifact_group(root, "maps", "Anomaly maps", summarize_from=32),
+        _artifact_group(root, "diagnostics", "Diagnostics", summarize_from=32),
+        _artifact_group(root, "logs", "Job logs"),
+    ]
+    return ArtifactListing(
+        root=str(root),
+        exists=root.is_dir(),
+        total_bytes=sum(group.total_bytes for group in groups),
+        groups=[group for group in groups if group.file_count > 0],
+    )
+
+
+def _artifact_group(root: Path, name: str, title: str, *, summarize_from: int = 0) -> ArtifactGroup:
+    """One subdirectory, with its files listed or merely counted.
+
+    A run writes one file per scored image into `maps/`, so listing every one of them
+    would be five hundred rows answering a question nobody asked. Past `summarize_from`
+    the group reports its count and total size and stops naming names.
+    """
+    directory = root / name
+    files = sorted(path for path in directory.rglob("*") if path.is_file())
+    sizes = [path.stat().st_size for path in files]
+    listed: list[ArtifactFile] = []
+    if summarize_from == 0 or len(files) <= summarize_from:
+        listed = [
+            ArtifactFile(name=str(path.relative_to(directory)), bytes=size)
+            for path, size in zip(files, sizes, strict=True)
+        ]
+    return ArtifactGroup(
+        name=name,
+        title=title,
+        path=str(directory),
+        file_count=len(files),
+        total_bytes=sum(sizes),
+        files=listed,
+    )
+
+
+@router.get("/{experiment_id}/previews", summary="One representative image per scored sample")
+def get_sample_previews(
+    request: Request,
+    experiment_id: int,
+    subset: Subset | None = Query(default=None),
+) -> list[SamplePreview]:
+    """What a gallery needs to draw a tile per sample, without one request per tile.
+
+    Deliberately not part of the threshold report. That response is recomputed on every
+    slider tick, and none of this changes when the threshold moves — folding it in would
+    resend a few hundred unchanging rows per tick. Here it is one request per subset,
+    cached by the client for as long as the run's results stand.
+
+    One image per sample, the first by channel order. A grouped sample is several
+    photographs of one part and a tile is one thumbnail; which channel it shows is a
+    presentation choice, and the sample page is where all of them are.
+    """
+    experiment, settings = _load(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        scored = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+        masks = results_repo.masks_for_images(conn, [image.image_id for image in scored])
+
+    seen: dict[int, SamplePreview] = {}
+    for image in scored:
+        if image.sample_id in seen:
+            continue
+        seen[image.sample_id] = SamplePreview(
+            sample_id=image.sample_id,
+            image_id=image.image_id,
+            has_map=image.map_path is not None,
+            has_mask=image.image_id in masks,
+            width=image.width,
+            height=image.height,
+        )
+    return list(seen.values())
+
+
 @router.get("/{experiment_id}/curves", summary="ROC and PR curves for one subset")
 def get_curves(
     request: Request,
@@ -525,6 +707,22 @@ def _curve(arrays: tuple[np.ndarray, np.ndarray] | None) -> Curve | None:
     )
 
 
+def _map_scale(map_path: str | None) -> MapScale | None:
+    """This map's own extremes, or `None` if it cannot be read.
+
+    One `.npy` read per image of the sample being viewed — a few hundred kilobytes for the
+    one part on screen, not a scan of the run.
+    """
+    if not map_path:
+        return None
+    try:
+        array = np.load(map_path, allow_pickle=False)
+    except (OSError, ValueError):
+        # Deletable by design; the caller renders the absence rather than failing.
+        return None
+    return MapScale(low=float(np.min(array)), high=float(np.max(array)))
+
+
 @router.get("/{experiment_id}/samples/{sample_id}/images", summary="Per-image scores of a sample")
 def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> list[ImageScore]:
     """What the result viewer needs to draw one part across its channels."""
@@ -545,6 +743,9 @@ def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> l
             inference_ms=image.inference_ms,
             has_map=image.map_path is not None,
             has_mask=image.image_id in masks,
+            width=image.width,
+            height=image.height,
+            map_scale=_map_scale(image.map_path),
         )
         for image in scored
     ]

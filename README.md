@@ -1,213 +1,144 @@
 # visual-anomaly-lab
 
-**A universal, local-first anomaly-detection explorer for image datasets — import your images, train
-several methods on them, and compare the results under one evaluation protocol.**
+**A local desktop workbench for visual anomaly detection.** Point it at a folder of images, train
+several methods on them, and compare what they found — same samples, same split, same metrics.
+
+Everything runs on your machine. No cloud, no accounts, no telemetry. Source images are read where
+they are and never copied anywhere.
+
+![Scored samples, filtered to the model's mistakes](docs/images/gallery.jpg)
 
 ---
 
-## Why
+## Quick start
 
-Visual anomaly detection has plenty of published methods and very few honest, side-by-side answers about
-which one works on *your* images. Papers report numbers on public benchmarks; real inspection datasets
-look nothing like them. `visual-anomaly-lab` is a desktop workbench for closing that gap: point it at a
-folder of images, and train, score, and compare a classical baseline against modern deep methods on the
-same samples, the same split, and the same metrics.
-
-Two commitments shape the whole design:
-
-- **Universal by intent.** The goal is an anomaly-detection explorer for arbitrary image datasets. The
-  domain model, import layer, deep-learning methods, evaluation layer, and UI are dataset-agnostic —
-  the number of acquisition channels a dataset has, for example, is per-dataset *data*, never a constant
-  in the code. The project is developed against a private industrial inspection dataset (multi-illumination
-  images of a manufactured part), which serves as the **first showcase dataset**: an initial focus that
-  keeps the design honest against real data, not the final scope.
-- **Local and private by design.** Everything runs on one machine — no cloud, no accounts, no telemetry.
-  Source images are read in place and never copied into the repository.
-
-## What you'll be able to do
-
-The product is one loop, end to end:
-
-| Stage | Capability |
-| --- | --- |
-| **Import** | Point the app at a directory; review a proposed manifest (detected channels, grouping, warnings) before anything is written; commit it into the catalog. Re-importing the same directory updates it rather than duplicating it. |
-| **Label & split** | Mark logical samples normal / defect / unlabeled; create seeded, sample-level train/val/test splits so no two views of the same object straddle a subset. |
-| **Train** | Create an experiment (dataset + split + method + config), run it as an async job, and watch live progress and streaming logs. |
-| **Infer** | Score samples with a trained experiment, producing per-image scores and anomaly maps. |
-| **Evaluate** | Threshold-independent metrics, an interactive threshold slider driving a live confusion matrix, FP/FN lists, and ranked most-normal / most-anomalous views. |
-| **Compare** | Several experiments side by side under one protocol — ROC curves overlaid, timing, config diff, and where the methods disagree. |
-
-Throughout: **grouped multi-view samples** (one physical object, many images, one label), **anomaly-map
-overlays** with an opacity slider, and **experiments that persist** — close the app, reopen it, and a past
-experiment comes back with identical configuration, metrics, results, and logs.
-
-> ### Project status — the loop closes
->
-> **M0**–**M3** are complete: the whole loop above runs. Point the app at a directory or a public
-> benchmark, review the proposed manifest, commit it, adopt the benchmark's own split, train a method,
-> score it, and read image- **and** pixel-level metrics with a working anomaly-map overlay. Experiments
-> persist; reopening one gives back identical numbers.
->
-> Two methods ship: `pixel_reference`, a dataset-agnostic floor baseline that needs numpy and Pillow and
-> trains in seconds, and `efficientad_anomalib`, which trains on Apple Silicon via MPS. The remaining rows
-> of the [Methods](#methods) table are designed, not shipped.
->
-> **Next is M4**, which makes the method *legible* — architecture view, teacher inspector, live training
-> charts, benchmark charts, diagnostic overlays — all built on the diagnostics contract M3 established.
-> See [`docs/roadmap.md`](docs/roadmap.md) for the milestone sequence and honest sizing.
-
-## Methods
-
-All methods sit behind one plugin interface and are selected by a stable registry key. Adding a method
-means adding a module and a registry entry — nothing else in the application changes.
-
-| Registry key | What it is | Scope |
-| --- | --- | --- |
-| `pixel_reference` | Dataset-agnostic floor baseline: per-pixel median + MAD over the training normals → z-map → smoothing → high-percentile score. numpy and Pillow only, trains in seconds, gives every deep result something to beat. | Dataset-agnostic |
-| `efficientad_anomalib` | EfficientAD via Intel's [anomalib](https://github.com/open-edge-platform/anomalib) | Dataset-agnostic |
-| `efficientad_custom` | From-scratch EfficientAD reimplementation, for direct comparison against the library version | Dataset-agnostic |
-| `patchcore_anomalib` | PatchCore via anomalib | Dataset-agnostic |
-| `classical_circular` | Geometry-aware classical baseline tailored to the showcase dataset: circle fit → polar unwrap → orientation alignment → robust per-channel reference comparison. Deferred to a later, optional milestone (ADR-0015). | **Showcase-dataset-specific** (circular parts) |
-
-The classical baseline is the *only* component allowed to assume anything about the showcase dataset's
-geometry. Everything else must work on a dataset it has never seen — which is why the vertical slice is
-proved on a dataset-agnostic method against public benchmarks, and not on the classical one.
-
-## Architecture at a glance
-
-- **Desktop app:** React + TypeScript + Vite UI running inside a **Tauri** shell. The shell is thin — it
-  spawns the backend, hands over the port, and tears it down on exit.
-- **Backend:** a **Python FastAPI sidecar** (HTTP + WebSocket) bound to `127.0.0.1`. It has no Tauri
-  dependency, so the same UI also runs in a plain browser against a manually started backend — which is
-  how most development and debugging actually happens.
-- **Jobs:** training, inference, and import each run as a subprocess worker off a single FIFO queue,
-  streaming progress events to the UI over WebSocket, with cancellation and crash recovery.
-- **Storage:** SQLite for metadata, scores, and paths; filesystem artifacts (checkpoints, anomaly maps,
-  thumbnails, logs) — all under a gitignored `data/` directory.
-- **Compute target:** Apple Silicon / MPS. No CUDA assumption, no cluster, one job at a time.
-- **Toolchain:** [`uv`](https://docs.astral.sh/uv/) for Python, [`bun`](https://bun.sh/) for the frontend,
-  `cargo` for the Tauri shell. Lockfiles are committed.
-
-Full detail — domain model, API surface, job protocol, evaluation protocol — is in
-[`docs/system-design.md`](docs/system-design.md).
-
-## Private data
-
-> **Warning.** `privatedata/` holds proprietary source images that must never be committed or pushed.
-> `.gitignore` excludes `privatedata/` and all `*.bmp` / `*.BMP` files as defense in depth, and
-> `scripts/check-repo-safety.sh` fails if anything private — or any oversized file — is staged or tracked.
-> **Run it before every commit and push.** Stage explicit paths; never `git add -A`.
-
-Images are referenced **in place** and treated as a read-only mount: the application decodes them for
-display and training and never writes to that tree, never copies them into a tracked path, and never
-sends them anywhere off the machine.
-
-## Reference datasets
-
-Methods are developed and validated against public benchmarks, not only against the private tree. That is
-what keeps the tool universal: a number computed here can be compared against a number someone else
-published, on the same data and — through the `csv_table` adapter — on the same official split.
-
-**These datasets are not committed.** `/datasets/` is gitignored: they are large, freely available, and
-adding gigabytes to a source repository to duplicate a public download buys nothing.
-`scripts/check-repo-safety.sh` fails if anything under `datasets/` is ever staged. Download them yourself
-and point the import screen at the directory.
-
-| Dataset | What it is | Adapter | Licence |
-| --- | --- | --- | --- |
-| [**VisA**](https://github.com/amazon-science/spot-diff) (Visual Anomaly), Zou et al. | 12 object classes, ~1000 normal + 100 anomalous images each, **with pixel-level ground-truth masks** and official one-class split tables in `split_csv/1cls.csv`. | `csv_table` | CC BY 4.0 (licence file ships with the download) |
-| [**GKN Blade Surface Defect Dataset**](https://doi.org/10.17632/3bh998k78g.1), Qianyu Zhou, University of Connecticut, 22 May 2023 | 203 good, 48 nick, 149 scratch photographs of blade surfaces. No masks. | `folder_classes` | CC BY 4.0, DOI [10.17632/3bh998k78g.1](https://doi.org/10.17632/3bh998k78g.1) |
-
-Both are used for training and as the comparison baseline. To import one, point the import screen at its
-root directory and fill in the adapter options — for GKN, `normal_dirs = Data_GKN/Good` and
-`defect_dirs = Data_GKN/Nick, Data_GKN/Scratch`; for one VisA class,
-`csv_path = split_csv/1cls.csv` with `filter_column = object` and `filter_value = candle`. Then create a
-split with the **`imported`** strategy to adopt the published partition rather than drawing your own,
-which is what makes the resulting figure comparable to the paper's.
-
-## Documentation
-
-| Document | Contents |
-| --- | --- |
-| [`docs/system-design.md`](docs/system-design.md) | Architecture, domain model, canonical terminology, API surface, job and evaluation protocols |
-| [`docs/roadmap.md`](docs/roadmap.md) | Milestones M0–M9, scope, exit criteria, sizing |
-| [`docs/backlog.md`](docs/backlog.md) | Task-level breakdown by epic |
-| [`docs/adr/`](docs/adr/) | Architecture decision records 0001–0018 — what was decided, why, and what it costs |
-
-## Getting started
-
-### Prerequisites
-
-[`uv`](https://docs.astral.sh/uv/) for Python, [`bun`](https://bun.sh/) for the frontend, and a Rust
-toolchain for the desktop shell. On macOS the Xcode command line tools are also needed
-(`xcode-select --install`). Nothing else — `uv` fetches its own Python 3.12.
-
-### First run
+You need [`uv`](https://docs.astral.sh/uv/), [`bun`](https://bun.sh/), and a Rust toolchain. On macOS
+also `xcode-select --install`. Nothing else — `uv` fetches its own Python.
 
 ```bash
 git clone git@github.com:VitalyVorobyev/visual-anomaly-lab.git
 cd visual-anomaly-lab
 
-./scripts/setup-hooks.sh          # private-data guard runs on every commit
-uv sync --directory backend
+uv sync --directory backend --extra dl   # drop --extra dl to skip the deep methods
 cd frontend && bun install && cd ..
 
-./scripts/dev-app.sh              # the full desktop app
+./scripts/dev-app.sh
 ```
 
-The window opens once the sidecar reports ready and shows its version, schema version and database path.
+Then, in the app:
 
-### The browser workflow
+1. **Import** — point it at a directory of images. It proposes a manifest; review it and commit.
+2. **Label & split** — mark samples, or adopt a benchmark's published split.
+3. **New experiment** — pick a dataset, a split and a method.
+4. **Train**, then **Score & evaluate**.
+5. Look at what it found.
 
-The backend has no dependency on the desktop shell, and **the browser path is first class** — it is how
-debugging actually happens. In two terminals:
+If you have no dataset to hand, [VisA](#reference-datasets) is a good first one and takes a few
+minutes end to end with `pixel_reference`.
+
+## What you get
+
+### Every scored sample, filterable by what went wrong
+
+The **Samples** view ranks the whole subset by anomaly score and filters it by outcome. *Mistakes*
+is false positives and false negatives together — usually the first thing worth looking at.
+
+In the screenshot above, the worst false positive in the run is a clean part whose shadowed rims
+light up. The overlay says so at a glance.
+
+### One sample, up close
+
+Three layers over the photograph, and they answer different questions. The **heatmap** says how
+anomalous, everywhere. The **prediction** is the model's own segmentation — where it crossed a
+threshold, with an edge. The **ground truth** is what was annotated. Laid together, agreement and
+disagreement are visible directly.
+
+![One sample with the prediction against the ground truth](docs/images/sample.jpg)
+
+Arrow keys step through the filtered set; scroll to zoom, drag to pan.
+
+### Metrics you can check
+
+![ROC and PR curves](docs/images/benchmark.jpg)
+
+Threshold-independent metrics are computed once and stored. Anything that depends on a threshold —
+the confusion matrix, precision, recall, the FP and FN lists — is recomputed as you move the slider,
+so it behaves like a filter rather than a commitment. Pixel-level ROC-AUC and AU-PRO appear whenever
+a dataset ships masks.
+
+**A metric that could not be computed shows a dash, never a zero.** A subset with no defects has no
+ROC-AUC, and a fabricated number is worse than a visible gap.
+
+### What the model is doing
+
+![Training losses](docs/images/training.jpg)
+
+Losses stream live and survive a reload. The **Architecture** view is read from a real forward pass
+rather than drawn by hand, so it cannot go stale against the model it describes, and the
+**Inspector** shows whatever intermediate pictures a method chose to record.
+
+## Methods
+
+| Method | What it is | Needs |
+| --- | --- | --- |
+| `pixel_reference` | Per-pixel median + MAD over the training normals → z-map → smoothing → high-percentile score. Trains in seconds and gives every deep result something to beat. | numpy, Pillow |
+| `efficientad_anomalib` | EfficientAD via Intel's [anomalib](https://github.com/open-edge-platform/anomalib). Trains on Apple Silicon through MPS. | `--extra dl` |
+
+Two more are designed and not yet built: a from-scratch EfficientAD for direct comparison against the
+library version, and PatchCore. A method is a Python module and a registry entry — no routes, no
+schemas, and no TypeScript, because the configuration form is generated from the method's own schema.
+
+## Reference datasets
+
+Datasets are not included; download them and point the import screen at the directory.
+
+| Dataset | What it is | Adapter | Licence |
+| --- | --- | --- | --- |
+| [**VisA**](https://github.com/amazon-science/spot-diff) — Zou et al. | 12 object classes, ~1000 normal + 100 anomalous images each, **with pixel-level masks** and official split tables. | `csv_table` | CC BY 4.0 |
+| [**GKN Blade Surface Defect**](https://doi.org/10.17632/3bh998k78g.1) — Qianyu Zhou, University of Connecticut | 203 good, 48 nick, 149 scratch photographs of blade surfaces. No masks. | `folder_classes` | CC BY 4.0 |
+
+For one VisA class: `csv_path = split_csv/1cls.csv`, `filter_column = object`,
+`filter_value = candle`. For GKN: `normal_dirs = Data_GKN/Good` and
+`defect_dirs = Data_GKN/Nick, Data_GKN/Scratch`.
+
+Then create a split with the **`imported`** strategy to adopt the published partition rather than
+drawing your own — that is what makes your number comparable to the paper's.
+
+## How it fits together
+
+- **UI** — React + TypeScript in a [Tauri](https://tauri.app/) shell. The shell is thin: it starts
+  the backend, hands over the port, and shuts it down on exit.
+- **Backend** — a Python FastAPI process on `127.0.0.1`, with no Tauri dependency, so the same UI
+  also runs in a plain browser against a manually started backend.
+- **Jobs** — import, training and inference each run as a subprocess off a single queue, streaming
+  progress over a WebSocket, cancellable, and recovered after a crash.
+- **Storage** — SQLite for metadata, scores and paths; anomaly maps, checkpoints, thumbnails and
+  logs on the filesystem under `data/`. Delete that directory to reset the application.
+- **Compute** — Apple Silicon / MPS. No CUDA assumption, one job at a time.
+
+Anomaly maps are stored raw. Colormap, threshold, opacity and segmentation are all applied when the
+picture is drawn, so those choices stay changeable after the expensive computation is done.
+
+## Running in a browser
+
+The backend does not depend on the desktop shell, and the browser path is fully supported:
 
 ```bash
-./scripts/dev-backend.sh          # FastAPI on :8000, with reload
-./scripts/dev-frontend.sh         # Vite on :5173
+./scripts/dev-backend.sh    # FastAPI on :8000
+./scripts/dev-frontend.sh   # Vite on :5173
 ```
 
-Then open <http://localhost:5173>. With no shell to inject a base URL, the app falls back to
-`http://127.0.0.1:8000`. The API is equally usable from `curl` or pytest; interactive docs are at
-<http://127.0.0.1:8000/docs>.
+Open <http://localhost:5173>. Interactive API docs are at <http://127.0.0.1:8000/docs>.
 
-### How the two processes fit together
+One thing the browser cannot do is open a folder in your file manager, so where the desktop app
+offers *Reveal in Finder*, the browser shows the path as selectable text.
 
-The shell starts the sidecar with `ANOMALY_LAB_PORT=0`, so the OS picks a free port and the **sidecar
-announces it back** on stdout; the shell then injects that URL into the page. On exit it signals the
-child's process group, and the sidecar independently exits if its parent disappears — so a crash or a
-force-quit leaves no stray Python process. Data lives in a gitignored `data/`, relocatable with
-`ANOMALY_LAB_DATA_DIR`; deleting that directory resets the application.
+## Contributing
 
-### Checks
+Development setup, the check suite, architecture decisions and the roadmap are in
+[`docs/development.md`](docs/development.md).
 
-```bash
-uv run --directory backend pytest         # backend tests
-uv run --directory backend ruff check .   # lint
-uv run --directory backend mypy           # types, strict
-cd frontend && bun run test && bun run typecheck
-./scripts/check-repo-safety.sh            # never commit private data (ADR-0001)
-```
+## Credits
 
-The deep-learning methods live behind an optional dependency group, so a checkout that only wants the
-baseline never pays for torch. Install it when you want EfficientAD, and check the accelerator before
-trusting it:
-
-```bash
-uv sync --directory backend --extra dl
-./scripts/mps-smoke-test.py               # is MPS actually usable here? (ADR-0008)
-```
-
-A handful of backend tests assert the exact composition of the private showcase tree. They are skipped
-unless you point them at it, and CI never does:
-
-```bash
-ANOMALY_LAB_SHOWCASE_ROOT=/path/to/tree uv run --directory backend pytest -k showcase
-```
-
-After changing any API route or response model, regenerate the typed client and commit the result — the
-diff is the API contract changing:
-
-```bash
-./scripts/gen-api-types.sh
-```
+The reference datasets are licensed separately by their authors, as credited above. The screenshots
+in this README show VisA imagery (CC BY 4.0).

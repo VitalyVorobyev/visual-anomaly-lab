@@ -45,6 +45,20 @@ faster than linear, which keeps a map's large quiet regions from veiling the who
 CONTOUR_RGB = (34, 211, 138)
 """Ground-truth contours are drawn in a green that no colormap entry comes close to."""
 
+PREDICTION_RGB = (129, 140, 248)
+"""The model's own claim, in a periwinkle that reads clearly against the ground-truth green.
+
+The pair has to be told apart at a glance, because the whole point of drawing both is to
+see where they disagree. It also has to survive being drawn over the colormap: `inferno`
+runs black -> deep purple -> red -> orange -> pale yellow, and its purple end is far darker
+and more saturated than this, so a filled region never reads as part of the heatmap."""
+
+PREDICTION_FILL_ALPHA = 90
+"""Translucent enough to judge the pixels underneath, opaque enough to find. A filled
+region is right here for the reason an outline is right for ground truth: the reader is
+comparing the model's *extent* against a known one, and an outline of a ragged
+threshold crossing is a tangle of contours rather than a shape."""
+
 
 def _build_lut() -> np.ndarray:
     positions = np.array([position for position, _ in _ANCHORS], dtype=np.float64)
@@ -147,22 +161,14 @@ def render_rgb_image(array: np.ndarray, *, size: tuple[int, int] | None = None) 
     return buffer.getvalue()
 
 
-def render_mask_contour(
-    mask: np.ndarray,
-    *,
-    size: tuple[int, int] | None = None,
-    width: int = 2,
-) -> bytes:
-    """Draw a mask's outline as a transparent RGBA PNG.
+def boundary_of(binary: np.ndarray, width: int = 2) -> np.ndarray:
+    """The outline of a binary region, as `region AND NOT erode(region)`.
 
-    An outline rather than a filled overlay: a filled ground-truth mask hides the very
-    pixels the reader is trying to judge the model's map against.
-
-    The boundary is `mask AND NOT erode(mask)`, with erosion done by shifting and
-    AND-ing — a handful of numpy operations, and no morphology dependency for one shape.
+    Erosion is done by shifting and AND-ing — a handful of numpy operations, and no
+    morphology dependency for one shape.
     """
-    binary = np.asarray(mask, dtype=bool)
-    eroded = binary.copy()
+    region = np.asarray(binary, dtype=bool)
+    eroded = region.copy()
     for _ in range(max(1, width)):
         shifted = eroded.copy()
         shifted[1:, :] &= eroded[:-1, :]
@@ -177,18 +183,73 @@ def render_mask_contour(
         shifted[:, -1] = False
         eroded = shifted
 
-    boundary = binary & ~eroded
-    rgba = np.zeros((*binary.shape, 4), dtype=np.uint8)
-    rgba[boundary, 0] = CONTOUR_RGB[0]
-    rgba[boundary, 1] = CONTOUR_RGB[1]
-    rgba[boundary, 2] = CONTOUR_RGB[2]
-    rgba[boundary, 3] = _UINT8_MAX
+    return np.asarray(region & ~eroded, dtype=bool)
+
+
+def _paint(
+    stencil: np.ndarray,
+    rgb: tuple[int, int, int],
+    alpha: int,
+    size: tuple[int, int] | None,
+) -> bytes:
+    """One flat colour wherever `stencil` is set, transparent everywhere else."""
+    rgba = np.zeros((*stencil.shape, 4), dtype=np.uint8)
+    rgba[stencil, 0] = rgb[0]
+    rgba[stencil, 1] = rgb[1]
+    rgba[stencil, 2] = rgb[2]
+    rgba[stencil, 3] = alpha
 
     image = Image.fromarray(rgba, mode="RGBA")
     if size is not None and image.size != size:
-        # NEAREST keeps the outline one solid colour instead of fading it to nothing.
+        # NEAREST keeps the shape one solid colour instead of fading its edge to nothing.
         image = image.resize(size, Image.Resampling.NEAREST)
 
     buffer = io.BytesIO()
     image.save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+def render_mask_contour(
+    mask: np.ndarray,
+    *,
+    size: tuple[int, int] | None = None,
+    width: int = 2,
+) -> bytes:
+    """Draw a mask's outline as a transparent RGBA PNG.
+
+    An outline rather than a filled overlay: a filled ground-truth mask hides the very
+    pixels the reader is trying to judge the model's map against.
+    """
+    binary = np.asarray(mask, dtype=bool)
+    return _paint(boundary_of(binary, width), CONTOUR_RGB, _UINT8_MAX, size)
+
+
+def render_prediction_region(
+    array: np.ndarray,
+    threshold: float,
+    *,
+    size: tuple[int, int] | None = None,
+    outline: bool = False,
+    width: int = 2,
+) -> bytes:
+    """Draw where the map crosses `threshold`, as the model's own segmentation.
+
+    This is the overlay that answers "how does what the model found differ from what was
+    annotated?" — a question the heatmap cannot answer, because a heatmap has no edge. Laid
+    under the ground-truth outline, agreement reads as a green line hugging a filled shape
+    and disagreement reads as the two coming apart.
+
+    `threshold` is in **map units** and is a *display* decision, not an evaluation one.
+    Nothing here feeds a metric: the pixel metrics integrate over every threshold (ADR-0017)
+    and the sample-score threshold on the results screen classifies whole samples, not
+    pixels. Keeping this parameter explicit and in the map's own units is what stops the
+    three being confused for each other.
+
+    Filled by default, outlined on request. Two filled regions would hide each other, so a
+    comparison of two experiments' predictions on one sample outlines instead.
+    """
+    values = np.asarray(array, dtype=np.float32)
+    region = values >= threshold
+    if outline:
+        return _paint(boundary_of(region, width), PREDICTION_RGB, _UINT8_MAX, size)
+    return _paint(region, PREDICTION_RGB, PREDICTION_FILL_ALPHA, size)

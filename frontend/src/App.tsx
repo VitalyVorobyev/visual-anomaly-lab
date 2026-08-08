@@ -23,10 +23,21 @@ const NAV = [
   { to: "/health", label: "Health", end: false },
 ];
 
+/**
+ * The shell, with a height chain rather than a document that grows.
+ *
+ * `h-screen` + `min-h-0` down to `main` is what lets a route say "the canvas takes what is
+ * left" and have that mean something. Without it `flex-1` is measured against content
+ * height, the image sizes itself, and a screen whose whole job is looking at a picture
+ * spends its first third on chrome.
+ *
+ * The scroll container moves from the document to `main`. The header is outside it and
+ * already `sticky`, so it behaves identically; inner scrollers are unaffected.
+ */
 export function App() {
   return (
     <TooltipProvider>
-      <div className="min-h-screen bg-ground text-fg">
+      <div className="flex h-screen flex-col bg-ground text-fg">
         <header className="sticky top-0 z-40 border-b border-line bg-ground/85 backdrop-blur-sm">
           <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
             <Wordmark />
@@ -59,11 +70,45 @@ export function App() {
           </div>
         </header>
 
-        <main className="mx-auto max-w-6xl px-6 py-8">
+        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
           <Outlet />
         </main>
       </div>
     </TooltipProvider>
+  );
+}
+
+/**
+ * The default: a column of prose, forms and tables, capped at a readable width.
+ *
+ * Everything that is read rather than looked at lives here. `max-w-6xl` is the measure
+ * that keeps a metric table and a paragraph scannable on a wide display.
+ */
+export function ReadingLayout() {
+  return (
+    <div className="mx-auto w-full max-w-6xl px-6 py-8">
+      <Outlet />
+    </div>
+  );
+}
+
+/**
+ * The layout for screens whose content is an image.
+ *
+ * Two differences from the reading layout, both for the same reason. There is no width
+ * cap: 72rem is right for prose and wrong for a photograph someone is inspecting, which
+ * should use the window it was given. And the route gets the viewport's height as a flex
+ * child rather than growing the page, so a canvas can fill what the header and the toolbar
+ * leave rather than sizing itself and letting the page scroll.
+ *
+ * A nested layout route rather than a flag the shell reads off the URL: the routes that
+ * want this are listed in one place, in `main.tsx`, next to the ones that do not.
+ */
+export function CanvasLayout() {
+  return (
+    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
+      <Outlet />
+    </div>
   );
 }
 

@@ -9,10 +9,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { JobMetrics } from "../api/client";
+import { queryKeys } from "../api/queryKeys";
 import {
   bothSnapshotsSettled,
   formatLogLine,
   formatLogTail,
+  invalidatedBy,
   isTerminal,
   mergeSeries,
   toSeries,
@@ -90,6 +92,40 @@ describe("bothSnapshotsSettled", () => {
     // `isPending` goes false on error too — the console is live and the chart is empty,
     // which is the honest outcome rather than a screen that never connects.
     expect(bothSnapshotsSettled(true, false)).toBe(true);
+  });
+});
+
+describe("invalidatedBy", () => {
+  /**
+   * The regression guard for M4.6's opening bug. Every frame used to invalidate the job row
+   * and nothing else, so a run that finished while its own screen was open never refreshed
+   * the experiment: `scored_subsets` stayed empty and the Benchmark tab stayed disabled,
+   * the run list still read `queued`, and navigating away and back appeared to fix it.
+   */
+  it("refreshes the experiment when the run ends, not only the job", () => {
+    for (const ev of ["done", "error", "end"] as const) {
+      expect(invalidatedBy(ev, 10, 2)).toEqual([
+        queryKeys.job(10),
+        queryKeys.experiment(2),
+        queryKeys.experimentLists(),
+      ]);
+    }
+  });
+
+  it("leaves the experiment alone on progress", () => {
+    // Progress lands up to four times a second; refetching the experiment at that rate
+    // would be a poll wearing an event's clothes.
+    expect(invalidatedBy("progress", 10, 2)).toEqual([queryKeys.job(10)]);
+  });
+
+  it("refreshes only the job for a run that belongs to no experiment", () => {
+    // Import, verify and prewarm jobs have no experiment to refresh.
+    expect(invalidatedBy("done", 4, undefined)).toEqual([queryKeys.job(4)]);
+  });
+
+  it("refreshes nothing for frames that change no server state", () => {
+    expect(invalidatedBy("log", 10, 2)).toEqual([]);
+    expect(invalidatedBy("metric", 10, 2)).toEqual([]);
   });
 });
 

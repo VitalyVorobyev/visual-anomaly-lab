@@ -48,8 +48,10 @@ user, one machine, one job at a time.
    particular the number of acquisition channels is **never** hard-coded — it is per-dataset data (ADR-0005).
 2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images. Labels
    and split membership live on the *sample*, never on the image, so all views of a part always share a subset.
-3. **Private data never leaves the machine** (ADR-0001). Source images are referenced in place from
-   `privatedata/`, read-only, never copied into tracked paths.
+3. **Private data never leaves the machine** (ADR-0022, superseding ADR-0001). Source images live
+   **outside the repository working tree** and are referenced in place, read-only, never copied into
+   tracked paths. Git cannot stage what is not under the working directory, so the commonest
+   catastrophic mistake is structurally unavailable rather than guarded against.
 4. **Apple Silicon / MPS** is the target compute device; there is no GPU cluster and no CUDA assumption.
 
 ---
@@ -78,7 +80,7 @@ flowchart TB
         DB[("SQLite<br/>data/app.sqlite3")]
         ART["Artifact store<br/>data/artifacts/exp-&lt;id&gt;/"]
         THUMB["Thumbnail cache<br/>data/thumbnails/"]
-        PRIV["privatedata/<br/>read-only, referenced in place"]
+        PRIV["Source images<br/>outside the tree, referenced in place"]
     end
 
     UI -->|"HTTP + WebSocket"| API
@@ -158,8 +160,8 @@ nothing else in the application changes.
 
 **SQLite** at `data/app.sqlite3` — metadata, configuration, scores, paths (§4). **Artifact store** at
 `data/artifacts/exp-<id>/` — checkpoints, reference statistics, anomaly maps, logs. **Thumbnail cache** at
-`data/thumbnails/` (§9). **`privatedata/`** is treated as a read-only mount: the backend opens files there for
-decoding and training and never writes to it.
+`data/thumbnails/` (§9). **Source images** live outside the repository and are treated as a read-only mount:
+the backend opens them for decoding and training and never writes to that tree (ADR-0022).
 
 ### Standalone backend / browser-based development
 
@@ -186,7 +188,7 @@ command above), `scripts/dev-frontend.sh` (Vite against it), and `scripts/dev-ap
 ```
 visual-anomaly-lab/
 ├── README.md                       # setup, dataset conventions, how to add a method
-├── .gitignore                      # privatedata/, *.bmp, data/, venvs, build output
+├── .gitignore                      # data/, *.bmp, venvs, build output (and privatedata/, belt and braces)
 ├── scripts/check-repo-safety.sh    # pre-push guard: fails if private data is staged (ADR-0001)
 ├── docs/
 │   ├── system-design.md            # this document
@@ -214,9 +216,8 @@ visual-anomaly-lab/
 │   └── src-tauri/                  # Rust desktop shell: sidecar spawn, port handoff, teardown
 │       ├── Cargo.toml, tauri.conf.json
 │       └── src/main.rs
-│
-├── privatedata/                    # GITIGNORED — source images, read-only, never copied
-│   └── <dataset>/{set1,set2,unsorted}/…
+│                                # NOTE: source images are NOT here. They live outside this
+│                                # tree entirely and are reached by absolute path (ADR-0022).
 │
 └── data/                           # GITIGNORED — all app-managed state
     ├── app.sqlite3                 # metadata, scores, paths
@@ -290,7 +291,7 @@ erDiagram
 ### Entities
 
 **`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`.
-A named collection of samples rooted at an absolute path on disk (typically under `privatedata/`).
+A named collection of samples rooted at an absolute path on disk, outside this repository.
 `root_path` is a reference, never a copy destination, and it is **unique**: re-importing a directory
 updates the dataset it already produced rather than creating a second one beside it (ADR-0013).
 `adapter` and `manifest_path` record how the dataset came to look the way it does.
@@ -400,7 +401,7 @@ class ImageRecord(BaseModel):
     image_id: int
     sample_id: int
     channel: str | None              # canonical channel name, None for single-view datasets
-    path: Path                       # absolute path into privatedata/, read-only
+    path: Path                       # absolute path to the source image, read-only
 
 
 class Prediction(BaseModel):
@@ -608,7 +609,7 @@ sequenceDiagram
     participant UI
     participant API as FastAPI
     participant AD as Import adapter
-    participant FS as privatedata/
+    participant FS as Source images
     participant DB as SQLite
 
     UI->>API: POST /api/import/scan {root_path, adapter, options}
@@ -877,8 +878,11 @@ This is a single-user, local research tool, and the security model is stated pla
   a loopback-only single-user process would add ceremony without changing the threat model. This is a
   deliberate, documented decision (ADR-0003) — the API must not be exposed beyond loopback without revisiting
   it.
-- **Private data contract (ADR-0001).** Source images never enter the repository or leave the machine:
-  - `privatedata/` and `*.bmp` / `*.BMP` are gitignored, as is `data/`;
+- **Private data contract (ADR-0022, superseding ADR-0001).** Source images never enter the repository
+  or leave the machine:
+  - they live **outside the working tree**, so `git add -A` cannot reach them at all;
+  - `*.bmp` / `*.BMP` are gitignored, as is `data/` — and `privatedata/` still is, in case the
+    directory is ever recreated;
   - images are **referenced in place by absolute path**, never copied into a tracked directory;
   - `scripts/check-repo-safety.sh` is a pre-push guard that fails if anything private is staged;
   - nothing in the backend uploads, telemeters or phones home; model weights are downloaded from public
