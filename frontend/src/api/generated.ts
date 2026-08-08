@@ -410,7 +410,19 @@ export interface paths {
         get: operations["get_diagnostics_api_experiments__experiment_id__diagnostics_get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete diagnostics to reclaim disk
+         * @description Remove stored diagnostics and report what it reclaimed (ADR-0027).
+         *
+         *     **Anomaly maps are never touched.** They live in a sibling directory and each is
+         *     referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
+         *     the overlay, `has_map` and the map scale. Reclaiming their space means deleting the
+         *     experiment.
+         *
+         *     Refused with 409 while a job is running, because an inference job's index write merges
+         *     with what is on disk and would put back exactly what this removed.
+         */
+        delete: operations["clear_diagnostics_api_experiments__experiment_id__diagnostics_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -2025,6 +2037,26 @@ export interface components {
             tiers?: components["schemas"]["ImageTier"][] | null;
         };
         /**
+         * PruneResult
+         * @description What a clear actually reclaimed. Reported, never assumed.
+         */
+        PruneResult: {
+            /** Removed Entries */
+            removed_entries: number;
+            /** Removed Files */
+            removed_files: number;
+            /** Bytes Reclaimed */
+            bytes_reclaimed: number;
+            /** Remaining Bytes */
+            remaining_bytes: number;
+        };
+        /**
+         * PruneScope
+         * @description How much of a run's diagnostics to delete (ADR-0027).
+         * @enum {string}
+         */
+        PruneScope: "image" | "on_demand" | "all";
+        /**
          * ResultsPage
          * @description Ranked samples for one subset, with a starting threshold and its rationale.
          */
@@ -3086,6 +3118,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DiagnosticIndex"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_diagnostics_api_experiments__experiment_id__diagnostics_delete: {
+        parameters: {
+            query?: {
+                /** @description `image` drops every per-image entry and keeps the model-scoped ones; `on_demand` drops only what was asked for while browsing; `all` drops everything this run recorded about itself. */
+                scope?: components["schemas"]["PruneScope"];
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PruneResult"];
                 };
             };
             /** @description Validation Error */

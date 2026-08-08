@@ -62,7 +62,10 @@ from anomaly_lab.models.diagnostics import (
     DiagnosticIndex,
     DiagnosticKind,
     DisplayRange,
+    PruneResult,
+    PruneScope,
     load_index,
+    prune,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
@@ -386,6 +389,25 @@ def _load(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
     if experiment is None:
         raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
     return experiment, settings
+
+
+def _refuse_while_a_job_runs(request: Request, settings: Settings) -> None:
+    """409 with the job's name, for the routes that must not race a worker.
+
+    Any running job, not only this experiment's: one machine, one device, one FIFO queue
+    (ADR-0009), and an inference job's `flush()` merges the index with whatever is on
+    disk — so a delete landing between the model returning and the flush would be quietly
+    undone. Refusing while naming what to wait for is the whole difference between "not
+    now" and "that button does nothing sometimes".
+    """
+    queue: JobQueue = request.app.state.job_queue
+    job_id = queue.current_job_id
+    if job_id is None:
+        return
+    with connection(settings.db_path) as conn:
+        job = jobs_repo.get_job(conn, job_id)
+    running = f"{job.kind.value} job {job_id}" if job is not None else f"job {job_id}"
+    raise HTTPException(status_code=409, detail=f"a {running} is running; try again when it ends")
 
 
 @router.get("/model-types", summary="Every registered method, with its configuration schema")
@@ -852,6 +874,34 @@ def get_diagnostics(request: Request, experiment_id: int) -> DiagnosticIndex:
     """
     experiment, settings = _load(request, experiment_id)
     return load_index(settings.experiment_dir(experiment.id) / "diagnostics")
+
+
+@router.delete("/{experiment_id}/diagnostics", summary="Delete diagnostics to reclaim disk")
+def clear_diagnostics(
+    request: Request,
+    experiment_id: int,
+    scope: PruneScope = Query(
+        default=PruneScope.IMAGE,
+        description=(
+            "`image` drops every per-image entry and keeps the model-scoped ones; "
+            "`on_demand` drops only what was asked for while browsing; `all` drops "
+            "everything this run recorded about itself."
+        ),
+    ),
+) -> PruneResult:
+    """Remove stored diagnostics and report what it reclaimed (ADR-0027).
+
+    **Anomaly maps are never touched.** They live in a sibling directory and each is
+    referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
+    the overlay, `has_map` and the map scale. Reclaiming their space means deleting the
+    experiment.
+
+    Refused with 409 while a job is running, because an inference job's index write merges
+    with what is on disk and would put back exactly what this removed.
+    """
+    experiment, settings = _load(request, experiment_id)
+    _refuse_while_a_job_runs(request, settings)
+    return prune(settings.experiment_dir(experiment.id) / "diagnostics", scope=scope)
 
 
 @router.get(

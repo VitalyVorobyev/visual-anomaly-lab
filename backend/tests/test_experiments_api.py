@@ -963,3 +963,52 @@ def test_additional_steps_stays_optional_on_the_wire(client: TestClient) -> None
 
     assert "additional_steps" not in train_params.get("required", [])
     assert "default" not in train_params["properties"]["additional_steps"]
+
+
+# ------------------------------------------------------- clearing diagnostics
+
+
+def test_clearing_images_keeps_the_run_scoped_entries(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """What the Architecture and Inspector tabs draw must survive a routine disk clear."""
+    before = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
+    assert any(entry["scope"] == "image" for entry in before["entries"])
+    assert any(entry["scope"] == "model" for entry in before["entries"])
+
+    response = client.delete(f"/api/experiments/{scored['id']}/diagnostics")
+    assert response.status_code == 200, response.text
+    result = response.json()
+    assert result["removed_entries"] > 0
+    assert result["bytes_reclaimed"] > 0
+
+    after = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
+    assert not any(entry["scope"] == "image" for entry in after["entries"])
+    assert any(entry["scope"] == "model" for entry in after["entries"])
+
+
+def test_clearing_diagnostics_leaves_the_anomaly_maps_alone(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """Deleting a map orphans an `ImageResult` row and breaks the overlay silently."""
+    maps = settings.experiment_dir(scored["id"]) / "maps"
+    before = sorted(path.name for path in maps.iterdir())
+    assert before
+
+    client.delete(f"/api/experiments/{scored['id']}/diagnostics", params={"scope": "all"})
+
+    assert sorted(path.name for path in maps.iterdir()) == before
+    overlay = client.get(f"/api/experiments/{scored['id']}/results", params={"subset": "test"})
+    assert overlay.status_code == 200
+
+
+def test_clearing_an_experiment_that_recorded_nothing_is_not_an_error(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """The button exists before the first run does."""
+    experiment = _create(client, seeded)
+
+    response = client.delete(f"/api/experiments/{experiment['id']}/diagnostics")
+
+    assert response.status_code == 200
+    assert response.json()["removed_entries"] == 0

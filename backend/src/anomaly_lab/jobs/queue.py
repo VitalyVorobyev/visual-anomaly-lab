@@ -157,6 +157,17 @@ class JobQueue:
             asyncio.run_coroutine_threadsafe(self._terminate(job_id), loop)
         return True
 
+    @property
+    def current_job_id(self) -> int | None:
+        """The job whose worker is running right now, or `None`.
+
+        Read by the routes that must refuse while a worker holds the device. It is a
+        snapshot, not a lock — what actually keeps the resident inference worker and a job
+        worker from coexisting is `before_spawn`, which the runner awaits (ADR-0026). This
+        is here so the *refusal* can name the job rather than fail obscurely later.
+        """
+        return self._current_id
+
     def subscribe(self, job_id: int) -> asyncio.Queue[str]:
         queue: asyncio.Queue[str] = asyncio.Queue(maxsize=SUBSCRIBER_BUFFER)
         self._subscribers.setdefault(job_id, set()).add(queue)
