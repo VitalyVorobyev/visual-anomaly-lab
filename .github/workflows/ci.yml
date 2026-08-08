@@ -82,10 +82,13 @@ jobs:
       # this job was created to close. Everything else is already covered above.
       #
       # It runs on CPU — the MPS path stays local-only, and no assertion here depends on
-      # the device. Budget is roughly twelve minutes: about eight for the pre-existing
-      # files, half a minute for the equivalence pins, and a couple of minutes for
-      # `test_efficientad_custom.py`, which trains a real model for 100 steps because a
-      # method that runs without detecting anything is the failure worth catching.
+      # the device. This is by far the slowest job, because `test_efficientad_custom.py`
+      # trains real models: a method that runs without detecting anything is the failure
+      # worth catching, and nothing cheaper catches it. The cost is dominated by *fitting*,
+      # not by the number of assertions, so the way to keep it down is to share fitted
+      # models between tests that only read them — which is what the `saved` and `trained`
+      # module fixtures are for. Adding another test that fits its own model is a decision
+      # about this job's runtime, not a free addition.
       #
       # `cd backend` rather than `uv run --directory backend`, because the shell expands
       # the glob before uv changes directory: from the repository root the pattern matches

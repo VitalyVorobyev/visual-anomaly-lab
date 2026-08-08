@@ -18,10 +18,12 @@ nothing at all would have passed everything.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -303,14 +305,15 @@ def test_every_prediction_has_a_two_dimensional_map(trained: Trained) -> None:
 # ------------------------------------------------------------------ plugin contract
 
 
-def test_predictions_come_back_one_per_input_in_order(tmp_path: Path) -> None:
-    train_ctx, infer_ctx = _contexts(tmp_path)
-    train = _training_records(tmp_path)
-    model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(train, train_ctx)
+def test_predictions_come_back_one_per_input_in_order(trained: Trained) -> None:
+    """One `Prediction` per input, in the input's order — the interface's central promise.
 
-    predictions = model.predict(train, infer_ctx)
-    assert [prediction.image_id for prediction in predictions] == [r.image_id for r in train]
+    The infer handler checks the count and then trusts the order, because nothing in a
+    `Prediction` identifies which input it came from except its position and its id.
+    """
+    assert [prediction.image_id for prediction in trained.predictions] == [
+        record.image_id for record in trained.probe
+    ]
 
 
 def test_one_seed_is_one_experiment(tmp_path: Path) -> None:
@@ -441,33 +444,61 @@ def test_the_diagnostic_keys_are_the_ones_the_views_expect(tmp_path: Path) -> No
 # ------------------------------------------------------------------ resume
 
 
-def test_a_checkpoint_loses_nothing(tmp_path: Path) -> None:
-    """Bit-equality, not tolerance. A checkpoint that is nearly right is not right."""
-    train_ctx, _ = _contexts(tmp_path)
+@dataclass
+class Saved:
+    """A fitted model already written to disk, and what it takes to continue it."""
+
+    artifacts: Path
+    train_ctx: TrainContext
+    records: list[ImageRecord]
+    completed: int
+    state: dict[str, Any]
+
+
+@pytest.fixture(scope="module")
+def saved(tmp_path_factory: pytest.TempPathFactory) -> Saved:
+    """One short run, fitted and saved once for every test that only needs to *load* it.
+
+    These five tests are about persistence, not about fitting, and each fitting its own
+    model cost about a minute of CI apiece for no coverage — the `dl` job ran twenty-one
+    minutes before this fixture existed. Every test still constructs its own model and
+    loads it from disk, so none of them shares mutable model state.
+    """
+    root = tmp_path_factory.mktemp("efficientad-saved")
+    train_ctx, _ = _contexts(root)
+    records = _training_records(root)
     model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(_training_records(tmp_path), train_ctx)
-    model.save(tmp_path / "artifacts")
+    model.fit(records, train_ctx)
+    model.save(root / "artifacts")
+    return Saved(
+        artifacts=root / "artifacts",
+        train_ctx=train_ctx,
+        records=records,
+        completed=model.completed_steps(),
+        state={key: value.clone() for key, value in model._net.state_dict().items()},
+    )
 
+
+def test_a_checkpoint_loses_nothing(saved: Saved) -> None:
+    """Bit-equality, not tolerance. A checkpoint that is nearly right is not right."""
     restored = EfficientAdCustomModel(_config(max_steps=10))
-    restored.load(tmp_path / "artifacts")
+    restored.load(saved.artifacts)
 
-    assert restored.completed_steps() == model.completed_steps() == 10
-    expected = model._net.state_dict()
+    assert restored.completed_steps() == saved.completed == 10
     actual = restored._net.state_dict()
-    assert set(actual) == set(expected)
-    for key, value in expected.items():
+    assert set(actual) == set(saved.state)
+    for key, value in saved.state.items():
         torch.testing.assert_close(actual[key], value, rtol=0, atol=0, msg=key)
 
 
-def test_a_checkpoint_carries_what_a_continuation_needs(tmp_path: Path) -> None:
-    """Weights alone are not a continuation: Adam's moments are most of what a run learned."""
-    train_ctx, _ = _contexts(tmp_path)
-    model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(_training_records(tmp_path), train_ctx)
-    model.save(tmp_path / "artifacts")
+def test_a_checkpoint_carries_what_a_continuation_needs(saved: Saved) -> None:
+    """Weights alone are not a continuation: Adam's moments are most of what a run learned.
 
+    The penalty state is the one the wrapper does not carry — ADR-0025 records its penalty
+    sequence restarting on every resume as an accepted cost.
+    """
     restored = EfficientAdCustomModel(_config(max_steps=10))
-    restored.load(tmp_path / "artifacts")
+    restored.load(saved.artifacts)
     assert restored._optimizer_state is not None
     assert restored._scheduler_state is not None
     assert restored._generator_state is not None
@@ -475,56 +506,48 @@ def test_a_checkpoint_carries_what_a_continuation_needs(tmp_path: Path) -> None:
     assert restored._penalty_state is not None
 
 
-def test_the_continuation_actually_trains(tmp_path: Path) -> None:
-    train_ctx, _ = _contexts(tmp_path)
-    model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(_training_records(tmp_path), train_ctx)
-    model.save(tmp_path / "artifacts")
-
+def test_the_continuation_actually_trains(saved: Saved) -> None:
     restored = EfficientAdCustomModel(_config(max_steps=10))
-    restored.load(tmp_path / "artifacts")
-    before = {key: value.clone() for key, value in restored._net.state_dict().items()}
-    restored.fit_more(_training_records(tmp_path), train_ctx, additional_steps=5)
+    restored.load(saved.artifacts)
+    restored.fit_more(saved.records, saved.train_ctx, additional_steps=5)
 
     assert restored.completed_steps() == 15
     after = restored._net.state_dict()
-    assert any(not torch.equal(after[key], value) for key, value in before.items()), (
+    assert any(not torch.equal(after[key], value) for key, value in saved.state.items()), (
         "the weights did not move, so nothing was continued"
     )
 
 
-def test_a_continuation_at_a_different_input_size_is_refused(tmp_path: Path) -> None:
+def test_a_continuation_at_a_different_input_size_is_refused(saved: Saved, tmp_path: Path) -> None:
     """The normalization was fitted at one resolution and does not transfer to another.
 
     Continuing anyway would produce maps that are wrong in a way nothing downstream can
     see — the run would look finished and its scores would be quietly meaningless.
     """
-    train_ctx, _ = _contexts(tmp_path)
-    model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(_training_records(tmp_path), train_ctx)
-    model.save(tmp_path / "artifacts")
-
     restored = EfficientAdCustomModel(_config(max_steps=10))
-    restored.load(tmp_path / "artifacts")
+    restored.load(saved.artifacts)
     bigger, _ = _contexts(tmp_path / "bigger", width=320, height=320)
     with pytest.raises(RuntimeError, match="does not transfer"):
-        restored.fit_more(_training_records(tmp_path), bigger, additional_steps=5)
+        restored.fit_more(saved.records, bigger, additional_steps=5)
 
 
-def test_an_unknown_checkpoint_format_is_refused_by_name(tmp_path: Path) -> None:
-    """A future checkpoint may hold the same keys with different meanings."""
-    train_ctx, _ = _contexts(tmp_path)
-    model = EfficientAdCustomModel(_config(max_steps=10))
-    model.fit(_training_records(tmp_path), train_ctx)
-    model.save(tmp_path / "artifacts")
+def test_an_unknown_checkpoint_format_is_refused_by_name(saved: Saved, tmp_path: Path) -> None:
+    """A future checkpoint may hold the same keys with different meanings.
 
-    path = tmp_path / "artifacts" / "efficientad_custom.pt"
+    Copied out of the shared fixture before being edited, so tampering with a checkpoint
+    cannot break the tests that expect to read a good one.
+    """
+    artifacts = tmp_path / "tampered"
+    artifacts.mkdir()
+    path = artifacts / "efficientad_custom.pt"
+    shutil.copy(saved.artifacts / "efficientad_custom.pt", path)
+
     stored = torch.load(path, map_location="cpu", weights_only=False)
     stored["format"] = 99
     torch.save(stored, path)
 
     with pytest.raises(RuntimeError, match="format 99"):
-        EfficientAdCustomModel(_config()).load(tmp_path / "artifacts")
+        EfficientAdCustomModel(_config()).load(artifacts)
 
 
 # ------------------------------------------------------------------ independence
