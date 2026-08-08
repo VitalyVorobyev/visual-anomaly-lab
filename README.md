@@ -89,6 +89,18 @@ Running the two EfficientADs against each other on one split is the point of hav
 improvement in the custom one is a configuration field, so it is an ablation the comparison screen
 can show you rather than a claim you have to take on trust.
 
+**The teacher is one of those fields, and it turned out to be the most important one.** EfficientAD
+distils a student against a small pretrained network, and the two published versions of that network
+are different — same architecture, weights differing tensor by tensor. Swapping which one is loaded
+moved AU-PRO from 0.560 to 0.914 at a fixed budget on VisA `candle`, three seeds each, which is
+larger than the effect of seven times more training. So `teacher_source` picks between them, and
+`anomaly-lab distill` **produces one here** from a frozen WideResNet-101 — see
+[teacher-distillation.md](docs/teacher-distillation.md) for the exact commands and
+[ADR-0031](docs/adr/0031-the-teacher-is-an-experiment-variable-and-we-produce-it.md) for why.
+
+Distillation changes nothing about inference: the large model is training-only, and what a trained
+experiment loads and runs is the same 2.7M-parameter network it always was.
+
 PatchCore is designed and not yet built. A method is a Python module and a registry entry — no
 routes, no schemas, and no TypeScript, because the configuration form is generated from the method's
 own schema.
