@@ -39,7 +39,6 @@ leaves a 40 MB teacher behind; deleting anomalib's cache is a separate act.
 from __future__ import annotations
 
 import contextlib
-import inspect
 import shutil
 import time
 from collections.abc import Iterator, Sequence
@@ -63,6 +62,7 @@ from anomaly_lab.models.base import (
     module_available,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
+from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
 from anomaly_lab.models.preprocessing import load_array, to_chw
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -476,6 +476,12 @@ class EfficientAdAnomalibModel(AnomalyModel):
 
         Shapes and parameter counts read off the running model cannot go stale the way a
         hand-drawn figure does, which is the whole basis for M4's architecture view.
+
+        Every module is recorded, not only the three branches, through the shared helper in
+        `models/introspect.py` — so this method contributes only *which roots to walk* and
+        *how they are wired*, and any other torch method inherits the same view by doing the
+        same (ADR-0024). The branch nodes remain, as the depth-0 rows, so a reader who knows
+        the old three-card picture is not lost.
         """
         if not ctx.diagnostics.enabled:
             return
@@ -483,39 +489,29 @@ class EfficientAdAnomalibModel(AnomalyModel):
         probe = torch_module.zeros(
             1, 3, ctx.preprocessing.height, ctx.preprocessing.width, device=ctx.device.value
         )
-        nodes: list[dict[str, Any]] = []
+        records: list[ModuleRecord] = []
         for name in ("teacher", "student", "ae"):
-            branch = getattr(model, name)
-            with torch_module.no_grad():
-                # The branches do not share a signature: the autoencoder needs the target
-                # size, because its decoder upsamples to it rather than inferring it. The
-                # signature is inspected rather than special-cased by branch name, so a
-                # future branch with its own arguments does not silently break this.
-                output = branch(probe, **_probe_arguments(branch, probe))
-            nodes.append(
-                {
-                    "id": name,
-                    "label": name,
-                    "type": type(branch).__name__,
-                    "parameters": int(sum(p.numel() for p in branch.parameters())),
-                    "input_shape": list(probe.shape),
-                    "output_shape": list(output.shape),
-                }
-            )
+            records.extend(collect(getattr(model, name), probe, prefix=f"{name}."))
+
+        payload = build_tree(records)
+        # The wiring between the branches is the one thing hooks cannot see: it lives in
+        # the training loop's losses, not in any module's forward. Stated here, by the code
+        # that knows it, rather than inferred by the helper from names it should not read.
+        payload["edges"] = [
+            {"source": "teacher", "target": "student", "label": "distillation"},
+            {"source": "student", "target": "ae", "label": "reconstruction"},
+        ]
+        payload["total_parameters"] = int(sum(p.numel() for p in model.parameters()))
 
         ctx.emit_diagnostic(
             "architecture",
             "Model architecture",
             DiagnosticKind.GRAPH,
-            {
-                "nodes": nodes,
-                "edges": [
-                    {"source": "teacher", "target": "student", "label": "distillation"},
-                    {"source": "student", "target": "ae", "label": "reconstruction"},
-                ],
-                "total_parameters": int(sum(p.numel() for p in model.parameters())),
-            },
-            description="Branch shapes and parameter counts, read from a dry forward pass.",
+            payload,
+            description=(
+                "Every module's real input and output shapes, read from a dry forward "
+                "pass. Functional operations are not modules and so do not appear."
+            ),
         )
 
     def _emit_teacher_view(
@@ -659,19 +655,6 @@ def _next_penalty_batch(module: Any) -> Any:
     except StopIteration:
         module.imagenet_iterator = iter(module.imagenet_loader)
         return next(module.imagenet_iterator)[0]
-
-
-def _probe_arguments(branch: Any, probe: Any) -> dict[str, Any]:
-    """Extra keyword arguments a branch needs for a dry forward pass.
-
-    Only `image_size` so far, which the autoencoder requires because its decoder
-    upsamples to an explicit target rather than inferring one.
-    """
-    try:
-        parameters = inspect.signature(branch.forward).parameters
-    except (TypeError, ValueError):  # pragma: no cover - a C-implemented forward
-        return {}
-    return {"image_size": probe.shape[-2:]} if "image_size" in parameters else {}
 
 
 def _penalty_set_is_extracted(penalty_dir: Path) -> bool:
