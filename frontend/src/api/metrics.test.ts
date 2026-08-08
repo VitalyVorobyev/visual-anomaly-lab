@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   caveats,
+  comparisonRows,
   detectionRows,
   formatMilliseconds,
   formatScore,
@@ -143,5 +144,37 @@ describe("caveats", () => {
         pixel: { skipped_unannotated_defects: 0, skipped_missing_maps: 0 },
       }),
     ).toEqual([]);
+  });
+});
+
+describe("laying several runs out as columns", () => {
+  const grouped = { images: { total: 6 }, samples: { total: 3 } };
+
+  it("keeps a metric one run lacks as a dash in that column", () => {
+    // Not a dropped row: dropping it would shift every other column's meaning, and the
+    // absence — no masks in that run's dataset, an ungrouped split — is itself the finding.
+    const rows = comparisonRows([
+      pixelRows({ pixel: { pixel_roc_auc: 0.9, au_pro: 0.8, mask_regions: 4 } }),
+      pixelRows({}),
+    ]);
+    expect(rows.map((row) => row.key)).toEqual(["pixel_roc_auc", "au_pro", "mask_regions"]);
+    expect(rows[0]?.values).toEqual(["0.900", null]);
+  });
+
+  it("contributes rows from whichever run has them", () => {
+    // A run with pixel metrics beside one without still gets its rows drawn.
+    const rows = comparisonRows([pixelRows({}), pixelRows({ pixel: { pixel_roc_auc: 0.5 } })]);
+    expect(rows[0]?.values).toEqual([null, "0.500"]);
+  });
+
+  it("reuses the single-run builders, so a comparison cannot print a different number", () => {
+    const metrics = { ...grouped, sample_roc_auc: 0.75, image_roc_auc: 0.5 };
+    const rows = comparisonRows([detectionRows(metrics)]);
+    const single = detectionRows(metrics);
+    expect(rows.map((row) => row.values[0])).toEqual(single.map((row) => row.value));
+  });
+
+  it("is empty when no run computed anything", () => {
+    expect(comparisonRows([[], []])).toEqual([]);
   });
 });

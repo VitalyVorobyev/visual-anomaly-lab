@@ -37,6 +37,7 @@ The format is **MADR-lite**: one page, three sections, no ceremony.
 | [0025](0025-training-is-resumable-as-a-declared-capability.md) | Training is resumable as a declared capability, and steps are absolute | Accepted |
 | [0026](0026-a-resident-inference-worker-beside-the-job-queue.md) | A resident inference worker beside the job queue | Accepted |
 | [0027](0027-on-demand-diagnostics-are-first-class-and-deletable.md) | On-demand diagnostics are first-class in the index, and are deletable | Accepted |
+| [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Comparing runs whose scores are not in the same units | Accepted |
 
 ## Conventions
 

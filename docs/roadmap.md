@@ -191,27 +191,58 @@ first-class in the index and deletable (**ADR-0027**).
 
 ---
 
-## Next
+### M5 — Comparison UI · complete 2026-08-08
 
-### M5 — Comparison UI
+The milestone the workbench exists for, and it turned on a question the plan had not asked: **what
+does it mean to compare two runs whose scores are not in the same units?** On the reference data
+`pixel_reference` sits at a threshold of 14.28 and `efficientad_anomalib` at 0.065 — a factor of two
+hundred, both correct, and one slider across the pair would have printed two true confusion matrices
+at operating points nobody chose. **ADR-0028** answers it and was written before the screen.
 
-**Goal.** Several methods, one split, one evaluation protocol, compared directly. This is what makes the workbench worth having.
+- [x] `pixel_reference` and `efficientad_anomalib` are comparable side by side on the same split
+      under the same evaluation protocol, with identical preprocessing — and the Configuration tab
+      is what shows the preprocessing to be identical rather than asserting it.
+- [x] Any sample can be opened in a side-by-side map view, N panes wide.
+- [x] Every requirement in the brief's UI list is implemented; the comparison view was the last one.
 
-**Scope**
+What shipped: `GET /api/compare` and `eval/compare.py` — the operating-point rules and the
+per-sample agreement table, beside `threshold.py` and importing no model. A screen with its own run
+picker constrained to one dataset and one split, two metric tables split by whether a number depends
+on a threshold, overlaid ROC and PR curves, a configuration diff that calls out preprocessing
+loudly, a per-sample table filtered to **where the methods disagree**, and a side-by-side sample
+view sharing one cut fraction and one zoom across every pane.
 
-- Multi-experiment metric table: sample / image / pixel ROC-AUC, PRO, confusion at a chosen threshold, timing.
-- A/B overlay showing two methods' anomaly maps on the same sample, to see where they disagree.
-- TP / FP / TN / FN filtering polish across the results and comparison screens.
+**Still binds:**
 
-**Exit criteria**
-
-- [ ] `pixel_reference` and `efficientad_anomalib` are comparable side by side on the same split under the same evaluation protocol, with identical preprocessing.
-- [ ] Any sample can be opened in A/B overlay.
-- [ ] Every requirement in the brief's UI list is implemented.
-
-**Size:** medium — a focused piece of frontend work over an evaluation layer that already produces the numbers.
+- **Nothing is compared in score units, ever.** Threshold-independent metrics are functions of the
+  ranking and compare directly. Everything else is resolved per run by one shared *rule*, and each
+  run's own threshold is printed beside its confusion matrix with the sentence that produced it.
+  Remove either and the table becomes the misleading one ADR-0028 rejected — it looks identical.
+- **What transfers across runs is a fraction of a range, never a value.** One cut slider drives N
+  segmentations, resolving to 42.299 in one run and 0.230 in another, which is what makes it the
+  same operating point in both. No map is renormalized into another's scale, and no future screen
+  may stack two methods' maps into a difference image.
+- **The `f1` rule delegates to `suggest_threshold`.** It is quadratic in the number of samples and
+  that cost is accepted: a second F1-optimal search would be free to drift from the one the results
+  screen opens its slider at, and a comparison that disagrees with the screen it was reached from is
+  worse than a slow one. The same reasoning made `outcome_of` public.
+- **A different dataset or split is refused; different preprocessing is warned.** The first is a
+  different question and the numbers are not commensurable. The second is a legitimate experiment
+  whose AUROC difference is then partly a measurement of the resize — a caveat, stated above the
+  table rather than under it.
+- **The metric rows are the single-run builders, transposed.** A comparison cannot print a number
+  the experiment screen disagrees with, and a metric one run lacks is a dash in that column rather
+  than a dropped row that would shift every other column's meaning.
+- **A dynamic set of runs means `useQueries`, not a hook in a `map`.** The premise of the screen is
+  that a column can be added, and the number of hooks a component calls may not change between
+  renders.
+- **A cancelled training run leaves the checkpoint untouched**, because `ModelCancelledError`
+  propagates before `model.save`. That is why the stale-metrics warning counts only *succeeded*
+  train jobs, and why it correctly stays silent on the reference experiments.
 
 ---
+
+## Next
 
 ### M6 — Custom EfficientAD
 
