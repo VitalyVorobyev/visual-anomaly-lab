@@ -96,6 +96,78 @@ image any other way is a bug, not a variation. Aspect ratio is deliberately not 
 straight to the configured size, which makes an anomaly map a plain stretch back onto the source image, so an
 overlay aligns without the UI reconstructing letterbox offsets.
 
+### Standardizing for a backbone is the model's business, not the bridge's
+
+The bridge decides decode, resize and colour, and stops there. What a method then does with those pixels is
+part of the method: `efficientad_nets.imagenet_normalize` applies ImageNet statistics inside `forward`, and
+that is not a second preprocessing, it is the network's first layer.
+
+The seam matters because **the two libraries put it in different places**, and one of them is invisible when
+it is wrong. anomalib's EfficientAD normalizes inside the model, so the wrapper hands it `load_array`'s
+`[0, 1]` array unchanged. anomalib's PatchCore does **not** — `Patchcore.configure_pre_processor` puts the
+`Normalize` in the Lightning pre-processor, which none of these wrappers use — so `patchcore_anomalib`
+applies it itself, from `IMAGENET_MEAN` / `IMAGENET_STD` in `preprocessing.py`. Feeding an ImageNet backbone
+unnormalized pixels does not fail: it runs, produces maps, and quietly scores features from outside the
+distribution the backbone was trained on.
+
+## Bounding a memory-bank method
+
+`pixel_reference` caps how many normals build its median and `efficientad_*` cap how many fit their
+quantiles. Both are one number over a pass whose value saturates. **PatchCore is the case where the bound is
+the design**, because its cost is not a step budget at all — it holds every training patch at once and then
+runs a selection whose loop count is the size of the bank.
+
+Measured by `scripts/patchcore-smoke-test.py` at 256×256 with `wide_resnet50_2` and `layer2+layer3`, read
+from a real forward pass rather than derived from an assumed stride:
+
+| quantity | measured |
+| --- | --- |
+| patch grid / embedding width | 32×32 = 1024 patches, 1536 dims |
+| per image | 6.29 MB |
+| a ~900-image VisA class | 921 600 patches = **5.66 GB** before any selection |
+| backbone forward | **7.0 ms/image on MPS**, 19.3 on CPU |
+| greedy iteration at N=100 000 | 7.16 ms on MPS, **2.46 ms on CPU** |
+| greedy total at `coreset_ratio` 0.1 | 1.2 s at N=25 000, 24.6 s at 100 000, 150.8 s at 250 000 |
+| nearest-neighbour search, 10 000-vector bank | 14.5 ms/image on MPS, 13.1 on CPU |
+
+Three things follow, and each is a rule rather than a tuning.
+
+**Two independent caps, applied in a fixed order.** `max_bank_images` bounds the backbone pass;
+`max_candidate_vectors` bounds the store and, with it, the selection — whose total cost is *quadratic*, since
+both the iteration count and the work per iteration grow with N. Images are dropped first and patches thinned
+second, never the reverse: patches inside one image overlap through the 3×3 pooling and are largely
+redundant, while two images differ by whatever the process actually varies. `plan_bank` resolves both before
+the pass and its numbers go into the job log, so a footprint is known before it is paid for. It is pure and
+torch-free for the same reason `introspect.build_tree` is: the arithmetic that decides whether the machine
+survives is checked by the CI job that has no torch.
+
+**The selection runs on the CPU even when the rest runs on MPS.** The loop is one norm over a tall thin
+tensor, an argmax and a scatter — too little arithmetic to cover per-iteration dispatch — so the device that
+wins the forward pass loses the selection threefold. Nothing in the application would have shown this: the
+run finishes and the bank is correct, it is merely three times slower than it needed to be.
+
+**The loop itself is ours, and the rule is not.** anomalib's `KCenterGreedy` returns when it is finished and
+not before, so a job reports no progress and ignores cancellation for as long as it runs. Every other long
+operation here stops within one step. So the projection and the distance stay anomalib's, the iteration order
+is identical, and `test_dl_patchcore.py::test_the_greedy_selection_matches_anomalib` pins that the same
+features and the same starting point produce the same indices.
+
+### A seed only means something if it reaches every stream
+
+Writing that pin found the bug worth finding. `SparseRandomProjection` draws its sparsity pattern through
+scikit-learn's `sample_without_replacement`, whose `random_state` defaults to `None` — **numpy's global RNG,
+which `torch.manual_seed` does not touch** — and anomalib constructs it with no `random_state` at all. Its
+coreset is therefore not reproducible: same seed, same data, a different memory bank, and nothing anywhere
+saying so.
+
+This is M6's finding arriving in a different library. There it was weight initialisation drawing from torch's
+global stream, so `seed` controlled the training order over *different* initial weights and two runs of one
+configuration were not one experiment. The shape is the same and so is the consequence: a `seed` field on the
+experiment form that does not control the result puts unattributable noise under every comparison built on
+it. `patchcore_anomalib` pins both streams, and a test asserts the bank is identical across two fits at one
+seed and different at another — both directions, because pinning a seed is only meaningful if changing it
+changes the answer.
+
 ## A downloaded asset can be a hyperparameter
 
 EfficientAD cannot train from a dataset alone: it needs a **pretrained teacher**, distilled from a
@@ -133,6 +205,15 @@ either without a refetch. Two consequences worth stating:
 This is the general shape, not a special case: anything downloaded that a number depends on is an
 input to the experiment, and belongs in its configuration where the comparison screen can show it.
 
+**PatchCore inherits the whole argument.** Its backbone is timm's pretrained `wide_resnet50_2`, resolved
+through the HuggingFace hub and equally somebody's training run, so `backbone` and `pretrained_backbone` are
+configuration and `allow_downloads` refuses a fetch by name. The difference is what gets stored: EfficientAD's
+teacher is small enough to live in the checkpoint, while a backbone is 260 MB per experiment and a comparison
+holds several. So `patchcore.pt` carries a **sha256 fingerprint** of the backbone instead, and `load` refuses
+a mismatch naming the backbone. The bank was selected in the old feature space, so distances against new
+weights are not comparable — and without the check, the checkpoint would load, inference would run, and the
+number would be plausible and wrong.
+
 ## Diagnostics
 
 A method that declares `produces_diagnostics` can show what it did as well as what it concluded, by
@@ -164,6 +245,12 @@ requires no server round-trip.
 Defaults target Apple Silicon: `preferred_device = "mps"` for the DL adapters, `"cpu"` for the classical
 baseline (ADR-0008). Device is resolved at job start with a graceful fallback to CPU when MPS is unavailable
 or an operator is unimplemented, and the resolved device is recorded in the job log.
+
+**A method's preferred device is not necessarily right for every stage inside it.** `patchcore_anomalib`
+prefers MPS and keeps its backbone there, and pins its coreset selection to the CPU regardless — measured
+three times faster, because a loop that does too little arithmetic per iteration is dominated by dispatch
+rather than by compute. The rule this generalizes to: `preferred_device` is where the *tensor work* goes, and
+a tight Python-driven loop over small kernels is a reason to measure rather than to inherit.
 
 ## Classical baseline
 

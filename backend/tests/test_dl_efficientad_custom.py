@@ -3,7 +3,7 @@
 **Gated on torch alone, never on anomalib.** That is not an oversight — this method
 deliberately does not depend on anomalib, and a test file that imported it would stop
 measuring the difference. The comparison against the reference lives in
-`test_efficientad_equivalence.py`, which is a different question.
+`test_dl_efficientad_equivalence.py`, which is a different question.
 
 Nothing here downloads anything. The teacher is the seeded random one (`pretrained_teacher`
 off) and the penalty set is eight synthetic images written into `tmp_path`, so the real

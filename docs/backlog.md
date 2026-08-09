@@ -43,8 +43,13 @@ the detail is in the git history and the ADRs.
 
 ### E9 — Anomalib integration (M7)
 
-- [ ] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M)
+- [x] `patchcore_anomalib` wrapper + memory sizing (coreset ratio, memory-bank footprint, documented limits) (M) — two independent caps resolved by a pure `plan_bank` before the pass, printed to the log and to a `memory_bank` diagnostic. Defaults set by `scripts/patchcore-smoke-test.py`, not guessed.
+- [x] Run PatchCore against `efficientad_custom` in the comparison view (S) — done on `candle`/`default`; 26 of 270 samples disagree and the thresholds differ 158-fold.
+- [ ] **Give PatchCore the tuning EfficientAD got, then re-compare** (M) — the first head-to-head is defaults against a tuned run, so the 0.047 sample ROC-AUC gap says nothing about the methods. `backbone`, `layer_set`, `coreset_ratio` and `max_candidate_vectors` are all fields, so each is an ablation the comparison screen can show.
+- [ ] Run both on the **official one-class split** (`official-1cls`, split 2) (S) — every number so far is on a generated split, and M6 set the rule that nothing is compared to a published figure until the official protocol runs.
 - [ ] Revisit the training loop against anomalib's Lightning path if their module stops reaching into `trainer.datamodule`; ours exists only because that coupling would cost the preprocessing bridge (S)
+- [ ] **Report anomalib's non-reproducible coreset upstream** (S) — `SparseRandomProjection` is constructed with no `random_state`, so `KCenterGreedy` selects a different bank on every run at a fixed `torch.manual_seed`. Worked around here by pinning both streams; the library's own users have no way to know.
+- [ ] Batch PatchCore's inference (S) — scoring is per image so `Prediction.inference_ms` stays honest, which leaves the backbone forward unbatched. Measured 7 ms of a ~22 ms image; worth it only if inference becomes the bottleneck in a comparison.
 
 ### E11 — Custom EfficientAD (M6)
 

@@ -36,7 +36,7 @@ decay 1e-5.
 This is the reference recipe, deliberately. A teacher distilled by a different procedure would
 make every comparison against a published teacher partly a measurement of the procedure. The
 aggregation is pinned against a transcription of the reference in
-`tests/test_efficientad_distill.py`, agreeing to 6e-8 — float32 reduction-order noise, not a
+`tests/test_dl_efficientad_distill.py`, agreeing to 6e-8 — float32 reduction-order noise, not a
 difference in meaning.
 
 Detection later runs the PDN with padding **off**, where the same weights give a 56×56 map that

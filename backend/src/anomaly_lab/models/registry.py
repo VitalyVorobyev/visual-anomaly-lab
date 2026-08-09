@@ -40,13 +40,24 @@ def _efficientad_custom() -> type[AnomalyModel]:
     return EfficientAdCustomModel
 
 
-# `patchcore_anomalib` (M7) and `classical_circular` (optional M8) each cost exactly one
-# more entry here and one more module. `efficientad_custom` cost exactly that in M6 — no
-# route, no schema, no line of TypeScript — which is the prediction ADR-0007 made.
+def _patchcore_anomalib() -> type[AnomalyModel]:
+    from anomaly_lab.models.patchcore_anomalib import PatchcoreAnomalibModel
+
+    return PatchcoreAnomalibModel
+
+
+# `efficientad_custom` cost exactly one entry and one module in M6 — no route, no schema, no
+# line of TypeScript — which is the prediction ADR-0007 made. `patchcore_anomalib` cost the
+# same in M7, and it is the stronger test of the two: EfficientAD's second implementation
+# has the same shape as its first, while PatchCore trains nothing, has no steps, resumes
+# nothing and holds a memory bank instead of weights. It still needed one entry here.
+#
+# `classical_circular` (optional M8) is the remaining one.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_anomalib": _efficientad_anomalib,
     "efficientad_custom": _efficientad_custom,
+    "patchcore_anomalib": _patchcore_anomalib,
 }
 
 

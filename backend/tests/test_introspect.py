@@ -3,7 +3,7 @@
 **Torch-free on purpose.** `build_tree` takes plain records, which is what lets the
 hierarchy, the bounding and the truncation reporting be checked in CI — which installs
 without the `dl` extra. The half that actually runs a forward pass is exercised in
-`test_efficientad_introspect.py`, which skips wherever anomalib is absent.
+`test_dl_efficientad_introspect.py`, which skips wherever anomalib is absent.
 """
 
 from __future__ import annotations

@@ -370,18 +370,84 @@ is tracked against run by run.
 
 ---
 
-### M7 — PatchCore
+### M7 — PatchCore · complete 2026-08-09
 
 **Goal.** A third method, and the first one whose resource profile is genuinely awkward.
 
-**Scope**
-
-- `patchcore_anomalib` wrapper, with explicit attention to memory: a coreset memory bank over a full training set at native resolution needs a sized, documented configuration rather than library defaults.
+The awkwardness was the milestone, and it was larger than "needs a config rather than defaults". At
+256×256 with `wide_resnet50_2` a ~900-image VisA class generates **921 600 patches — 5.66 GB — before
+any selection**, and anomalib's coreset then runs 92 160 Python iterations over all of it. The
+measurement came first (`scripts/patchcore-smoke-test.py`, ADR-0008's rule), and it decided the
+defaults rather than confirming them.
 
 **Exit criteria**
 
-- [ ] PatchCore trains and infers without exhausting memory, and its memory-bank configuration is documented.
-- [ ] It appears in the comparison view alongside the others with no changes outside the plugin.
+- [x] PatchCore trains and infers without exhausting memory, and its memory-bank configuration is
+      documented. Two independent caps resolved by a pure `plan_bank` **before** the pass, its numbers
+      in the log and in a `memory_bank` diagnostic table.
+- [x] It appears in the comparison view alongside the others with no changes outside the plugin.
+      Verified against a real run: regenerating the API contract after adding the method produces
+      **no diff at all**.
+
+**The first real run, on `candle`, split `default`, defaults untouched.** Both caps bound as planned —
+512 of 600 images, 195 of 1024 patches each, a 99 840-vector pool at 613 MB, a **9 984-vector bank at
+61 MB**, selected in 21 s on the CPU while the embedding pass ran on MPS. Every figure the probe
+predicted held to within a few percent, which is what makes the sizing a measurement rather than a
+guess. Inference is 27.7 ms/image against `efficientad_custom`'s 26.3 on the same images.
+
+| test subset | `patchcore_anomalib` | `efficientad_custom` (`candle-nelson-curve-s0`) |
+| --- | --- | --- |
+| sample ROC-AUC | 0.908 | **0.955** |
+| AU-PRO | 0.912 | **0.943** |
+| pixel ROC-AUC | 0.974 | **0.994** |
+| resolved threshold (`f1`) | 37.23 | 0.236 |
+
+**EfficientAD wins on this split, and the comparison is not yet a fair one.** PatchCore ran at
+untouched defaults on its first attempt; the EfficientAD run beside it is the product of a milestone
+of tuning, on a teacher chosen because it measured better. What the pair establishes is that the
+screen works with a structurally different method in it — 26 of 270 samples disagree, and the two
+thresholds differ by a factor of 158, which is exactly the situation ADR-0028 exists for. Reading the
+0.047 sample ROC-AUC gap as a result about the *methods* would repeat the mistake ADR-0029 was written
+to prevent.
+
+**Still binds:**
+
+- **The cost is quadratic in the candidate pool, and the second cap is what bounds it.**
+  `max_bank_images` bounds the backbone pass; `max_candidate_vectors` bounds the store *and* the
+  selection, since both the iteration count and the work per iteration grow with N. Measured: 1.2 s at
+  25 000 candidates, 24.6 s at 100 000, 150.8 s at 250 000, about half an hour at a full class. Images
+  are dropped before patches are thinned, because patches inside one image overlap through the 3×3
+  pooling and are largely redundant while two images differ by whatever the process actually varies.
+- **A method's preferred device can be wrong for a stage inside it.** The backbone forward is 2.8×
+  faster on MPS and stays there; the greedy loop is **3× faster on CPU** (2.46 ms/iteration against
+  7.16 at N=100 000) because it does too little arithmetic per iteration to cover dispatch. Nothing in
+  the application would have shown it — the run finishes and the bank is correct, it is merely three
+  times slower than it needed to be.
+- **anomalib's coreset is not reproducible, and `torch.manual_seed` does not fix it.**
+  `SparseRandomProjection` draws its sparsity pattern through scikit-learn's
+  `sample_without_replacement` with `random_state=None` — numpy's global stream. Same seed, same data,
+  a different bank, nothing saying so. This is **M6's finding in a different library**: there it was
+  weight init drawing from torch's global stream, and the consequence is identical — a `seed` field
+  that does not control the result puts unattributable noise under every comparison built on it. Both
+  streams are now pinned, asserted in both directions.
+- **The two libraries put ImageNet normalization in different places, and one of them is silent.**
+  anomalib's EfficientAD normalizes inside `forward`, so the wrapper passes `[0, 1]` through
+  unchanged; anomalib's PatchCore puts it in the Lightning pre-processor, which none of these wrappers
+  use. Unnormalized pixels do not fail — they run, produce maps, and quietly score an off-distribution
+  backbone.
+- **The backbone is an experiment input, stored as a fingerprint rather than as weights.** 260 MB per
+  experiment is not affordable across a comparison, so `patchcore.pt` carries a sha256 of the backbone
+  and `load` refuses a mismatch by name. Without it the checkpoint loads, inference runs, and the
+  number is plausible and wrong.
+- **ADR-0007's prediction held against a method the interface was not designed around.** One registry
+  entry and one module, no route, no schema, no TypeScript, `generated.ts` unchanged. M6 tested this
+  with a second EfficientAD, which shares its shape with the first; PatchCore has no steps, no
+  gradients and no resume, holds a bank instead of weights, and still cost exactly one entry.
+- **The `dl` CI glob was a naming contract spelled after one method.** `test_efficientad_*.py` matched
+  nothing for PatchCore, so a new dl-gated file would have skipped in the torch-free job and run
+  nowhere at all — the failure that glob's own comment describes. Renamed to `test_dl_*.py`.
+  `test_efficientad_assets.py` is deliberately excluded: it is torch-free and had been running in both
+  jobs for no reason.
 
 **Size:** small-to-medium — the wrapper reuses M3's integration path.
 

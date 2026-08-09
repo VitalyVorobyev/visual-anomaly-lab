@@ -15,7 +15,7 @@ module's import path is torch.
 and every form are generated from this file's JSON Schema — so each one is an ablation the
 workbench itself can run and put beside its own baseline on the comparison screen
 (**ADR-0028**). Their defaults reproduce the published *algorithm*, so an untouched run is
-the verified core that `test_efficientad_equivalence.py` pins, and a change is one field.
+the verified core that `test_dl_efficientad_equivalence.py` pins, and a change is one field.
 
 **One default is no longer the wrapper's, and it is the most important one.**
 `teacher_source` defaults to `nelson1425` rather than to the asset anomalib ships, because
@@ -74,6 +74,7 @@ from anomaly_lab.models.base import (
     module_available,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
+from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
 from anomaly_lab.models.preprocessing import load_array, to_chw
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -938,7 +939,7 @@ class EfficientAdCustomModel(AnomalyModel):
             "teacher_features_pca",
             "Teacher features (PCA composite)",
             DiagnosticKind.IMAGE,
-            _pca_to_rgb(features),
+            pca_to_rgb(features),
             description="Three leading principal components of the teacher's 384 channels.",
         )
         ctx.emit_diagnostic(
@@ -1116,27 +1117,3 @@ class EfficientAdCustomModel(AnomalyModel):
         self._generator_state = stored.get("generator_state")
         self._torch_rng_state = stored.get("torch_generator_state")
         self._penalty_state = stored.get("penalty_state")
-
-
-def _pca_to_rgb(features: np.ndarray) -> np.ndarray:
-    """Reduce a `(C, H, W)` feature map to `(H, W, 3)` in [0, 1] by PCA.
-
-    384 teacher channels cannot be looked at directly. The three leading components carry
-    what varies spatially, which is what a reader wants to see; the result is a false-colour
-    image and is labelled as one in the UI.
-
-    Deliberately duplicated from `efficientad_anomalib` rather than shared. It is twelve
-    lines, and hoisting it into a common module to serve exactly two plugins is the
-    premature generality the plugin boundary exists to avoid — a third caller would change
-    that, and this comment is here so the decision is visible rather than inferred.
-    """
-    channels, height, width = features.shape
-    flat = features.reshape(channels, height * width).T.astype(np.float64)
-    centred = flat - flat.mean(axis=0, keepdims=True)
-    # SVD rather than an explicit covariance eigendecomposition: 384x384 is small, but the
-    # covariance route squares the condition number for no benefit here.
-    _, _, components = np.linalg.svd(centred, full_matrices=False)
-    projected = (centred @ components[:3].T).reshape(height, width, 3)
-    low = projected.min(axis=(0, 1), keepdims=True)
-    high = projected.max(axis=(0, 1), keepdims=True)
-    return ((projected - low) / np.maximum(high - low, 1e-9)).astype(np.float32)

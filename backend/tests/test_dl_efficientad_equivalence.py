@@ -19,7 +19,7 @@ Two pins, different in kind:
 
 Gated on anomalib because it is the reference. The method's own tests are gated on torch
 alone — `efficientad_custom` deliberately does not depend on anomalib, and
-`test_efficientad_custom.py` is what measures that.
+`test_dl_efficientad_custom.py` is what measures that.
 """
 
 from __future__ import annotations

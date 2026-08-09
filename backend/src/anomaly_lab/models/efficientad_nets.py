@@ -6,7 +6,7 @@ and keeps its own module scope torch-free so the registry stays lazy — which i
 file exists separately rather than at the top of that one.
 
 **anomalib is the baseline, not the specification.** The networks here are written from
-the paper, and their outputs are pinned against anomalib's in `test_efficientad_equivalence.py`
+the paper, and their outputs are pinned against anomalib's in `test_dl_efficientad_equivalence.py`
 with every improvement switched off. That pin is not deference: it is what makes a later
 divergence *measurable*, because a change in a number can then be attributed to the change
 we made rather than to a difference we never noticed we had.
