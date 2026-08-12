@@ -60,9 +60,7 @@ def test_catalog_external_override_and_managed_deletion(
         )
         assert rejected.status_code == 422
 
-        selected = client.put(
-            "/api/model-assets/fixture/source", json={"path": str(external)}
-        )
+        selected = client.put("/api/model-assets/fixture/source", json={"path": str(external)})
         assert selected.status_code == 200, selected.text
         assert selected.json()["status"] == "ready"
         assert selected.json()["source"] == "external"
@@ -127,8 +125,6 @@ def test_invalid_external_source_is_rejected(
     wrong = tmp_path / "wrong.bin"
     wrong.write_bytes(b"wrong")
     with TestClient(create_app(Settings(data_dir=tmp_path / "data"))) as client:
-        response = client.put(
-            "/api/model-assets/fixture/source", json={"path": str(wrong)}
-        )
+        response = client.put("/api/model-assets/fixture/source", json={"path": str(wrong)})
         assert response.status_code == 422
         assert "SHA-256 mismatch" in response.text

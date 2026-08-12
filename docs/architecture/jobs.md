@@ -135,14 +135,16 @@ iterator restarts** in the anomalib wrapper. `efficientad_custom` resumes it.
 
 ## The one process that is not a job
 
-Serving a per-image diagnostic on demand is a hundred milliseconds of work behind eleven seconds of
-setup, so a job per request would mean a model load per click — and, because the queue is a single
-FIFO by design, a request made during training would wait for the training. There is instead **one
-resident inference worker**, keyed by `(experiment_id, checkpoint generation)` (**ADR-0026**).
+Serving an interactive model request is a hundred milliseconds of work behind seconds of setup, so a
+job per click would mean a model load per click — and, because the queue is a single FIFO by design,
+a request made during training would wait for the training. There is instead **one resident compute
+worker**, keyed by `(kind, target key, artifact generation)` (**ADR-0026**). It holds either an
+experiment inspector or MobileSAM, never both.
 
 It mirrors the queue's layering exactly, so there is one shape to learn rather than two:
-`jobs/resident.py` is the manager, `jobs/inspector.py` is the entrypoint, `experiments/diagnose.py`
-is the work — as `jobs/queue.py`, `jobs/worker.py` and `experiments/infer.py` are.
+`jobs/resident.py` is the manager; `jobs/inspector.py` and `jobs/segmenter.py` are thin entrypoints;
+`experiments/diagnose.py` and `model_assets/mobile_sam.py` do the work — as `jobs/queue.py`,
+`jobs/worker.py` and a job handler do.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no migration. A
   browse click is not a unit of work anyone needs to cancel or resume.
@@ -155,12 +157,14 @@ is the work — as `jobs/queue.py`, `jobs/worker.py` and `experiments/infer.py` 
   the lock an in-flight request holds. **A job may therefore be delayed by one in-flight request, and
   that delay *is* the guarantee**: the hook must not be made non-blocking. The dependency is injected
   from `api/app.py` into both; the queue never imports the resident.
-- **Keyed by a generation fingerprint** over the model directory's names, sizes and mtimes, compared
-  on every request, so serving from stale weights is impossible by construction rather than by an
-  eviction hook firing in time.
+- **Keyed by a generation fingerprint** over the experiment model directory or verified asset file,
+  compared on every request, so serving from stale weights is impossible by construction rather than
+  by an eviction hook firing in time. Changing target kind also replaces the process.
 - **A request arriving while a job runs is refused with 409, naming the job.** Queuing it behind a
   two-hour train would make a button that sometimes takes two hours.
-- **A request changes no score, no map and no metric.** `InferContext.maps_subdir` points its
+- **A request changes no score, annotation, map or metric.** A MobileSAM answer is an ephemeral set of
+  ranked cropped bitmap candidates; only explicit acceptance puts one into the annotation draft.
+  `InferContext.maps_subdir` points diagnostic inference's
   unconditional map write at `scratch-maps`, which is then removed; without it a browse request would
   overwrite an image's map under a range fitted by a different run.
 - **Any deviation kills the process** — a timeout, a broken pipe, a mismatched `rid`. Each is a state
@@ -169,7 +173,7 @@ is the work — as `jobs/queue.py`, `jobs/worker.py` and `experiments/infer.py` 
 - **Destructive artifact work holds an eviction guard**, not merely a one-shot `evict`: the resident is
   killed and its lock remains held until the database row and app-owned artifact directory are gone. A
   diagnostic request therefore cannot respawn into the interval between those two operations.
-  `GET /api/health` reports which experiment, which generation, time to eviction and requests served
+  `GET /api/health` reports the resident kind, target key, generation, time to eviction and requests served
   — the only place the one invisible process in the system becomes visible, and a lock-free field
   read, because a health check that can block behind a model load is not a health check.
 

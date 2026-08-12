@@ -13,6 +13,9 @@ import type {
   AnnotationDraft,
   AnnotationLabel,
   AnnotationRevision,
+  SegmentAssistCapability,
+  SegmentAssistRequest,
+  SegmentAssistResponse,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
@@ -98,5 +101,26 @@ export function useCompleteAnnotation(imageId: number) {
       void queryClient.invalidateQueries({ queryKey: queryKeys.annotationDraft(imageId) });
       void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(imageId) });
     },
+  });
+}
+
+export function useSegmentAssistCapability() {
+  return useQuery<SegmentAssistCapability>({
+    queryKey: queryKeys.segmentAssist(),
+    queryFn: async () =>
+      unwrap(await api.GET("/api/segment-assist"), "the contour-assistance capability"),
+  });
+}
+
+export function useSegmentAssist(imageId: number) {
+  return useMutation<SegmentAssistResponse, Error, SegmentAssistRequest>({
+    mutationFn: async (body) =>
+      unwrap(
+        await api.POST("/api/images/{image_id}/segment-assist", {
+          params: { path: { image_id: imageId } },
+          body,
+        }),
+        "the contour suggestions",
+      ),
   });
 }

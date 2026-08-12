@@ -40,8 +40,7 @@ SPECS: tuple[ModelAssetSpec, ...] = (
         sha256="6dbb90523a35330fedd7f1d3dfc66f995213d81b29a5ca8108dbcdd4e37d6c2f",
         license_name="Apache-2.0",
         license_url=(
-            "https://github.com/ChaoningZhang/MobileSAM/blob/"
-            f"{_MOBILE_SAM_COMMIT}/LICENSE"
+            f"https://github.com/ChaoningZhang/MobileSAM/blob/{_MOBILE_SAM_COMMIT}/LICENSE"
         ),
         project_url="https://github.com/ChaoningZhang/MobileSAM",
     ),

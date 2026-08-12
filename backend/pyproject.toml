@@ -20,7 +20,10 @@ dl = [
     # a real comparison rather than two views of one library. Declared directly rather
     # than relied on transitively, so removing anomalib some day does not silently remove
     # the custom method too.
+    "mobile-sam",
+    "timm>=1.0.24",
     "torch>=2.13",
+    "torchvision>=0.28.0",
 ]
 
 [dependency-groups]
@@ -97,7 +100,7 @@ files = ["src", "tests"]
 # this, mypy fails on the two lazy `import torch` statements on any checkout that did not
 # opt into the extra — which is every checkout that follows the documented default.
 [[tool.mypy.overrides]]
-module = ["anomalib.*", "torch", "torch.*", "torchvision.*"]
+module = ["anomalib.*", "mobile_sam", "mobile_sam.*", "torch", "torch.*", "torchvision.*"]
 ignore_missing_imports = true
 follow_untyped_imports = true
 
@@ -114,3 +117,6 @@ disallow_subclassing_any = false
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
+
+[tool.uv.sources]
+mobile-sam = { git = "https://github.com/ChaoningZhang/MobileSAM.git", rev = "f706ad9c4eb7f219c00d9050e46328518ffb65d2" }

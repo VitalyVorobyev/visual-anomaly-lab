@@ -41,6 +41,8 @@ import type {
   AnnotationLabel,
   AnnotationPoint,
   AnnotationShape,
+  AssistBox,
+  AssistPoint,
   PolygonShape,
   SampleSummary,
 } from "../api/client";
@@ -56,6 +58,8 @@ import {
   Button,
   Empty,
   ErrorBox,
+  ProgressBar,
+  SegmentedControl,
   Select,
   Slider,
   SkeletonRows,
@@ -69,8 +73,13 @@ import {
   useAnnotationLabels,
   useCompleteAnnotation,
   useSaveAnnotation,
+  useSegmentAssist,
+  useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
+import { useCancelJob } from "../hooks/useExperiments";
+import { isTerminal, useJob } from "../hooks/useJob";
+import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 
 const QUEUE_PAGE = 120;
 
@@ -175,10 +184,24 @@ function EditorReady({
   const [message, setMessage] = useState<string | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [tracing, setTracing] = useState(false);
+  const [assistMode, setAssistMode] = useState<"point" | "box">("point");
+  const [assistPoints, setAssistPoints] = useState<AssistPoint[]>([]);
+  const [assistBox, setAssistBox] = useState<AssistBox | null>(null);
+  const [candidateIndex, setCandidateIndex] = useState(0);
+  const [assetJobId, setAssetJobId] = useState<number>();
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
+  const refreshedAssetJob = useRef<number | undefined>(undefined);
 
   const save = useSaveAnnotation(imageId);
   const complete = useCompleteAnnotation(imageId);
+  const capability = useSegmentAssistCapability();
+  const modelAssets = useModelAssets();
+  const installAsset = useInstallModelAsset();
+  const assist = useSegmentAssist(imageId);
+  const asset = modelAssets.data?.assets.find((item) => item.key === "mobile-sam-vit-t");
+  const followedAssetJobId = assetJobId ?? asset?.active_job?.id;
+  const assetJob = useJob(followedAssetJobId);
+  const cancelAssetJob = useCancelJob();
   const dirty = canonical(history.present) !== canonical(savedDocument);
 
   const flatQueue = useMemo(
@@ -196,6 +219,8 @@ function EditorReady({
   const queueIndex = flatQueue.findIndex((item) => item.image.id === imageId);
   const currentImage = sample.images.find((image) => image.id === imageId);
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
+  const candidates = assist.data?.candidates ?? [];
+  const candidate = candidates[candidateIndex] ?? null;
 
   const openQueueItem = useCallback(
     (index: number) => {
@@ -296,6 +321,65 @@ function EditorReady({
     }
   };
 
+  const clearAssist = useCallback(() => {
+    setAssistPoints([]);
+    setAssistBox(null);
+    setCandidateIndex(0);
+    assist.reset();
+  }, [assist]);
+
+  const requestAssist = async () => {
+    try {
+      const result = await assist.mutateAsync({
+        points: assistPoints,
+        box: assistBox ?? undefined,
+        label_key: labelKey,
+        operation,
+      });
+      setCandidateIndex(0);
+      setMessage(
+        `${result.candidates.length} suggestion${result.candidates.length === 1 ? "" : "s"} · ${result.device.toUpperCase()} · ${result.warm ? "warm" : "loaded"}`,
+      );
+    } catch {
+      // The mutation's error stays beside the controls that caused it.
+    }
+  };
+
+  const acceptCandidate = async (asContour: boolean) => {
+    if (!candidate) return;
+    try {
+      if (asContour) {
+        const polygons = await traceBitmapShape(candidate.shape);
+        if (polygons.length === 0) throw new Error("No editable contour could be derived.");
+        dispatch({
+          type: "commit",
+          document: {
+            ...history.present,
+            shapes: [...history.present.shapes, ...polygons],
+          },
+        });
+        setSelectedId(polygons[0]?.id ?? null);
+      } else {
+        dispatch({ type: "commit", document: withShape(history.present, candidate.shape) });
+        setSelectedId(candidate.shape.id);
+      }
+      setTool("select");
+      clearAssist();
+      setMessage(asContour ? "Editable suggested contour accepted" : "Suggested mask accepted");
+    } catch (error) {
+      setTraceError(error instanceof Error ? error.message : "Suggestion conversion failed.");
+    }
+  };
+
+  useEffect(() => {
+    if (!followedAssetJobId || !isTerminal(assetJob.job?.status)) return;
+    if (refreshedAssetJob.current === followedAssetJobId) return;
+    refreshedAssetJob.current = followedAssetJobId;
+    void modelAssets.refetch();
+    void capability.refetch();
+    if (assetJob.job?.status === "succeeded") setMessage("MobileSAM is ready");
+  }, [assetJob.job?.status, capability, followedAssetJobId, modelAssets]);
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
@@ -322,12 +406,15 @@ function EditorReady({
         setTool("brush");
       } else if (key === "e") {
         setTool("eraser");
+      } else if (key === "a") {
+        setTool("assist");
       } else if (event.key === "Enter" && pendingPoints.length >= 3) {
         event.preventDefault();
         finishPolygon();
       } else if (event.key === "Escape") {
         setPendingPoints([]);
         setSelectedId(null);
+        clearAssist();
         setTool("select");
       } else if ((event.key === "Backspace" || event.key === "Delete") && selectedId) {
         event.preventDefault();
@@ -346,7 +433,7 @@ function EditorReady({
     };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  }, [complete.isPending, completeCurrent, dirty, finishPolygon, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId]);
+  }, [clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId]);
 
   useEffect(() => {
     if (!message) return;
@@ -450,6 +537,7 @@ function EditorReady({
           <ToolButton icon={<Shapes />} label="Polygon (P)" active={tool === "polygon"} onClick={() => setTool("polygon")} />
           <ToolButton icon={<Brush />} label="Brush (B)" active={tool === "brush"} onClick={() => setTool("brush")} />
           <ToolButton icon={<Eraser />} label="Eraser (E)" active={tool === "eraser"} onClick={() => setTool("eraser")} />
+          <ToolButton icon={<WandSparkles />} label="Contour assist (A)" active={tool === "assist"} onClick={() => setTool("assist")} />
           <span className="my-1 h-px w-6 bg-line" />
           <ToolButton icon={<Undo2 />} label="Undo (⌘Z)" disabled={history.past.length === 0} onClick={() => dispatch({ type: "undo" })} />
           <ToolButton icon={<Redo2 />} label="Redo (⇧⌘Z)" disabled={history.future.length === 0} onClick={() => dispatch({ type: "redo" })} />
@@ -472,6 +560,10 @@ function EditorReady({
           tool={tool}
           pendingPoints={pendingPoints}
           brushRadius={brushRadius}
+          assistMode={assistMode}
+          assistPoints={assistPoints}
+          assistBox={assistBox}
+          assistShape={candidate?.shape ?? null}
           view={view}
           onView={setView}
           onSelect={setSelectedId}
@@ -494,6 +586,16 @@ function EditorReady({
             if (!shape) return;
             dispatch({ type: "commit", document: withShape(history.present, shape) });
             setSelectedId(shape.id);
+          }}
+          onAssistPoint={(point) => {
+            assist.reset();
+            setCandidateIndex(0);
+            setAssistPoints((points) => [...points, point].slice(-32));
+          }}
+          onAssistBox={(box) => {
+            assist.reset();
+            setCandidateIndex(0);
+            setAssistBox(box);
           }}
         />
 
@@ -544,6 +646,147 @@ function EditorReady({
               </div>
             )}
           </section>
+
+          {tool === "assist" && (
+            <section className="border-b border-line p-3">
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h2 className="text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                  Contour assist
+                </h2>
+                <Badge tone={asset?.status === "ready" ? "normal" : "neutral"}>
+                  {asset?.status ?? "checking"}
+                </Badge>
+              </div>
+
+              {modelAssets.isPending || capability.isPending ? (
+                <SkeletonRows rows={2} />
+              ) : followedAssetJobId && !isTerminal(assetJob.job?.status) ? (
+                <div className="flex flex-col gap-2">
+                  <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
+                    <span>{assetJob.job?.message ?? "Downloading MobileSAM…"}</span>
+                    <Button
+                      size="sm"
+                      variant="danger"
+                      loading={cancelAssetJob.isPending}
+                      onClick={() => cancelAssetJob.mutate(followedAssetJobId)}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                  <ProgressBar fraction={assetJob.job?.progress ?? 0} />
+                </div>
+              ) : asset?.status !== "ready" ? (
+                <div className="flex flex-col gap-2 text-xs leading-5 text-fg-muted">
+                  <p>
+                    Download the verified 38.8 MiB TinyViT checkpoint once. It stays in
+                    app-managed storage and is shared by every dataset.
+                  </p>
+                  {asset?.reason && <p className="text-warn">{asset.reason}</p>}
+                  <a
+                    href={asset?.license_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className={cn("w-fit text-signal underline-offset-2 hover:underline", focusRing)}
+                  >
+                    Apache-2.0 licence
+                  </a>
+                  <Button
+                    icon={<WandSparkles />}
+                    loading={installAsset.isPending}
+                    disabled={!asset}
+                    onClick={() => {
+                      if (!asset) return;
+                      installAsset.mutate(asset.key, {
+                        onSuccess: (job) => setAssetJobId(job.id),
+                      });
+                    }}
+                  >
+                    Accept licence & download
+                  </Button>
+                  {installAsset.error && <ErrorBox>{installAsset.error.message}</ErrorBox>}
+                  {assetJob.job?.error && <ErrorBox>{assetJob.job.error}</ErrorBox>}
+                </div>
+              ) : capability.data && !capability.data.runtime_available ? (
+                <ErrorBox>{capability.data.reason ?? "MobileSAM runtime is unavailable."}</ErrorBox>
+              ) : (
+                <div className="flex flex-col gap-3">
+                  <SegmentedControl
+                    aria-label="Assistance prompt"
+                    value={assistMode}
+                    options={[
+                      { value: "point", label: "Points" },
+                      { value: "box", label: "Box" },
+                    ]}
+                    onValueChange={(value) => {
+                      clearAssist();
+                      setAssistMode(value as "point" | "box");
+                    }}
+                  />
+                  <p className="text-xs leading-5 text-fg-subtle">
+                    {assistMode === "point"
+                      ? "Click the defect. Shift-click marks background. Add points to refine."
+                      : "Drag a tight box around the defect. Right-drag still pans."}
+                  </p>
+                  <div className="flex items-center justify-between rounded-control bg-raised px-2 py-1.5 text-xs">
+                    <span>
+                      {assistMode === "point"
+                        ? `${assistPoints.length} point${assistPoints.length === 1 ? "" : "s"}`
+                        : assistBox
+                          ? `${Math.round(assistBox.x1 - assistBox.x0)} × ${Math.round(assistBox.y1 - assistBox.y0)} px`
+                          : "No box"}
+                    </span>
+                    <Button size="sm" disabled={!assistPoints.length && !assistBox} onClick={clearAssist}>
+                      Clear
+                    </Button>
+                  </div>
+                  <Button
+                    variant="primary"
+                    icon={<WandSparkles />}
+                    loading={assist.isPending}
+                    disabled={
+                      assist.isPending ||
+                      (assistPoints.length === 0 &&
+                        (!assistBox || assistBox.x1 - assistBox.x0 < 2 || assistBox.y1 - assistBox.y0 < 2))
+                    }
+                    onClick={() => void requestAssist()}
+                  >
+                    Suggest contours
+                  </Button>
+                  {assist.error && <ErrorBox>{assist.error.message}</ErrorBox>}
+                  {candidates.length > 0 && (
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-3 gap-1" aria-label="Suggested masks">
+                        {candidates.map((item, index) => (
+                          <button
+                            key={item.shape.id}
+                            type="button"
+                            onClick={() => setCandidateIndex(index)}
+                            className={cn(
+                              "rounded-control border px-1.5 py-1 text-left font-mono text-[10px]",
+                              focusRing,
+                              index === candidateIndex
+                                ? "border-warn bg-warn/10 text-fg"
+                                : "border-line text-fg-muted hover:border-line-strong",
+                            )}
+                          >
+                            <span className="block">#{index + 1} · {item.score.toFixed(3)}</span>
+                            <span className="block text-fg-subtle">{item.area.toLocaleString()} px</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <Button onClick={() => void acceptCandidate(false)}>Accept mask</Button>
+                        <Button onClick={() => void acceptCandidate(true)}>Editable contour</Button>
+                      </div>
+                      <p className="text-[10px] leading-4 text-fg-subtle">
+                        Quality is MobileSAM's own ranking score, not a calibrated probability.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
 
           <section className="min-h-0 flex-1 overflow-y-auto p-3">
             <div className="mb-2 flex items-center justify-between">

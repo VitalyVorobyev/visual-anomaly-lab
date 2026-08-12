@@ -504,6 +504,7 @@ consumes this boundary; it does not own another downloader or cache.
 - [x] Imported source masks remain byte-for-byte untouched while their app-owned revisions can be edited.
 - [x] Evaluation uses one completed revision and marks older metric digests stale.
 - [x] PNG, LabelMe and COCO round trips preserve the binary evaluation mask.
+- [x] MobileSAM suggestions stay temporary until accepted and reuse the one resident/device lock.
 - [ ] A keyboard-only annotation pass can move through a queue, edit, save and complete an image.
 
 ---

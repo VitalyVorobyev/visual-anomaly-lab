@@ -1228,6 +1228,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/segment-assist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether prompt-guided contour assistance is ready */
+        get: operations["segment_assist_capability_api_segment_assist_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/segment-assist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Suggest source-coordinate masks from point and box prompts */
+        post: operations["segment_assist_api_images__image_id__segment_assist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/splits": {
         parameters: {
             query?: never;
@@ -1476,6 +1510,30 @@ export interface components {
             total_bytes: number;
             /** Groups */
             groups: components["schemas"]["ArtifactGroup"][];
+        };
+        /** AssistBox */
+        AssistBox: {
+            /** X0 */
+            x0: number;
+            /** Y0 */
+            y0: number;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
+        };
+        /** AssistPoint */
+        AssistPoint: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /**
+             * Kind
+             * @default positive
+             * @enum {string}
+             */
+            kind: "positive" | "negative";
         };
         /**
          * Availability
@@ -2437,7 +2495,7 @@ export interface components {
              * Format: date-time
              */
             started_at: string;
-            /** @description The resident inference worker, when one is live. */
+            /** @description The resident compute worker, when one is live. */
             resident?: components["schemas"]["ResidentHealth"] | null;
         };
         /**
@@ -3187,14 +3245,24 @@ export interface components {
          * ResidentHealth
          * @description The one long-lived compute process nothing else would show (ADR-0026).
          *
-         *     A resident inference worker holds a loaded checkpoint — and on this machine, the MPS
-         *     device — between browse requests. Without this block the only evidence it exists is a
-         *     second Python process in Activity Monitor, which is the wrong place to discover that
-         *     something is holding your accelerator.
+         *     The resident holds either an experiment checkpoint or a promptable segmentation model
+         *     — and on this machine, the MPS device — between interactive requests. Without this
+         *     block the only evidence it exists is a second Python process in Activity Monitor,
+         *     which is the wrong place to discover that something is holding your accelerator.
          */
         ResidentHealth: {
+            /**
+             * Kind
+             * @description The resident target family.
+             */
+            kind: string;
+            /**
+             * Key
+             * @description The experiment id or model-asset key.
+             */
+            key: string;
             /** Experiment Id */
-            experiment_id: number;
+            experiment_id?: number | null;
             /**
              * Generation
              * @description Checkpoint fingerprint; a retrain changes it.
@@ -3330,6 +3398,80 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             };
+        };
+        /** SegmentAssistCapability */
+        SegmentAssistCapability: {
+            /**
+             * Provider
+             * @default mobile_sam
+             * @constant
+             */
+            provider: "mobile_sam";
+            /**
+             * Title
+             * @default MobileSAM · TinyViT
+             */
+            title: string;
+            /**
+             * Asset Key
+             * @default mobile-sam-vit-t
+             */
+            asset_key: string;
+            /**
+             * Asset Status
+             * @enum {string}
+             */
+            asset_status: "missing" | "invalid" | "ready";
+            /** Runtime Available */
+            runtime_available: boolean;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /** SegmentAssistRequest */
+        SegmentAssistRequest: {
+            /** Points */
+            points?: components["schemas"]["AssistPoint"][];
+            box?: components["schemas"]["AssistBox"] | null;
+            /** Label Key */
+            label_key: string;
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+        };
+        /** SegmentAssistResponse */
+        SegmentAssistResponse: {
+            /** Image Id */
+            image_id: number;
+            /**
+             * Device
+             * @enum {string}
+             */
+            device: "mps" | "cpu";
+            /** Warm */
+            warm: boolean;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Candidates */
+            candidates: components["schemas"]["SegmentCandidate"][];
+        };
+        /** SegmentCandidate */
+        SegmentCandidate: {
+            shape: components["schemas"]["BitmapShape-Output"];
+            /**
+             * Score
+             * @description MobileSAM's predicted mask quality; not a probability.
+             */
+            score: number;
+            /**
+             * Area
+             * @description Candidate area in source-image pixels.
+             */
+            area: number;
         };
         /** SplitDetail */
         SplitDetail: {
@@ -5713,6 +5855,61 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    segment_assist_capability_api_segment_assist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentAssistCapability"];
+                };
+            };
+        };
+    };
+    segment_assist_api_images__image_id__segment_assist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SegmentAssistRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentAssistResponse"];
                 };
             };
             /** @description Validation Error */

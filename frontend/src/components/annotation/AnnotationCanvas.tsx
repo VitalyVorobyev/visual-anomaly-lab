@@ -15,11 +15,13 @@ import type {
   AnnotationDocument,
   AnnotationLabel,
   AnnotationPoint,
+  AssistBox,
+  AssistPoint,
   BitmapShape,
 } from "../../api/client";
 import { imageUrl, maskUrl } from "../../api/imageUrl";
 
-export type EditorTool = "select" | "polygon" | "brush" | "eraser";
+export type EditorTool = "select" | "polygon" | "brush" | "eraser" | "assist";
 
 export interface CanvasView {
   zoom: number;
@@ -42,12 +44,18 @@ interface Props {
   tool: EditorTool;
   pendingPoints: AnnotationPoint[];
   brushRadius: number;
+  assistMode: "point" | "box";
+  assistPoints: AssistPoint[];
+  assistBox: AssistBox | null;
+  assistShape: BitmapShape | null;
   view: CanvasView;
   onView: (view: CanvasView) => void;
   onSelect: (shapeId: string | null) => void;
   onPoint: (point: AnnotationPoint) => void;
   onMovePoint: (shapeId: string, pointIndex: number, point: AnnotationPoint) => void;
   onBrush: (points: AnnotationPoint[]) => void;
+  onAssistPoint: (point: AssistPoint) => void;
+  onAssistBox: (box: AssistBox | null) => void;
 }
 
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(function AnnotationCanvas({
@@ -58,12 +66,18 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   tool,
   pendingPoints,
   brushRadius,
+  assistMode,
+  assistPoints,
+  assistBox,
+  assistShape,
   view,
   onView,
   onSelect,
   onPoint,
   onMovePoint,
   onBrush,
+  onAssistPoint,
+  onAssistBox,
 }, forwardedRef) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
@@ -78,6 +92,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   } | null>(null);
   const previousView = useRef<CanvasView | null>(null);
   const [brushPoints, setBrushPoints] = useState<AnnotationPoint[]>([]);
+  const [boxStart, setBoxStart] = useState<AnnotationPoint | null>(null);
   const source = useHtmlImage(imageUrl(imageId, "full"));
   const baseMask = useHtmlImage(
     document.base === "source_mask" ? maskUrl(imageId) : undefined,
@@ -176,6 +191,18 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       });
       return;
     }
+    if (tool === "assist") {
+      const point = sourcePoint();
+      if (!point) return;
+      if (assistMode === "point") {
+        const negative = native instanceof MouseEvent && native.shiftKey;
+        onAssistPoint({ ...point, kind: negative ? "negative" : "positive" });
+      } else {
+        setBoxStart(point);
+        onAssistBox({ x0: point.x, y0: point.y, x1: point.x, y1: point.y });
+      }
+      return;
+    }
     if (tool === "brush" || tool === "eraser") {
       const point = sourcePoint();
       if (point) setBrushPoints([point]);
@@ -213,11 +240,24 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     setBrushPoints((points) => [...points, point]);
   };
 
+  const trackAssistBox = () => {
+    if (tool !== "assist" || assistMode !== "box" || !boxStart) return;
+    const point = sourcePoint();
+    if (!point) return;
+    onAssistBox({
+      x0: Math.min(boxStart.x, point.x),
+      y0: Math.min(boxStart.y, point.y),
+      x1: Math.max(boxStart.x, point.x),
+      y1: Math.max(boxStart.y, point.y),
+    });
+  };
+
   const finishGesture = () => {
     if (panning?.clearOnClick && !panning.moved) onSelect(null);
     setPanning(null);
     if (brushPoints.length > 0) onBrush(brushPoints);
     setBrushPoints([]);
+    setBoxStart(null);
   };
 
   const onWheel = (event: KonvaEventObject<WheelEvent>) => {
@@ -252,10 +292,12 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         onMouseMove={() => {
           onStageMove();
           trackBrush();
+          trackAssistBox();
         }}
         onTouchMove={() => {
           onStageMove();
           trackBrush();
+          trackAssistBox();
         }}
         onMouseUp={finishGesture}
         onMouseLeave={finishGesture}
@@ -268,7 +310,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         className={
           panning
             ? "cursor-grabbing"
-            : tool === "polygon" || tool === "brush" || tool === "eraser"
+            : tool === "polygon" || tool === "brush" || tool === "eraser" || tool === "assist"
               ? "cursor-crosshair"
               : "cursor-grab"
         }
@@ -309,6 +351,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     shape={shape}
                     selected={shape.id === selectedId}
                     onSelect={() => onSelect(shape.id)}
+                    selectable={tool === "select"}
                   />
                 );
               }
@@ -323,6 +366,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     stroke={shape.operation === "add" ? color : "#f87171"}
                     strokeWidth={(selected ? 2.5 : 1.5) / scale}
                     hitStrokeWidth={10 / scale}
+                    listening={tool === "select"}
                     onMouseDown={(event) => {
                       if (event.evt.button === 2) return;
                       event.cancelBubble = true;
@@ -391,6 +435,55 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                 listening={false}
               />
             )}
+            {assistShape && (
+              <BitmapLayer
+                shape={assistShape}
+                selected
+                selectable={false}
+                suggestion
+                onSelect={() => undefined}
+              />
+            )}
+            {assistBox && (
+              <Rect
+                x={assistBox.x0}
+                y={assistBox.y0}
+                width={assistBox.x1 - assistBox.x0}
+                height={assistBox.y1 - assistBox.y0}
+                stroke="#3bc9db"
+                strokeWidth={2 / scale}
+                dash={[7 / scale, 4 / scale]}
+                listening={false}
+              />
+            )}
+            {assistPoints.map((point, index) => (
+              <Group key={`assist-point-${index}`} listening={false}>
+                <Circle
+                  x={point.x}
+                  y={point.y}
+                  radius={6 / scale}
+                  fill={point.kind === "positive" ? "#22c55e" : "#ef4444"}
+                  stroke="#ffffff"
+                  strokeWidth={1.5 / scale}
+                />
+                <Line
+                  points={[-3 / scale, 0, 3 / scale, 0]}
+                  x={point.x}
+                  y={point.y}
+                  stroke="#ffffff"
+                  strokeWidth={1.5 / scale}
+                />
+                {point.kind === "positive" && (
+                  <Line
+                    points={[0, -3 / scale, 0, 3 / scale]}
+                    x={point.x}
+                    y={point.y}
+                    stroke="#ffffff"
+                    strokeWidth={1.5 / scale}
+                  />
+                )}
+              </Group>
+            ))}
             <Rect
               width={document.image_width}
               height={document.image_height}
@@ -413,10 +506,14 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
 function BitmapLayer({
   shape,
   selected,
+  selectable,
+  suggestion = false,
   onSelect,
 }: {
   shape: BitmapShape;
   selected: boolean;
+  selectable: boolean;
+  suggestion?: boolean;
   onSelect: () => void;
 }) {
   const image = useHtmlImage(`data:image/png;base64,${shape.png_base64}`);
@@ -428,10 +525,11 @@ function BitmapLayer({
       clipWidth={shape.width}
       clipHeight={shape.height}
       onMouseDown={(event) => {
-        if (event.evt.button === 2) return;
+        if (!selectable || event.evt.button === 2) return;
         event.cancelBubble = true;
         onSelect();
       }}
+      listening={selectable}
     >
       <KonvaImage
         image={image}
@@ -439,7 +537,7 @@ function BitmapLayer({
         y={shape.y}
         width={shape.width}
         height={shape.height}
-        opacity={shape.operation === "add" ? 0.34 : 0.2}
+        opacity={suggestion ? 0.5 : shape.operation === "add" ? 0.34 : 0.2}
       />
       {selected && (
         <Rect
@@ -447,7 +545,7 @@ function BitmapLayer({
           y={shape.y}
           width={shape.width}
           height={shape.height}
-          stroke="#3bc9db"
+          stroke={suggestion ? "#fbbf24" : "#3bc9db"}
           strokeWidth={1.5}
         />
       )}
