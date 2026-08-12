@@ -70,7 +70,7 @@ the detail is in the git history and the ADRs.
       completed revisions, source-mask provenance, derived-mask SHA256 and metric ground-truth digest.
 - [x] **Implement draft/revision APIs with optimistic concurrency** (M): `ETag` / `If-Match`, explicit
       completion, stale-metric signalling and only synthetic PNG fixtures.
-- [ ] **Implement PNG, LabelMe and COCO interchange** (M): polygons, RLE and bitmap layers round-trip
+- [x] **Implement PNG, LabelMe and COCO interchange** (M): polygons, RLE and bitmap layers round-trip
       to the same binary evaluation mask; original source files never change.
 - [ ] **Build the manual editor** (L, split before starting): controlled Konva scene, polygon/vertex,
       brush/eraser, add/subtract, pan/zoom, undo/redo, autosave, conflict and keyboard queue.

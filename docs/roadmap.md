@@ -497,7 +497,7 @@ versioned defect annotation the ground truth used for future evaluation.
 
 - [x] Imported source masks remain byte-for-byte untouched while their app-owned revisions can be edited.
 - [x] Evaluation uses one completed revision and marks older metric digests stale.
-- [ ] PNG, LabelMe and COCO round trips preserve the binary evaluation mask.
+- [x] PNG, LabelMe and COCO round trips preserve the binary evaluation mask.
 - [ ] A keyboard-only annotation pass can move through a queue, edit, save and complete an image.
 
 ---

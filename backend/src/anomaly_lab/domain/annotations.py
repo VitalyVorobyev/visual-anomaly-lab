@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -27,6 +27,25 @@ class PolygonShape(BaseModel):
     points: list[AnnotationPoint] = Field(min_length=3)
 
 
+class BitmapShape(BaseModel):
+    """A cropped binary PNG layer positioned in the immutable source frame."""
+
+    model_config = API_MODEL_CONFIG
+
+    id: str = Field(min_length=1, max_length=128)
+    label_key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    kind: Literal["bitmap"] = "bitmap"
+    operation: Literal["add", "subtract"] = "add"
+    x: int = Field(ge=0)
+    y: int = Field(ge=0)
+    width: int = Field(gt=0)
+    height: int = Field(gt=0)
+    png_base64: str = Field(min_length=1, max_length=90_000_000)
+
+
+AnnotationShape = Annotated[PolygonShape | BitmapShape, Field(discriminator="kind")]
+
+
 class AnnotationDocument(BaseModel):
     """Editable vector truth in source-image pixel coordinates."""
 
@@ -36,7 +55,7 @@ class AnnotationDocument(BaseModel):
     image_width: int = Field(gt=0)
     image_height: int = Field(gt=0)
     base: Literal["empty", "source_mask"] = "empty"
-    shapes: list[PolygonShape] = Field(default_factory=list)
+    shapes: list[AnnotationShape] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _valid_source_frame(self) -> AnnotationDocument:
@@ -44,9 +63,15 @@ class AnnotationDocument(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("shape ids must be unique")
         for shape in self.shapes:
-            for point in shape.points:
-                if not (0 <= point.x <= self.image_width and 0 <= point.y <= self.image_height):
-                    raise ValueError("every point must lie inside the source-image frame")
+            if isinstance(shape, PolygonShape):
+                for point in shape.points:
+                    if not (0 <= point.x <= self.image_width and 0 <= point.y <= self.image_height):
+                        raise ValueError("every point must lie inside the source-image frame")
+            elif (
+                shape.x + shape.width > self.image_width
+                or shape.y + shape.height > self.image_height
+            ):
+                raise ValueError("every bitmap must lie inside the source-image frame")
         return self
 
     def canonical_json(self) -> str:

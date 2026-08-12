@@ -94,6 +94,11 @@ token exposed as an ETag.
 appends this row. A database trigger makes rows immutable; deletion remains available only as part of the
 dataset lifecycle. See [annotation truth](annotations.md).
 
+An annotation document's discriminated shape list currently contains `PolygonShape` and `BitmapShape`.
+Both use stable ids, taxonomy keys and ordered `add` / `subtract` composition. Bitmap data is a cropped binary
+PNG positioned in source pixels; this is the lossless bridge for imported masks, LabelMe mask shapes, COCO
+RLE and the editor's future brush strokes.
+
 **`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `params`, `created_at`.
 A named partition of a dataset's samples. `strategy`, `seed` and `params` record how it was produced so it
 can be regenerated exactly — a seed alone reproduces nothing without the fractions it was drawn under. Splits are immutable once created; changing a split means creating a new one.

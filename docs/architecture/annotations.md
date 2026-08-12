@@ -10,8 +10,9 @@ truth.
 An annotation document is JSON schema version 1 in **source-image pixel coordinates**. It pins
 `image_width`, `image_height`, a base (`empty` or `source_mask`), and an ordered list of shapes. The first
 shape is a polygon with a stable id, dataset taxonomy key, `add` / `subtract` operation and three or more
-points. Duplicate shape ids, points outside the source frame, unknown label keys, dimension changes and
-base-layer changes are rejected before persistence.
+points. A bitmap shape is a cropped binary PNG with the same identity, taxonomy and operation fields plus
+its integer source-frame rectangle. Duplicate shape ids, geometry outside the source frame, malformed bitmap
+bytes, unknown label keys, dimension changes and base-layer changes are rejected before persistence.
 
 The source frame is load-bearing. A future crop/localisation profile may change what a method sees, but an
 annotation never moves into model-input or canvas coordinates. The UI transform and the spatial input
@@ -30,13 +31,30 @@ but this contract also handles a second window and an autosave racing a manual s
 
 ## Completion and storage
 
-`POST .../complete` also requires `If-Match`. It renders the base and ordered polygon operations to a binary
+`POST .../complete` also requires `If-Match`. It renders the base and ordered polygon/bitmap operations to a binary
 PNG, atomically writes `data/annotations/image-<id>/revision-<n>.png`, hashes the canonical document and mask,
 inserts an append-only revision, then removes the draft. A database trigger rejects `UPDATE` on revisions.
 The mask endpoint verifies both its expected app-owned path and digest before serving immutable bytes.
 
 Dataset deletion includes annotation directories and rows in its previewed app-owned cascade. The imported
 image and mask trees are outside that inventory and survive unchanged.
+
+## Interchange
+
+The current completed truth—not a mutable draft—exports losslessly in three forms:
+
+- binary PNG is a source-sized 0/255 mask;
+- LabelMe 7 JSON uses its native `shape_type: "mask"`: a two-point inclusive bounding box plus a cropped,
+  base64-encoded PNG. Empty truth has no shapes;
+- COCO JSON is a one-image dataset whose binary defect region is an uncompressed, column-major RLE
+  annotation. Empty truth has no annotations.
+
+Draft import is `ETag` / `If-Match` guarded like every other edit. PNG and native raster shapes become bitmap
+layers; LabelMe and COCO polygons remain editable polygon layers. COCO compressed and uncompressed RLE are
+both accepted. Labels resolve by stable taxonomy key or display name, and unknown classes or mismatched image
+dimensions are refused. Import replaces the editable operations while preserving immutable source-mask
+provenance: a source-backed document first subtracts the entire source base and then applies the imported
+layers. Completing the result therefore creates another app-owned revision and never rewrites the source.
 
 ## Current boundary
 
@@ -47,8 +65,8 @@ content digest of the subset's sample labels and resolved mask identities in eac
 or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
 scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
 
-PNG / LabelMe / COCO interchange, brush layers and the full-height editor extend this contract rather than
-introducing another annotation store.
+Brush layers and the full-height editor extend this contract rather than introducing another annotation
+store.
 
 ---
 
