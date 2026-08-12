@@ -286,6 +286,7 @@ class MetricSet(BaseModel):
     experiment_id: int
     subset: Subset
     metrics: dict[str, Any] = Field(default_factory=dict)
+    ground_truth_digest: str | None = None
     computed_at: str
 
     @field_validator("metrics", mode="before")

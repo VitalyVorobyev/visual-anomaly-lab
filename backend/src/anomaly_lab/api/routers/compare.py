@@ -47,6 +47,7 @@ from anomaly_lab.eval.compare import (
     agreement,
     resolve_threshold,
 )
+from anomaly_lab.eval.ground_truth import current_digest
 from anomaly_lab.eval.threshold import ConfusionCounts, report
 from anomaly_lab.media.overlay import read_display_range
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -79,6 +80,7 @@ class ComparedRun(BaseModel):
     created_at: str
     scored: bool = Field(description="Whether this run has results for the chosen subset.")
     metrics: dict[str, Any] = Field(default_factory=dict)
+    ground_truth_stale: bool = False
     map_range: MapScale | None = Field(
         default=None,
         description=(
@@ -207,6 +209,12 @@ def compare_experiments(
             )
         ]
         warnings = _warnings(conn, experiments, samples_by_run, chosen)
+        stale_names = [run.name for run in runs if run.ground_truth_stale]
+        if stale_names:
+            warnings.append(
+                f"Ground truth changed after metrics were computed for {', '.join(stale_names)}. "
+                "Recompute those runs before comparing their stored metrics or curves."
+            )
 
         dataset = datasets_repo.get_dataset(conn, first.dataset_id)
         split = splits_repo.get_split(conn, first.split_id)
@@ -309,7 +317,13 @@ def _metrics_for(
     for found in results_repo.list_metric_sets(conn, experiment_id):
         if found.subset is subset:
             return MetricSummary(
-                subset=found.subset, metrics=found.metrics, computed_at=found.computed_at
+                subset=found.subset,
+                metrics=found.metrics,
+                computed_at=found.computed_at,
+                ground_truth_digest=found.ground_truth_digest,
+                ground_truth_stale=(
+                    found.ground_truth_digest != current_digest(conn, experiment_id, found.subset)
+                ),
             )
     return None
 
@@ -329,6 +343,7 @@ def _compared_run(
         created_at=experiment.created_at,
         scored=bool(samples),
         metrics=metrics.metrics if metrics else {},
+        ground_truth_stale=metrics.ground_truth_stale if metrics else False,
         map_range=_map_range(Path(experiment.artifact_dir)),
         threshold=operating.value,
         threshold_rationale=operating.rationale,

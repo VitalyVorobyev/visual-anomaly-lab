@@ -21,7 +21,7 @@ import { LineChart } from "../../components/charts/LineChart";
 import type { Series } from "../../components/charts/LineChart";
 import { seriesColour } from "../../components/charts/Frame";
 import type { Scale } from "../../components/charts/scale";
-import { Empty, Panel, SkeletonRows } from "../../components/ui";
+import { Callout, Empty, Panel, SkeletonRows } from "../../components/ui";
 import { useCurveSets } from "../../hooks/useComparison";
 
 export function CompareCurves({
@@ -31,9 +31,11 @@ export function CompareCurves({
   runs: ComparedRun[];
   subset: Subset | undefined;
 }) {
+  const stale = runs.some((run) => run.ground_truth_stale);
   const curves = useCurveSets(
     runs.map((run) => run.id),
     subset,
+    !stale,
   );
   const pending = curves.some((query) => query.isPending);
 
@@ -48,13 +50,19 @@ export function CompareCurves({
 
   return (
     <Panel title={`Curves — ${subset ?? "every scored subset"}`}>
-      {pending && <SkeletonRows rows={3} />}
-      {!pending && roc.length === 0 && pr.length === 0 && (
+      {stale && (
+        <Callout tone="warning" title="Recompute before comparing curves">
+          At least one run was measured against older labels or masks. The curves stay
+          hidden until every run is reevaluated against the same current ground truth.
+        </Callout>
+      )}
+      {!stale && pending && <SkeletonRows rows={3} />}
+      {!stale && !pending && roc.length === 0 && pr.length === 0 && (
         <Empty>
           None of these runs has both classes in this subset, so there is no curve to draw.
         </Empty>
       )}
-      {!pending && (roc.length > 0 || pr.length > 0) && (
+      {!stale && !pending && (roc.length > 0 || pr.length > 0) && (
         <div className="grid gap-8 lg:grid-cols-2">
           {roc.length > 0 && (
             <LineChart
@@ -79,10 +87,10 @@ export function CompareCurves({
           )}
         </div>
       )}
-      <p className="mt-4 text-xs text-fg-muted">
+      {!stale && <p className="mt-4 text-xs text-fg-muted">
         The areas under these curves are the ROC-AUC and AP in the table above, computed by
         the same implementation — a curve here cannot disagree with a number there.
-      </p>
+      </p>}
     </Panel>
   );
 }

@@ -63,7 +63,7 @@ export function useComparison({
  * single-run Benchmark tab uses, so a run already looked at there is drawn without a
  * request.
  */
-export function useCurveSets(ids: number[], subset: Subset | undefined) {
+export function useCurveSets(ids: number[], subset: Subset | undefined, enabled = true) {
   return useQueries({
     queries: ids.map((id) => ({
       queryKey: queryKeys.curves(id, subset),
@@ -77,6 +77,7 @@ export function useCurveSets(ids: number[], subset: Subset | undefined) {
           }),
           "the curves",
         ),
+      enabled,
     })),
   });
 }

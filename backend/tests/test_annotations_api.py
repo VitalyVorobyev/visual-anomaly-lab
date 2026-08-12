@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -161,6 +162,85 @@ def test_source_mask_is_pinned_but_never_rewritten(
     )
     assert report["masks_digest_checked"] == 1
     assert report["masks_modified_count"] == 0
+
+
+def test_completed_revision_becomes_the_overlay_and_marks_metrics_stale(
+    client: TestClient,
+    scored: dict[str, Any],
+    seeded: Fixture,
+) -> None:
+    image_id = seeded.defect_image_ids[0]
+    before_overlay = client.get(f"/api/images/{image_id}/mask")
+    before_detail = client.get(f"/api/experiments/{scored['id']}").json()
+    before_metric = before_detail["metrics"][0]
+    assert before_metric["ground_truth_stale"] is False
+
+    opened, etag = _open(client, image_id)
+    document = opened["document"]
+    assert isinstance(document, dict)
+    width = int(document["image_width"])
+    height = int(document["image_height"])
+    edited = {
+        **document,
+        "shapes": [
+            {
+                "id": "remove-source-region",
+                "label_key": "defect",
+                "kind": "polygon",
+                "operation": "subtract",
+                "points": [
+                    {"x": 0, "y": 0},
+                    {"x": width, "y": 0},
+                    {"x": width, "y": height},
+                    {"x": 0, "y": height},
+                ],
+            }
+        ],
+    }
+    saved = client.put(
+        f"/api/images/{image_id}/annotations/draft",
+        json=edited,
+        headers={"If-Match": etag},
+    )
+    assert saved.status_code == 200, saved.text
+    completed = client.post(
+        f"/api/images/{image_id}/annotations/complete",
+        headers={"If-Match": saved.headers["etag"]},
+    )
+    assert completed.status_code == 200, completed.text
+
+    after_overlay = client.get(f"/api/images/{image_id}/mask")
+    assert after_overlay.status_code == 200
+    assert after_overlay.headers["etag"] != before_overlay.headers["etag"]
+    assert after_overlay.content != before_overlay.content
+
+    stale = client.get(f"/api/experiments/{scored['id']}").json()["metrics"][0]
+    assert stale["ground_truth_stale"] is True
+    assert stale["ground_truth_digest"] == before_metric["ground_truth_digest"]
+
+    reevaluated = client.post(f"/api/experiments/{scored['id']}/reevaluate")
+    assert reevaluated.status_code == 200, reevaluated.text
+    fresh = reevaluated.json()[0]
+    assert fresh["ground_truth_stale"] is False
+    assert fresh["ground_truth_digest"] != before_metric["ground_truth_digest"]
+
+
+def test_reevaluation_refuses_a_changed_pinned_source_mask(
+    client: TestClient,
+    settings: Settings,
+    scored: dict[str, Any],
+    seeded: Fixture,
+) -> None:
+    image_id = seeded.defect_image_ids[0]
+    with connection(settings.db_path) as conn:
+        source = masks_repo.get_mask_for_image(conn, image_id)
+    assert source is not None
+    source_path = Path(source.path)
+    Image.new("L", (16, 16), 255).save(source_path)
+
+    response = client.post(f"/api/experiments/{scored['id']}/reevaluate")
+    assert response.status_code == 409
+    assert "source ground truth" in response.json()["detail"]
 
 
 def test_completed_revisions_are_immutable_in_sqlite(

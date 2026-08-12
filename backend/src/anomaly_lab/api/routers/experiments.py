@@ -27,6 +27,7 @@ from pydantic import BaseModel, Field
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -38,8 +39,10 @@ from anomaly_lab.domain.entities import (
     ExperimentStatus,
     JobKind,
     Label,
+    MetricSet,
     Subset,
 )
+from anomaly_lab.eval.ground_truth import current_digest
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
 from anomaly_lab.eval.threshold import (
@@ -131,6 +134,8 @@ class MetricSummary(BaseModel):
     subset: Subset
     metrics: dict[str, Any] = Field(default_factory=dict)
     computed_at: str
+    ground_truth_digest: str | None = None
+    ground_truth_stale: bool = False
 
 
 class ExperimentSummary(BaseModel):
@@ -348,7 +353,7 @@ class ImageScore(BaseModel):
     """This image's own extremes. `None` when the map file could not be read."""
 
 
-def _headline(metric_sets: list[MetricSummary]) -> float | None:
+def _headline(metric_sets: list[MetricSummary] | list[MetricSet]) -> float | None:
     """Test if there is one, otherwise whatever was scored — never a blend of subsets."""
     by_subset = {found.subset: found.metrics for found in metric_sets}
     for subset in (Subset.TEST, Subset.VAL, Subset.TRAIN):
@@ -359,10 +364,19 @@ def _headline(metric_sets: list[MetricSummary]) -> float | None:
 
 
 def _metric_summaries(conn: sqlite3.Connection, experiment_id: int) -> list[MetricSummary]:
-    return [
-        MetricSummary(subset=found.subset, metrics=found.metrics, computed_at=found.computed_at)
-        for found in results_repo.list_metric_sets(conn, experiment_id)
-    ]
+    summaries: list[MetricSummary] = []
+    for found in results_repo.list_metric_sets(conn, experiment_id):
+        current = current_digest(conn, experiment_id, found.subset)
+        summaries.append(
+            MetricSummary(
+                subset=found.subset,
+                metrics=found.metrics,
+                computed_at=found.computed_at,
+                ground_truth_digest=found.ground_truth_digest,
+                ground_truth_stale=found.ground_truth_digest != current,
+            )
+        )
+    return summaries
 
 
 def _summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSummary:
@@ -375,7 +389,7 @@ def _summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumm
         status=experiment.status,
         created_at=experiment.created_at,
         notes=experiment.notes,
-        headline_roc_auc=_headline(_metric_summaries(conn, experiment.id)),
+        headline_roc_auc=_headline(results_repo.list_metric_sets(conn, experiment.id)),
     )
 
 
@@ -787,7 +801,10 @@ def reevaluate(request: Request, experiment_id: int) -> list[MetricSummary]:
     """
     experiment, settings = _load(request, experiment_id)
     with connection(settings.db_path) as conn:
-        evaluate_and_store(conn, experiment)
+        try:
+            evaluate_and_store(conn, experiment)
+        except annotations_repo.GroundTruthDriftError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         return _metric_summaries(conn, experiment.id)
 
 
@@ -909,7 +926,9 @@ def get_sample_previews(
     experiment, settings = _load(request, experiment_id)
     with connection(settings.db_path) as conn:
         scored = results_repo.list_scored_images(conn, experiment.id, subset=subset)
-        masks = results_repo.masks_for_images(conn, [image.image_id for image in scored])
+        masks = annotations_repo.resolve_ground_truth_masks(
+            conn, [image.image_id for image in scored]
+        )
 
     seen: dict[int, SamplePreview] = {}
     for image in scored:
@@ -1024,7 +1043,9 @@ def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> l
             for image in results_repo.list_scored_images(conn, experiment.id)
             if image.sample_id == sample_id
         ]
-        masks = results_repo.masks_for_images(conn, [image.image_id for image in scored])
+        masks = annotations_repo.resolve_ground_truth_masks(
+            conn, [image.image_id for image in scored]
+        )
 
     return [
         ImageScore(

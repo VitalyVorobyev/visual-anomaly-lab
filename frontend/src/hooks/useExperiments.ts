@@ -287,7 +287,11 @@ export function useDiagnostics(experimentId: number | undefined) {
  * Recomputed per request from the stored scores, like the threshold report — nothing here
  * is persisted, so a curve can never disagree with the metric it is drawn beside.
  */
-export function useCurves(experimentId: number | undefined, subset: Subset | undefined) {
+export function useCurves(
+  experimentId: number | undefined,
+  subset: Subset | undefined,
+  enabled = true,
+) {
   return useQuery<CurveSet>({
     queryKey: queryKeys.curves(experimentId ?? -1, subset),
     queryFn: async () =>
@@ -300,7 +304,7 @@ export function useCurves(experimentId: number | undefined, subset: Subset | und
         }),
         "the curves",
       ),
-    enabled: experimentId !== undefined,
+    enabled: experimentId !== undefined && enabled,
   });
 }
 

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Literal
 
 from anomaly_lab.domain.annotations import (
     AnnotationDocument,
@@ -10,6 +13,25 @@ from anomaly_lab.domain.annotations import (
     AnnotationLabel,
     AnnotationRevision,
 )
+from anomaly_lab.media.decode import sha256_of
+
+
+class GroundTruthDriftError(RuntimeError):
+    """Pinned truth bytes no longer match their recorded identity."""
+
+
+@dataclass(frozen=True)
+class GroundTruthMask:
+    image_id: int
+    record_id: int
+    path: str
+    sha256: str | None
+    kind: Literal["revision", "source"]
+
+    @property
+    def identity(self) -> str:
+        digest = self.sha256 or "unhashed"
+        return f"{self.kind}:{self.record_id}:{digest}"
 
 
 def _document(value: str) -> AnnotationDocument:
@@ -218,6 +240,108 @@ def list_revisions(conn: sqlite3.Connection, image_id: int) -> list[AnnotationRe
 def get_revision(conn: sqlite3.Connection, revision_id: int) -> AnnotationRevision | None:
     row = conn.execute("SELECT * FROM annotation_revision WHERE id = ?", (revision_id,)).fetchone()
     return _revision(row) if row is not None else None
+
+
+def resolve_ground_truth_masks(
+    conn: sqlite3.Connection,
+    image_ids: list[int],
+    *,
+    verify_bytes: bool = False,
+) -> dict[int, GroundTruthMask]:
+    """Resolve newest completed revision, then imported source mask, per image.
+
+    `verify_bytes` is for consumers that will use the pixels. Metadata-only reads use
+    recorded digests so experiment detail stays O(rows), not O(source bytes).
+    """
+    found: dict[int, GroundTruthMask] = {}
+    for start in range(0, len(image_ids), 900):
+        chunk = image_ids[start : start + 900]
+        if not chunk:
+            continue
+        placeholders = ",".join("?" * len(chunk))
+        revisions = conn.execute(
+            f"""
+            SELECT id, image_id, mask_path, mask_sha256
+              FROM annotation_revision
+             WHERE image_id IN ({placeholders})
+             ORDER BY image_id, revision_no DESC
+            """,
+            chunk,
+        ).fetchall()
+        for row in revisions:
+            image_id = int(row["image_id"])
+            found.setdefault(
+                image_id,
+                GroundTruthMask(
+                    image_id=image_id,
+                    record_id=int(row["id"]),
+                    path=str(row["mask_path"]),
+                    sha256=str(row["mask_sha256"]),
+                    kind="revision",
+                ),
+            )
+
+        unresolved = [image_id for image_id in chunk if image_id not in found]
+        if unresolved:
+            source_placeholders = ",".join("?" * len(unresolved))
+            sources = conn.execute(
+                f"""
+                SELECT id, image_id, path, sha256
+                  FROM mask
+                 WHERE kind = 'ground_truth' AND image_id IN ({source_placeholders})
+                 ORDER BY image_id, id
+                """,
+                unresolved,
+            ).fetchall()
+            for row in sources:
+                image_id = int(row["image_id"])
+                found.setdefault(
+                    image_id,
+                    GroundTruthMask(
+                        image_id=image_id,
+                        record_id=int(row["id"]),
+                        path=str(row["path"]),
+                        sha256=str(row["sha256"]) if row["sha256"] is not None else None,
+                        kind="source",
+                    ),
+                )
+
+    if not verify_bytes:
+        return found
+
+    verified: dict[int, GroundTruthMask] = {}
+    for image_id, truth in found.items():
+        path = Path(truth.path)
+        if not path.is_file():
+            if truth.kind == "revision":
+                raise GroundTruthDriftError(
+                    f"completed annotation ground truth for image {image_id} is unavailable"
+                )
+            verified[image_id] = truth
+            continue
+        try:
+            actual = sha256_of(path)
+        except OSError as exc:
+            if truth.kind == "revision":
+                raise GroundTruthDriftError(
+                    f"completed annotation ground truth for image {image_id} cannot be read"
+                ) from exc
+            verified[image_id] = truth
+            continue
+        if truth.sha256 is not None and actual != truth.sha256:
+            raise GroundTruthDriftError(
+                f"{truth.kind} ground truth for image {image_id} changed after it was pinned"
+            )
+        if truth.kind == "source" and truth.sha256 is None:
+            conn.execute("UPDATE mask SET sha256 = ? WHERE id = ?", (actual, truth.record_id))
+        verified[image_id] = GroundTruthMask(
+            image_id=truth.image_id,
+            record_id=truth.record_id,
+            path=truth.path,
+            sha256=actual,
+            kind=truth.kind,
+        )
+    return verified
 
 
 def delete_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> None:

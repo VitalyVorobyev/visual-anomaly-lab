@@ -5,6 +5,7 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 - `ImageResult.score` rows for an experiment,
 - `Sample.label`,
 - `SplitAssignment.subset`.
+- the resolved ground-truth mask for each image, when pixel metrics are enabled.
 
 It never imports a model module and never re-runs inference. Every method is therefore evaluated by exactly
 the same code, which is the precondition for the comparison view to mean anything.
@@ -30,7 +31,21 @@ alongside it as a diagnostic (it reveals when a model scores individual views we
 that signal).
 
 Persisted in `MetricSet`: **threshold-independent metrics only** — sample-level and image-level ROC-AUC,
-average precision, per-subset sample counts, and timing summaries.
+average precision, per-subset sample counts, timing summaries, and the digest of the labels and masks those
+numbers measured.
+
+### Ground-truth snapshot and freshness
+
+Metrics, image overlays and mask-presence reads share one resolver. For an image it selects the newest
+completed app-owned annotation revision, otherwise the imported source mask, otherwise no mask. Evaluation
+hash-verifies the selected bytes before using them. A changed pinned file is a named failure, not a new truth
+silently measured under the old experiment.
+
+Every subset's `ground_truth_digest` covers its current sample labels and each resolved mask's kind, row id
+and SHA256. Experiment detail recomputes that metadata digest without opening image files. A mismatch—or a
+legacy `NULL` digest—marks the metric set stale. The UI keeps old values visible with a warning, hides charts
+that would otherwise combine current labels with old areas, and offers reevaluation from stored scores. The
+comparison view carries the same signal per run and will not draw mixed-snapshot curves.
 
 **Threshold-dependent outputs are computed on demand** from the persisted scores: confusion matrix,
 precision / recall / F1, and the FP/FN sample lists. `GET /api/eval/{experiment_id}/threshold?value=…` returns
@@ -76,10 +91,10 @@ set, and a comparison against a paper's figure inherits it.
 **Everything skipped is reported** in the metric set and stated in words on the results screen. A pixel metric
 computed over half the defects is not the metric it claims to be, and a reader must not have to dig for that.
 
-Two known weaknesses: migration 005 added `mask.sha256`, but old source masks remain explicitly unhashed until
-they are pinned as an annotation base, so `verify` must distinguish existence coverage from digest coverage.
-And AU-PRO's connected-component labelling is Python-level union-find, which is fine for the sparse masks
-these datasets have and would be the slowest part of evaluation on masks that cover most of the frame.
+One known performance weakness remains: AU-PRO's connected-component labelling is Python-level union-find,
+which is fine for the sparse masks these datasets have and would be the slowest part of evaluation on masks
+that cover most of the frame. Source masks imported before migration 005 can still begin unhashed, but the
+first evaluation or annotation-base read pins them; `verify` reports digest coverage separately until then.
 
 ## Rankings
 
