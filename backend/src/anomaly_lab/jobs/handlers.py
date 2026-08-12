@@ -72,6 +72,12 @@ def _region_prepare() -> JobHandler:
     return run_region_prepare_job
 
 
+def _export() -> JobHandler:
+    from anomaly_lab.deployment.export import run_export_job
+
+    return run_export_job
+
+
 # `train` and `infer` arrived in M3 and cost exactly what was predicted: one entry each
 # and one handler function each. The queue, protocol, cancellation and event fan-out
 # needed no change to carry a method that trains a neural network for minutes on a GPU,
@@ -90,6 +96,7 @@ LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.DISTILL: _distill,
     JobKind.MODEL_ASSET_DOWNLOAD: _model_asset_download,
     JobKind.REGION_PREPARE: _region_prepare,
+    JobKind.EXPORT: _export,
 }
 
 

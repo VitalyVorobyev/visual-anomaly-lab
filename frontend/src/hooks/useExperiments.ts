@@ -165,6 +165,24 @@ export function useStartRun(experimentId: number) {
   });
 }
 
+/** Publish a portable bundle only through the method-declared generic export route. */
+export function useStartExport(experimentId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () =>
+      unwrap(
+        await api.POST("/api/experiments/{experiment_id}/export", {
+          params: { path: { experiment_id: experimentId } },
+          body: { experiment_id: experimentId, format: "onnx" },
+        }),
+        "the queued portable export",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.experiment(experimentId) });
+    },
+  });
+}
+
 export function useResults(experimentId: number | undefined, subset: Subset | undefined) {
   return useQuery<ResultsPage>({
     queryKey: queryKeys.results(experimentId ?? -1, subset),

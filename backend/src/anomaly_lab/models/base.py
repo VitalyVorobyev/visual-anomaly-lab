@@ -45,6 +45,12 @@ class Device(StrEnum):
     CUDA = "cuda"
 
 
+class PortableFormat(StrEnum):
+    """A deployment representation a fitted method can prove it emits."""
+
+    ONNX = "onnx"
+
+
 class Capabilities(BaseModel):
     """What a method can do, declared rather than inferred.
 
@@ -66,6 +72,13 @@ class Capabilities(BaseModel):
     step: `pixel_reference` builds a median over the training set and is either fitted or
     not. A method that declares this must also satisfy `SupportsResume`, and the train
     handler checks that the two agree rather than trusting the flag.
+    """
+    portable_formats: list[PortableFormat] = Field(default_factory=list)
+    """Formats this plugin can export with numerical parity (ADR-0034).
+
+    Empty means unsupported, not "unknown". The API and UI may offer an export only
+    when the requested value is present here and the instance satisfies the matching
+    structural protocol.
     """
     preferred_device: Device = Device.CPU
 

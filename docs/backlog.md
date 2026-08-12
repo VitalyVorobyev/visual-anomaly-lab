@@ -131,10 +131,10 @@ the detail is in the git history and the ADRs.
 
 ### E22 — Portable model deployment (M12)
 
-- [ ] **Define the deployment bundle schema and method capability** (M): versioned manifest, ONNX graph,
+- [x] **Define the deployment bundle schema and method capability** (M): versioned manifest, ONNX graph,
       auxiliary tensors, checksums, source/prepared-frame contract, score reducer, threshold provenance and
       parity fixtures; validate with pydantic and JSON Schema.
-- [ ] **Ship one complete export vertical slice** (M): generic export job/API/UI and an atomic,
+- [x] **Ship one complete export vertical slice** (M): generic export job/API/UI and an atomic,
       parity-checked `pixel_reference` bundle. The generic layers branch only on capability.
 - [ ] **Build the Rust reference runner** (M): validate manifest and hashes, run the pinned ONNX Runtime
       binding, reproduce preprocessing/scoring, emit a machine-readable result and verify the fixture.

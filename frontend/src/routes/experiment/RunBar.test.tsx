@@ -13,6 +13,7 @@ function detail(overrides: Partial<ExperimentDetail> = {}): ExperimentDetail {
     model_type: "pixel_reference",
     config: {},
     supports_resume: false,
+    portable_formats: [],
     training_state: null,
     ...overrides,
   } as ExperimentDetail;
@@ -86,6 +87,40 @@ describe("RunBar", () => {
     const score = screen.getByRole("button", { name: /Score & evaluate/ });
     expect(score.hasAttribute("disabled")).toBe(true);
     expect(score.getAttribute("title")).toBe("Nothing has been trained yet.");
+  });
+
+  it("offers ONNX only when the method declares verified export", () => {
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail({ portable_formats: ["onnx"] })}
+        jobs={[job({})]}
+        hasTrained
+        onFollow={noop}
+        onViewLog={noop}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Export ONNX" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(button.getAttribute("title")).toMatch(/checksummed ONNX bundle/);
+  });
+
+  it("explains an unverified exporter instead of starting a doomed job", () => {
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail()}
+        jobs={[job({})]}
+        hasTrained
+        onFollow={noop}
+        onViewLog={noop}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Export unavailable" });
+    expect(button.hasAttribute("disabled")).toBe(true);
+    expect(button.getAttribute("title")).toMatch(/no numerically verified ONNX exporter/);
   });
 
   it("shows the live run, its progress and a way to stop it", () => {

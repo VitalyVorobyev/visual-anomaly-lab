@@ -24,7 +24,7 @@ import {
 } from "../../components/ui";
 import type { ExperimentDetail, JobSummary } from "../../api/client";
 import { isTerminal } from "../../hooks/useJob";
-import { useCancelJob, useStartRun } from "../../hooks/useExperiments";
+import { useCancelJob, useStartExport, useStartRun } from "../../hooks/useExperiments";
 import { jobTone } from "./OverviewTab";
 
 export function RunBar({
@@ -44,6 +44,7 @@ export function RunBar({
   onViewLog: () => void;
 }) {
   const start = useStartRun(experimentId);
+  const startExport = useStartExport(experimentId);
   const cancel = useCancelJob(experimentId);
   const [confirmRetrain, setConfirmRetrain] = useState(false);
 
@@ -65,7 +66,8 @@ export function RunBar({
   // `jobs` arrives newest first, so the first unfinished one is the live one. The queue
   // runs a single job at a time (ADR-0009), so there is never more than one.
   const live = jobs.find((job) => !isTerminal(job.status));
-  const busy = live !== undefined || start.isPending;
+  const busy = live !== undefined || start.isPending || startExport.isPending;
+  const canExportOnnx = detail.portable_formats.includes("onnx");
 
   const run = (kind: "train" | "infer", additionalSteps?: number) =>
     start.mutate({ kind, additionalSteps }, { onSuccess: (job) => onFollow(job.id) });
@@ -114,6 +116,23 @@ export function RunBar({
         >
           Score &amp; evaluate
         </Button>
+        <Button
+          variant="secondary"
+          disabled={busy || !hasTrained || !canExportOnnx}
+          loading={startExport.isPending}
+          title={
+            !canExportOnnx
+              ? "This method has no numerically verified ONNX exporter yet."
+              : !hasTrained
+                ? "Nothing has been trained yet."
+                : "Create a checksummed ONNX bundle with parity fixtures."
+          }
+          onClick={() =>
+            startExport.mutate(undefined, { onSuccess: (job) => onFollow(job.id) })
+          }
+        >
+          {canExportOnnx ? "Export ONNX" : "Export unavailable"}
+        </Button>
 
         {live !== undefined && (
           <>
@@ -160,6 +179,7 @@ export function RunBar({
       )}
 
       {start.error && <ErrorBox>{start.error.message}</ErrorBox>}
+      {startExport.error && <ErrorBox>{startExport.error.message}</ErrorBox>}
       {cancel.error && <ErrorBox>{cancel.error.message}</ErrorBox>}
 
       <ConfirmDialog
