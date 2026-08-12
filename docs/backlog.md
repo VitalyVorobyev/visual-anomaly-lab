@@ -136,8 +136,9 @@ the detail is in the git history and the ADRs.
       parity fixtures; validate with pydantic and JSON Schema.
 - [x] **Ship one complete export vertical slice** (M): generic export job/API/UI and an atomic,
       parity-checked `pixel_reference` bundle. The generic layers branch only on capability.
-- [ ] **Build the Rust reference runner** (M): validate manifest and hashes, run the pinned ONNX Runtime
-      binding, reproduce preprocessing/scoring, emit a machine-readable result and verify the fixture.
+- [x] **Build the Rust reference runner** (M): validate manifest and hashes, run the pinned ONNX Runtime
+      binding, enforce the prepared-input/scoring contract, emit a machine-readable result and verify the
+      fixture.
 - [ ] **Add deep and memory-bank exporters** (M each): implement and prove parity for the supported method;
       leave every unproven method visibly unsupported. Record operator/runtime limitations.
 - [ ] **Test a dedicated-hardware handoff** (M): copy only the bundle and runner, run offline on a second
