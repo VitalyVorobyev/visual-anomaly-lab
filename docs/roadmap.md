@@ -561,6 +561,14 @@ weight fingerprint. On the paired public VisA gate it reached mean image ROC-AUC
 0.9953 and AU-PRO 0.9514, clearing every predeclared quality floor and materially exceeding the PatchCore
 control. The lazy, resumable plugin is integrated; GLASS is next.
 
+**GLASS feasibility.** The complete 20-step mining update runs at 200 ms for a 288 × 288 image on
+MPS with 1.19 GiB driver memory; CPU takes 304 ms. The upstream batch of eight scales almost
+linearly in time while raising MPS driver memory to 4.30 GiB, so the application reference will
+use batch one. The candidate is Mac-credible with a bounded centre pass and finite updates.
+Built-in Perlin synthesis avoids an implicit DTD download; the optional public texture corpus
+remains behind a quality gate. [`measurements-glass.md`](measurements-glass.md) records the full
+protocol, asset hash, weight fingerprint and integration invariants.
+
 **Exit criteria**
 
 - [x] At least three distinct method families run through the unchanged vertical slice.

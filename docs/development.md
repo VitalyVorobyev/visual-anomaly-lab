@@ -127,6 +127,7 @@ boundary is wrong — fix the boundary, not the caller.
 | [`measurements-efficientad.md`](measurements-efficientad.md) | The append-only evidence log behind ADR-0029 |
 | [`measurements-region-profiles.md`](measurements-region-profiles.md) | The paired public-data localisation gate behind ADR-0033 |
 | [`measurements-dinomaly.md`](measurements-dinomaly.md) | Dinomaly compatibility, resources and public benchmark evidence for M11 |
+| [`measurements-glass.md`](measurements-glass.md) | GLASS compatibility, resources, asset policy and integration constraints for M11 |
 | [`teacher-distillation.md`](teacher-distillation.md) | Distilling the EfficientAD teacher here, with the exact commands |
 
 The paired M11 public-data gate is reproducible without touching source images:

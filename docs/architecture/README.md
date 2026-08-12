@@ -25,7 +25,8 @@ Sequencing of the work is in [`roadmap.md`](../roadmap.md); the task breakdown i
 [`measurements-efficientad.md`](../measurements-efficientad.md) and
 [`measurements-region-profiles.md`](../measurements-region-profiles.md);
 M11's modern-method resource and benchmark evidence begins in
-[`measurements-dinomaly.md`](../measurements-dinomaly.md);
+[`measurements-dinomaly.md`](../measurements-dinomaly.md) and continues in
+[`measurements-glass.md`](../measurements-glass.md);
 producing an EfficientAD teacher rather than downloading one is in
 [`teacher-distillation.md`](../teacher-distillation.md).
 
