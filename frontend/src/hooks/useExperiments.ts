@@ -12,6 +12,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
+import type { ExperimentListQuery } from "../api/experimentState";
 import type {
   ArtifactListing,
   CurveSet,
@@ -41,13 +42,21 @@ export function useModelTypes() {
   });
 }
 
-export function useExperiments(datasetId?: number) {
+export function useExperiments(query: ExperimentListQuery = {}) {
   return useQuery<ExperimentSummary[]>({
-    queryKey: queryKeys.experiments(datasetId),
+    queryKey: queryKeys.experiments(query),
     queryFn: async () =>
       unwrap(
         await api.GET("/api/experiments", {
-          params: { query: datasetId === undefined ? {} : { dataset_id: datasetId } },
+          params: {
+            query: {
+              ...(query.datasetId === undefined ? {} : { dataset_id: query.datasetId }),
+              ...(query.modelType === undefined ? {} : { model_type: query.modelType }),
+              ...(query.status === undefined ? {} : { status: query.status }),
+              ...(query.query === undefined ? {} : { q: query.query }),
+              ...(query.sort === undefined ? {} : { sort: query.sort }),
+            },
+          },
         }),
         "the experiment list",
       ),

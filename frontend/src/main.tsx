@@ -18,7 +18,7 @@ import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
 import { ExperimentRoute } from "./routes/ExperimentRoute";
 import { ExperimentSampleRoute } from "./routes/ExperimentSampleRoute";
-import { ExperimentsRoute } from "./routes/ExperimentsRoute";
+import { CreateExperimentRoute, ExperimentsRoute } from "./routes/ExperimentsRoute";
 import { HealthRoute } from "./routes/HealthRoute";
 import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
@@ -56,6 +56,15 @@ createRoot(container).render(
               <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
               <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
               <Route path="experiments" element={<ExperimentsRoute />} />
+              <Route path="experiments/new" element={<CreateExperimentRoute />} />
+              <Route
+                path="datasets/:datasetId/experiments"
+                element={<ExperimentsRoute />}
+              />
+              <Route
+                path="datasets/:datasetId/experiments/new"
+                element={<CreateExperimentRoute />}
+              />
               <Route path="compare" element={<CompareRoute />} />
               <Route path="experiments/:experimentId" element={<ExperimentRoute />} />
               <Route path="health" element={<HealthRoute />} />

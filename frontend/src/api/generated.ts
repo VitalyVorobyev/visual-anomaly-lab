@@ -164,7 +164,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Experiments, newest first */
+        /** Search and filter experiments */
         get: operations["list_experiments_api_experiments_get"];
         put?: never;
         /**
@@ -1652,6 +1652,12 @@ export interface components {
             map_range: components["schemas"]["MapScale"] | null;
         };
         /**
+         * ExperimentSort
+         * @description Stable orders offered by the experiment catalogue.
+         * @enum {string}
+         */
+        ExperimentSort: "newest" | "oldest" | "name";
+        /**
          * ExperimentStatus
          * @enum {string}
          */
@@ -2947,6 +2953,10 @@ export interface operations {
         parameters: {
             query?: {
                 dataset_id?: number | null;
+                model_type?: string | null;
+                status?: components["schemas"]["ExperimentStatus"] | null;
+                q?: string | null;
+                sort?: components["schemas"]["ExperimentSort"];
                 limit?: number;
             };
             header?: never;

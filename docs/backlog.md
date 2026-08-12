@@ -42,14 +42,18 @@ the detail is in the git history and the ADRs.
 - [x] **Make scroll ownership a route contract** (S): `ReadingLayout` scrolls, `WorkspaceLayout`
       and `CanvasLayout` do not. Move dataset filters into a supporting rail and make the virtual
       grid the one data scroller. Validate at 1440×900 and 1024×768.
-- [ ] **Create dataset-local navigation** (M): Browse, Annotate, Splits and Experiments. Preserve a
-      compact global `Datasets / Experiments / Compare` shell; Import is a dataset action and Health
-      is a status popover/direct route.
-- [ ] **Separate experiment history from creation** (M): `/datasets/:id/experiments` is a table and
+- [x] **Create the dataset-local navigation foundation** (M): Browse, Splits and Experiments now sit
+      under one dataset while the global shell stays `Datasets / Experiments / Compare`. Annotate
+      joins this strip when E19 supplies a real route rather than a dead destination.
+- [x] **Separate experiment history from creation** (M): `/datasets/:id/experiments` is a table and
       `/datasets/:id/experiments/new` is the schema-driven form, with dataset fixed by context.
-- [ ] **Search experiments in SQLite** (M): name/id query, multi-select `method_key`, dataset,
-      status and date filters; sortable columns, cursor pagination and URL query state. Selection
-      hands compatible experiments to Compare.
+- [x] **Establish the SQLite experiment query surface** (M): combined name/notes, exact method,
+      dataset and status filters plus stable newest/oldest/name ordering; URL state; global and
+      dataset-scoped catalogues.
+- [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
+      range, cursor pagination, sortable column headers and compatible selection handed to Compare.
+- [x] **Expose experiment deletion in the catalogue** (S): an explicit destructive confirmation
+      removes rows first and app-owned artifacts second; source datasets are stated as untouched.
 - [ ] **Preview and perform experiment deletion** (M): cancel/evict live work first, delete records
       transactionally, then app-owned artifacts, and report freed bytes.
 - [ ] **Preview and perform dataset deletion** (M): typed-name confirmation; cascade through

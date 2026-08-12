@@ -88,6 +88,14 @@ class PayloadFormat(StrEnum):
     RAW = "raw"
 
 
+class ExperimentSort(StrEnum):
+    """Stable orders offered by the experiment catalogue."""
+
+    NEWEST = "newest"
+    OLDEST = "oldest"
+    NAME = "name"
+
+
 class MethodCatalog(BaseModel):
     """Everything the create screen needs, in one round trip."""
 
@@ -498,15 +506,27 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
         return _detail(conn, stored)
 
 
-@router.get("", summary="Experiments, newest first")
+@router.get("", summary="Search and filter experiments")
 def list_experiments(
     request: Request,
     dataset_id: int | None = Query(default=None),
+    model_type: str | None = Query(default=None),
+    status: ExperimentStatus | None = Query(default=None),
+    q: str | None = Query(default=None, max_length=200),
+    sort: ExperimentSort = Query(default=ExperimentSort.NEWEST),
     limit: int = Query(default=100, ge=1, le=500),
 ) -> list[ExperimentSummary]:
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        found = experiments_repo.list_experiments(conn, dataset_id=dataset_id, limit=limit)
+        found = experiments_repo.list_experiments(
+            conn,
+            dataset_id=dataset_id,
+            model_type=model_type,
+            status=status,
+            query=q,
+            sort=sort.value,
+            limit=limit,
+        )
         return [_summary(conn, experiment) for experiment in found]
 
 

@@ -74,6 +74,7 @@ export type ExperimentSummary = Schemas["ExperimentSummary"];
 export type ExperimentDetail = Schemas["ExperimentDetail"];
 export type TrainingState = Schemas["TrainingState"];
 export type ExperimentStatus = Schemas["ExperimentStatus"];
+export type ExperimentSort = Schemas["ExperimentSort"];
 export type MetricSummary = Schemas["MetricSummary"];
 export type ResultsPage = Schemas["ResultsPage"];
 export type SampleVerdict = Schemas["SampleVerdict"];

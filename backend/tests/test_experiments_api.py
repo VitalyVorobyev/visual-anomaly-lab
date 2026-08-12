@@ -708,6 +708,35 @@ def test_the_experiment_list_shows_the_headline_number(
     assert entry["headline_roc_auc"] == pytest.approx(1.0)
 
 
+def test_the_experiment_catalog_combines_search_method_status_and_sort(
+    client: TestClient, seeded: Fixture
+) -> None:
+    first = _create(client, seeded, name="Needle baseline")
+    second = _create(client, seeded, name="Needle follow-up")
+    _create(client, seeded, name="Unrelated")
+
+    listed = client.get(
+        "/api/experiments",
+        params={
+            "dataset_id": seeded.dataset_id,
+            "model_type": "pixel_reference",
+            "status": "draft",
+            "q": "needle",
+            "sort": "oldest",
+        },
+    )
+
+    assert listed.status_code == 200
+    assert [entry["id"] for entry in listed.json()] == [first["id"], second["id"]]
+
+
+def test_the_experiment_catalog_rejects_unknown_filter_values(
+    client: TestClient,
+) -> None:
+    assert client.get("/api/experiments", params={"status": "ghost"}).status_code == 422
+    assert client.get("/api/experiments", params={"sort": "fastest"}).status_code == 422
+
+
 def test_deleting_an_experiment_removes_its_artifacts_too(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
