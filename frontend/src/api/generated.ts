@@ -1125,6 +1125,75 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/model-assets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List licensed model assets and their verified local state */
+        get: operations["list_model_assets_api_model_assets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-assets/{asset_key}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Download and verify a catalogued model asset */
+        post: operations["install_model_asset_api_model_assets__asset_key__install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-assets/{asset_key}/source": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Use a verified model asset from an external path */
+        put: operations["set_model_asset_source_api_model_assets__asset_key__source_put"];
+        post?: never;
+        /** Stop using an external model asset path */
+        delete: operations["clear_model_asset_source_api_model_assets__asset_key__source_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/model-assets/{asset_key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Remove an app-managed model asset */
+        delete: operations["remove_model_asset_api_model_assets__asset_key__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/reference-packs": {
         parameters: {
             query?: never;
@@ -2338,6 +2407,11 @@ export interface components {
              */
             headline_roc_auc: number | null;
         };
+        /** ExternalModelAssetSource */
+        ExternalModelAssetSource: {
+            /** Path */
+            path: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -2453,6 +2527,14 @@ export interface components {
              */
             diagnostic_images?: number;
         };
+        /** InstallModelAssetRequest */
+        InstallModelAssetRequest: {
+            /**
+             * License Accepted
+             * @default false
+             */
+            license_accepted: boolean;
+        };
         /**
          * JobDetail
          * @description A job plus everything needed to render its screen before the socket opens.
@@ -2489,7 +2571,7 @@ export interface components {
          * JobKind
          * @enum {string}
          */
-        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill";
+        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill" | "model_asset_download";
         /**
          * JobMetrics
          * @description Every scalar series a job has emitted so far.
@@ -2914,6 +2996,49 @@ export interface components {
              */
             ground_truth_stale: boolean;
         };
+        /** ModelAssetCatalog */
+        ModelAssetCatalog: {
+            /** Assets */
+            assets: components["schemas"]["ModelAssetInfo"][];
+        };
+        /** ModelAssetInfo */
+        ModelAssetInfo: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Purpose */
+            purpose: string;
+            status: components["schemas"]["ModelAssetStatus"];
+            source: components["schemas"]["ModelAssetSource"];
+            /** Path */
+            path: string;
+            /** Size */
+            size: number | null;
+            /** Expected Size */
+            expected_size: number;
+            /** Sha256 */
+            sha256: string;
+            /** Reason */
+            reason: string | null;
+            /** License Name */
+            license_name: string;
+            /** License Url */
+            license_url: string;
+            /** Project Url */
+            project_url: string;
+            active_job: components["schemas"]["JobSummary"] | null;
+        };
+        /**
+         * ModelAssetSource
+         * @enum {string}
+         */
+        ModelAssetSource: "managed" | "external";
+        /**
+         * ModelAssetStatus
+         * @enum {string}
+         */
+        ModelAssetStatus: "missing" | "ready" | "invalid";
         /**
          * ModelDescription
          * @description What the method picker needs, without importing the method's dependencies.
@@ -5383,6 +5508,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_model_assets_api_model_assets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAssetCatalog"];
+                };
+            };
+        };
+    };
+    install_model_asset_api_model_assets__asset_key__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallModelAssetRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_model_asset_source_api_model_assets__asset_key__source_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExternalModelAssetSource"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAssetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    clear_model_asset_source_api_model_assets__asset_key__source_delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAssetInfo"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_model_asset_api_model_assets__asset_key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                asset_key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ModelAssetInfo"];
                 };
             };
             /** @description Validation Error */

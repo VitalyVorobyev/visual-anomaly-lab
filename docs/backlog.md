@@ -77,8 +77,11 @@ the detail is in the git history and the ADRs.
 - [x] **Finish raster editing and resilient passes** (M): brush/eraser bitmap layers, editable contour
       tracing, mode-free left/right-drag panning, Fit/1:1 views, debounced autosave, explicit conflict
       recovery and keyboard page-boundary traversal.
-- [ ] **Add a generic model-asset store and MobileSAM assist** (M): licensed on-demand download,
-      size/SHA256/progress/cancel, local override, CPU fallback and the one resident-worker lock.
+- [x] **Add a generic model-asset store** (M): immutable upstream revision, explicit licence acceptance,
+      size/SHA256 verification, progress/cancel, atomic install, safe removal and a verified external-path
+      override. The API catalogues assets without importing torch.
+- [ ] **Add MobileSAM point/box assist** (M): source-coordinate prompts and returned mask, editable contour
+      acceptance, CPU fallback and the one resident-worker lock.
 
 ### E20 — Region profiles + spatial pipeline (M10)
 
