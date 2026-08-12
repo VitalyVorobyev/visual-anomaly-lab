@@ -148,19 +148,19 @@ the detail is in the git history and the ADRs.
 
 ### E23 — User book + lean project documentation (M12)
 
-- [ ] **Create the mdBook source and CI build** (S): quick start, system design, concepts and task-oriented
+- [x] **Create the mdBook source and CI build** (S): quick start, system design, concepts and task-oriented
       navigation; generated output is not committed.
-- [ ] **Document the complete pipelines** (M): import, annotation, region preparation, experiment,
+- [x] **Document the complete pipelines** (M): import, annotation, region preparation, experiment,
       training/inference/evaluation/comparison, model assets and portable export, with failure semantics.
-- [ ] **Exercise extension guides end to end** (M): add a model, add model-owned transforms, add shared
+- [x] **Exercise extension guides end to end** (M): add a model, add model-owned transforms, add shared
       preprocessing/region extraction, and solve a new dataset from import adapter to deployment.
-- [ ] **Generate the method and benchmark chapters** (M): supported/experimental/exportable capability
+- [x] **Generate the method and benchmark chapters** (M): supported/experimental/exportable capability
       tables from registry metadata; plots and performance reports from checked measurement data, never
       hand-copied claims.
-- [ ] **Rewrite the root README for users** (S): product purpose, screenshots, five-minute public-data
+- [x] **Rewrite the root README for users** (S): product purpose, screenshots, five-minute public-data
       start, supported workflows and links into the book. Move contributor detail into the book/development
       docs and remove duplicated instructions.
-- [ ] **Audit handbook, development docs, roadmap and backlog against code** (S): one current description
+- [x] **Audit handbook, development docs, roadmap and backlog against code** (S): one current description
       per fact, valid links, no stale method list or historical implementation narrative.
 
 ### E12 — Interface polish (M12)

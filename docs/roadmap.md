@@ -602,12 +602,12 @@ reference-data credits.
 
 **Exit criteria**
 
-- [ ] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
+- [x] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
 - [x] A supported fitted method exports atomically, passes Python-versus-portable parity, and runs through
       the Rust reference consumer from the documented command.
 - [x] The deployment manifest is sufficient to reproduce tensor preparation, scoring, operating point and
       source-map projection without importing application Python.
-- [ ] The book explains the system, every pipeline, method and preprocessing extension, a new-dataset
+- [x] The book explains the system, every pipeline, method and preprocessing extension, a new-dataset
       workflow, supported methods and generated public benchmark evidence.
 - [ ] Key screens pass visual review at both target sizes and in both themes.
-- [ ] The method-extension guide has been followed end to end, and the handbook matches the code.
+- [x] The method-extension guide has been followed end to end, and the handbook matches the code.

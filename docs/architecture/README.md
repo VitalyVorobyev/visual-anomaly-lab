@@ -93,7 +93,7 @@ flowchart TB
     end
 
     subgraph backend["FastAPI sidecar — 127.0.0.1, no auth"]
-        API["App factory + routers<br/>datasets · import · splits ·<br/>experiments · jobs · images · eval · export"]
+        API["App factory + routers<br/>datasets · annotations · regions · import · splits ·<br/>experiments · compare · jobs · images · assets · export"]
         WS["WebSocket /ws/jobs/{id}"]
         REG["Model plugin registry"]
         QUEUE["Job queue (single-slot FIFO)"]
@@ -172,13 +172,19 @@ a server-visible absolute directory path.
 
 | Router | Prefix | Responsibility |
 | --- | --- | --- |
-| `datasets` | `/api/datasets` | dataset CRUD, channel dictionary, sample listing/filtering, label edits |
+| `datasets` | `/api/datasets` | dataset CRUD and deletion preview, channel dictionary, sample listing/filtering, label edits |
+| `annotations` | `/api/datasets/…/annotation-labels`, `/api/images/…/annotations` | label taxonomy, optimistic draft editing, immutable revisions, PNG/LabelMe/COCO import and export |
 | `import` | `/api/import` | `scan` (produce manifest) and `commit` (create rows); `verify` re-check |
-| `splits` | `/api/splits` | create/list seeded splits, per-subset counts, assignments |
-| `experiments` | `/api/experiments` | create (config frozen), list, detail, delete; model catalog + JSON Schema |
-| `jobs` | `/api/jobs` | enqueue train/infer/import, status, cancel, log tail; `/ws/jobs/{id}` |
-| `images` | `/api/images` | thumb / preview / full pixel delivery, anomaly-map PNG rendering |
-| `eval` | `/api/eval` | threshold-independent metrics, on-demand threshold outputs, rankings, comparison |
+| `reference_packs` | `/api/reference-packs` | discover complete local VisA/GKN packs and register missing datasets atomically |
+| `splits` | `/api/splits` | create/list seeded or imported splits, per-subset counts, assignments |
+| `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build and prepared images |
+| `segment_assist` | `/api/segment-assist`, `/api/images/…/segment-assist` | MobileSAM readiness and temporary prompt-guided mask suggestions |
+| `experiments` | `/api/experiments` | model catalogue/schema, search, create/detail/delete, train/infer/export, results and diagnostics |
+| `compare` | `/api/compare` | compatible multi-run metrics, operating points and per-sample agreement |
+| `jobs` | `/api/jobs`, `/ws/jobs/{id}` | status, cancel, metrics, log tail and live progress for generic background work |
+| `images` | `/api/images` | thumb / preview / full pixel delivery, prepared previews and anomaly-map PNG rendering |
+| `model_assets` | `/api/model-assets` | licensed asset catalogue, verified install/external source and app-owned removal |
+| `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
 
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
 identifiers persisted in `Experiment.model_type`: `pixel_reference`, `efficientad_anomalib`,

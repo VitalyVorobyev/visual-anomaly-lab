@@ -45,6 +45,7 @@ __pycache__/
 .coverage
 htmlcov/
 build/
+/book/
 
 # ── Node / Vite ────────────────────────────────────────────
 node_modules/
