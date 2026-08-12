@@ -12,6 +12,7 @@ visual-anomaly-lab/
 │   ├── backlog.md                  # task breakdown by epic
 │   ├── measurements-efficientad.md # the append-only evidence log behind ADR-0029
 │   ├── measurements-region-profiles.md # the M10 localisation value gate behind ADR-0033
+│   ├── measurements-dinomaly.md    # the M11 Dinomaly resource and quality evidence
 │   ├── development.md              # how to run, test and check the thing
 │   └── papers.md                   # method references
 │

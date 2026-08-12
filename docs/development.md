@@ -33,6 +33,7 @@ Before trusting the accelerator, and before writing wrapper code against a new l
 
 ```bash
 ./scripts/mps-smoke-test.py
+./scripts/dinomaly-smoke-test.py
 ```
 
 After changing any API route or response model, regenerate the typed client and commit the result.
@@ -125,6 +126,7 @@ boundary is wrong — fix the boundary, not the caller.
 | [`backlog.md`](backlog.md) | Task-level breakdown |
 | [`measurements-efficientad.md`](measurements-efficientad.md) | The append-only evidence log behind ADR-0029 |
 | [`measurements-region-profiles.md`](measurements-region-profiles.md) | The paired public-data localisation gate behind ADR-0033 |
+| [`measurements-dinomaly.md`](measurements-dinomaly.md) | Dinomaly compatibility, resources and public benchmark evidence for M11 |
 | [`teacher-distillation.md`](teacher-distillation.md) | Distilling the EfficientAD teacher here, with the exact commands |
 
 **Read the handbook to learn the system; read a record to learn why.** When the two disagree, the
