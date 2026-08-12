@@ -20,10 +20,12 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
+from pathlib import Path
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.manifest import Manifest
 from anomaly_lab.datasets.storage import committed_manifest_id, save_manifest
+from anomaly_lab.datasets.storage import manifest_path as stored_manifest_path
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import masks as masks_repo
@@ -62,12 +64,14 @@ def commit_manifest(
     manifest: Manifest,
     *,
     dataset_id: int | None = None,
+    _within_transaction: bool = False,
 ) -> CommitResult:
     """Write an accepted manifest into the catalog, and store it verbatim."""
-    dataset, created = _resolve_dataset(conn, manifest, dataset_id)
-
-    conn.execute("BEGIN")
+    if not _within_transaction:
+        conn.execute("BEGIN IMMEDIATE")
+    saved_path: str | None = None
     try:
+        dataset, created = _resolve_dataset(conn, manifest, dataset_id)
         channel_ids = {
             name: datasets_repo.upsert_channel(conn, dataset.id, name=name, position=index).id
             for index, name in enumerate(manifest.channels)
@@ -119,16 +123,20 @@ def commit_manifest(
             for image in images_repo.list_images_for_dataset(conn, dataset.id)
             if image.path not in seen_paths
         ]
+        manifest_id = committed_manifest_id(dataset.id)
+        path = save_manifest(settings, manifest, manifest_id=manifest_id)
+        saved_path = str(path)
+        datasets_repo.record_manifest(
+            conn, dataset.id, adapter=manifest.adapter, manifest_path=str(path)
+        )
     except Exception:
-        conn.execute("ROLLBACK")
+        if not _within_transaction and conn.in_transaction:
+            conn.execute("ROLLBACK")
+        if saved_path is not None:
+            Path(saved_path).unlink(missing_ok=True)
         raise
-    conn.execute("COMMIT")
-
-    manifest_id = committed_manifest_id(dataset.id)
-    path = save_manifest(settings, manifest, manifest_id=manifest_id)
-    datasets_repo.record_manifest(
-        conn, dataset.id, adapter=manifest.adapter, manifest_path=str(path)
-    )
+    if not _within_transaction:
+        conn.execute("COMMIT")
 
     return CommitResult(
         dataset_id=dataset.id,
@@ -142,6 +150,33 @@ def commit_manifest(
         masks=masks,
         missing_paths=sorted(missing)[:MAX_MISSING_REPORTED],
     )
+
+
+def commit_manifests_atomically(
+    conn: sqlite3.Connection, settings: Settings, manifests: list[Manifest]
+) -> list[CommitResult]:
+    """Commit a reference pack as one database decision.
+
+    All expensive scans happen before this call.  Manifest files are written while the
+    database transaction is open and removed if a later member fails, so the batch is
+    either fully registered or absent from both catalog and accepted-manifest storage.
+    """
+    conn.execute("BEGIN IMMEDIATE")
+    results: list[CommitResult] = []
+    written: list[str] = []
+    try:
+        for manifest in manifests:
+            result = commit_manifest(conn, settings, manifest, _within_transaction=True)
+            results.append(result)
+            written.append(result.manifest_id)
+        conn.execute("COMMIT")
+    except Exception:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        for manifest_id in written:
+            stored_manifest_path(settings, manifest_id).unlink(missing_ok=True)
+        raise
+    return results
 
 
 def _resolve_dataset(

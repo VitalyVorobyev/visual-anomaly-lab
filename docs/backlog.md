@@ -60,7 +60,7 @@ the detail is in the git history and the ADRs.
       images, splits, experiments, jobs, manual labels, manifest, job logs, thumbnails and artifacts; one guarded row
       transaction followed by app-owned cleanup. Dataset and experiment jobs block the operation, unsafe
       paths are refused, and an external synthetic source sentinel survives the full cascade.
-- [ ] **Discover and register local reference packs** (M): schema-driven providers for VisA and
+- [x] **Discover and register local reference packs** (M): schema-driven providers for VisA and
       GKN, metadata-only detection, atomic/idempotent `Register all`, and instructional absent/error
       states. No automatic download.
 

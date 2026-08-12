@@ -33,7 +33,7 @@ def scan_manifest_id(job_id: int) -> str:
 
 
 def committed_manifest_id(dataset_id: int) -> str:
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
     return f"dataset-{dataset_id}-{stamp}"
 
 

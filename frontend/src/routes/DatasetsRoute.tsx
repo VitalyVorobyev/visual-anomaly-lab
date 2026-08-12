@@ -1,11 +1,14 @@
 /** The catalog: every imported dataset, with its composition. */
 
-import { Plus, Trash2 } from "lucide-react";
-import { useState } from "react";
+import { Check, ExternalLink, LibraryBig, Plus, Trash2 } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import {
   Button,
+  Badge,
+  Callout,
   ConfirmDialog,
   CountRun,
   Empty,
@@ -15,11 +18,16 @@ import {
   Panel,
   SkeletonRows,
 } from "../components/ui";
+import { JobProgress } from "../components/JobProgress";
+import { queryKeys } from "../api/queryKeys";
 import {
   useDatasetDeletionPreview,
   useDatasets,
   useDeleteDataset,
+  useReferencePacks,
+  useRegisterReferencePacks,
 } from "../hooks/useCatalog";
+import { isTerminal, useJob } from "../hooks/useJob";
 
 type Dataset = NonNullable<ReturnType<typeof useDatasets>["data"]>[number];
 
@@ -46,6 +54,8 @@ export function DatasetsRoute() {
       {remove.error && <ErrorBox>{remove.error.message}</ErrorBox>}
       {datasets.error && <ErrorBox>{datasets.error.message}</ErrorBox>}
       {datasets.isPending && <SkeletonRows rows={4} />}
+
+      <ReferenceDatasetShelf />
 
       {datasets.data?.length === 0 && (
         <Empty
@@ -195,6 +205,157 @@ export function DatasetsRoute() {
           });
         }}
       />
+    </div>
+  );
+}
+
+function ReferenceDatasetShelf() {
+  const catalog = useReferencePacks();
+  const register = useRegisterReferencePacks();
+  const [jobId, setJobId] = useState<number>();
+  const clearJob = useCallback(() => setJobId(undefined), []);
+  const available = catalog.data?.packs.filter((pack) => pack.status === "available") ?? [];
+
+  return (
+    <Panel
+      title={
+        <span className="flex items-center gap-2">
+          <LibraryBig className="size-4 text-signal" />
+          Reference datasets
+        </span>
+      }
+      actions={
+        catalog.data && catalog.data.pending_datasets > 0 ? (
+          <Button
+            variant="primary"
+            size="sm"
+            loading={register.isPending}
+            disabled={jobId !== undefined}
+            onClick={() =>
+              register.mutate(
+                { pack_keys: available.map((pack) => pack.key) },
+                { onSuccess: (job) => setJobId(job.id) },
+              )
+            }
+          >
+            Register {catalog.data.pending_datasets}
+          </Button>
+        ) : undefined
+      }
+    >
+      <p className="mb-4 max-w-3xl text-sm text-fg-muted">
+        Public benchmarks found in the local datasets folder. Registration indexes files in
+        place; it never copies or changes the source pack.
+      </p>
+
+      {catalog.error && <ErrorBox>{catalog.error.message}</ErrorBox>}
+      {register.error && <ErrorBox>{register.error.message}</ErrorBox>}
+      {catalog.isPending && <SkeletonRows rows={2} />}
+
+      {catalog.data && (
+        <ul className="grid gap-2 lg:grid-cols-2">
+          {catalog.data.packs.map((pack) => {
+            const registered = pack.datasets.filter(
+              (dataset) => dataset.registered_dataset_id !== null,
+            ).length;
+            const tone =
+              pack.status === "registered"
+                ? "normal"
+                : pack.status === "available"
+                  ? "info"
+                  : pack.status === "incomplete"
+                    ? "warning"
+                    : "neutral";
+            return (
+              <li
+                key={pack.key}
+                className="rounded-control border border-line bg-raised px-3.5 py-3"
+              >
+                <div className="flex items-start gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-sm font-medium text-fg">{pack.title}</span>
+                      <Badge tone={tone}>{pack.status}</Badge>
+                    </div>
+                    <p className="mt-1 font-mono text-[11px] break-all text-fg-subtle">
+                      {pack.root_path}
+                    </p>
+                  </div>
+                  {pack.status === "registered" && (
+                    <Check className="mt-0.5 size-4 shrink-0 text-normal" aria-hidden />
+                  )}
+                </div>
+                <div className="mt-2 flex items-center justify-between gap-3 text-xs text-fg-muted">
+                  <span>
+                    {registered}/{pack.datasets.length} datasets registered
+                  </span>
+                  {(pack.status === "absent" || pack.status === "incomplete") && (
+                    <a
+                      href={pack.install_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1 text-signal hover:underline"
+                    >
+                      Get dataset <ExternalLink className="size-3" />
+                    </a>
+                  )}
+                </div>
+                {pack.status === "incomplete" && pack.missing.length > 0 && (
+                  <p className="mt-2 text-xs text-warn">
+                    Missing {pack.missing.length} required path
+                    {pack.missing.length === 1 ? "" : "s"}.
+                  </p>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      {jobId !== undefined && (
+        <div className="mt-4 border-t border-line pt-4">
+          <ReferenceRegistrationJob jobId={jobId} onFinished={clearJob} />
+        </div>
+      )}
+
+      {catalog.data?.packs.every((pack) => pack.status === "absent") && (
+        <Callout className="mt-3">
+          No reference packs are installed. Place a supported pack under the local datasets
+          folder, then return here; discovery is automatic.
+        </Callout>
+      )}
+    </Panel>
+  );
+}
+
+function ReferenceRegistrationJob({
+  jobId,
+  onFinished,
+}: {
+  jobId: number;
+  onFinished: () => void;
+}) {
+  const queryClient = useQueryClient();
+  const { job, lines, error } = useJob(jobId);
+
+  useEffect(() => {
+    if (!job || !isTerminal(job.status)) return;
+    void queryClient.invalidateQueries({ queryKey: queryKeys.datasets() });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.referencePacks() });
+    if (job.status === "succeeded") {
+      const timer = window.setTimeout(onFinished, 1800);
+      return () => window.clearTimeout(timer);
+    }
+  }, [job?.status, onFinished, queryClient]);
+
+  return (
+    <div className="flex flex-col gap-3">
+      <JobProgress jobId={jobId} job={job} lines={lines} error={error} />
+      {job && isTerminal(job.status) && job.status !== "succeeded" && (
+        <Button className="self-end" size="sm" variant="ghost" onClick={onFinished}>
+          Dismiss
+        </Button>
+      )}
     </div>
   );
 }

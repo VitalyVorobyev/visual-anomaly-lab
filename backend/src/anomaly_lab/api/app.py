@@ -24,6 +24,7 @@ from anomaly_lab.api.routers import (
     images,
     import_,
     jobs,
+    reference_packs,
     splits,
     ws,
 )
@@ -122,6 +123,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(import_.router)
     app.include_router(jobs.router)
     app.include_router(jobs.ws_router)
+    app.include_router(reference_packs.router)
     app.include_router(splits.router)
     app.include_router(ws.router)
     return app

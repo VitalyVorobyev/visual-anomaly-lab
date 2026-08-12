@@ -30,6 +30,7 @@ export const queryKeys = {
   manifest: (manifestId: string) => ["import", "manifest", manifestId] as const,
 
   datasets: () => ["datasets"] as const,
+  referencePacks: () => ["reference-packs"] as const,
   dataset: (datasetId: number) => ["datasets", datasetId] as const,
   datasetDeletion: (datasetId: number) =>
     ["datasets", datasetId, "deletion-preview"] as const,

@@ -103,6 +103,20 @@ nothing exercised until then.
 `SplitStrategy.IMPORTED` materializes ([the evaluation layer](evaluation.md)). Note that an official one-class protocol generally has train and
 test and **no `val` subset at all**, so an empty validation set is ordinary rather than a broken split.
 
+## Local reference packs
+
+`GET /api/reference-packs` performs a metadata-only discovery pass under the configured public
+reference-data root (the repository's gitignored `/datasets/` directory in development). It knows the
+published layouts of VisA and GKN but does not open an image merely to decide whether a pack exists.
+Absent and incomplete packs remain instructional states, with their expected root and upstream source
+link visible in the dataset catalogue.
+
+`POST /api/reference-packs/register` creates one cancellable `reference_import` job for every selected
+pack. VisA becomes twelve ordinary `csv_table` datasets, one per object class; GKN becomes one
+`folder_classes` dataset. Scans finish before the database changes, then all missing manifests commit in
+one transaction. A failed class therefore cannot leave half a benchmark registered. Repeating the action
+skips datasets already present. Source images and masks are referenced in place and remain read-only.
+
 ## The options form
 
 An adapter's options model is a pydantic model, and its **JSON Schema drives the import form**: control type

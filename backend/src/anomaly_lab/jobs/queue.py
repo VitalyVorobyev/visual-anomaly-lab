@@ -354,6 +354,9 @@ class JobQueue:
         # The worker resolves its own settings from the environment, so it must be
         # pointed at the same data directory rather than inheriting a default.
         env["ANOMALY_LAB_DATA_DIR"] = str(self._settings.data_dir)
+        env["ANOMALY_LAB_REFERENCE_DATASETS_DIR"] = str(
+            self._settings.reference_datasets_dir
+        )
         # Unbuffered, so a flushed event line reaches us immediately.
         env["PYTHONUNBUFFERED"] = "1"
 

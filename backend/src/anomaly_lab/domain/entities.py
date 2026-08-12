@@ -33,6 +33,7 @@ def _decode_json_object(value: object) -> object:
 
 class JobKind(StrEnum):
     IMPORT = "import"
+    REFERENCE_IMPORT = "reference_import"
     VERIFY = "verify"
     PREWARM = "prewarm"
     TRAIN = "train"

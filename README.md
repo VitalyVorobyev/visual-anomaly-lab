@@ -115,16 +115,19 @@ exactly one entry.
 
 ## Reference datasets
 
-Datasets are not included; download them and point the import screen at the directory.
+Datasets are not included. Download either pack into the gitignored `/datasets/` directory; the dataset
+catalogue detects a complete local pack and offers one **Register** action. Registration indexes the files
+in place and never copies or modifies them. Any other image tree still goes through the general import
+screen.
 
 | Dataset | What it is | Adapter | Licence |
 | --- | --- | --- | --- |
 | [**VisA**](https://github.com/amazon-science/spot-diff) — Zou et al. | 12 object classes, ~1000 normal + 100 anomalous images each, **with pixel-level masks** and official split tables. | `csv_table` | CC BY 4.0 |
 | [**GKN Blade Surface Defect**](https://doi.org/10.17632/3bh998k78g.1) — Qianyu Zhou, University of Connecticut | 203 good, 48 nick, 149 scratch photographs of blade surfaces. No masks. | `folder_classes` | CC BY 4.0 |
 
-For one VisA class: `csv_path = split_csv/1cls.csv`, `filter_column = object`,
-`filter_value = candle`. For GKN: `normal_dirs = Data_GKN/Good` and
-`defect_dirs = Data_GKN/Nick, Data_GKN/Scratch`.
+VisA registration creates one dataset per object class from `split_csv/1cls.csv`; GKN maps `Good` to
+normal and `Nick` / `Scratch` to defect. Those are provider defaults, not assumptions in the domain model
+or either adapter.
 
 Then create a split with the **`imported`** strategy to adopt the published partition rather than
 drawing your own — that is what makes your number comparable to the paper's.
