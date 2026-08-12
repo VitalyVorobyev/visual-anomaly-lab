@@ -56,9 +56,10 @@ the detail is in the git history and the ADRs.
       block with an instruction to cancel or wait; queue enqueue is excluded across the transaction;
       a resident is evicted under its lock; records commit before app-owned artifacts are removed.
       A corrupt artifact path is refused and an external synthetic sentinel proves source safety.
-- [ ] **Preview and perform dataset deletion** (M): typed-name confirmation; cascade through
-      app-owned splits, experiments, results, caches, annotations and profiles while a synthetic
-      sentinel proves the external source tree is untouched.
+- [x] **Preview and perform dataset deletion** (M): typed-name confirmation; exact counts for samples,
+      images, splits, experiments, jobs, manual labels, manifest, job logs, thumbnails and artifacts; one guarded row
+      transaction followed by app-owned cleanup. Dataset and experiment jobs block the operation, unsafe
+      paths are refused, and an external synthetic source sentinel survives the full cascade.
 - [ ] **Discover and register local reference packs** (M): schema-driven providers for VisA and
       GKN, metadata-only detection, atomic/idempotent `Register all`, and instructional absent/error
       states. No automatic download.

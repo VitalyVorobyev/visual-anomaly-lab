@@ -22,9 +22,11 @@ MPS device — concurrency would only cause contention and confusing timing meas
 visible and cancellable before they start. The queue is intentionally in-process: no Celery, no Redis, no
 broker (ADR-0009).
 
-Experiment deletion takes the queue's **lifecycle guard**. `enqueue` takes the same cross-thread lock, so
-the delete operation cannot observe an idle experiment and race a new train request into existence. Active
-queued or running work blocks deletion and is named in the preview; it must finish or be cancelled first.
+Experiment and dataset deletion take the queue's **lifecycle guard**. `enqueue` takes the same cross-thread
+lock, so a delete operation cannot observe idle state and race a new train, score, verify or pre-warm request
+into existence. Active queued or running work blocks deletion and is named in the preview; it must finish or
+be cancelled first. Dataset lookup covers both experiment-bound jobs and dataset ids in kind-agnostic job
+parameters.
 
 ## Worker → parent event protocol
 

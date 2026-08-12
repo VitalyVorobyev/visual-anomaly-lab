@@ -11,19 +11,30 @@ has, and a two-channel sample is described by the same shape as a three-channel 
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 import sqlite3
+from dataclasses import dataclass
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field, model_validator
 
+from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.samples import SampleFilter
 from anomaly_lab.domain.entities import Channel, Dataset, Image, Label, LabelSource, Sample, Subset
+from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.jobs.resident import ResidentWorker
+from anomaly_lab.media.cache import TIERS, cache_path
+from anomaly_lab.owned_storage import StorageUsage, experiment_artifact_path, path_usage
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
@@ -155,6 +166,53 @@ class BulkLabelResult(BaseModel):
     updated: int
 
 
+class DatasetDeletionPreview(BaseModel):
+    """Every app-owned consequence of deleting a dataset."""
+
+    model_config = API_MODEL_CONFIG
+
+    dataset_id: int
+    name: str
+    samples: int
+    images: int
+    splits: int
+    experiments: int
+    jobs: int
+    manual_labels: int
+    generated_files: int
+    generated_bytes: int
+    active_jobs: list[JobSummary] = Field(default_factory=list)
+    resident_loaded: bool = False
+    storage_locations_safe: bool = True
+    can_delete: bool
+    blocker: str | None = None
+
+
+class DatasetDeletionResult(BaseModel):
+    """Completed row cascade and best-effort app-owned storage cleanup."""
+
+    model_config = API_MODEL_CONFIG
+
+    deleted: bool
+    freed_files: int
+    freed_bytes: int
+    cleanup_errors: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _DeletionInventory:
+    dataset: Dataset
+    image_ids: list[int]
+    experiment_ids: list[int]
+    jobs: int
+    owned_paths: list[Path]
+    usage: StorageUsage
+    storage_safe: bool
+    samples: int
+    splits: int
+    manual_labels: int
+
+
 def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSummary:
     return DatasetSummary(
         id=dataset.id,
@@ -208,6 +266,88 @@ def _require_dataset(conn: sqlite3.Connection, dataset_id: int) -> Dataset:
     return dataset
 
 
+def _owned_manifest_path(settings: Settings, dataset: Dataset) -> Path | None:
+    if not dataset.manifest_path:
+        return None
+    stored = Path(dataset.manifest_path).expanduser()
+    expected_parent = settings.manifests_dir
+    expected_prefix = f"dataset-{dataset.id}-"
+    if (
+        not stored.is_absolute()
+        or ".." in stored.parts
+        or settings.manifests_dir.is_symlink()
+        or stored.parent != expected_parent
+        or not stored.name.startswith(expected_prefix)
+        or not stored.name.endswith(".json")
+        or stored.is_symlink()
+    ):
+        return None
+    return stored
+
+
+def _deletion_inventory(
+    conn: sqlite3.Connection, settings: Settings, dataset_id: int
+) -> _DeletionInventory:
+    dataset = _require_dataset(conn, dataset_id)
+    images = images_repo.list_images_for_dataset(conn, dataset_id)
+    experiments = experiments_repo.list_experiments_for_dataset(conn, dataset_id)
+    jobs = jobs_repo.list_jobs_for_dataset(conn, dataset_id)
+
+    paths: list[Path] = []
+    safe = True
+    for experiment in experiments:
+        artifact_path = experiment_artifact_path(settings, experiment)
+        if experiment.artifact_dir and artifact_path is None:
+            safe = False
+        elif artifact_path is not None:
+            paths.append(artifact_path)
+    for image in images:
+        paths.extend(
+            cache_path(settings, image.id, tier)
+            for tier, spec in TIERS.items()
+            if spec.cached
+        )
+    paths.extend(
+        settings.jobs_log_dir / f"{job.id}.log"
+        for job in jobs
+        if job.experiment_id is None
+    )
+
+    owned_manifest = _owned_manifest_path(settings, dataset)
+    if dataset.manifest_path and owned_manifest is None:
+        safe = False
+    elif owned_manifest is not None:
+        paths.append(owned_manifest)
+
+    unique_paths = list(dict.fromkeys(paths))
+    usage = sum((path_usage(path) for path in unique_paths), start=StorageUsage())
+    manual_labels = int(
+        conn.execute(
+            "SELECT COUNT(*) FROM sample WHERE dataset_id = ? AND label_source = 'manual'",
+            (dataset_id,),
+        ).fetchone()[0]
+    )
+    return _DeletionInventory(
+        dataset=dataset,
+        image_ids=[image.id for image in images],
+        experiment_ids=[experiment.id for experiment in experiments],
+        jobs=len(jobs),
+        owned_paths=unique_paths,
+        usage=usage,
+        storage_safe=safe,
+        samples=samples_repo.count_samples(conn, dataset_id),
+        splits=len(splits_repo.list_splits(conn, dataset_id)),
+        manual_labels=manual_labels,
+    )
+
+
+def _remove_owned_path(path: Path) -> None:
+    if path.is_symlink() or not path.is_dir():
+        path.unlink(missing_ok=True)
+    else:
+        shutil.rmtree(path)
+
+
 @router.get("", summary="Every dataset, with its counts")
 def list_datasets(request: Request) -> list[DatasetSummary]:
     """List the catalog."""
@@ -231,24 +371,96 @@ def get_dataset(request: Request, dataset_id: int) -> DatasetDetail:
         )
 
 
-@router.delete("/{dataset_id}", status_code=204, summary="Delete a dataset and its rows")
-def delete_dataset(request: Request, dataset_id: int) -> None:
-    """Remove the catalog entry. **Source images are never touched** (ADR-0001).
-
-    Refused while an experiment references the dataset: an experiment freezes its
-    configuration at creation, so orphaning one would leave results that cannot be
-    explained (ADR-0005).
-    """
+@router.get(
+    "/{dataset_id}/deletion-preview",
+    summary="Preview every app-owned consequence of deleting a dataset",
+)
+def preview_dataset_deletion(request: Request, dataset_id: int) -> DatasetDeletionPreview:
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        _require_dataset(conn, dataset_id)
-        try:
-            datasets_repo.delete_dataset(conn, dataset_id)
-        except sqlite3.IntegrityError as exc:
-            raise HTTPException(
-                status_code=409,
-                detail=(f"dataset {dataset_id} still has experiments attached; delete those first"),
-            ) from exc
+        inventory = _deletion_inventory(conn, settings, dataset_id)
+        active = jobs_repo.active_jobs_for_dataset(conn, dataset_id)
+    resident: ResidentWorker = request.app.state.resident
+    snapshot = resident.snapshot()
+    resident_loaded = snapshot is not None and snapshot.experiment_id in inventory.experiment_ids
+
+    blocker: str | None = None
+    if active:
+        blocker = "Cancel or wait for active dataset work before deleting it."
+    elif not inventory.storage_safe:
+        blocker = "Stored app-owned paths do not match this dataset's expected locations."
+
+    return DatasetDeletionPreview(
+        dataset_id=dataset_id,
+        name=inventory.dataset.name,
+        samples=inventory.samples,
+        images=len(inventory.image_ids),
+        splits=inventory.splits,
+        experiments=len(inventory.experiment_ids),
+        jobs=inventory.jobs,
+        manual_labels=inventory.manual_labels,
+        generated_files=inventory.usage.files,
+        generated_bytes=inventory.usage.bytes,
+        active_jobs=[summary_of(job) for job in active],
+        resident_loaded=resident_loaded,
+        storage_locations_safe=inventory.storage_safe,
+        can_delete=blocker is None,
+        blocker=blocker,
+    )
+
+
+@router.delete("/{dataset_id}", summary="Delete a dataset and all app-owned descendants")
+async def delete_dataset(request: Request, dataset_id: int) -> DatasetDeletionResult:
+    """Delete catalog state and generated storage, never source images or source masks."""
+    settings: Settings = request.app.state.settings
+    queue: JobQueue = request.app.state.job_queue
+    resident: ResidentWorker = request.app.state.resident
+
+    async with queue.lifecycle_guard(), resident.eviction_guard():
+        with connection(settings.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # The write transaction begins before the inventory: a simultaneous
+                # re-import or manual-label request cannot add rows after we have named
+                # the consequences but before the cascade commits.
+                inventory = _deletion_inventory(conn, settings, dataset_id)
+                if not inventory.storage_safe:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="refusing dataset deletion because an app-owned path is unsafe",
+                    )
+                active = jobs_repo.active_jobs_for_dataset(conn, dataset_id)
+                if active:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="cancel or wait for active dataset work before deleting it",
+                    )
+                deleted = datasets_repo.delete_dataset_rows(
+                    conn, dataset_id, include_experiments=True
+                )
+                conn.execute("COMMIT")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+
+        freed = StorageUsage()
+        cleanup_errors: list[str] = []
+        for path in inventory.owned_paths:
+            usage = path_usage(path)
+            try:
+                await asyncio.to_thread(_remove_owned_path, path)
+            except OSError as exc:
+                cleanup_errors.append(f"{path.name}: {exc}")
+            else:
+                freed += usage
+
+    return DatasetDeletionResult(
+        deleted=deleted,
+        freed_files=freed.files,
+        freed_bytes=freed.bytes,
+        cleanup_errors=cleanup_errors,
+    )
 
 
 @router.get("/{dataset_id}/samples", summary="A page of samples, filtered")

@@ -33,6 +33,8 @@ export type BulkLabelRequest = Schemas["BulkLabelRequest"];
 
 export type DatasetSummary = Schemas["DatasetSummary"];
 export type DatasetDetail = Schemas["DatasetDetail"];
+export type DatasetDeletionPreview = Schemas["DatasetDeletionPreview"];
+export type DatasetDeletionResult = Schemas["DatasetDeletionResult"];
 export type SampleSummary = Schemas["SampleSummary"];
 export type SamplePage = Schemas["SamplePage"];
 export type ImageSummary = Schemas["ImageSummary"];
