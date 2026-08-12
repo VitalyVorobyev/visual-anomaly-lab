@@ -33,6 +33,13 @@ dataset in the selected public packs and atomically commits the resulting manife
 receives both the app-data directory and the reference-data directory explicitly; relying on a
 source-checkout default would make discovery in the API disagree with execution in a packaged build.
 
+`model_asset_download` is likewise an ordinary unbound job. Its handler knows only an asset key; the fixed
+catalogue supplies the immutable URL, byte count and SHA-256, preventing a caller from turning the sidecar
+into an arbitrary downloader. The licence must be accepted before enqueue. Bytes go to a job-specific
+partial file and become visible at the managed path only after size and digest verification; cancellation or
+failure removes the partial. Because it uses the same queue, download progress, logs and cancellation need no
+second mechanism, and a model-asset write cannot compete with an accelerator job.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:

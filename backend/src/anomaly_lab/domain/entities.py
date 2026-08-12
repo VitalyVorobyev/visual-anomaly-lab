@@ -39,6 +39,7 @@ class JobKind(StrEnum):
     TRAIN = "train"
     INFER = "infer"
     DISTILL = "distill"
+    MODEL_ASSET_DOWNLOAD = "model_asset_download"
 
 
 class JobStatus(StrEnum):

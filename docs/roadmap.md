@@ -494,6 +494,11 @@ versioned defect annotation the ground truth used for future evaluation.
   Fit/1:1 views, undo/redo, autosave with conflict detection, completion state, keyboard queue and
   MobileSAM point/box assistance.
 
+The shared asset prerequisite is in place: a fixed catalogue exposes licence and provenance, an ordinary
+cancellable job downloads to a partial and atomically installs only after exact size/SHA-256 verification,
+and a verified external path can be selected without copying or taking ownership of it. MobileSAM assistance
+consumes this boundary; it does not own another downloader or cache.
+
 **Exit criteria**
 
 - [x] Imported source masks remain byte-for-byte untouched while their app-owned revisions can be edited.

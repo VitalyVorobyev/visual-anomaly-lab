@@ -105,6 +105,11 @@ class Settings(BaseSettings):
         """
         return self.data_dir / "model-cache"
 
+    @property
+    def model_assets_dir(self) -> Path:
+        """Licensed, integrity-checked assets used by interactive model tools."""
+        return self.model_cache_dir / "assets"
+
     def experiment_dir(self, experiment_id: int) -> Path:
         return self.artifacts_dir / f"exp-{experiment_id}"
 

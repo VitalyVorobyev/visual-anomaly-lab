@@ -8,7 +8,7 @@ visual-anomaly-lab/
 ├── docs/
 │   ├── architecture/               # the handbook — how the system works now (this document)
 │   ├── adr/                        # decision records: why it is shaped this way
-│   ├── roadmap.md                  # milestones M0–M9
+│   ├── roadmap.md                  # milestones M0–M10
 │   ├── backlog.md                  # task breakdown by epic
 │   ├── measurements-efficientad.md # the append-only evidence log behind ADR-0029
 │   ├── development.md              # how to run, test and check the thing
@@ -24,6 +24,7 @@ visual-anomaly-lab/
 │   │   ├── datasets/               # import adapters, manifest model, scan/verify
 │   │   ├── media/                  # BMP decode, thumbnail/preview cache, map rendering
 │   │   ├── models/                 # base.py (interface), classical/, anomalib_adapters/, registry
+│   │   ├── model_assets/           # fixed catalogue, integrity checks, licensed downloads
 │   │   ├── jobs/                   # queue, subprocess worker entrypoint, event protocol
 │   │   └── eval/                   # metrics, channel→sample aggregation, thresholds
 │   └── tests/                      # pytest: unit + API-level with a temp data dir
@@ -51,6 +52,8 @@ visual-anomaly-lab/
     │       └── logs/               # <job>.log — full worker stdout stream
     ├── annotations/
     │   └── image-<id>/revision-<n>.png # immutable app-owned binary truth
+    ├── model-cache/
+    │   └── assets/                 # verified shared weights + external-source metadata
     └── exports/                    # CSV / JSON exports of results and metrics
 ```
 
@@ -67,6 +70,13 @@ constructs a path from `__file__` or the current working directory.
 anomaly maps, thumbnails, checkpoints — always lives on the filesystem, referenced by path. This keeps the
 database small enough to be trivially inspectable with `sqlite3`, keeps large binaries out of transactions,
 and lets artifacts be deleted or archived by directory (ADR-0004).
+
+**Model assets are executable inputs, not casual downloads.** `model_assets/catalog.py` pins every accepted
+asset to an immutable upstream revision, exact byte count, SHA-256 and licence. Acquisition streams to a
+job-specific partial file, reports progress, honours cancellation, verifies size and digest, then atomically
+renames into `model-cache/assets/`. A user may instead select an external file; it must pass the same checks,
+is recorded by absolute path, and is never copied or deleted by the application. Listing the catalogue hashes
+each distinct `(path, size, mtime)` state once, so the UI can poll without repeatedly reading tens of MB.
 
 ---
 
