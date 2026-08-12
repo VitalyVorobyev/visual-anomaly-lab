@@ -83,6 +83,8 @@ def create_experiment(
     name: str,
     dataset_id: int,
     split_id: int,
+    region_profile_id: int,
+    region_manifest_sha256: str,
     model_type: str,
     model_config: Mapping[str, Any],
     preprocessing_config: Mapping[str, Any],
@@ -93,14 +95,17 @@ def create_experiment(
     cursor = conn.execute(
         """
         INSERT INTO experiment
-               (name, dataset_id, split_id, model_type, model_config,
+               (name, dataset_id, split_id, region_profile_id,
+                region_manifest_sha256, model_type, model_config,
                 preprocessing_config, eval_config, artifact_dir, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
             dataset_id,
             split_id,
+            region_profile_id,
+            region_manifest_sha256,
             model_type,
             json.dumps(dict(model_config), sort_keys=True),
             json.dumps(dict(preprocessing_config), sort_keys=True),

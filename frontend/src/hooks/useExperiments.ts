@@ -97,6 +97,7 @@ export interface CreateExperimentInput {
   name: string;
   dataset_id: number;
   split_id: number;
+  region_profile_id: number;
   model_type: string;
   config: Record<string, unknown>;
   preprocessing: Record<string, unknown>;

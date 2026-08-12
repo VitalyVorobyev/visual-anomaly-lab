@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import importlib.util
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -220,6 +220,14 @@ class InferContext(ModelContext):
     (ADR-0026).
     """
 
+    map_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
+    """Injected source-frame projection applied before a plugin's map is persisted.
+
+    Plugins still emit maps in the prepared frame. The experiment boundary owns the
+    pinned spatial transform, so projection happens here once and no method needs to know
+    that region profiles exist.
+    """
+
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
     @property
@@ -262,8 +270,13 @@ class InferContext(ModelContext):
                 f"shape {np.shape(array)}, which is not a 2-D map with singleton axes"
             )
             raise ValueError(msg)
+        if self.map_projector is not None:
+            values = np.ascontiguousarray(self.map_projector(image_id, values), dtype=np.float32)
+        finite = values[np.isfinite(values)]
+        if finite.size == 0:
+            raise ValueError(f"anomaly map for image {image_id} has no covered finite pixels")
         np.save(path, values)
-        self._map_extremes.append((float(values.min()), float(np.percentile(values, 99.9))))
+        self._map_extremes.append((float(finite.min()), float(np.percentile(finite, 99.9))))
         return path
 
     def display_range(self) -> tuple[float, float] | None:

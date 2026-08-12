@@ -114,6 +114,13 @@ describe("valueAt", () => {
   it("is null for a channel the plane does not have", () => {
     expect(valueAt(plane, 0.5, 0.5, 1)).toBeNull();
   });
+
+  it("has no measurement outside the prepared region", () => {
+    const uncovered = decodePlane(encode([[[Number.NaN]]]));
+
+    expect(valueAt(uncovered, 0.5, 0.5)).toBeNull();
+    expect(valuesAt(uncovered, 0.5, 0.5)).toEqual([]);
+  });
 });
 
 describe("fractionOf", () => {

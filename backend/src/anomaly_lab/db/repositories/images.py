@@ -86,6 +86,7 @@ class SplitImage:
     sample_id: int
     channel: str | None
     path: str
+    sha256: str
     label: Label
     subset: Subset
 
@@ -122,6 +123,7 @@ def list_images_for_split(
                image.sample_id   AS sample_id,
                channel.name      AS channel,
                image.path        AS path,
+               image.sha256      AS sha256,
                sample.label      AS label,
                split_assignment.subset AS subset
           FROM split_assignment
@@ -141,6 +143,7 @@ def list_images_for_split(
             sample_id=int(row["sample_id"]),
             channel=row["channel"],
             path=str(row["path"]),
+            sha256=str(row["sha256"]),
             label=Label(row["label"]),
             subset=Subset(row["subset"]),
         )

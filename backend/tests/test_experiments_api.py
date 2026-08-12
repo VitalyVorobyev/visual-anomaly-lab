@@ -26,8 +26,11 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import JobKind, JobStatus, Label
+from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.regions.preparation import run_region_prepare_job
 
 from .conftest import FIXTURE_SIZE as SIZE
 from .conftest import TEST_DEFECTS, TEST_NORMALS, TRAIN_NORMALS, Fixture
@@ -43,7 +46,7 @@ def test_the_method_catalog_carries_schemas_rather_than_field_lists(client: Test
 
     keys = {method["key"] for method in payload["methods"]}
     assert "pixel_reference" in keys
-    assert payload["preprocessing_schema"]["properties"]["width"]["default"] == 256
+    assert set(payload["preprocessing_schema"]["properties"]) == {"color"}
     assert "aggregation" in payload["evaluation_schema"]["properties"]
 
     baseline = next(m for m in payload["methods"] if m["key"] == "pixel_reference")
@@ -73,7 +76,42 @@ def test_creating_an_experiment_freezes_its_configuration(
     # complete rather than partial.
     assert created["config"]["score_percentile"] == 99.5
     assert created["preprocessing"]["color"] == "rgb"
+    assert created["preprocessing"]["width"] == SIZE
+    assert created["preprocessing"]["height"] == SIZE
+    assert created["region_profile_id"] == seeded.region_profile_id
+    assert len(created["region_manifest_sha256"]) == 64
     assert created["artifact_dir"].endswith(f"exp-{created['id']}")
+
+
+def test_an_unbuilt_region_profile_cannot_become_experiment_input(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    with connection(settings.db_path) as conn:
+        profile = region_profiles_repo.create_revision(
+            conn,
+            dataset_id=seeded.dataset_id,
+            name="not built",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=SIZE,
+            prepared_height=SIZE,
+            padding_fraction=0.0,
+            seed=29,
+        )
+
+    response = client.post(
+        "/api/experiments",
+        json={
+            "name": "missing pixels",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "region_profile_id": profile.id,
+            "model_type": "pixel_reference",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "has not been built" in response.text
 
 
 def test_an_invalid_configuration_is_refused_at_creation_not_at_job_time(
@@ -86,6 +124,7 @@ def test_an_invalid_configuration_is_refused_at_creation_not_at_job_time(
             "name": "bad",
             "dataset_id": seeded.dataset_id,
             "split_id": seeded.split_id,
+            "region_profile_id": seeded.region_profile_id,
             "model_type": "pixel_reference",
             "config": {"score_percentile": 900},
         },
@@ -101,6 +140,7 @@ def test_an_unknown_method_is_refused_by_name(client: TestClient, seeded: Fixtur
             "name": "bad",
             "dataset_id": seeded.dataset_id,
             "split_id": seeded.split_id,
+            "region_profile_id": seeded.region_profile_id,
             "model_type": "not_a_method",
         },
     )
@@ -115,6 +155,7 @@ def test_a_split_from_another_dataset_is_refused(client: TestClient, seeded: Fix
             "name": "mismatched",
             "dataset_id": seeded.dataset_id + 999,
             "split_id": seeded.split_id,
+            "region_profile_id": seeded.region_profile_id,
             "model_type": "pixel_reference",
         },
     )
@@ -619,6 +660,46 @@ def test_the_preprocessed_source_is_served_rather_than_the_display_tier(
     assert float(plane.max()) <= 1.0
     # The fixture stamps a 255 square into the defect, so the peak is saturated.
     assert float(plane.max()) == pytest.approx(1.0)
+
+
+def test_model_input_values_are_projected_back_into_source_coordinates(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """A crop-sized value plane cannot be indexed by a source-image pointer."""
+    with connection(settings.db_path) as conn:
+        profile = region_profiles_repo.create_revision(
+            conn,
+            dataset_id=seeded.dataset_id,
+            name="coarse identity input",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=SIZE // 2,
+            prepared_height=SIZE // 2,
+            padding_fraction=0.0,
+            seed=31,
+        )
+    run_region_prepare_job(
+        JobContext(
+            job_id=98,
+            kind=JobKind.REGION_PREPARE,
+            params={
+                "dataset_id": seeded.dataset_id,
+                "profile_id": profile.id,
+                "mode": "build",
+            },
+            settings=settings,
+        )
+    )
+    experiment = _create(client, seeded, region_profile_id=profile.id)
+
+    response = client.get(
+        f"/api/experiments/{experiment['id']}/images/{seeded.defect_image_ids[0]}/source-values"
+    )
+
+    assert response.status_code == 200
+    plane, _ = _plane(response.content)
+    assert plane.shape[:2] == (SIZE, SIZE)
+    assert np.isfinite(plane).all()
 
 
 def test_source_values_revalidate_on_the_frozen_preprocessing(

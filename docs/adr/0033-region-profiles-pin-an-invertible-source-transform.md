@@ -50,3 +50,6 @@ operation is represented by a persisted, invertible source/prepared transform.**
 
 - **2026-08-12:** Made the resampling filter explicit on the immutable profile and documented the atomic,
   manifest-backed build that implements the already-decided bounded-artifact consequence.
+- **2026-08-12:** Completed experiment pinning: a run freezes the profile and manifest digests, methods read
+  only prepared artifacts, and shared persistence projects maps back to source coordinates. Completed builds
+  are now immutable; a rebuild is a new profile revision.

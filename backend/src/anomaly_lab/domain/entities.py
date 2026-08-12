@@ -278,6 +278,8 @@ class Experiment(BaseModel):
     name: str
     dataset_id: int
     split_id: int
+    region_profile_id: int
+    region_manifest_sha256: str
     model_type: str
     # `model_config` is taken by pydantic itself, so the field carries a trailing
     # underscore in Python and its database and wire name through the alias.

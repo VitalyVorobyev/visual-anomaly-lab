@@ -97,7 +97,7 @@ the detail is in the git history and the ADRs.
       MobileSAM; schemas drive controls and heavy imports remain lazy.
 - [x] **Build profile preview and preparation jobs** (M): 24 evenly spaced calibration images,
       coverage/failure/runtime/storage report, cancellation and bounded full-dataset output.
-- [ ] **Pin a built profile revision to an experiment** (M): store the immutable profile id,
+- [x] **Pin a built profile revision to an experiment** (M): store the immutable profile id,
       require a complete build, feed every method the same prepared PNGs and project maps back through
       the recorded transforms.
 - [ ] **Run the paired value gate** (M): identity versus localisation on at least two VisA classes,

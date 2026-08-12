@@ -65,10 +65,10 @@ TypeScript and a colormap living in two languages. Neither follows from serving 
   the **preprocessed source** the model actually saw
   (`GET /api/experiments/{id}/images/{image_id}/source-values`).
 - **The source planes are the preprocessed array, not the display image.** They are what
-  `load_array` produced for the model, at the experiment's own size and colour mode, so a
-  per-channel readout is the number the method consumed rather than an 8-bit preview of it. The ETag
-  covers the image's `sha256` and the frozen preprocessing config, so it is fetched once per image
-  and never again.
+  `load_array` produced for the model, in its colour mode, projected through the pinned transform so
+  the hover remains in source coordinates. A per-channel readout is therefore the number the method
+  consumed rather than an 8-bit preview of it; uncovered source pixels are NaN. The ETag covers the
+  prepared digest and frozen model-input config, so it is fetched once per image and never again.
 - **`graph` and `table` stay refused**, with the same 400 as before. Their payload is inline.
 - **The payload ETag now covers the display range.** It hashed size and mtime only, so anything that
   changed a key's range left every already-fetched PNG cached at the old scale. This was reachable
@@ -83,6 +83,12 @@ the "source" values, which would report what the browser is showing rather than 
 The hover readout generalizes for free. Because a diagnostic array is addressed the same way, the
 per-branch panes inherit the same readout with no code written per method — which is the property
 ADR-0018 exists to produce, arriving here without being asked for.
+
+## Changelog
+
+- **2026-08-12:** Project model-input planes through the experiment's pinned region transform before
+  serving them. The readout remains the float input the method consumed, but now shares source coordinates
+  with the photograph and stored map; NaN explicitly marks pixels outside the prepared crop.
 
 Negative consequences, accepted honestly:
 

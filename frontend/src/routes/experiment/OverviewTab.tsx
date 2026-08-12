@@ -85,6 +85,9 @@ export function Configuration({
   detail: {
     config: Record<string, unknown>;
     preprocessing: Record<string, unknown>;
+    region_profile_id: number;
+    region_profile_name?: string | null;
+    region_manifest_sha256: string;
     training_state?: TrainingState | null;
   };
 }) {
@@ -108,9 +111,17 @@ export function Configuration({
       )}
 
       <Disclosure summary="What this run was configured with">
-        <div className="grid gap-5 sm:grid-cols-2">
+        <div className="grid gap-5 sm:grid-cols-3">
+          <ConfigBlock
+            title="Prepared region"
+            values={{
+              profile: detail.region_profile_name ?? detail.region_profile_id,
+              revision_id: detail.region_profile_id,
+              manifest: detail.region_manifest_sha256,
+            }}
+          />
           <ConfigBlock title="Method" values={detail.config} />
-          <ConfigBlock title="Preprocessing" values={detail.preprocessing} />
+          <ConfigBlock title="Model input" values={detail.preprocessing} />
         </div>
       </Disclosure>
     </Panel>
@@ -129,7 +140,7 @@ function ConfigBlock({ title, values }: { title: string; values: Record<string, 
           {entries.map(([key, value]) => (
             <div key={key} className="flex items-baseline justify-between gap-3 border-b border-line/60 pb-1 last:border-0">
               <dt className="text-fg-muted">{key}</dt>
-              <dd className="text-fg tabular-nums">{JSON.stringify(value)}</dd>
+              <dd className="break-all text-right text-fg tabular-nums">{JSON.stringify(value)}</dd>
             </div>
           ))}
         </dl>

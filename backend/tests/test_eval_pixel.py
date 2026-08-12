@@ -173,3 +173,21 @@ def test_mismatched_shapes_are_refused() -> None:
     accumulator = PixelAccumulator(vmin=0.0, vmax=1.0)
     with pytest.raises(ValueError, match="same shape"):
         accumulator.add(np.zeros((8, 8), dtype=np.float32), np.zeros((4, 4), dtype=bool))
+
+
+def test_uncovered_source_pixels_stay_in_the_denominator_at_the_score_floor() -> None:
+    anomaly_map = np.full((8, 8), np.nan, dtype=np.float32)
+    anomaly_map[2:6, 2:6] = 0.25
+    mask = np.zeros((8, 8), dtype=bool)
+    mask[0:2, 0:2] = True
+    accumulator = PixelAccumulator(vmin=0.0, vmax=1.0, bins=256)
+
+    accumulator.add(anomaly_map, mask)
+
+    summary = accumulator.summary()
+    assert summary["defect_pixels"] == 4
+    assert summary["normal_pixels"] == 60
+    assert summary["covered_pixel_fraction"] == 0.25
+    assert summary["uncovered_defect_pixels"] == 4
+    assert summary["uncovered_normal_pixels"] == 44
+    assert accumulator.region_count == 1

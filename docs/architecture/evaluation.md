@@ -153,6 +153,12 @@ aggregation sweep first said the reducer did not matter, which was true of a run
 were not localized and false in general — see
 [the measurements](../measurements-efficientad.md).
 
+Maps from a region-prepared experiment are stored in source coordinates. Pixels outside the selected
+source crop are `NaN`, not fabricated observations. Renderers make those pixels transparent. Evaluation keeps
+them in the source-frame denominator at the run's score floor, so a localisation that misses a defect is
+penalised rather than rewarded by hiding it. It reports `covered_pixel_fraction`,
+`uncovered_defect_pixels`, and `uncovered_normal_pixels` alongside the evaluated counts.
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

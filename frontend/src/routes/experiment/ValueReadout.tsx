@@ -4,9 +4,9 @@
  * You asked for the colour under the cursor. In a measurement tool the useful readout is
  * the model's own number, not the CSS colour a colormap chose for it — so this reports the
  * anomaly value in map units with its position in the run-wide range, and the preprocessed
- * source values the method actually read. For a multi-channel dataset those source values
- * *are* the per-channel numbers a colour readout would have shown, at full float precision
- * and at the size the model saw rather than the size the browser is displaying.
+ * model-input values the method actually read. They are projected back through the pinned
+ * transform so the pointer stays in source coordinates; outside the prepared crop there
+ * is deliberately no value. For a multi-channel dataset every plane remains available.
  *
  * Both come from float32 planes fetched once per image and indexed locally (ADR-0023). No
  * colour is ever inverted: the colormap clips and quantizes, so the inverse is multi-valued
@@ -47,6 +47,7 @@ export function ValueReadout({
   const anomaly = map ? valueAt(map, position.u, position.v) : null;
   const fraction = anomaly === null ? null : fractionOf(anomaly, range);
   const channels = source ? valuesAt(source, position.u, position.v) : [];
+  const uncovered = source !== undefined && channels.length === 0;
 
   // A plane the server decimated is an approximate readout, and saying so is the whole
   // reason the stride rides in the header.
@@ -64,13 +65,14 @@ export function ValueReadout({
       )}
       {channels.length > 0 && (
         <span>
-          source{" "}
+          input{" "}
           <span className="text-fg tabular-nums">
             {channels.map((value) => value.toFixed(3)).join(", ")}
           </span>
         </span>
       )}
-      {anomaly === null && channels.length === 0 && (
+      {uncovered && <span className="text-fg-subtle">outside prepared region</span>}
+      {!uncovered && anomaly === null && channels.length === 0 && (
         <span className="text-fg-subtle">no values recorded for this image</span>
       )}
       {sampled && <span className="text-fg-subtle">sampled</span>}
