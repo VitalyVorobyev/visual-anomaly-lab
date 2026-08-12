@@ -480,7 +480,7 @@ experiment and read its history without crossing between unrelated top-level scr
 
 ---
 
-### M9 — Annotation system + editor
+### M9 — Annotation system + editor · complete 2026-08-12
 
 **Goal.** Turn source masks into immutable provenance and make the application's own editable,
 versioned defect annotation the ground truth used for future evaluation.
@@ -505,7 +505,7 @@ consumes this boundary; it does not own another downloader or cache.
 - [x] Evaluation uses one completed revision and marks older metric digests stale.
 - [x] PNG, LabelMe and COCO round trips preserve the binary evaluation mask.
 - [x] MobileSAM suggestions stay temporary until accepted and reuse the one resident/device lock.
-- [ ] A keyboard-only annotation pass can move through a queue, edit, save and complete an image.
+- [x] A keyboard-only annotation pass can move through a queue, edit, save and complete an image.
 
 ---
 

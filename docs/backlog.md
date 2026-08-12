@@ -83,6 +83,8 @@ the detail is in the git history and the ADRs.
 - [x] **Add MobileSAM point/box assist** (M): source-coordinate positive/negative points or box,
       up to three ephemeral ranked masks, mask/editable-contour acceptance, MPS with transparent CPU
       fallback and the one resident-worker lock. The verified asset remains a catalogue concern.
+- [x] **Close the keyboard-only editor pass** (S): focusable source-pixel cursor, one/ten-pixel
+      movement, polygon and brush actions, explicit close, queue traversal and completion shortcuts.
 
 ### E20 — Region profiles + spatial pipeline (M10)
 

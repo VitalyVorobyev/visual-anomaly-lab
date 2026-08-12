@@ -8,7 +8,15 @@
 
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+} from "react";
 import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage } from "react-konva";
 
 import type {
@@ -54,6 +62,7 @@ interface Props {
   onPoint: (point: AnnotationPoint) => void;
   onMovePoint: (shapeId: string, pointIndex: number, point: AnnotationPoint) => void;
   onBrush: (points: AnnotationPoint[]) => void;
+  onFinishPolygon: () => void;
   onAssistPoint: (point: AssistPoint) => void;
   onAssistBox: (box: AssistBox | null) => void;
 }
@@ -76,6 +85,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onPoint,
   onMovePoint,
   onBrush,
+  onFinishPolygon,
   onAssistPoint,
   onAssistBox,
 }, forwardedRef) {
@@ -93,6 +103,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   const previousView = useRef<CanvasView | null>(null);
   const [brushPoints, setBrushPoints] = useState<AnnotationPoint[]>([]);
   const [boxStart, setBoxStart] = useState<AnnotationPoint | null>(null);
+  const [keyboardFocused, setKeyboardFocused] = useState(false);
+  const [keyboardPoint, setKeyboardPoint] = useState<AnnotationPoint>({
+    x: document.image_width / 2,
+    y: document.image_height / 2,
+  });
   const source = useHtmlImage(imageUrl(imageId, "full"));
   const baseMask = useHtmlImage(
     document.base === "source_mask" ? maskUrl(imageId) : undefined,
@@ -194,6 +209,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     if (tool === "assist") {
       const point = sourcePoint();
       if (!point) return;
+      setKeyboardPoint(point);
       if (assistMode === "point") {
         const negative = native instanceof MouseEvent && native.shiftKey;
         onAssistPoint({ ...point, kind: negative ? "negative" : "positive" });
@@ -205,7 +221,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     }
     if (tool === "brush" || tool === "eraser") {
       const point = sourcePoint();
-      if (point) setBrushPoints([point]);
+      if (point) {
+        setKeyboardPoint(point);
+        setBrushPoints([point]);
+      }
       return;
     }
     // Source pixels are themselves Konva Image nodes, so a useful canvas click almost
@@ -214,7 +233,45 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     onSelect(null);
     if (tool === "polygon") {
       const point = sourcePoint();
-      if (point) onPoint(point);
+      if (point) {
+        setKeyboardPoint(point);
+        onPoint(point);
+      }
+    }
+  };
+
+  const onCanvasKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    const directions: Partial<Record<string, [number, number]>> = {
+      ArrowUp: [0, -1],
+      ArrowDown: [0, 1],
+      ArrowLeft: [-1, 0],
+      ArrowRight: [1, 0],
+    };
+    const direction = directions[event.key];
+    if (direction) {
+      event.preventDefault();
+      event.stopPropagation();
+      const step = event.shiftKey ? 10 : 1;
+      setKeyboardPoint((point) => ({
+        x: clamp(point.x + direction[0] * step, 0, document.image_width),
+        y: clamp(point.y + direction[1] * step, 0, document.image_height),
+      }));
+      return;
+    }
+    if (event.key !== "Enter" && event.key !== " ") return;
+    if (tool === "select" || (tool === "assist" && assistMode === "box")) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (tool === "polygon") {
+      if (event.key === "Enter" && pendingPoints.length >= 3) onFinishPolygon();
+      else onPoint(keyboardPoint);
+    } else if (tool === "brush" || tool === "eraser") {
+      onBrush([keyboardPoint]);
+    } else if (tool === "assist") {
+      onAssistPoint({
+        ...keyboardPoint,
+        kind: event.shiftKey ? "negative" : "positive",
+      });
     }
   };
 
@@ -282,7 +339,18 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   };
 
   return (
-    <div ref={hostRef} className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas">
+    <div
+      ref={hostRef}
+      role="region"
+      tabIndex={0}
+      data-annotation-canvas
+      aria-label="Annotation canvas"
+      aria-description="Use arrow keys to move the source-pixel cursor. Shift moves ten pixels. Space applies the current drawing tool; Enter closes a polygon after three points."
+      onFocus={() => setKeyboardFocused(true)}
+      onBlur={() => setKeyboardFocused(false)}
+      onKeyDown={onCanvasKeyDown}
+      className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-signal"
+    >
       <Stage
         ref={stageRef}
         width={size.width}
@@ -484,6 +552,32 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                 )}
               </Group>
             ))}
+            {keyboardFocused && tool !== "select" && (
+              <Group listening={false}>
+                <Circle
+                  x={keyboardPoint.x}
+                  y={keyboardPoint.y}
+                  radius={7 / scale}
+                  fill="#08090aaa"
+                  stroke="#3bc9db"
+                  strokeWidth={2 / scale}
+                />
+                <Line
+                  x={keyboardPoint.x}
+                  y={keyboardPoint.y}
+                  points={[-11 / scale, 0, 11 / scale, 0]}
+                  stroke="#ffffff"
+                  strokeWidth={1 / scale}
+                />
+                <Line
+                  x={keyboardPoint.x}
+                  y={keyboardPoint.y}
+                  points={[0, -11 / scale, 0, 11 / scale]}
+                  stroke="#ffffff"
+                  strokeWidth={1 / scale}
+                />
+              </Group>
+            )}
             <Rect
               width={document.image_width}
               height={document.image_height}
@@ -497,6 +591,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       {!source && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-white/55">
           Loading source image…
+        </div>
+      )}
+      {keyboardFocused && (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-control border border-line bg-surface/90 px-2 py-1 font-mono text-[10px] text-fg-muted shadow-panel backdrop-blur-sm">
+          {Math.round(keyboardPoint.x)}, {Math.round(keyboardPoint.y)} px · arrows move · Shift 10 px · Space draws
         </div>
       )}
     </div>
