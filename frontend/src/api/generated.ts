@@ -1228,6 +1228,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/region-extractors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every registered region extractor and its schema */
+        get: operations["list_region_extractors_api_region_extractors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Immutable region profile revisions owned by one dataset */
+        get: operations["list_region_profiles_api_datasets__dataset_id__region_profiles_get"];
+        put?: never;
+        /** Append an immutable region profile revision */
+        post: operations["create_region_profile_api_datasets__dataset_id__region_profiles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One immutable region profile revision */
+        get: operations["get_region_profile_api_region_profiles__profile_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/segment-assist": {
         parameters: {
             query?: never;
@@ -2100,6 +2152,8 @@ export interface components {
             experiments: number;
             /** Jobs */
             jobs: number;
+            /** Region Profiles */
+            region_profiles: number;
             /** Manual Labels */
             manual_labels: number;
             /** Generated Files */
@@ -3236,6 +3290,104 @@ export interface components {
          * @enum {string}
          */
         ReferencePackStatus: "absent" | "incomplete" | "available" | "registered";
+        /** RegionAvailability */
+        RegionAvailability: {
+            /**
+             * Available
+             * @default true
+             */
+            available: boolean;
+            /** Reason */
+            reason: string | null;
+        };
+        /** RegionExtractorDescription */
+        RegionExtractorDescription: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Summary */
+            summary: string;
+            availability: components["schemas"]["RegionAvailability"];
+            /** Required Assets */
+            required_assets: string[];
+            /** Config Schema */
+            config_schema: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * RegionFailurePolicy
+         * @description A localisation failure is visible; it never silently becomes full-frame input.
+         * @enum {string}
+         */
+        RegionFailurePolicy: "fail";
+        /** RegionProfileCreate */
+        RegionProfileCreate: {
+            /** Name */
+            name: string;
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Prepared Width
+             * @default 256
+             */
+            prepared_width: number;
+            /**
+             * Prepared Height
+             * @default 256
+             */
+            prepared_height: number;
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /**
+             * Seed
+             * @default 17
+             */
+            seed: number;
+        };
+        /**
+         * RegionProfileRevision
+         * @description One immutable dataset-owned spatial-input configuration (ADR-0033).
+         */
+        RegionProfileRevision: {
+            /** Id */
+            id: number;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Name */
+            name: string;
+            /** Revision No */
+            revision_no: number;
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config: {
+                [key: string]: unknown;
+            };
+            /** Prepared Width */
+            prepared_width: number;
+            /** Prepared Height */
+            prepared_height: number;
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /** @default fail */
+            failure_policy: components["schemas"]["RegionFailurePolicy"];
+            /** Seed */
+            seed: number;
+            /** Created At */
+            created_at: string;
+        };
         /** RegisterReferencePacksParams */
         RegisterReferencePacksParams: {
             /** Pack Keys */
@@ -5855,6 +6007,123 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_region_extractors_api_region_extractors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionExtractorDescription"][];
+                };
+            };
+        };
+    };
+    list_region_profiles_api_datasets__dataset_id__region_profiles_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionProfileRevision"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_region_profile_api_datasets__dataset_id__region_profiles_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionProfileCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionProfileRevision"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_region_profile_api_region_profiles__profile_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionProfileRevision"];
                 };
             };
             /** @description Validation Error */

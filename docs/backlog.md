@@ -92,7 +92,7 @@ the detail is in the git history and the ADRs.
       experiment pinning, source-frame annotations and explicit failure policy.
 - [ ] **Replace direct resize with an invertible input transform** (M): crop, 5% padding,
       aspect-preserving contain resize, edge padding and inverse map projection.
-- [ ] **Add the `RegionExtractor` registry** (M): identity, foreground-threshold baseline and
+- [x] **Add the `RegionExtractor` registry** (M): identity, foreground-threshold baseline and
       MobileSAM; schemas drive controls and heavy imports remain lazy.
 - [ ] **Build profile preview and preparation jobs** (M): 24 evenly spaced calibration images,
       coverage/failure/runtime/storage report, cancellation and bounded full-dataset output.

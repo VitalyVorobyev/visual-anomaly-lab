@@ -14,6 +14,7 @@ from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.domain.entities import JobKind, JobStatus, Label, Subset
@@ -170,6 +171,17 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         job_log = settings.jobs_log_dir / f"{dataset_job.id}.log"
         jobs_repo.mark_running(conn, dataset_job.id, log_path=str(job_log))
         jobs_repo.finish_job(conn, dataset_job.id, status=JobStatus.SUCCEEDED)
+        region_profiles_repo.create_revision(
+            conn,
+            dataset_id=dataset_id,
+            name="delete-me",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=256,
+            prepared_height=256,
+            padding_fraction=0.05,
+            seed=17,
+        )
 
     (artifact_dir / "maps").mkdir(parents=True)
     (artifact_dir / "model.bin").write_bytes(b"abc")
@@ -195,6 +207,7 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         "splits": 1,
         "experiments": 1,
         "jobs": 1,
+        "region_profiles": 1,
         "manual_labels": 1,
         "generated_files": 6,
         "generated_bytes": 25,
@@ -223,6 +236,7 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         assert datasets_repo.get_dataset(conn, dataset_id) is None
         assert experiments_repo.get_experiment(conn, experiment.id) is None
         assert jobs_repo.get_job(conn, dataset_job.id) is None
+        assert region_profiles_repo.list_profiles(conn, dataset_id) == []
 
 
 def test_active_dataset_work_blocks_preview_and_delete(

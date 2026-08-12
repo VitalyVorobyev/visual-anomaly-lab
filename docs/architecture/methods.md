@@ -103,6 +103,24 @@ through the recorded transform, with source pixels outside a crop marked uncover
 resize remains the live model path until region profile build artifacts and experiment pinning land; there
 is no mixed hidden rollout where some methods use the new bridge and others do not.
 
+## Region extractor plugins
+
+Spatial localisation has its own lazy `RegionExtractor` registry rather than becoming a model option. An
+extractor receives one source RGB array and returns one source pixel-edge box or an explicit failure. Its
+pydantic configuration schema drives the client exactly as model schemas do; adding an extractor is one
+module and one registry entry. The three current entries represent the value test rather than three promises
+of equal quality:
+
+- `identity` is the full-source control;
+- `foreground_threshold` estimates background luminance from the border, thresholds absolute contrast on a
+  bounded analysis grid, and returns the largest connected component;
+- `mobile_sam` uses the verified TinyViT checkpoint and a bounded automatic prompt grid, then selects the
+  largest mask inside configured area/quality limits. Torch and MobileSAM imports remain inside construction.
+
+Extractor confidence is method-specific and cannot be compared between registry entries. Profile preview
+reports coverage, box geometry, runtime and failures; it does not turn those confidence values into a shared
+score they are not.
+
 ### Standardizing for a backbone is the model's business, not the bridge's
 
 The bridge decides decode, resize and colour, and stops there. What a method then does with those pixels is
