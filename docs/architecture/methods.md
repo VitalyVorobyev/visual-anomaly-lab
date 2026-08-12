@@ -49,7 +49,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "efficientad_custom":    _efficientad_custom,    # ours, same interface (ADR-0008)
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
     "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
-    "glass_anomalib":        _glass_anomalib,        # learned-synthesis reference
+    "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
     # "classical_circular":  M8, optional (ADR-0015)
 }
 ```
@@ -249,7 +249,9 @@ in the measurement record, but becomes app-managed storage only if a paired publ
 ablation shows value. Likewise, the upstream per-category `svd` switch is exposed only as
 the generic `synthesis_anchor` experiment control; no dataset name enters the method.
 Resource evidence and the external-asset policy are recorded in
-[`measurements-glass.md`](../measurements-glass.md).
+[`measurements-glass.md`](../measurements-glass.md). The bounded paired public gate missed
+its image-level quality floor, so the method remains available as an explicitly experimental
+comparison rather than the recommended learned-synthesis reference.
 
 ## A downloaded asset can be a hyperparameter
 

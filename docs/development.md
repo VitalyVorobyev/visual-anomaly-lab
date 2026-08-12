@@ -134,10 +134,13 @@ The paired M11 public-data gate is reproducible without touching source images:
 
 ```bash
 ./scripts/dinomaly-public-gate.py --data-dir /tmp/dinomaly-public-gate
+./scripts/glass-public-gate.py --data-dir /tmp/glass-public-gate
 ```
 
 The destination must be absent or empty. It becomes an isolated workbench with the official VisA
-one-class splits, identity-prepared 392 px pixels, both runs, logs and `result.json`.
+one-class splits, identity-prepared pixels at the candidate's recorded size, both runs, logs and
+`result.json`. The two entry points share `scripts/m11_public_gate.py`; adding a candidate protocol
+does not copy the import, preparation, execution or decision machinery.
 
 **Read the handbook to learn the system; read a record to learn why.** When the two disagree, the
 handbook is right about what the code does and the record is right about what was chosen.

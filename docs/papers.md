@@ -20,7 +20,7 @@ to 2.6.0. It is an implementation source, not the specification of our model or 
 
 | Priority | Candidate | New principle | Integration and Apple-Silicon question |
 |---:|---|---|---|
-| 1 | [GLASS](https://arxiv.org/abs/2407.09359) | learned discriminator with image- and feature-level anomaly synthesis | Already in anomalib 2.6. Synthetic texture inputs and generated anomaly budgets must be explicit, bounded experiment inputs. |
+| 1 | [GLASS](https://arxiv.org/abs/2407.09359) | learned discriminator with image- and feature-level anomaly synthesis | Evaluated and integrated as experimental: the bounded public gate missed the image ROC-AUC floor and trailed PatchCore. |
 | 2 | [AnomalyVFM](https://arxiv.org/abs/2601.20524) | zero-shot adapted vision foundation model | Already in anomalib 2.6. It provides the most distinct no-in-domain-training reference, but RADIO weights and CPU/MPS cost need an asset and smoke-test decision first. |
 | 3 | [SuperADD](https://arxiv.org/abs/2605.14808) | training-free DINOv3 multi-layer memory bank under distribution shift | Newly available in anomalib 2.6 and scientifically current, but it overlaps PatchCore's memory-bank principle. The upstream default uses a huge DINOv3 backbone and hides a 100,000-vector database cap from its public constructor, so resource planning comes before integration. |
 
@@ -36,8 +36,9 @@ Additional useful comparisons stay below the first integration wave:
 
 ## Selection rule
 
-M11 integrates **different useful failure modes**, not the largest leaderboard number. Dinomaly is now the
-reconstruction reference; the remaining wave is GLASS → AnomalyVFM for learned synthetic-discrimination
-and zero-shot foundation-model references beside the existing student–teacher and memory-bank families.
-SuperADD is evaluated in parallel as the newest distribution-shift reference, but only moves ahead if a
-bounded smaller-backbone configuration retains its value on the public protocol.
+M11 integrates **different useful failure modes**, not the largest leaderboard number. Dinomaly is the
+reconstruction reference; GLASS remains an experimental learned-synthesis comparison after missing its
+promotion floor; AnomalyVFM is next as the zero-shot foundation-model candidate beside the existing
+student–teacher and memory-bank families. SuperADD is evaluated afterwards as the newest
+distribution-shift reference, but only moves ahead if a bounded smaller-backbone configuration retains
+its value on the public protocol.

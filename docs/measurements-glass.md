@@ -68,3 +68,61 @@ centre passes. CPU is a credible fallback, though about 1.5 times slower for tra
 **Decision:** proceed to a lazy GLASS plugin with batch 1, 288 × 288 as the documented
 reference size, finite updates, a bounded centre sample, Perlin-only synthesis by default,
 MPS preferred with CPU fallback, and an exact paired public-data quality gate before promotion.
+
+## 2026-08-12 — Paired public-data quality gate
+
+`scripts/glass-public-gate.py` ran the integrated plugin and the fixed PatchCore control on
+the official VisA one-class splits for `candle` and `pcb1`. Within each class both methods
+received the same identity-prepared 288 × 288 pixels and the same evaluation protocol. The
+destination was an isolated app-data directory; source images under `/datasets/` remained
+read-only.
+
+| Variable | GLASS value |
+|---|---|
+| Updates | 5,000, batch 1 |
+| Feature centre | 128 evenly spaced normals, refreshed every 392 absolute updates |
+| Feature mining | 20 inner steps |
+| Synthesis | sample-anchored global perturbation + built-in local Perlin regions |
+| Learning rate | 1e-4 |
+| Prepared input | identity, 288 × 288 |
+| Seed | 20260812 |
+| Checkpoint selection | final fixed-budget checkpoint; no labelled validation selection |
+
+| Class | Method | Image ROC-AUC | Pixel ROC-AUC | AU-PRO |
+|---|---|---:|---:|---:|
+| `candle` | GLASS | 0.8293 | 0.9122 | 0.5505 |
+| `candle` | PatchCore | 0.9371 | 0.9887 | 0.9467 |
+| `pcb1` | GLASS | 0.7583 | 0.8850 | 0.6598 |
+| `pcb1` | PatchCore | 0.8654 | 0.9934 | 0.8058 |
+| **Mean** | **GLASS** | **0.7938** | **0.8986** | **0.6052** |
+| **Mean** | **PatchCore** | **0.9013** | **0.9910** | **0.8762** |
+| Promotion floor | GLASS required | 0.8000 | 0.8500 | 0.6000 |
+
+GLASS passed the pixel ROC-AUC and AU-PRO floors but missed the image ROC-AUC floor by
+0.0062. PatchCore exceeded it by 0.1075 image ROC-AUC, 0.0924 pixel ROC-AUC and 0.2710
+AU-PRO on the same pixels. The result therefore does **not** promote GLASS as the
+learned-synthesis reference.
+
+| Class | Method | Train | Infer | Peak RSS | Model checkpoint | Full experiment artifacts |
+|---|---|---:|---:|---:|---:|---:|
+| `candle` | GLASS | 19m 06s | 15.5s | 1.34 GiB | 53 MiB | 1,197 MiB |
+| `candle` | PatchCore | 16.3s | 10.0s | 1.62 GiB | 29 MiB | 1,173 MiB |
+| `pcb1` | GLASS | 20m 03s | 14.8s | 1.07 GiB | 53 MiB | 1,199 MiB |
+| `pcb1` | PatchCore | 16.7s | 12.9s | 1.62 GiB | 29 MiB | 1,175 MiB |
+
+The approximately 1.2 GiB experiment footprint is predominantly persisted result maps,
+not GLASS state; compact source-map persistence remains a separate cross-method problem.
+
+### Why this is not the upstream benchmark protocol
+
+Anomalib's GLASS reference documents 100 epochs, batch 8, at most 392 samples per epoch,
+category-specific `svd`, and the checkpoint with the best labelled image-plus-pixel AUROC.
+That is 39,200 image exposures and selects both distribution geometry and checkpoint using
+category/test evidence. The workbench gate deliberately uses 5,000 image exposures, one
+generic synthesis distribution and the final checkpoint. It is a bounded, honest reference,
+not an attempt to reproduce a category-tuned paper table.
+
+**Decision:** keep `glass_anomalib` available as an explicitly experimental comparison, not
+a recommended reference. A follow-up may test a larger predeclared fixed budget or one paired
+DTD ablation held constant across both classes. It must not tune `svd`, the stopping point or
+the checkpoint separately per dataset category.
