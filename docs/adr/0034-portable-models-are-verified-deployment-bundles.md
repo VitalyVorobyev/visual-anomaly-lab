@@ -55,3 +55,10 @@ are verified against the fitted experiment.**
   bundle.
 - Fixed experiment dimensions make the first contract intentionally static-shape and batch-one. Dynamic
   batching can be added as a later manifest version after it has a measured consumer.
+
+## Changelog
+
+- **2026-08-12 — bundle version 2.** Image scoring became a discriminated contract: linear percentile,
+  maximum, top-k mean, or a named scalar graph tensor. The first version could describe
+  `pixel_reference` but would have made a PatchCore consumer guess a score from its display map, silently
+  dropping the paper's memory-bank reweighting. The Rust reference runner accepts both versions.

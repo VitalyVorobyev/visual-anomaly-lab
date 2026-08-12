@@ -1,4 +1,4 @@
-"""The version-one portable deployment manifest.
+"""The version-two portable deployment manifest.
 
 This is deliberately more explicit than an ONNX graph. The graph computes a map; this
 contract says which pixels enter it, what its tensors mean, how the image score is
@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from enum import StrEnum
 from pathlib import PurePosixPath
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -17,7 +18,7 @@ from anomaly_lab.models.base import PortableFormat
 from anomaly_lab.models.preprocessing import ColorMode
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
-BUNDLE_FORMAT_VERSION = 1
+BUNDLE_FORMAT_VERSION = 2
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -40,6 +41,14 @@ class TensorSpec(BaseModel):
     dtype: TensorDtype
     layout: TensorLayout
     shape: list[int]
+
+
+class ScalarTensorSpec(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    name: str
+    dtype: TensorDtype
+    shape: list[int] = Field(default_factory=lambda: [1])
 
 
 class PixelInputContract(BaseModel):
@@ -66,8 +75,34 @@ class MapOutputContract(BaseModel):
 class PercentileReducer(BaseModel):
     model_config = API_MODEL_CONFIG
 
-    kind: str = "percentile_linear"
+    kind: Literal["percentile_linear"] = "percentile_linear"
     percentile: float = Field(ge=0.0, le=100.0)
+
+
+class MaxReducer(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    kind: Literal["max"] = "max"
+
+
+class TopKMeanReducer(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    kind: Literal["top_k_mean"] = "top_k_mean"
+    top_k: int = Field(ge=1)
+
+
+class TensorScore(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    kind: Literal["tensor"] = "tensor"
+    tensor: ScalarTensorSpec
+
+
+ScoreContract = Annotated[
+    PercentileReducer | MaxReducer | TopKMeanReducer | TensorScore,
+    Field(discriminator="kind"),
+]
 
 
 class OperatingPointContract(BaseModel):
@@ -155,7 +190,7 @@ class DeploymentManifest(BaseModel):
     opset: int
     input: PixelInputContract
     anomaly_map: MapOutputContract
-    score: PercentileReducer
+    score: ScoreContract
     operating_point: OperatingPointContract | None = None
     region: RegionContract
     runtime: str = "ONNX Runtime compatible"

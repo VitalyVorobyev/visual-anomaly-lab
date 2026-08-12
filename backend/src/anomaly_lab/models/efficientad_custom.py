@@ -61,6 +61,8 @@ from typing import Any, Literal
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import MaxReducer, TopKMeanReducer
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -68,6 +70,7 @@ from anomaly_lab.models.base import (
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     evenly_spaced,
@@ -76,7 +79,7 @@ from anomaly_lab.models.base import (
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
-from anomaly_lab.models.preprocessing import load_array, to_chw
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array, to_chw
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 STATE_FILENAME = "efficientad_custom.pt"
@@ -278,6 +281,7 @@ class EfficientAdCustomModel(AnomalyModel):
             supports_resume=True,
             channel_aware=False,
             dataset_specific=False,
+            portable_formats=[PortableFormat.ONNX],
             preferred_device=Device.MPS,
         )
 
@@ -1025,6 +1029,93 @@ class EfficientAdCustomModel(AnomalyModel):
             ctx.progress((index + 1) / len(images), f"scored {index + 1}/{len(images)}")
 
         return predictions
+
+    # -------------------------------------------------------------- deployment
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export the fitted map path; keep its explicit score reducer in the manifest."""
+        import torch
+
+        if self._net is None:
+            raise RuntimeError("efficientad_custom has no fitted network to export")
+        if self._fitted_size != (preprocessing.width, preprocessing.height):
+            raise ValueError("stored EfficientAD geometry does not match preprocessing")
+
+        weight = self.config.student_teacher_weight
+        net = self._net.to("cpu").eval()
+
+        class PortableMap(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.net = net
+
+            def forward(self, image: Any) -> Any:
+                map_st, map_stae = self.net.maps(image, normalize=True)
+                return weight * map_st + (1.0 - weight) * map_stae
+
+        input_name = "image"
+        output_name = "anomaly_map"
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            PortableMap().eval(),
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[output_name],
+            opset_version=18,
+            dynamo=False,
+        )
+        score = (
+            MaxReducer()
+            if self.config.score_reduction == "max"
+            else TopKMeanReducer(top_k=self.config.score_top_k)
+        )
+        return OnnxGraphContract(
+            opset=18,
+            input_name=input_name,
+            output_name=output_name,
+            score=score,
+            absolute_tolerance=5e-5,
+            relative_tolerance=5e-5,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """Run the fitted Python semantics over an already-prepared parity tensor."""
+        import torch
+
+        from anomaly_lab.models.efficientad_nets import reduce_score
+
+        if self._net is None or self._fitted_size is None:
+            raise RuntimeError("efficientad_custom has no fitted network for parity")
+        if input_nchw.shape[0] != 1 or input_nchw.shape[2:] != (
+            self._fitted_size[1],
+            self._fitted_size[0],
+        ):
+            raise ValueError("portable parity input shape does not match the fitted network")
+        net = self._net.to("cpu").eval()
+        with torch.no_grad():
+            map_st, map_stae = net.maps(torch.from_numpy(input_nchw), normalize=True)
+            combined = (
+                self.config.student_teacher_weight * map_st
+                + (1.0 - self.config.student_teacher_weight) * map_stae
+            )
+            score = reduce_score(
+                combined,
+                reduction=self.config.score_reduction,
+                top_k=self.config.score_top_k,
+            )
+        return combined[0, 0].numpy().astype(np.float32), float(score[0])
 
     # ---------------------------------------------------------------- persistence
 

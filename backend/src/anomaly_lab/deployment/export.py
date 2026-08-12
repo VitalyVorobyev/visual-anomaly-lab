@@ -23,15 +23,19 @@ from anomaly_lab.deployment.schema import (
     DeploymentManifest,
     FileDigest,
     MapOutputContract,
+    MaxReducer,
     OperatingPointContract,
     ParityFixture,
     PercentileReducer,
     PixelInputContract,
     RegionContract,
+    ScoreContract,
     SourceExperiment,
     TensorDtype,
     TensorLayout,
+    TensorScore,
     TensorSpec,
+    TopKMeanReducer,
 )
 from anomaly_lab.domain.entities import ExperimentStatus, Subset
 from anomaly_lab.eval.threshold import suggest_threshold
@@ -105,10 +109,20 @@ def run_export_job(ctx: JobContext) -> dict[str, Any]:
         )
 
         ctx.progress(0.45, "checking portable-runtime parity")
-        actual_map = _run_onnx(staging / GRAPH_FILENAME, graph.input_name, fixture)
-        actual_score = float(np.percentile(actual_map, graph.score_percentile))
-        absolute_tolerance = 2e-5
-        relative_tolerance = 2e-5
+        outputs = _run_onnx(staging / GRAPH_FILENAME, graph.input_name, fixture)
+        try:
+            actual_map = np.asarray(outputs[graph.output_name], dtype=np.float32).squeeze()
+        except KeyError as exc:
+            raise ExperimentJobError(
+                f"exported graph has no declared map output {graph.output_name!r}"
+            ) from exc
+        if actual_map.ndim != 2:
+            raise ExperimentJobError(
+                f"exported anomaly map has invalid shape {np.shape(outputs[graph.output_name])}"
+            )
+        actual_score = _score(outputs, actual_map, graph.score)
+        absolute_tolerance = graph.absolute_tolerance
+        relative_tolerance = graph.relative_tolerance
         max_absolute_error = float(np.max(np.abs(actual_map - expected_map)))
         score_absolute_error = abs(actual_score - expected_score)
         if (
@@ -166,7 +180,7 @@ def run_export_job(ctx: JobContext) -> dict[str, Any]:
                     shape=[1, 1, loaded.preprocessing.height, loaded.preprocessing.width],
                 ),
             ),
-            score=PercentileReducer(percentile=graph.score_percentile),
+            score=graph.score,
             operating_point=operating_point,
             region=RegionContract(
                 profile_revision_id=loaded.experiment.region_profile_id,
@@ -231,15 +245,37 @@ def _fixture(channels: int, height: int, width: int) -> np.ndarray:
     return np.ascontiguousarray(np.stack(planes, axis=0)[np.newaxis], dtype=np.float32)
 
 
-def _run_onnx(graph: Path, input_name: str, fixture: np.ndarray) -> np.ndarray:
+def _run_onnx(graph: Path, input_name: str, fixture: np.ndarray) -> dict[str, np.ndarray]:
     ort: Any = importlib.import_module("onnxruntime")
 
     session = ort.InferenceSession(str(graph), providers=["CPUExecutionProvider"])
-    output: Any = session.run(None, {input_name: fixture})[0]
-    result = np.asarray(output, dtype=np.float32).squeeze()
-    if result.ndim != 2:
-        raise ExperimentJobError(f"exported anomaly map has invalid shape {np.shape(output)}")
-    return result
+    values: list[Any] = session.run(None, {input_name: fixture})
+    return {
+        output.name: np.asarray(value, dtype=np.float32)
+        for output, value in zip(session.get_outputs(), values, strict=True)
+    }
+
+
+def _score(outputs: dict[str, np.ndarray], anomaly_map: np.ndarray, score: ScoreContract) -> float:
+    if isinstance(score, PercentileReducer):
+        return float(np.percentile(anomaly_map, score.percentile))
+    if isinstance(score, MaxReducer):
+        return float(np.max(anomaly_map))
+    if isinstance(score, TopKMeanReducer):
+        flat = anomaly_map.ravel()
+        count = min(score.top_k, flat.size)
+        return float(np.partition(flat, flat.size - count)[-count:].mean())
+    if isinstance(score, TensorScore):
+        try:
+            value = np.asarray(outputs[score.tensor.name], dtype=np.float32).squeeze()
+        except KeyError as exc:
+            raise ExperimentJobError(
+                f"exported graph has no declared score output {score.tensor.name!r}"
+            ) from exc
+        if value.ndim != 0:
+            raise ExperimentJobError(f"exported score tensor has invalid shape {value.shape}")
+        return float(value)
+    raise AssertionError(f"unhandled score contract {type(score).__name__}")
 
 
 def _digest(root: Path, relative: str) -> FileDigest:

@@ -80,6 +80,8 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import ScalarTensorSpec, TensorDtype, TensorScore
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -87,6 +89,7 @@ from anomaly_lab.models.base import (
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     evenly_spaced,
@@ -98,6 +101,8 @@ from anomaly_lab.models.introspect import build_tree, collect
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
+    ColorMode,
+    PreprocessingConfig,
     load_array,
     to_chw,
 )
@@ -480,6 +485,7 @@ class PatchcoreAnomalibModel(AnomalyModel):
             supports_resume=False,
             channel_aware=False,
             dataset_specific=False,
+            portable_formats=[PortableFormat.ONNX],
             preferred_device=Device.MPS,
         )
 
@@ -1001,6 +1007,96 @@ class PatchcoreAnomalibModel(AnomalyModel):
             ctx.progress((index + 1) / len(images), f"scored {index + 1}/{len(images)}")
 
         return predictions
+
+    # -------------------------------------------------------------- deployment
+
+    def _portable_module(self, preprocessing: PreprocessingConfig) -> Any:
+        """Build the static-shape inference graph from anomalib's fitted components."""
+        import torch
+
+        if self._model is None or self._model.memory_bank.numel() == 0:
+            raise RuntimeError("patchcore_anomalib has no fitted memory bank to export")
+        model = self._model.to("cpu").eval()
+        size = (preprocessing.height, preprocessing.width)
+
+        class PortablePatchcore(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.model = model
+                self.register_buffer("input_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1))
+                self.register_buffer("input_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1))
+
+            def forward(self, image: Any) -> tuple[Any, Any]:
+                if image.shape[1] == 1:
+                    image = image.expand(-1, 3, -1, -1)
+                batch = (image - self.input_mean) / self.input_std
+                features = self.model.feature_extractor(batch)
+                pooled = {
+                    layer: self.model.feature_pooler(value) for layer, value in features.items()
+                }
+                embedding = self.model.generate_embedding(pooled)
+                rows, cols = embedding.shape[-2:]
+                flat = self.model.reshape_embedding(embedding)
+                patch_scores, locations = self.model.nearest_neighbors(flat, n_neighbors=1)
+                patch_scores = patch_scores.reshape((1, -1))
+                locations = locations.reshape((1, -1))
+                score = self.model.compute_anomaly_score(patch_scores, locations, flat)
+                grid = patch_scores.reshape((1, 1, rows, cols))
+                anomaly_map = self.model.anomaly_map_generator(grid, size)
+                return anomaly_map, score
+
+        return PortablePatchcore().eval()
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export feature extraction, bank lookup, map generation and paper score."""
+        import torch
+
+        module = self._portable_module(preprocessing)
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        input_name = "image"
+        map_name = "anomaly_map"
+        score_name = "score"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            module,
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[map_name, score_name],
+            opset_version=18,
+            dynamo=False,
+        )
+        return OnnxGraphContract(
+            opset=18,
+            input_name=input_name,
+            output_name=map_name,
+            score=TensorScore(tensor=ScalarTensorSpec(name=score_name, dtype=TensorDtype.FLOAT32)),
+            absolute_tolerance=1e-4,
+            relative_tolerance=1e-4,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """Run the exact fitted deployment path on an already-prepared tensor."""
+        import torch
+
+        preprocessing = PreprocessingConfig(
+            width=int(input_nchw.shape[3]),
+            height=int(input_nchw.shape[2]),
+            color=ColorMode.GRAYSCALE if input_nchw.shape[1] == 1 else ColorMode.RGB,
+        )
+        with torch.no_grad():
+            anomaly_map, score = self._portable_module(preprocessing)(torch.from_numpy(input_nchw))
+        return anomaly_map[0, 0].numpy().astype(np.float32), float(score[0])
 
     # ---------------------------------------------------------------- persistence
 

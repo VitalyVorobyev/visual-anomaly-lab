@@ -1,4 +1,4 @@
-//! Verified reader and ONNX Runtime executor for deployment bundle version 1.
+//! Verified reader and ONNX Runtime executor for deployment bundle versions 1 and 2.
 
 use std::{
     collections::HashSet,
@@ -10,13 +10,14 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use ort::{
     inputs,
-    session::{Session, builder::GraphOptimizationLevel},
+    session::{Session, SessionOutputs, builder::GraphOptimizationLevel},
     value::TensorRef,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-const SUPPORTED_FORMAT_VERSION: u32 = 1;
+const MIN_FORMAT_VERSION: u32 = 1;
+const MAX_FORMAT_VERSION: u32 = 2;
 
 #[derive(Debug, Deserialize)]
 pub struct Manifest {
@@ -25,7 +26,7 @@ pub struct Manifest {
     pub graph_path: String,
     pub input: PixelInput,
     pub anomaly_map: MapOutput,
-    pub score: PercentileReducer,
+    pub score: ScoreContract,
     pub operating_point: Option<OperatingPoint>,
     pub files: Vec<FileDigest>,
     pub parity: ParityFixture,
@@ -56,9 +57,18 @@ pub struct TensorSpec {
 }
 
 #[derive(Debug, Deserialize)]
-pub struct PercentileReducer {
+pub struct ScoreContract {
     pub kind: String,
-    pub percentile: f64,
+    pub percentile: Option<f64>,
+    pub top_k: Option<usize>,
+    pub tensor: Option<ScalarTensorSpec>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ScalarTensorSpec {
+    pub name: String,
+    pub dtype: String,
+    pub shape: Vec<usize>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -254,7 +264,7 @@ impl Bundle {
             "anomaly map contains a non-finite value"
         );
         let map = map.to_vec();
-        let score = percentile_linear(&map, self.manifest.score.percentile)?;
+        let score = self.resolve_score(&outputs, &map)?;
         let operating_point = self
             .manifest
             .operating_point
@@ -272,6 +282,56 @@ impl Bundle {
             map_max: map.iter().copied().fold(f32::NEG_INFINITY, f32::max),
         };
         Ok((report, map))
+    }
+
+    fn resolve_score(&self, outputs: &SessionOutputs<'_>, map: &[f32]) -> Result<f32> {
+        match self.manifest.score.kind.as_str() {
+            "percentile_linear" => percentile_linear(
+                map,
+                self.manifest
+                    .score
+                    .percentile
+                    .context("percentile score contract has no percentile")?,
+            ),
+            "max" => Ok(map.iter().copied().fold(f32::NEG_INFINITY, f32::max)),
+            "top_k_mean" => top_k_mean(
+                map,
+                self.manifest
+                    .score
+                    .top_k
+                    .context("top-k score contract has no top_k")?,
+            ),
+            "tensor" => {
+                let tensor = self
+                    .manifest
+                    .score
+                    .tensor
+                    .as_ref()
+                    .context("tensor score contract has no tensor")?;
+                let output = outputs
+                    .get(tensor.name.as_str())
+                    .context("graph did not return the declared score tensor")?;
+                let (shape, values) = output.try_extract_tensor::<f32>()?;
+                let expected: Vec<i64> = tensor
+                    .shape
+                    .iter()
+                    .map(|&dimension| i64::try_from(dimension))
+                    .collect::<std::result::Result<_, _>>()?;
+                ensure!(
+                    shape.as_ref() == expected,
+                    "score shape {shape:?} does not match manifest {:?}",
+                    tensor.shape
+                );
+                ensure!(values.len() == 1, "score tensor must contain one value");
+                let score = values[0];
+                ensure!(
+                    score.is_finite(),
+                    "score tensor contains a non-finite value"
+                );
+                Ok(score)
+            }
+            kind => bail!("unsupported score contract {kind}"),
+        }
     }
 
     /// Run the bundled deterministic fixture and enforce its published tolerances.
@@ -335,13 +395,14 @@ pub fn write_f32(path: impl AsRef<Path>, values: &[f32]) -> Result<()> {
     fs::write(path.as_ref(), bytes).with_context(|| format!("write {}", path.as_ref().display()))
 }
 
-#[allow(clippy::float_cmp)] // The version-one contract names the exact canonical range [0, 1].
+#[allow(clippy::float_cmp)] // The bundle contract names the exact canonical range [0, 1].
 fn validate_manifest(manifest: &Manifest) -> Result<()> {
     ensure!(
-        manifest.format_version == SUPPORTED_FORMAT_VERSION,
-        "unsupported bundle format version {}; runner supports {}",
+        (MIN_FORMAT_VERSION..=MAX_FORMAT_VERSION).contains(&manifest.format_version),
+        "unsupported bundle format version {}; runner supports {} through {}",
         manifest.format_version,
-        SUPPORTED_FORMAT_VERSION
+        MIN_FORMAT_VERSION,
+        MAX_FORMAT_VERSION
     );
     ensure!(
         manifest.portable_format == "onnx",
@@ -394,15 +455,37 @@ fn validate_manifest(manifest: &Manifest) -> Result<()> {
         manifest.input.tensor.shape[1] == expected_channels,
         "input color and channel count disagree"
     );
-    ensure!(
-        manifest.score.kind == "percentile_linear",
-        "unsupported score reducer {}",
-        manifest.score.kind
-    );
-    ensure!(
-        (0.0..=100.0).contains(&manifest.score.percentile),
-        "score percentile is outside [0, 100]"
-    );
+    match manifest.score.kind.as_str() {
+        "percentile_linear" => ensure!(
+            (0.0..=100.0).contains(
+                &manifest
+                    .score
+                    .percentile
+                    .context("percentile score contract has no percentile")?
+            ),
+            "score percentile is outside [0, 100]"
+        ),
+        "max" => {}
+        "top_k_mean" => ensure!(
+            manifest
+                .score
+                .top_k
+                .context("top-k score contract has no top_k")?
+                > 0,
+            "score top_k must be positive"
+        ),
+        "tensor" => {
+            let tensor = manifest
+                .score
+                .tensor
+                .as_ref()
+                .context("tensor score contract has no tensor")?;
+            ensure!(tensor.dtype == "float32", "score dtype must be float32");
+            ensure!(tensor.shape == [1], "score tensor shape must be [1]");
+            ensure!(!tensor.name.is_empty(), "score tensor name is empty");
+        }
+        kind => bail!("unsupported score contract {kind}"),
+    }
     ensure!(
         manifest.parity.absolute_tolerance > 0.0,
         "absolute tolerance must be positive"
@@ -492,9 +575,23 @@ fn percentile_linear(values: &[f32], percentile: f64) -> Result<f32> {
     Ok(sorted[lower] + (sorted[upper] - sorted[lower]) * fraction)
 }
 
+#[allow(clippy::cast_precision_loss)]
+fn top_k_mean(values: &[f32], top_k: usize) -> Result<f32> {
+    ensure!(!values.is_empty(), "cannot reduce an empty anomaly map");
+    ensure!(top_k > 0, "top_k must be positive");
+    ensure!(
+        values.iter().all(|value| value.is_finite()),
+        "cannot reduce non-finite values"
+    );
+    let count = top_k.min(values.len());
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f32::total_cmp);
+    Ok(sorted[sorted.len() - count..].iter().sum::<f32>() / count as f32)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{percentile_linear, resolve_payload};
+    use super::{percentile_linear, resolve_payload, top_k_mean};
     use std::path::Path;
 
     #[test]
@@ -512,5 +609,12 @@ mod tests {
         assert!(resolve_payload(root, "fixture/input.f32").is_ok());
         assert!(resolve_payload(root, "../secret").is_err());
         assert!(resolve_payload(root, "/tmp/model.onnx").is_err());
+    }
+
+    #[test]
+    fn top_k_mean_caps_at_the_map_size() {
+        assert!((top_k_mean(&[1.0, 4.0, 2.0, 3.0], 2).unwrap() - 3.5).abs() < f32::EPSILON);
+        assert!((top_k_mean(&[1.0, 3.0], 20).unwrap() - 2.0).abs() < f32::EPSILON);
+        assert!(top_k_mean(&[1.0], 0).is_err());
     }
 }

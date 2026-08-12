@@ -28,6 +28,7 @@ import numpy as np
 from pydantic import BaseModel, Field
 
 from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import PercentileReducer
 from anomaly_lab.models.base import (
     AnomalyModel,
     Capabilities,
@@ -392,7 +393,7 @@ class PixelReferenceModel(AnomalyModel):
             opset=opset,
             input_name=input_name,
             output_name=output_name,
-            score_percentile=self.config.score_percentile,
+            score=PercentileReducer(percentile=self.config.score_percentile),
         )
 
     def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:

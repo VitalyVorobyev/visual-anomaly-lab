@@ -139,8 +139,10 @@ the detail is in the git history and the ADRs.
 - [x] **Build the Rust reference runner** (M): validate manifest and hashes, run the pinned ONNX Runtime
       binding, enforce the prepared-input/scoring contract, emit a machine-readable result and verify the
       fixture.
-- [ ] **Add deep and memory-bank exporters** (M each): implement and prove parity for the supported method;
-      leave every unproven method visibly unsupported. Record operator/runtime limitations.
+- [x] **Add deep and memory-bank exporters** (M each): `efficientad_custom` exports its complete map graph
+      with an explicit max/top-k host reducer; `patchcore_anomalib` embeds its fitted bank and exports the
+      paper's reweighted score as a scalar graph tensor. Both are pinned by ONNX Runtime parity tests;
+      unproven methods remain visibly unsupported.
 - [ ] **Test a dedicated-hardware handoff** (M): copy only the bundle and runner, run offline on a second
       target, record latency, memory, provider and parity.
 
