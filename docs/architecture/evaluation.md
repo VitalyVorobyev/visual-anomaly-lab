@@ -76,10 +76,10 @@ set, and a comparison against a paper's figure inherits it.
 **Everything skipped is reported** in the metric set and stated in words on the results screen. A pixel metric
 computed over half the defects is not the metric it claims to be, and a reader must not have to dig for that.
 
-Two known weaknesses: `verify` cannot detect mask drift, because schema v1 has no `mask.sha256` and the schema
-is frozen — a mask re-exported in place is invisible, and lifting this is a numbered migration. And AU-PRO's
-connected-component labelling is Python-level union-find, which is fine for the sparse masks these datasets
-have and would be the slowest part of evaluation on masks that cover most of the frame.
+Two known weaknesses: migration 005 added `mask.sha256`, but old source masks remain explicitly unhashed until
+they are pinned as an annotation base, so `verify` must distinguish existence coverage from digest coverage.
+And AU-PRO's connected-component labelling is Python-level union-find, which is fine for the sparse masks
+these datasets have and would be the slowest part of evaluation on masks that cover most of the frame.
 
 ## Rankings
 

@@ -305,6 +305,10 @@ def _deletion_inventory(
         paths.extend(
             cache_path(settings, image.id, tier) for tier, spec in TIERS.items() if spec.cached
         )
+        annotation_path = settings.annotation_image_dir(image.id)
+        if settings.annotations_dir.is_symlink() or annotation_path.is_symlink():
+            safe = False
+        paths.append(annotation_path)
     paths.extend(
         settings.jobs_log_dir / f"{job.id}.log" for job in jobs if job.experiment_id is None
     )

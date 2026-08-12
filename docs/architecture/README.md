@@ -10,6 +10,7 @@ code does and the record is right about what was chosen** (ADR-0030).
 | [Overview](#overview--goals) *(below)* | The loop, the non-goals, the four constraints, the component map |
 | [Repository](repository.md) | Where everything lives on disk |
 | [Domain model](domain-model.md) | `Dataset`, `Sample`, `Image`, `Split`, `Experiment` and the rest |
+| [Annotations](annotations.md) | Source-mask provenance, editable drafts, immutable revisions |
 | [Import](import.md) | Adapters, the reviewable manifest, scan and commit, re-import, `verify` |
 | [Methods](methods.md) | The plugin interface, capability flags, contexts, preprocessing, device policy |
 | [Diagnostics](diagnostics.md) | What a method shows about itself, and the two ways to read it |
@@ -40,7 +41,7 @@ The workbench supports one loop, end to end:
 | Stage | What the user does |
 | --- | --- |
 | **Import** | Point the app at a folder of images; review a proposed manifest; commit it into the catalog. |
-| **Label & split** | Mark logical samples normal / defect / unlabeled; create seeded train/val/test splits. |
+| **Label & split** | Label samples, version source-frame defect masks, and create train/val/test splits. |
 | **Train** | Create an experiment: dataset + split + model + model config + preprocessing config; run it as an async job with live progress and logs. |
 | **Infer** | Score a subset (or individual samples) with a trained experiment, producing per-image scores and anomaly maps. |
 | **Evaluate** | Compute threshold-independent metrics; explore a threshold interactively; inspect FP/FN; view ranked most-normal / most-anomalous lists. |
@@ -55,8 +56,7 @@ The brief's scope constraints are binding. The system deliberately does **not** 
 - cloud deployment or remote compute — everything runs on the local machine,
 - distributed or multi-node training,
 - real-time camera acquisition,
-- complex annotation tooling — no polygon or brush mask editor. Masks are *imported* alongside the images
-  that have them ([methods](methods.md)) and never drawn here.
+- multi-user collaborative annotation or consensus workflows; annotation editing is local and single-user.
 
 The guiding principle is **a small, understandable architecture over premature scalability**. There is one
 user, one machine, one job at a time.

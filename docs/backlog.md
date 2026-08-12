@@ -66,7 +66,7 @@ the detail is in the git history and the ADRs.
 
 ### E19 — Versioned annotation + editor (M9)
 
-- [ ] **Write the annotation-truth ADR and schema v2 reset path** (M): app-owned drafts and immutable
+- [x] **Write the annotation-truth ADR and migration 005** (M): app-owned drafts and immutable
       completed revisions, source-mask provenance, derived-mask SHA256 and metric ground-truth digest.
 - [ ] **Implement draft/revision APIs with optimistic concurrency** (M): `ETag` / `If-Match`, explicit
       completion, stale-metric signalling and only synthetic PNG fixtures.

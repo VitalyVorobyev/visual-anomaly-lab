@@ -24,6 +24,14 @@ _MIGRATION_FILENAME = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
 _TRANSACTION_CONTROL = re.compile(
     r"^\s*(BEGIN|COMMIT|ROLLBACK|END)\b", re.IGNORECASE | re.MULTILINE
 )
+_TRIGGER_BLOCK = re.compile(
+    r"\bCREATE\s+TRIGGER\b.*?^\s*END\s*;", re.IGNORECASE | re.MULTILINE | re.DOTALL
+)
+
+
+def contains_transaction_control(sql: str) -> bool:
+    """Reject transaction statements, without mistaking a trigger body for one."""
+    return _TRANSACTION_CONTROL.search(_TRIGGER_BLOCK.sub("", sql)) is not None
 
 
 class MigrationError(RuntimeError):
@@ -56,7 +64,7 @@ def discover_migrations() -> list[Migration]:
             raise MigrationError(msg)
 
         sql = entry.read_text(encoding="utf-8")
-        if _TRANSACTION_CONTROL.search(sql):
+        if contains_transaction_control(sql):
             msg = (
                 f"Migration {entry.name!r} contains transaction control. The runner wraps each "
                 "file in BEGIN/COMMIT; an inner COMMIT would leave a partial migration applied."

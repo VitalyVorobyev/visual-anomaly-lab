@@ -11,17 +11,20 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db import migrate
 from anomaly_lab.db.connection import connect
 from anomaly_lab.db.migrate import (
-    _TRANSACTION_CONTROL,
     Migration,
     MigrationError,
     apply_migrations,
     apply_migrations_to,
+    contains_transaction_control,
     current_schema_version,
     discover_migrations,
 )
 
 # The canonical domain entities of ADR-0005, one table each.
 EXPECTED_TABLES = {
+    "annotation_draft",
+    "annotation_label",
+    "annotation_revision",
     "dataset",
     "channel",
     "sample",
@@ -147,6 +150,17 @@ def test_labels_are_constrained(migrated_db: sqlite3.Connection) -> None:
         )
 
 
+def test_annotation_migration_backfills_a_default_taxonomy(settings: Settings) -> None:
+    with connect(settings.db_path) as conn:
+        first = next(m for m in discover_migrations() if m.number == 1)
+        conn.executescript(f"BEGIN;\n{first.sql}\nPRAGMA user_version = 1;\nCOMMIT;")
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('kept', '/tmp/kept')")
+
+        assert apply_migrations_to(conn) >= 5
+        row = conn.execute("SELECT key, name FROM annotation_label WHERE dataset_id = 1").fetchone()
+        assert tuple(row) == ("defect", "Defect")
+
+
 def test_a_failed_migration_leaves_nothing_behind(
     settings: Settings, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -169,7 +183,7 @@ def test_a_failed_migration_leaves_nothing_behind(
 def test_a_migration_file_may_not_manage_its_own_transaction() -> None:
     """An inner COMMIT would end the runner's transaction and leave a partial schema."""
     for migration in discover_migrations():
-        assert not _TRANSACTION_CONTROL.search(migration.sql), migration.name
+        assert not contains_transaction_control(migration.sql), migration.name
 
 
 def test_a_distill_job_is_accepted_and_a_nonsense_kind_is_not(

@@ -10,9 +10,10 @@ It **detects drift and never repairs it**. Deciding that a file which changed sh
 re-hashed into the catalog, or that a missing one should be dropped, is the operator's
 call, and the honest failure of an unmounted disk is a report rather than a deletion.
 
-Masks are walked too, but only for presence: schema v1 records no hash for them and the
-schema is frozen (ADR-0004). They are counted apart from the images so that a clean report
-does not quietly claim a check it did not perform.
+Masks are walked too. Migration 005 added a nullable digest: masks that have been pinned
+as annotation provenance get a byte-for-byte check, while older rows still receive an
+explicit presence-only check. The report separates that coverage so it never implies a
+hash comparison it did not perform.
 """
 
 from __future__ import annotations
@@ -81,17 +82,31 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
         if total:
             context.progress((index + 1) / total, f"{index + 1} of {total}")
 
-    # Masks are checked for presence only. Schema v1 has no `mask.sha256` and the schema
-    # is frozen (ADR-0004), so a mask that was re-exported in place is drift this job
-    # cannot see. Counted separately so the report never implies otherwise.
     masks_missing: list[str] = []
+    masks_modified: list[str] = []
+    masks_unreadable: list[str] = []
     masks_verified = 0
+    masks_digest_checked = 0
+    masks_unhashed = 0
     for offset, mask in enumerate(recorded_masks):
         context.raise_if_cancelled()
-        if Path(mask.path).is_file():
+        path = Path(mask.path)
+        if not path.is_file():
+            masks_missing.append(mask.path)
+        elif mask.sha256 is None:
+            masks_unhashed += 1
             masks_verified += 1
         else:
-            masks_missing.append(mask.path)
+            try:
+                digest = sha256_of(path)
+            except OSError:
+                masks_unreadable.append(mask.path)
+            else:
+                masks_digest_checked += 1
+                if digest == mask.sha256:
+                    masks_verified += 1
+                else:
+                    masks_modified.append(mask.path)
 
         if total:
             position = len(recorded) + offset + 1
@@ -102,6 +117,8 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
         ("modified", modified),
         ("unreadable", unreadable),
         ("missing mask", masks_missing),
+        ("modified mask", masks_modified),
+        ("unreadable mask", masks_unreadable),
     ):
         if paths:
             context.log(f"{len(paths)} {label} files", level="warning")
@@ -120,4 +137,10 @@ def run_verify_job(context: JobContext) -> dict[str, Any]:
         "masks_verified": masks_verified,
         "masks_missing": masks_missing[:MAX_PATHS_REPORTED],
         "masks_missing_count": len(masks_missing),
+        "masks_modified": masks_modified[:MAX_PATHS_REPORTED],
+        "masks_modified_count": len(masks_modified),
+        "masks_unreadable": masks_unreadable[:MAX_PATHS_REPORTED],
+        "masks_unreadable_count": len(masks_unreadable),
+        "masks_digest_checked": masks_digest_checked,
+        "masks_unhashed": masks_unhashed,
     }

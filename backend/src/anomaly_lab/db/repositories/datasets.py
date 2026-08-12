@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.domain.entities import Channel, Dataset, Label
 
 
@@ -51,6 +52,7 @@ def create_dataset(
     if created is None:  # pragma: no cover - the insert above just succeeded
         msg = "the dataset row vanished immediately after insertion"
         raise RuntimeError(msg)
+    annotations_repo.ensure_default_label(conn, created.id)
     return created
 
 
@@ -118,6 +120,7 @@ def delete_dataset_rows(
             (dataset_id,),
         )
         conn.execute("DELETE FROM experiment WHERE dataset_id = ?", (dataset_id,))
+    annotations_repo.delete_for_dataset(conn, dataset_id)
     conn.execute(
         """
         DELETE FROM image
