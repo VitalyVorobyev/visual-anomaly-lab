@@ -8,7 +8,7 @@
 
 import Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage } from "react-konva";
 
 import type {
@@ -19,7 +19,7 @@ import type {
 } from "../../api/client";
 import { imageUrl, maskUrl } from "../../api/imageUrl";
 
-export type EditorTool = "select" | "polygon" | "hand";
+export type EditorTool = "select" | "polygon" | "brush" | "eraser";
 
 export interface CanvasView {
   zoom: number;
@@ -29,6 +29,11 @@ export interface CanvasView {
 
 export const INITIAL_CANVAS_VIEW: CanvasView = { zoom: 1, panX: 0, panY: 0 };
 
+export interface AnnotationCanvasHandle {
+  fit: () => void;
+  actualPixels: () => void;
+}
+
 interface Props {
   imageId: number;
   document: AnnotationDocument;
@@ -36,26 +41,30 @@ interface Props {
   selectedId: string | null;
   tool: EditorTool;
   pendingPoints: AnnotationPoint[];
+  brushRadius: number;
   view: CanvasView;
   onView: (view: CanvasView) => void;
   onSelect: (shapeId: string | null) => void;
   onPoint: (point: AnnotationPoint) => void;
   onMovePoint: (shapeId: string, pointIndex: number, point: AnnotationPoint) => void;
+  onBrush: (points: AnnotationPoint[]) => void;
 }
 
-export function AnnotationCanvas({
+export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(function AnnotationCanvas({
   imageId,
   document,
   labels,
   selectedId,
   tool,
   pendingPoints,
+  brushRadius,
   view,
   onView,
   onSelect,
   onPoint,
   onMovePoint,
-}: Props) {
+  onBrush,
+}, forwardedRef) {
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
@@ -64,7 +73,11 @@ export function AnnotationCanvas({
     y: number;
     panX: number;
     panY: number;
+    moved: boolean;
+    clearOnClick: boolean;
   } | null>(null);
+  const previousView = useRef<CanvasView | null>(null);
+  const [brushPoints, setBrushPoints] = useState<AnnotationPoint[]>([]);
   const source = useHtmlImage(imageUrl(imageId, "full"));
   const baseMask = useHtmlImage(
     document.base === "source_mask" ? maskUrl(imageId) : undefined,
@@ -98,6 +111,45 @@ export function AnnotationCanvas({
     [labels],
   );
 
+  const fitView = () => {
+    previousView.current = view;
+    onView(INITIAL_CANVAS_VIEW);
+  };
+
+  const actualPixels = () => {
+    previousView.current = view;
+    const actualOrigin = {
+      x: (size.width - document.image_width) / 2,
+      y: (size.height - document.image_height) / 2,
+    };
+    const fitOrigin = {
+      x: (size.width - document.image_width * fit) / 2,
+      y: (size.height - document.image_height * fit) / 2,
+    };
+    onView({
+      zoom: 1 / fit,
+      panX: actualOrigin.x - fitOrigin.x,
+      panY: actualOrigin.y - fitOrigin.y,
+    });
+  };
+
+  useImperativeHandle(forwardedRef, () => ({ fit: fitView, actualPixels }));
+
+  const toggleFit = () => {
+    const isFit =
+      Math.abs(view.zoom - 1) < 0.0001 &&
+      Math.abs(view.panX) < 0.5 &&
+      Math.abs(view.panY) < 0.5;
+    if (isFit && previousView.current) {
+      const previous = previousView.current;
+      previousView.current = null;
+      onView(previous);
+      return;
+    }
+    previousView.current = view;
+    onView(INITIAL_CANVAS_VIEW);
+  };
+
   const sourcePoint = (): AnnotationPoint | null => {
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return null;
@@ -111,10 +163,22 @@ export function AnnotationCanvas({
     const pointer = stageRef.current?.getPointerPosition();
     if (!pointer) return;
     const native = event.evt;
-    const panGesture =
-      tool === "hand" || (native instanceof MouseEvent && native.button === 1);
+    const button = native instanceof MouseEvent ? native.button : 0;
+    const panGesture = button === 2 || (button === 0 && tool === "select");
     if (panGesture) {
-      setPanning({ x: pointer.x, y: pointer.y, panX: view.panX, panY: view.panY });
+      setPanning({
+        x: pointer.x,
+        y: pointer.y,
+        panX: view.panX,
+        panY: view.panY,
+        moved: false,
+        clearOnClick: button === 0,
+      });
+      return;
+    }
+    if (tool === "brush" || tool === "eraser") {
+      const point = sourcePoint();
+      if (point) setBrushPoints([point]);
       return;
     }
     // Source pixels are themselves Konva Image nodes, so a useful canvas click almost
@@ -136,6 +200,24 @@ export function AnnotationCanvas({
       panX: panning.panX + pointer.x - panning.x,
       panY: panning.panY + pointer.y - panning.y,
     });
+    if (!panning.moved && Math.hypot(pointer.x - panning.x, pointer.y - panning.y) > 2) {
+      setPanning({ ...panning, moved: true });
+    }
+  };
+
+  const trackBrush = () => {
+    if (tool !== "brush" && tool !== "eraser") return;
+    if (brushPoints.length === 0) return;
+    const point = sourcePoint();
+    if (!point) return;
+    setBrushPoints((points) => [...points, point]);
+  };
+
+  const finishGesture = () => {
+    if (panning?.clearOnClick && !panning.moved) onSelect(null);
+    setPanning(null);
+    if (brushPoints.length > 0) onBrush(brushPoints);
+    setBrushPoints([]);
   };
 
   const onWheel = (event: KonvaEventObject<WheelEvent>) => {
@@ -167,12 +249,29 @@ export function AnnotationCanvas({
         height={size.height}
         onMouseDown={onStageDown}
         onTouchStart={onStageDown}
-        onMouseMove={onStageMove}
-        onTouchMove={onStageMove}
-        onMouseUp={() => setPanning(null)}
-        onTouchEnd={() => setPanning(null)}
+        onMouseMove={() => {
+          onStageMove();
+          trackBrush();
+        }}
+        onTouchMove={() => {
+          onStageMove();
+          trackBrush();
+        }}
+        onMouseUp={finishGesture}
+        onMouseLeave={finishGesture}
+        onTouchEnd={finishGesture}
         onWheel={onWheel}
-        className={tool === "hand" ? "cursor-grab" : tool === "polygon" ? "cursor-crosshair" : ""}
+        onContextMenu={(event) => event.evt.preventDefault()}
+        onDblClick={() => {
+          if (tool === "select") toggleFit();
+        }}
+        className={
+          panning
+            ? "cursor-grabbing"
+            : tool === "polygon" || tool === "brush" || tool === "eraser"
+              ? "cursor-crosshair"
+              : "cursor-grab"
+        }
       >
         <Layer imageSmoothingEnabled>
           <Group x={origin.x} y={origin.y} scaleX={scale} scaleY={scale}>
@@ -225,6 +324,7 @@ export function AnnotationCanvas({
                     strokeWidth={(selected ? 2.5 : 1.5) / scale}
                     hitStrokeWidth={10 / scale}
                     onMouseDown={(event) => {
+                      if (event.evt.button === 2) return;
                       event.cancelBubble = true;
                       onSelect(shape.id);
                     }}
@@ -280,6 +380,17 @@ export function AnnotationCanvas({
                 ))}
               </Group>
             )}
+            {brushPoints.length > 0 && (
+              <Line
+                points={brushPoints.flatMap((point) => [point.x, point.y])}
+                stroke={tool === "eraser" ? "#f87171" : "#3bc9db"}
+                strokeWidth={brushRadius * 2}
+                lineCap="round"
+                lineJoin="round"
+                opacity={0.72}
+                listening={false}
+              />
+            )}
             <Rect
               width={document.image_width}
               height={document.image_height}
@@ -297,7 +408,7 @@ export function AnnotationCanvas({
       )}
     </div>
   );
-}
+});
 
 function BitmapLayer({
   shape,
@@ -317,6 +428,7 @@ function BitmapLayer({
       clipWidth={shape.width}
       clipHeight={shape.height}
       onMouseDown={(event) => {
+        if (event.evt.button === 2) return;
         event.cancelBubble = true;
         onSelect();
       }}

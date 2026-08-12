@@ -8,31 +8,35 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Brush,
   Check,
   CircleDot,
-  Hand,
+  Eraser,
+  Maximize2,
   MousePointer2,
   Redo2,
-  RotateCcw,
   Save,
   Shapes,
   Trash2,
   Undo2,
+  WandSparkles,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useReducer, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
+import { Link, useBeforeUnload, useNavigate, useParams, useSearchParams } from "react-router";
 
 import {
   canonical,
   createHistory,
   historyReducer,
   nextShapeId,
+  replaceShape,
   withPolygonPoint,
   withShape,
   withoutShape,
 } from "../api/annotationState";
+import { bitmapStroke, traceBitmapShape } from "../api/annotationBitmap";
 import type {
   AnnotationLabel,
   AnnotationPoint,
@@ -43,6 +47,7 @@ import type {
 import {
   AnnotationCanvas,
   INITIAL_CANVAS_VIEW,
+  type AnnotationCanvasHandle,
   type CanvasView,
   type EditorTool,
 } from "../components/annotation/AnnotationCanvas";
@@ -52,6 +57,7 @@ import {
   Empty,
   ErrorBox,
   Select,
+  Slider,
   SkeletonRows,
   Tooltip,
   cn,
@@ -74,11 +80,17 @@ export function AnnotationEditorRoute() {
   const sampleId = Number(params["sampleId"]);
   const imageId = Number(params["imageId"]);
   const [searchParams] = useSearchParams();
+  const [reloadGeneration, setReloadGeneration] = useState(0);
   const offset = Math.max(0, Number(searchParams.get("offset") ?? 0) || 0);
 
   const dataset = useDataset(datasetId);
   const sample = useSample(datasetId, sampleId);
   const queue = useSamples(datasetId, { limit: QUEUE_PAGE, offset });
+  const previousQueue = useSamples(datasetId, {
+    limit: QUEUE_PAGE,
+    offset: Math.max(0, offset - QUEUE_PAGE),
+  });
+  const nextQueue = useSamples(datasetId, { limit: QUEUE_PAGE, offset: offset + QUEUE_PAGE });
   const labels = useAnnotationLabels(datasetId);
   const draft = useAnnotationDraft(imageId);
 
@@ -101,15 +113,22 @@ export function AnnotationEditorRoute() {
 
   return (
     <EditorReady
-      key={imageId}
+      key={`${imageId}-${reloadGeneration}`}
       datasetId={datasetId}
       imageId={imageId}
       datasetName={dataset.data.name}
       sample={sample.data}
       queue={queue.data.items}
+      queueTotal={queue.data.total}
+      previousQueue={previousQueue.data?.items ?? []}
+      nextQueue={nextQueue.data?.items ?? []}
       queueOffset={offset}
       labels={labels.data}
       initial={draft.data}
+      onReload={async () => {
+        await draft.refetch();
+        setReloadGeneration((generation) => generation + 1);
+      }}
     />
   );
 }
@@ -120,22 +139,31 @@ function EditorReady({
   datasetName,
   sample,
   queue,
+  queueTotal,
+  previousQueue,
+  nextQueue,
   queueOffset,
   labels,
   initial,
+  onReload,
 }: {
   datasetId: number;
   imageId: number;
   datasetName: string;
   sample: SampleSummary;
   queue: SampleSummary[];
+  queueTotal: number;
+  previousQueue: SampleSummary[];
+  nextQueue: SampleSummary[];
   queueOffset: number;
   labels: AnnotationLabel[];
   initial: DraftEnvelope;
+  onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const [history, dispatch] = useReducer(historyReducer, initial.draft.document, createHistory);
   const [etag, setEtag] = useState(initial.etag);
+  const [draftVersion, setDraftVersion] = useState(initial.draft.version);
   const [savedDocument, setSavedDocument] = useState(initial.draft.document);
   const [tool, setTool] = useState<EditorTool>("select");
   const [operation, setOperation] = useState<"add" | "subtract">("add");
@@ -143,7 +171,11 @@ function EditorReady({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingPoints, setPendingPoints] = useState<AnnotationPoint[]>([]);
   const [view, setView] = useState<CanvasView>(INITIAL_CANVAS_VIEW);
+  const [brushRadius, setBrushRadius] = useState(18);
   const [message, setMessage] = useState<string | null>(null);
+  const [traceError, setTraceError] = useState<string | null>(null);
+  const [tracing, setTracing] = useState(false);
+  const canvasRef = useRef<AnnotationCanvasHandle>(null);
 
   const save = useSaveAnnotation(imageId);
   const complete = useCompleteAnnotation(imageId);
@@ -153,26 +185,43 @@ function EditorReady({
     () => queue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
     [queue],
   );
+  const flatPrevious = useMemo(
+    () => previousQueue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
+    [previousQueue],
+  );
+  const flatNext = useMemo(
+    () => nextQueue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
+    [nextQueue],
+  );
   const queueIndex = flatQueue.findIndex((item) => item.image.id === imageId);
   const currentImage = sample.images.find((image) => image.id === imageId);
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
 
   const openQueueItem = useCallback(
     (index: number) => {
-      const item = flatQueue[index];
+      let item = flatQueue[index];
+      let nextOffset = queueOffset;
+      if (index < 0 && queueOffset > 0) {
+        item = flatPrevious.at(-1);
+        nextOffset = Math.max(0, queueOffset - QUEUE_PAGE);
+      } else if (index >= flatQueue.length && queueOffset + queue.length < queueTotal) {
+        item = flatNext[0];
+        nextOffset = queueOffset + QUEUE_PAGE;
+      }
       if (!item) return;
       navigate(
-        `/datasets/${datasetId}/annotate/${item.sample.id}/${item.image.id}?offset=${queueOffset}`,
+        `/datasets/${datasetId}/annotate/${item.sample.id}/${item.image.id}?offset=${nextOffset}`,
         { replace: true },
       );
     },
-    [datasetId, flatQueue, navigate, queueOffset],
+    [datasetId, flatNext, flatPrevious, flatQueue, navigate, queue.length, queueOffset, queueTotal],
   );
 
   const persist = useCallback(async (): Promise<string> => {
     if (!dirty) return etag;
     const saved = await save.mutateAsync({ document: history.present, etag });
     setEtag(saved.etag);
+    setDraftVersion(saved.draft.version);
     setSavedDocument(saved.draft.document);
     setMessage("Draft saved");
     return saved.etag;
@@ -226,6 +275,27 @@ function EditorReady({
     });
   };
 
+  const traceSelected = async () => {
+    if (!selected || selected.kind !== "bitmap") return;
+    setTracing(true);
+    setTraceError(null);
+    try {
+      const polygons = await traceBitmapShape(selected);
+      if (polygons.length === 0) throw new Error("No contour could be derived from this region.");
+      dispatch({
+        type: "commit",
+        document: replaceShape(history.present, selected.id, polygons),
+      });
+      setSelectedId(polygons[0]?.id ?? null);
+      setTool("select");
+      setMessage(polygons.length === 1 ? "Editable contour created" : `${polygons.length} editable contours created`);
+    } catch (error) {
+      setTraceError(error instanceof Error ? error.message : "Contour tracing failed.");
+    } finally {
+      setTracing(false);
+    }
+  };
+
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
@@ -248,8 +318,10 @@ function EditorReady({
         setTool("select");
       } else if (key === "p") {
         setTool("polygon");
-      } else if (key === "h") {
-        setTool("hand");
+      } else if (key === "b") {
+        setTool("brush");
+      } else if (key === "e") {
+        setTool("eraser");
       } else if (event.key === "Enter" && pendingPoints.length >= 3) {
         event.preventDefault();
         finishPolygon();
@@ -267,7 +339,9 @@ function EditorReady({
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
       } else if (key === "0") {
-        setView(INITIAL_CANVAS_VIEW);
+        canvasRef.current?.fit();
+      } else if (key === "1") {
+        canvasRef.current?.actualPixels();
       }
     };
     globalThis.addEventListener("keydown", onKey);
@@ -281,6 +355,39 @@ function EditorReady({
   }, [message]);
 
   const mutationError = save.error ?? complete.error;
+
+  useBeforeUnload(
+    useCallback(
+      (event: BeforeUnloadEvent) => {
+        if (!dirty) return;
+        event.preventDefault();
+        event.returnValue = "";
+      },
+      [dirty],
+    ),
+  );
+
+  useEffect(() => {
+    if (
+      !dirty ||
+      pendingPoints.length > 0 ||
+      save.isPending ||
+      save.error ||
+      complete.isPending
+    ) return;
+    const timer = globalThis.setTimeout(() => {
+      void persist();
+    }, 1200);
+    return () => globalThis.clearTimeout(timer);
+  }, [
+    complete.isPending,
+    dirty,
+    history.present,
+    pendingPoints.length,
+    persist,
+    save.error,
+    save.isPending,
+  ]);
 
   return (
     <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-ground">
@@ -306,7 +413,7 @@ function EditorReady({
 
         <div className="ml-auto flex items-center gap-2">
           <span className="hidden text-xs text-fg-muted sm:inline">
-            {message ?? (dirty ? "Unsaved changes" : `Draft v${initial.draft.version}`)}
+            {message ?? (dirty ? "Unsaved changes" : `Draft v${draftVersion}`)}
           </span>
           <Button
             icon={<Save />}
@@ -328,7 +435,12 @@ function EditorReady({
 
       {mutationError && (
         <div className="shrink-0 border-b border-line bg-surface px-3 py-2">
-          <ErrorBox>{mutationError.message}</ErrorBox>
+          <div className="flex items-center justify-between gap-3">
+            <ErrorBox>{mutationError.message}</ErrorBox>
+            {mutationError.message.includes("changed elsewhere") && (
+              <Button onClick={() => void onReload()}>Reload server draft</Button>
+            )}
+          </div>
         </div>
       )}
 
@@ -336,24 +448,30 @@ function EditorReady({
         <aside className="flex w-12 shrink-0 flex-col items-center gap-1 border-r border-line bg-surface py-2" aria-label="Annotation tools">
           <ToolButton icon={<MousePointer2 />} label="Select (V)" active={tool === "select"} onClick={() => setTool("select")} />
           <ToolButton icon={<Shapes />} label="Polygon (P)" active={tool === "polygon"} onClick={() => setTool("polygon")} />
-          <ToolButton icon={<Hand />} label="Pan (H)" active={tool === "hand"} onClick={() => setTool("hand")} />
+          <ToolButton icon={<Brush />} label="Brush (B)" active={tool === "brush"} onClick={() => setTool("brush")} />
+          <ToolButton icon={<Eraser />} label="Eraser (E)" active={tool === "eraser"} onClick={() => setTool("eraser")} />
           <span className="my-1 h-px w-6 bg-line" />
           <ToolButton icon={<Undo2 />} label="Undo (⌘Z)" disabled={history.past.length === 0} onClick={() => dispatch({ type: "undo" })} />
           <ToolButton icon={<Redo2 />} label="Redo (⇧⌘Z)" disabled={history.future.length === 0} onClick={() => dispatch({ type: "redo" })} />
           <span className="my-1 h-px w-6 bg-line" />
           <ToolButton icon={<ZoomIn />} label="Zoom in" onClick={() => setView({ ...view, zoom: Math.min(12, view.zoom * 1.25) })} />
           <ToolButton icon={<ZoomOut />} label="Zoom out" onClick={() => setView({ ...view, zoom: Math.max(0.25, view.zoom / 1.25) })} />
-          <ToolButton icon={<RotateCcw />} label="Fit image (0)" onClick={() => setView(INITIAL_CANVAS_VIEW)} />
-          <span className="mt-auto font-mono text-[9px] text-fg-subtle">{Math.round(view.zoom * 100)}%</span>
+          <ToolButton icon={<Maximize2 />} label="Fit image (0)" onClick={() => canvasRef.current?.fit()} />
+          <ToolButton icon={<span className="font-mono text-[9px] font-semibold">1:1</span>} label="Actual pixels (1)" onClick={() => canvasRef.current?.actualPixels()} />
+          <span className="mt-auto px-1 text-center font-mono text-[9px] leading-3 text-fg-subtle">
+            {view.zoom === 1 ? "Fit" : `${Math.round(view.zoom * 100)}% fit`}
+          </span>
         </aside>
 
         <AnnotationCanvas
+          ref={canvasRef}
           imageId={imageId}
           document={history.present}
           labels={labels}
           selectedId={selectedId}
           tool={tool}
           pendingPoints={pendingPoints}
+          brushRadius={brushRadius}
           view={view}
           onView={setView}
           onSelect={setSelectedId}
@@ -364,6 +482,19 @@ function EditorReady({
               document: withPolygonPoint(history.present, shapeId, pointIndex, point),
             })
           }
+          onBrush={(points) => {
+            const shape = bitmapStroke({
+              points,
+              radius: brushRadius,
+              imageWidth: history.present.image_width,
+              imageHeight: history.present.image_height,
+              labelKey,
+              operation: tool === "eraser" ? "subtract" : operation,
+            });
+            if (!shape) return;
+            dispatch({ type: "commit", document: withShape(history.present, shape) });
+            setSelectedId(shape.id);
+          }}
         />
 
         <aside className="flex w-72 shrink-0 flex-col border-l border-line bg-surface" aria-label="Annotation inspector">
@@ -394,6 +525,22 @@ function EditorReady({
                 <Button size="sm" disabled={pendingPoints.length < 3} onClick={finishPolygon}>
                   Close
                 </Button>
+              </div>
+            )}
+            {(tool === "brush" || tool === "eraser") && (
+              <div className="mt-3">
+                <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
+                  <span>Brush size</span>
+                  <span className="font-mono">{brushRadius}px</span>
+                </div>
+                <Slider
+                  aria-label="Brush size"
+                  value={brushRadius}
+                  min={2}
+                  max={96}
+                  step={1}
+                  onValueChange={setBrushRadius}
+                />
               </div>
             )}
           </section>
@@ -459,6 +606,16 @@ function EditorReady({
                   />
                   <Button variant="danger" icon={<Trash2 />} onClick={removeSelected} aria-label="Delete selected region" />
                 </div>
+                {selected.kind === "bitmap" && (
+                  <Button
+                    icon={<WandSparkles />}
+                    disabled={tracing}
+                    onClick={() => void traceSelected()}
+                  >
+                    {tracing ? "Tracing…" : "Make editable contour"}
+                  </Button>
+                )}
+                {traceError && <p className="text-xs text-defect">{traceError}</p>}
               </div>
             )}
           </section>
@@ -466,7 +623,7 @@ function EditorReady({
           <footer className="flex items-center justify-between border-t border-line px-3 py-2">
             <Button
               icon={<ArrowLeft />}
-              disabled={queueIndex <= 0 || dirty}
+              disabled={(queueIndex <= 0 && queueOffset === 0) || dirty}
               onClick={() => openQueueItem(queueIndex - 1)}
               aria-label="Previous image"
             />
@@ -475,7 +632,11 @@ function EditorReady({
             </span>
             <Button
               icon={<ArrowRight />}
-              disabled={queueIndex < 0 || queueIndex + 1 >= flatQueue.length || dirty}
+              disabled={
+                queueIndex < 0 ||
+                (queueIndex + 1 >= flatQueue.length && queueOffset + queue.length >= queueTotal) ||
+                dirty
+              }
               onClick={() => openQueueItem(queueIndex + 1)}
               aria-label="Next image"
             />

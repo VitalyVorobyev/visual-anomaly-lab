@@ -74,8 +74,9 @@ the detail is in the git history and the ADRs.
       to the same binary evaluation mask; original source files never change.
 - [x] **Build the editor foundation** (M): dataset-local queue, full-height controlled Konva scene,
       polygon/vertex editing, add/subtract, pan/zoom, undo/redo, guarded save/completion and keyboard tools.
-- [ ] **Finish raster editing and resilient passes** (M): brush/eraser bitmap layers, debounced autosave,
-      explicit conflict recovery and keyboard page-boundary traversal.
+- [x] **Finish raster editing and resilient passes** (M): brush/eraser bitmap layers, editable contour
+      tracing, mode-free left/right-drag panning, Fit/1:1 views, debounced autosave, explicit conflict
+      recovery and keyboard page-boundary traversal.
 - [ ] **Add a generic model-asset store and MobileSAM assist** (M): licensed on-demand download,
       size/SHA256/progress/cancel, local override, CPU fallback and the one resident-worker lock.
 
