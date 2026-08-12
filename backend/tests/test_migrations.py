@@ -37,6 +37,7 @@ EXPECTED_TABLES = {
     "image_result",
     "sample_result",
     "metric_set",
+    "region_profile_revision",
 }
 
 
@@ -161,6 +162,37 @@ def test_annotation_migration_backfills_a_default_taxonomy(settings: Settings) -
         assert apply_migrations_to(conn) >= 5
         row = conn.execute("SELECT key, name FROM annotation_label WHERE dataset_id = 1").fetchone()
         assert tuple(row) == ("defect", "Defect")
+
+
+def test_region_profile_revisions_are_dataset_owned_and_immutable(
+    migrated_db: sqlite3.Connection,
+) -> None:
+    migrated_db.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/tmp/d')")
+    migrated_db.execute(
+        """
+        INSERT INTO region_profile_revision (
+            dataset_id, name, revision_no, extractor_type, extractor_config,
+            prepared_width, prepared_height, seed
+        ) VALUES (1, 'dominant object', 1, 'identity', '{}', 256, 256, 17)
+        """
+    )
+
+    with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+        migrated_db.execute(
+            "UPDATE region_profile_revision SET extractor_type = 'other' WHERE id = 1"
+        )
+    with pytest.raises(sqlite3.IntegrityError):
+        migrated_db.execute(
+            """
+            INSERT INTO region_profile_revision (
+                dataset_id, name, revision_no, extractor_type, extractor_config,
+                prepared_width, prepared_height, failure_policy, seed
+            ) VALUES (1, 'bad fallback', 1, 'identity', '{}', 256, 256, 'identity', 17)
+            """
+        )
+
+    migrated_db.execute("DELETE FROM dataset WHERE id = 1")
+    assert migrated_db.execute("SELECT COUNT(*) FROM region_profile_revision").fetchone()[0] == 0
 
 
 def test_a_failed_migration_leaves_nothing_behind(

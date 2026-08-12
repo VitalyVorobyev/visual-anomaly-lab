@@ -13,12 +13,12 @@ refined, with a dated entry in a `## Changelog` section naming what changed. A *
 gets a new number and supersedes the old record explicitly — the superseded reasoning is what makes
 the replacement legible.
 
-**Numbers are permanent.** 658 citations of the form `ADR-NNNN` exist across the backend, the
+**Numbers are permanent.** Citations of the form `ADR-NNNN` exist across the backend, the
 frontend and the docs. A number is an address; it is never reused and never withdrawn.
 
 ## Decisions
 
-The nineteen that still settle something.
+The twenty-one that still settle something.
 
 | # | Title | Area |
 |---|---|---|
@@ -42,6 +42,7 @@ The nineteen that still settle something.
 | [0030](0030-decisions-are-amendable-and-the-handbook-holds-current-truth.md) | Decisions are amendable, and the handbook holds current truth | Process |
 | [0031](0031-the-teacher-is-an-experiment-variable-and-we-produce-it.md) | The teacher is an experiment variable, and we produce it | Methods |
 | [0032](0032-annotation-truth-is-versioned-and-source-frame.md) | Annotation truth is versioned and source-frame | Annotation |
+| [0033](0033-region-profiles-pin-an-invertible-source-transform.md) | Region profiles pin an invertible source transform | Spatial input |
 
 ## Folded
 
