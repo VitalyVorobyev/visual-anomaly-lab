@@ -58,7 +58,23 @@ PORT="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["port"])' <"$WOR
 SIDECAR_PID="$(python3 -c 'import json,sys; print(json.load(sys.stdin)["pid"])' <"$WORK_DIR/ready.jsonl")"
 
 echo "Fetching the OpenAPI schema from port $PORT..."
-curl -sSf "http://127.0.0.1:$PORT/openapi.json" -o "$WORK_DIR/openapi.json"
+OPENAPI_READY=0
+for _ in $(seq 1 120); do
+    if curl -sSf "http://127.0.0.1:$PORT/openapi.json" -o "$WORK_DIR/openapi.json" 2>/dev/null; then
+        OPENAPI_READY=1
+        break
+    fi
+    if ! kill -0 "$UV_PID" 2>/dev/null; then
+        break
+    fi
+    sleep 0.25
+done
+
+if [ "$OPENAPI_READY" -ne 1 ]; then
+    echo "ERROR: the backend announced port $PORT but never accepted the OpenAPI request." >&2
+    cat "$WORK_DIR/backend.log" >&2
+    exit 1
+fi
 
 echo "Running the generator in an isolated project..."
 GEN_DIR="$WORK_DIR/codegen"
