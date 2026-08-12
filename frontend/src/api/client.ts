@@ -61,6 +61,14 @@ export type SegmentAssistCapability = Schemas["SegmentAssistCapability"];
 export type ModelAssetCatalog = Schemas["ModelAssetCatalog"];
 export type ModelAssetInfo = Schemas["ModelAssetInfo"];
 
+export type RegionExtractorDescription = Schemas["RegionExtractorDescription"];
+export type RegionProfileCreate = Schemas["RegionProfileCreate"];
+export type RegionProfileRevision = Schemas["RegionProfileRevision"];
+export type RegionBuildSummary = Schemas["RegionBuildSummary"];
+export type RegionPreparationEntry = Schemas["RegionPreparationEntry"];
+export type SpatialTransform = Schemas["SpatialTransform"];
+export type SpatialResample = Schemas["SpatialResample"];
+
 export type JobSummary = Schemas["JobSummary"];
 export type JobDetail = Schemas["JobDetail"];
 export type JobStatus = Schemas["JobStatus"];

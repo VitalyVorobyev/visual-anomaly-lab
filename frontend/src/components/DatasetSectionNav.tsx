@@ -8,6 +8,7 @@ export function DatasetSectionNav({ datasetId }: { datasetId: number }) {
   const items = [
     { label: "Browse", to: `/datasets/${datasetId}`, end: true },
     { label: "Annotate", to: `/datasets/${datasetId}/annotate`, end: false },
+    { label: "Prepare", to: `/datasets/${datasetId}/prepare`, end: false },
     { label: "Splits", to: `/datasets/${datasetId}/splits`, end: false },
     { label: "Experiments", to: `/datasets/${datasetId}/experiments`, end: false },
   ];

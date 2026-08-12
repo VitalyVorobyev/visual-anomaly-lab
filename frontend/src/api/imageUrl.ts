@@ -15,6 +15,11 @@ export function imageUrl(imageId: number, tier: ImageTier): string {
   return `${apiBaseUrl}/api/images/${imageId}/${tier}`;
 }
 
+/** One immutable profile revision's materialised, lossless model input. */
+export function preparedImageUrl(profileId: number, imageId: number): string {
+  return `${apiBaseUrl}/api/region-profiles/${profileId}/prepared/${imageId}`;
+}
+
 /**
  * One experiment's anomaly map for an image, colormapped and sized to the source.
  *

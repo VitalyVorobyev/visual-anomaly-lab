@@ -1,0 +1,154 @@
+"""Bounded, reproducible region preview/build from generated image fixtures."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from pathlib import Path
+
+import pytest
+
+from anomaly_lab.config import Settings
+from anomaly_lab.db.connection import connection
+from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.repositories import region_profiles as profiles_repo
+from anomaly_lab.domain.entities import JobKind
+from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.regions.preparation import (
+    MANIFEST_FILENAME,
+    PREVIEW_LIMIT,
+    RegionBuildSummary,
+    preview_indices,
+    read_build_summary,
+    run_region_prepare_job,
+)
+from tests.conftest import Fixture, seed_synthetic_split
+
+
+@pytest.fixture
+def prepared_fixture(settings: Settings, tmp_path: Path) -> tuple[Fixture, int]:
+    apply_migrations(settings.db_path)
+    with connection(settings.db_path) as conn:
+        fixture = seed_synthetic_split(conn, tmp_path / "synthetic")
+        profile = profiles_repo.create_revision(
+            conn,
+            dataset_id=fixture.dataset_id,
+            name="full frame",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=24,
+            prepared_height=20,
+            padding_fraction=0.05,
+            seed=17,
+        )
+    return fixture, profile.id
+
+
+def _context(
+    settings: Settings,
+    fixture: Fixture,
+    profile_id: int,
+    *,
+    mode: str,
+    job_id: int = 41,
+) -> JobContext:
+    return JobContext(
+        job_id=job_id,
+        kind=JobKind.REGION_PREPARE,
+        params={"dataset_id": fixture.dataset_id, "profile_id": profile_id, "mode": mode},
+        settings=settings,
+    )
+
+
+def test_preview_indices_are_bounded_and_cover_both_ends() -> None:
+    chosen = preview_indices(103)
+
+    assert len(chosen) == PREVIEW_LIMIT
+    assert chosen[0] == 0
+    assert chosen[-1] == 102
+    assert chosen == sorted(set(chosen))
+    assert preview_indices(3) == [0, 1, 2]
+
+
+def test_preview_reports_transforms_without_writing_prepared_pixels(
+    settings: Settings,
+    prepared_fixture: tuple[Fixture, int],
+) -> None:
+    fixture, profile_id = prepared_fixture
+
+    result = run_region_prepare_job(_context(settings, fixture, profile_id, mode="preview"))
+
+    assert result["mode"] == "preview"
+    assert result["sampled"] == 14
+    assert result["succeeded"] == 14
+    assert result["failed"] == 0
+    assert all(entry["transform"]["prepared_width"] == 24 for entry in result["entries"])
+    assert not settings.region_profile_dir(profile_id).exists()
+
+
+def test_build_is_reproducible_and_records_every_source_transform(
+    settings: Settings,
+    prepared_fixture: tuple[Fixture, int],
+) -> None:
+    fixture, profile_id = prepared_fixture
+    first = RegionBuildSummary.model_validate(
+        run_region_prepare_job(_context(settings, fixture, profile_id, mode="build", job_id=42))
+    )
+    root = settings.region_profile_dir(profile_id)
+    first_manifest = (root / MANIFEST_FILENAME).read_bytes()
+    first_images = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((root / "images").iterdir())
+    }
+
+    second = RegionBuildSummary.model_validate(
+        run_region_prepare_job(_context(settings, fixture, profile_id, mode="build", job_id=43))
+    )
+
+    assert first.total == second.total == 14
+    assert first.succeeded == second.succeeded == 14
+    assert first.failed == second.failed == 0
+    assert first.manifest_sha256 == second.manifest_sha256
+    assert first.config_sha256 == second.config_sha256
+    assert len(first.preview_entries) == 14
+    assert first_manifest == (root / MANIFEST_FILENAME).read_bytes()
+    assert first_images == {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in sorted((root / "images").iterdir())
+    }
+    assert read_build_summary(settings, profile_id) == second
+    lines = [json.loads(line) for line in first_manifest.decode().splitlines()]
+    assert len(lines) == 14
+    assert [entry.image_id for entry in first.preview_entries] == [
+        line["image_id"] for line in lines
+    ]
+    assert all(line["status"] == "succeeded" for line in lines)
+    assert all("elapsed_ms" not in line for line in lines)
+    assert all(line["prepared_sha256"] for line in lines)
+
+
+def test_a_missing_source_is_a_persisted_failure_not_identity_fallback(
+    settings: Settings,
+    prepared_fixture: tuple[Fixture, int],
+) -> None:
+    fixture, profile_id = prepared_fixture
+    with connection(settings.db_path) as conn:
+        row = conn.execute(
+            """
+            SELECT image.path FROM image JOIN sample ON sample.id = image.sample_id
+             WHERE sample.dataset_id = ? ORDER BY image.id LIMIT 1
+            """,
+            (fixture.dataset_id,),
+        ).fetchone()
+    Path(row["path"]).unlink()
+
+    summary = RegionBuildSummary.model_validate(
+        run_region_prepare_job(_context(settings, fixture, profile_id, mode="build", job_id=44))
+    )
+
+    assert summary.failed == 1
+    assert summary.succeeded == 13
+    assert len(summary.failure_examples) == 1
+    assert summary.failure_examples[0].transform is None
+    assert summary.failure_examples[0].error
+    assert len(list((settings.region_profile_dir(profile_id) / "images").iterdir())) == 13

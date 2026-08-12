@@ -27,6 +27,7 @@ from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.samples import SampleFilter
@@ -293,6 +294,7 @@ def _deletion_inventory(
     dataset = _require_dataset(conn, dataset_id)
     images = images_repo.list_images_for_dataset(conn, dataset_id)
     experiments = experiments_repo.list_experiments_for_dataset(conn, dataset_id)
+    region_profiles = region_profiles_repo.list_profiles(conn, dataset_id)
     jobs = jobs_repo.list_jobs_for_dataset(conn, dataset_id)
 
     paths: list[Path] = []
@@ -311,6 +313,13 @@ def _deletion_inventory(
         if settings.annotations_dir.is_symlink() or annotation_path.is_symlink():
             safe = False
         paths.append(annotation_path)
+    if settings.region_profiles_dir.is_symlink():
+        safe = False
+    for profile in region_profiles:
+        profile_path = settings.region_profile_dir(profile.id)
+        if profile_path.is_symlink():
+            safe = False
+        paths.append(profile_path)
     paths.extend(
         settings.jobs_log_dir / f"{job.id}.log" for job in jobs if job.experiment_id is None
     )
@@ -339,12 +348,7 @@ def _deletion_inventory(
         storage_safe=safe,
         samples=samples_repo.count_samples(conn, dataset_id),
         splits=len(splits_repo.list_splits(conn, dataset_id)),
-        region_profiles=int(
-            conn.execute(
-                "SELECT COUNT(*) FROM region_profile_revision WHERE dataset_id = ?",
-                (dataset_id,),
-            ).fetchone()[0]
-        ),
+        region_profiles=len(region_profiles),
         manual_labels=manual_labels,
     )
 

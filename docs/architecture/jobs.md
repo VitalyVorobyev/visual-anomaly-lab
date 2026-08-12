@@ -40,6 +40,13 @@ partial file and become visible at the managed path only after size and digest v
 failure removes the partial. Because it uses the same queue, download progress, logs and cancellation need no
 second mechanism, and a model-asset write cannot compete with an accelerator job.
 
+`region_prepare` has two modes behind one handler. Preview selects at most 24 evenly spaced images and returns
+transforms without writing prepared pixels. Build visits the whole dataset, checks cancellation between
+images, writes into a managed staging directory and atomically publishes only after its manifest and summary
+are complete. Per-image extraction/decode failures are persisted in the result and reduce coverage; they do
+not fail over to identity. A malformed job, missing model asset or extractor construction failure fails the
+job before processing, which keeps a partially configured profile from looking like a low-coverage success.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:

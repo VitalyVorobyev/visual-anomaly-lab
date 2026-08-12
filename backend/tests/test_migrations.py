@@ -229,6 +229,17 @@ def test_a_distill_job_is_accepted_and_a_nonsense_kind_is_not(
         migrated_db.execute("INSERT INTO job (kind, params) VALUES ('ponder', '{}')")
 
 
+def test_region_preparation_job_kind_and_profile_resample_are_migrated(
+    migrated_db: sqlite3.Connection,
+) -> None:
+    migrated_db.execute("INSERT INTO job (kind, params) VALUES ('region_prepare', '{}')")
+    columns = {
+        str(row["name"])
+        for row in migrated_db.execute("PRAGMA table_info(region_profile_revision)")
+    }
+    assert "resample" in columns
+
+
 def test_rebuilding_the_job_table_kept_its_rows_and_its_foreign_key(
     settings: Settings,
 ) -> None:

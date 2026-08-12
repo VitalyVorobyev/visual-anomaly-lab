@@ -45,6 +45,12 @@ export const queryKeys = {
   annotationDraft: (imageId: number) => ["annotations", imageId, "draft"] as const,
   annotationRevisions: (imageId: number) => ["annotations", imageId, "revisions"] as const,
 
+  regionExtractors: () => ["region-extractors"] as const,
+  regionProfiles: (datasetId: number) =>
+    ["datasets", datasetId, "region-profiles"] as const,
+  regionBuild: (profileId: number) =>
+    ["region-profiles", profileId, "build"] as const,
+
   splits: (datasetId: number) => ["datasets", datasetId, "splits"] as const,
 
   jobs: () => ["jobs"] as const,

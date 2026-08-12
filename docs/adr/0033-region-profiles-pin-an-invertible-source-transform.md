@@ -21,7 +21,8 @@ one experiment configuration.
 operation is represented by a persisted, invertible source/prepared transform.**
 
 - A profile revision freezes an extractor registry key and JSON configuration, prepared size, padding
-  fraction, failure policy and seed. A new setting creates a new revision; it never edits one in place.
+  fraction, resampling filter, failure policy and seed. A new setting creates a new revision; it never edits
+  one in place.
 - Extractors return a region in source pixel-edge coordinates. `identity` returns the full source frame.
   Region failure is explicit and fails that image/profile build; it never silently becomes identity.
 - The shared bridge expands a detected region, clips it, crops, contain-resizes and edge-pads. It persists
@@ -44,3 +45,8 @@ operation is represented by a persisted, invertible source/prepared transform.**
   less convenient and scientifically more honest; previews must make the failure rate visible before build.
 - Profiles add dataset-owned storage and lifecycle work. The immutable row is intentionally separate from
   mutable preview/build status so operational progress cannot mutate the experiment variable.
+
+## Changelog
+
+- **2026-08-12:** Made the resampling filter explicit on the immutable profile and documented the atomic,
+  manifest-backed build that implements the already-decided bounded-artifact consequence.
