@@ -86,6 +86,7 @@ rather than drawn by hand, so it cannot go stale against the model it describes,
 | `efficientad_custom` | The same paper ([arXiv:2303.14535](https://arxiv.org/abs/2303.14535)), implemented here. The wrapper above is the baseline it is measured against, not a specification it copies — see [ADR-0029](docs/adr/0029-anomalib-is-the-baseline-not-the-specification.md). Needs torch alone, not anomalib. | `--extra dl` |
 | `patchcore_anomalib` | PatchCore ([arXiv:2106.08265](https://arxiv.org/abs/2106.08265)) via anomalib. Nothing is trained: a frozen backbone's patch features are greedily reduced to a coreset memory bank, and a test patch is scored by its distance to the nearest vector in it. | `--extra dl` |
 | `dinomaly_anomalib` | Dinomaly ([arXiv:2405.14325](https://arxiv.org/abs/2405.14325)) via anomalib. A frozen DINOv2 encoder and trainable transformer decoder reconstruct normal features; their disagreement produces the anomaly map. | `--extra dl` |
+| `glass_anomalib` | GLASS ([arXiv:2407.09359](https://arxiv.org/abs/2407.09359)) via anomalib. Perlin regions and mined feature perturbations teach a discriminator to separate normal from synthetic anomalies. | `--extra dl` |
 
 Running the two EfficientADs against each other on one split is the point of having both: every
 improvement in the custom one is a configuration field, so it is an ablation the comparison screen

@@ -49,6 +49,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "efficientad_custom":    _efficientad_custom,    # ours, same interface (ADR-0008)
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
     "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
+    "glass_anomalib":        _glass_anomalib,        # learned-synthesis reference
     # "classical_circular":  M8, optional (ADR-0015)
 }
 ```
@@ -223,6 +224,32 @@ and completed step. The frozen encoder remains in the app-managed asset cache an
 name, exact tensor fingerprint and dependency versions. Reload refuses a changed encoder rather than
 silently attaching old decoder weights to a different feature space. Public VisA evidence and the exact
 resource protocol are recorded in [`measurements-dinomaly.md`](../measurements-dinomaly.md).
+
+## A learned-synthesis method needs a bounded reference frame
+
+`glass_anomalib` keeps anomalib's GLASS network, Perlin local synthesis, Gaussian global
+synthesis, gradient-ascent mining, losses and anomaly-map rule. The plugin supplies the
+finite batch-1 loop, cancellation, shared prepared pixels and exact continuation. The
+pretrained WRN-50 is frozen; only the feature projection and discriminator are optimized.
+
+Global synthesis is defined relative to a centre in the projected normal-feature space.
+Upstream recomputes that centre over the entire training loader at every epoch boundary,
+which makes an otherwise finite step budget hide a dataset-sized pass. Here
+`center_images` bounds the pass and `evenly_spaced` preserves acquisition-range coverage;
+the plan prints both retained and omitted counts before loading torch.
+`center_refresh_steps` is an absolute step schedule. A continuation at step 650 therefore
+uses the saved centre until the same next refresh as an uninterrupted run, while a
+continuation exactly on a refresh boundary recomputes it. The checkpoint carries both
+optimizers, the current centre, CPU/MPS synthesis RNG, NumPy image-order stream and the
+completed step; a test pins 2+1 steps to the exact state of three uninterrupted steps.
+
+The optional Describable Textures Dataset is not an implicit dependency. Built-in Perlin
+synthesis is the first default and needs no corpus. DTD has a named public URL and SHA-256
+in the measurement record, but becomes app-managed storage only if a paired public-data
+ablation shows value. Likewise, the upstream per-category `svd` switch is exposed only as
+the generic `synthesis_anchor` experiment control; no dataset name enters the method.
+Resource evidence and the external-asset policy are recorded in
+[`measurements-glass.md`](../measurements-glass.md).
 
 ## A downloaded asset can be a hyperparameter
 

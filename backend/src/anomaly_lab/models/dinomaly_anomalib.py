@@ -21,13 +21,10 @@ Heavy imports stay inside functions.  Opening the method picker must not import 
 from __future__ import annotations
 
 import contextlib
-import hashlib
 import math
-import os
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
-from importlib import import_module
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -46,6 +43,7 @@ from anomaly_lab.models.base import (
     TrainContext,
     module_available,
 )
+from anomaly_lab.models.model_assets import fingerprint_state, huggingface_environment
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -159,60 +157,6 @@ def learning_rate(step: int) -> float:
     return float(FINAL_LR + 0.5 * (BASE_LR - FINAL_LR) * (1 + math.cos(math.pi * offset / span)))
 
 
-@contextlib.contextmanager
-def _asset_environment(cache_dir: Path, *, allow_downloads: bool) -> Iterator[None]:
-    """Resolve Hugging Face assets inside app-managed storage, optionally offline."""
-    hub_cache = cache_dir / "huggingface" / "hub"
-    hub_cache.mkdir(parents=True, exist_ok=True)
-    updates = {"HF_HUB_CACHE": str(hub_cache)}
-    if not allow_downloads:
-        updates["HF_HUB_OFFLINE"] = "1"
-    previous = {key: os.environ.get(key) for key in updates}
-    os.environ.update(updates)
-    hub_constants: Any = None
-    constant_previous: dict[str, Any] = {}
-    try:
-        # huggingface_hub snapshots these environment variables at import time. A
-        # resident worker may already have imported it for another model, so update
-        # both the process environment and the live constants for this construction.
-        hub_constants = import_module("huggingface_hub.constants")
-        constant_previous["HF_HUB_CACHE"] = hub_constants.HF_HUB_CACHE
-        hub_constants.HF_HUB_CACHE = str(hub_cache)
-        if not allow_downloads:
-            constant_previous["HF_HUB_OFFLINE"] = hub_constants.HF_HUB_OFFLINE
-            hub_constants.HF_HUB_OFFLINE = True
-        yield
-    except Exception as exc:
-        if not allow_downloads:
-            raise RuntimeError(
-                f"Dinomaly needs pretrained weights for {ENCODER_NAME!r}, downloads are "
-                f"disabled, and the app cache at {hub_cache} could not supply them. Turn "
-                f"allow_downloads on for one run. The underlying failure was: {exc}"
-            ) from exc
-        raise
-    finally:
-        if hub_constants is not None:
-            for key, value in constant_previous.items():
-                setattr(hub_constants, key, value)
-        for key, value in previous.items():
-            if value is None:
-                os.environ.pop(key, None)
-            else:
-                os.environ[key] = value
-
-
-def _fingerprint(state: dict[str, Any]) -> str:
-    """Stable SHA-256 over names, shapes, dtypes and raw encoder tensor bytes."""
-    digest = hashlib.sha256()
-    for key in sorted(state):
-        tensor = state[key].detach().cpu().contiguous()
-        digest.update(key.encode())
-        digest.update(str(tuple(tensor.shape)).encode())
-        digest.update(str(tensor.dtype).encode())
-        digest.update(tensor.numpy().tobytes())
-    return digest.hexdigest()
-
-
 def _normalised_chw(record: ImageRecord, ctx: TrainContext | InferContext) -> np.ndarray:
     """Shared prepared pixels, then the frozen encoder's channel standardisation."""
     array = to_chw(load_array(record.path, ctx.preprocessing))
@@ -271,7 +215,12 @@ class DinomalyAnomalibModel(AnomalyModel):
         import torch
 
         torch.manual_seed(self.config.seed)
-        with _asset_environment(cache_dir, allow_downloads=self.config.allow_downloads):
+        with huggingface_environment(
+            cache_dir,
+            allow_downloads=self.config.allow_downloads,
+            method="Dinomaly",
+            asset=ENCODER_NAME,
+        ):
             from anomalib.models import Dinomaly
 
             module = Dinomaly(
@@ -283,7 +232,7 @@ class DinomalyAnomalibModel(AnomalyModel):
                 visualizer=False,
             )
         model = module.model.to(device)
-        self._fingerprint = _fingerprint(model.encoder.state_dict())
+        self._fingerprint = fingerprint_state(model.encoder.state_dict())
         self._cache_dir = cache_dir
         return model
 
