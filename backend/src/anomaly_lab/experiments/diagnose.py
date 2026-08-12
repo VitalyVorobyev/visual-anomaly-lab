@@ -98,10 +98,13 @@ def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) 
         reporter=NullReporter(),
         diagnostics=writer,
         maps_subdir=SCRATCH_MAPS_SUBDIR,
+        map_projector=lambda target_id, values: loaded.region_build.transform_for(
+            target_id
+        ).project_map(values),
     )
 
     try:
-        loaded.model.predict(to_records(found), ctx)
+        loaded.model.predict(to_records(found, loaded.region_build), ctx)
         index = writer.flush()
     finally:
         # `predict` writes a map whether or not anybody wants it. Removed rather than

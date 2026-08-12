@@ -45,35 +45,45 @@ from tests.conftest import write_image
 # ----------------------------------------------------------------- preprocessing
 
 
-def test_every_method_sees_the_same_shape_regardless_of_source_size(tmp_path: Path) -> None:
-    """The whole point of the bridge: two differently sized files become one shape."""
+def test_model_input_refuses_pixels_outside_the_frozen_prepared_shape(tmp_path: Path) -> None:
+    """Spatial preparation happens once; this bridge may not quietly resize it again."""
     small = write_image(tmp_path / "small.png", size=(11, 7))
-    large = write_image(tmp_path / "large.png", size=(97, 53))
     config = PreprocessingConfig(width=32, height=24)
 
-    assert load_array(small, config).shape == (24, 32, 3)
-    assert load_array(large, config).shape == (24, 32, 3)
+    with pytest.raises(ValueError, match="expected frozen input"):
+        load_array(small, config)
 
 
 def test_pixels_arrive_as_float32_in_zero_to_one(tmp_path: Path) -> None:
-    array = load_array(write_image(tmp_path / "a.png"), PreprocessingConfig())
+    array = load_array(write_image(tmp_path / "a.png"), PreprocessingConfig(width=8, height=8))
     assert array.dtype == np.float32
     assert float(array.min()) >= 0.0 and float(array.max()) <= 1.0
 
 
 def test_grayscale_mode_produces_one_channel(tmp_path: Path) -> None:
     config = PreprocessingConfig(width=16, height=16, color=ColorMode.GRAYSCALE)
-    assert load_array(write_image(tmp_path / "g.png", mode="L"), config).shape == (16, 16, 1)
+    assert load_array(write_image(tmp_path / "g.png", mode="L", size=(16, 16)), config).shape == (
+        16,
+        16,
+        1,
+    )
 
 
 def test_a_grayscale_file_still_expands_to_three_under_rgb(tmp_path: Path) -> None:
     """Pretrained backbones expect three channels; a mono dataset must not be a special case."""
     config = PreprocessingConfig(width=16, height=16, color=ColorMode.RGB)
-    assert load_array(write_image(tmp_path / "g.png", mode="L"), config).shape == (16, 16, 3)
+    assert load_array(write_image(tmp_path / "g.png", mode="L", size=(16, 16)), config).shape == (
+        16,
+        16,
+        3,
+    )
 
 
 def test_to_chw_gives_torch_the_layout_it_wants(tmp_path: Path) -> None:
-    array = load_array(write_image(tmp_path / "a.png"), PreprocessingConfig(width=16, height=8))
+    array = load_array(
+        write_image(tmp_path / "a.png", size=(16, 8)),
+        PreprocessingConfig(width=16, height=8),
+    )
     assert to_chw(array).shape == (3, 8, 16)
 
 
@@ -603,6 +613,25 @@ def test_a_genuinely_wrong_map_shape_is_reported_at_the_plugin(tmp_path: Path) -
     _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=16, height=16))
     with pytest.raises(ValueError, match="must be 2-D"):
         infer_ctx.write_map(1, np.zeros((3, 16, 16), dtype=np.float32))
+
+
+def test_a_map_projector_runs_before_persistence_and_ignores_uncovered_extremes(
+    tmp_path: Path,
+) -> None:
+    _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=8, height=8))
+
+    def project(_: int, values: np.ndarray) -> np.ndarray:
+        source = np.full((12, 12), np.nan, dtype=np.float32)
+        source[2:10, 2:10] = values
+        return source
+
+    infer_ctx.map_projector = project
+    path = infer_ctx.write_map(7, np.arange(64, dtype=np.float32).reshape(8, 8))
+
+    stored = np.load(path)
+    assert stored.shape == (12, 12)
+    assert np.isnan(stored[0, 0])
+    assert infer_ctx.display_range() == pytest.approx((0.0, 62.937))
 
 
 # ----------------------------------------------------------- patchcore, torch-free parts

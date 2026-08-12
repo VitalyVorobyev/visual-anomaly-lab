@@ -19,7 +19,7 @@ class ImageRecord(BaseModel):
     image_id: int
     sample_id: int
     channel: str | None              # canonical channel name, None for single-view datasets
-    path: Path                       # absolute path to the source image, read-only
+    path: Path                       # absolute path to the pinned prepared PNG, read-only
 
 
 class Prediction(BaseModel):
@@ -72,36 +72,36 @@ without touching the rest of the app" true in practice rather than aspirational.
 - **`cache_dir`** — shared, app-managed storage for downloaded assets (pretrained weights, the ImageNette
   penalty set). Separate from `artifact_dir` because these belong to the *method* and are reused across every
   experiment that runs it — a copy per run would be absurd;
-- **`preprocessing`** — the resize and colour policy every method is made to share (below);
+- **`preprocessing`** — the prepared size and colour policy every method is made to share (below);
 - **`progress(fraction, message)`** — forwarded to the job event stream ([the job system](jobs.md));
 - **`metric(name, value, step)`** — scalar series; becomes a `metric` event, which is what per-epoch losses use;
 - **`should_cancel()` / `raise_if_cancelled()`** — cooperative cancellation, polled at batch boundaries;
 - **`log`** — structured logger whose records become `log` events in the job stream;
 - **`emit_diagnostic(...)`** — the diagnostics contract (below, ADR-0018);
 - `TrainContext.val` — the held-out normals, **empty when the split has no `val` subset**;
-- `InferContext.write_map(image_id, array)` — persists one float32 map and accumulates the run's display range.
+- `InferContext.write_map(image_id, array)` — projects through the pinned image transform, persists one
+  source-frame float32 map and accumulates the finite run display range.
 
 Everything above is *injected* (ADR-0014). Models never touch SQLite, never read application settings, and
 never write outside `artifact_dir` and `cache_dir` — which is also what makes a plugin unit-testable with a
 `NullReporter` and no job system at all.
 
-## Preprocessing is configuration of the experiment, not of the model
+## Spatial input is configuration of the experiment, not of the model
 
 A comparison between two methods only means something if they were shown the same pixels. Left to themselves
 the libraries disagree, and the resulting difference in AUROC would partly measure the resize.
 
-So `PreprocessingConfig` — size, colour mode, resampling filter — is stored on the `Experiment`, handed to the
-plugin in its context, and **every plugin loads its pixels through one function**. A model that decodes an
-image any other way is a bug, not a variation. Aspect ratio is deliberately not preserved: the resize goes
-straight to the configured size, which makes an anomaly map a plain stretch back onto the source image, so an
-overlay aligns without the UI reconstructing letterbox offsets.
-
-M10 introduces the replacement geometry as a reusable contract before switching method input over to it.
+Every `Experiment` pins a complete `RegionProfileRevision` build by profile id and manifest digest.
 `SpatialTransform` records a clipped half-open source crop, the actual integer contain-resize, and symmetric
-edge padding. Source points map with an explicit pixel-centre convention; masks and float maps project back
-through the recorded transform, with source pixels outside a crop marked uncovered. Profile preview and
-atomic full-build artifacts now exist; the current direct resize remains the live model path until experiment
-pinning lands. There is no mixed hidden rollout where some methods use the new bridge and others do not.
+edge padding. All plugins receive the build's lossless prepared PNG paths and decode them through
+`load_array`; that function applies colour policy and verifies the frozen size but is forbidden to resize.
+A model that opens another path is a bug, not a variation.
+
+Plugins emit maps in prepared coordinates. The injected `InferContext.write_map` projects them through the
+image's recorded transform before persistence, so stored maps, source masks and UI overlays share source
+coordinates. Pixels outside the selected crop are `NaN`: rendering makes them transparent, while evaluation
+keeps them in the denominator at the score floor and reports their defect/normal counts. A crop cannot improve
+its metric by hiding a defect. There is no mixed rollout and no method-specific localisation code.
 
 ## Region extractor plugins
 
@@ -123,16 +123,17 @@ score they are not.
 
 Preview selects at most 24 images evenly across the dataset and writes no prepared pixels. Full build is a
 single cancellable `region_prepare` job: it writes into a job-specific staging directory, records successful
-and failed images in a deterministic JSON-lines manifest, then atomically replaces the previous build for
-that immutable revision. Each successful entry pins the source digest, realised transform, extractor
-metadata and prepared-image digest. The summary retains a bounded visual-audit sample and failure examples;
+and failed images in a deterministic JSON-lines manifest, then atomically publishes the build. A completed
+materialisation is immutable; rebuilding requires a new profile revision. Each successful entry pins the
+source digest, realised transform, extractor metadata and prepared-image digest. The summary retains a bounded
+visual-audit sample and failure examples;
 the dataset-local **Prepare** screen overlays each source crop and can switch to the materialised pixels.
 MobileSAM attempts MPS for the first real image and transparently reconstructs on CPU after an MPS runtime
 failure; that chosen device is reported as extractor metadata rather than hidden.
 
 ### Standardizing for a backbone is the model's business, not the bridge's
 
-The bridge decides decode, resize and colour, and stops there. What a method then does with those pixels is
+The bridge decides the pinned spatial artifact and colour, and stops there. What a method then does with those pixels is
 part of the method: `efficientad_nets.imagenet_normalize` applies ImageNet statistics inside `forward`, and
 that is not a second preprocessing, it is the network's first layer.
 

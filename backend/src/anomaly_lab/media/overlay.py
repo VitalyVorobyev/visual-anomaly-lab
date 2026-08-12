@@ -115,13 +115,16 @@ def render_anomaly_map(
     to tell "the model found nothing here" from "nothing was rendered here".
     """
     values = np.asarray(array, dtype=np.float32)
+    finite = np.isfinite(values)
     if value_range is None:
-        low, high = float(values.min()), float(values.max())
+        covered = values[finite]
+        low, high = (float(covered.min()), float(covered.max())) if covered.size else (0.0, 1.0)
     else:
         low, high = value_range
     span = high - low if high > low else 1.0
 
-    normalized = np.clip((values - low) / span, 0.0, 1.0)
+    normalized = np.zeros(values.shape, dtype=np.float32)
+    normalized[finite] = np.clip((values[finite] - low) / span, 0.0, 1.0)
     indices = (normalized * (_LUT_SIZE - 1)).astype(np.uint8)
 
     rgba = np.empty((*values.shape, 4), dtype=np.uint8)
@@ -130,6 +133,7 @@ def render_anomaly_map(
         rgba[..., 3] = (np.power(normalized, ALPHA_GAMMA) * _UINT8_MAX).astype(np.uint8)
     else:
         rgba[..., 3] = _UINT8_MAX
+    rgba[~finite, 3] = 0
 
     image = Image.fromarray(rgba, mode="RGBA")
     if size is not None and image.size != size:

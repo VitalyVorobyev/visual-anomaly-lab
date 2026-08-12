@@ -32,6 +32,7 @@ erDiagram
     Sample  ||--o{ SplitAssignment : "belongs to"
     Dataset ||--o{ Experiment : "scored by"
     Split   ||--o{ Experiment : "uses"
+    RegionProfileRevision ||--o{ Experiment : "prepares input for"
     Experiment ||--o{ Job : "runs"
     Experiment ||--o{ ImageResult : "produces"
     Experiment ||--o{ SampleResult : "produces"
@@ -126,12 +127,17 @@ fields on this configuration row. A completed build lives under app-managed prof
 PNG per successful source image, a deterministic JSON-lines transform manifest and a bounded summary whose
 digests make both configuration and materialisation auditable.
 
-**`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `model_type`, `model_config` (JSON),
+**`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `region_profile_id`,
+`region_manifest_sha256`, `model_type`, `model_config` (JSON),
 `preprocessing_config` (JSON), `eval_config` (JSON), `status`, `artifact_dir`, `created_at`, `notes`.
 `status ∈ {draft, training, trained, failed}`. **Configuration is frozen at creation.** There is no separate
 `Run` entity: re-running with different settings creates a *new* experiment. This makes every result row
 unambiguously attributable to one immutable configuration, which is the whole point of a comparison workbench.
-`artifact_dir` points at `data/artifacts/exp-<id>/`.
+The pinned region profile must belong to the dataset and its manifest must be a complete immutable build.
+`preprocessing_config` stores the resolved prepared dimensions plus colour policy, not a second resize.
+`artifact_dir` points at `data/artifacts/exp-<id>/`. Startup removes only exact app-owned `exp-<id>`
+directories whose database row no longer exists; this also reclaims payloads deliberately orphaned by a
+breaking schema migration without ever traversing a dataset source path.
 
 **`Job`** — `id`, `kind ∈ {import, reference_import, verify, prewarm, train, infer, distill,
 model_asset_download, region_prepare}`, `experiment_id` (nullable — only

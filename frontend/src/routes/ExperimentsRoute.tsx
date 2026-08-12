@@ -26,6 +26,10 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import type { ModelDescription } from "../api/client";
 import {
+  useRegionBuild,
+  useRegionProfiles,
+} from "../hooks/useRegionProfiles";
+import {
   EMPTY_EXPERIMENT_CATALOG,
   readExperimentCatalogState,
   toExperimentListQuery,
@@ -399,6 +403,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   const [name, setName] = useState("");
   const [datasetId, setDatasetId] = useState<number | undefined>(initialDatasetId);
   const [splitId, setSplitId] = useState<number | undefined>();
+  const [regionProfileId, setRegionProfileId] = useState<number | undefined>();
   const [methodKey, setMethodKey] = useState<string | undefined>();
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
@@ -406,6 +411,8 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   const [tab, setTab] = useState<ConfigTab>("method");
 
   const splits = useSplits(datasetId);
+  const regionProfiles = useRegionProfiles(datasetId);
+  const regionBuild = useRegionBuild(regionProfileId);
   const method: ModelDescription | undefined = catalog.data?.methods.find(
     (entry) => entry.key === methodKey,
   );
@@ -449,13 +456,23 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   if (name.trim() === "") missing.push("a name");
   if (datasetId === undefined) missing.push("a dataset");
   if (splitId === undefined) missing.push("a split");
+  if (regionProfileId === undefined) missing.push("a prepared input");
+  else if (!regionBuild.data || regionBuild.data.failed > 0) {
+    missing.push("a complete region build");
+  }
   if (method && !method.availability.available) missing.push("a method you can run");
 
   const ready =
     missing.length === 0 && methodKey !== undefined && blocking.length === 0;
 
   const submit = () => {
-    if (!ready || methodKey === undefined || datasetId === undefined || splitId === undefined) {
+    if (
+      !ready ||
+      methodKey === undefined ||
+      datasetId === undefined ||
+      splitId === undefined ||
+      regionProfileId === undefined
+    ) {
       return;
     }
     create.mutate(
@@ -463,6 +480,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
         name: name.trim(),
         dataset_id: datasetId,
         split_id: splitId,
+        region_profile_id: regionProfileId,
         model_type: methodKey,
         config: toOptions(configFields, configValues),
         preprocessing: toOptions(preprocessingFields, preprocessingValues),
@@ -480,7 +498,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
         {catalog.error && <ErrorBox>{catalog.error.message}</ErrorBox>}
 
         <Section step={1} title="What to train on">
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Name">
               <Input
                 aria-label="Name"
@@ -505,7 +523,55 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
                   // A split belongs to one dataset, so the old choice is now meaningless
                   // rather than merely stale.
                   setSplitId(undefined);
+                  setRegionProfileId(undefined);
                 }}
+              />
+            </Field>
+
+            <Field
+              as="group"
+              label="Prepared input"
+              description={
+                datasetId !== undefined && regionProfiles.data?.length === 0 ? (
+                  <>
+                    No region profiles yet.{" "}
+                    <Link
+                      className="text-signal underline underline-offset-2"
+                      to={`/datasets/${datasetId}/prepare`}
+                    >
+                      Prepare the dataset
+                    </Link>
+                    .
+                  </>
+                ) : regionProfileId !== undefined && regionBuild.error ? (
+                  <>
+                    This revision is not built.{" "}
+                    <Link
+                      className="text-signal underline underline-offset-2"
+                      to={`/datasets/${datasetId}/prepare`}
+                    >
+                      Build it
+                    </Link>
+                    .
+                  </>
+                ) : regionBuild.data?.failed ? (
+                  `${regionBuild.data.failed} images failed preparation; create a corrected revision.`
+                ) : undefined
+              }
+            >
+              <Select
+                aria-label="Prepared input"
+                value={regionProfileId === undefined ? "" : String(regionProfileId)}
+                placeholder={datasetId === undefined ? "Pick a dataset first" : "Choose a revision…"}
+                disabled={datasetId === undefined}
+                options={(regionProfiles.data ?? []).map((profile) => ({
+                  value: String(profile.id),
+                  label: `${profile.name} · r${profile.revision_no}`,
+                  note: `${profile.prepared_width}×${profile.prepared_height}`,
+                }))}
+                onValueChange={(value) =>
+                  setRegionProfileId(value === "" ? undefined : Number(value))
+                }
               />
             </Field>
 
@@ -575,7 +641,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
                 },
                 {
                   id: "preprocessing",
-                  label: "Preprocessing",
+                  label: "Model input",
                   count: overrideCount(preprocessingFields, preprocessingValues),
                 },
                 {

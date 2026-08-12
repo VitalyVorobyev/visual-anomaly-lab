@@ -81,8 +81,8 @@ separately, for a readout only.
 - **Three planes are served, by the routes that already own their addressing**: the stored anomaly
   map (`/api/images/{id}/anomaly-map/values`), any diagnostic array (`format=raw` on the payload
   route), and the **preprocessed source the model actually saw**
-  (`/api/experiments/{id}/images/{image_id}/source-values`) — what `load_array` produced, at the
-  experiment's own size and colour mode, not an 8-bit preview of it.
+  (`/api/experiments/{id}/images/{image_id}/source-values`) — what `load_array` produced, projected
+  through the pinned transform into source coordinates (NaN outside the crop), not an 8-bit preview.
 
 Because a diagnostic array is addressed the same way as an anomaly map, the per-branch panes inherit
 the hover readout with no code written per method.

@@ -125,6 +125,15 @@ class TestHeatmap:
         assert int(own_scale[7, 7, 3]) == 255, "its own peak saturates the scale"
         assert int(run_scale[7, 7, 3]) < 10, "against the run, the same peak is barely there"
 
+    def test_uncovered_projected_pixels_are_transparent(self) -> None:
+        values = np.ones((4, 4), dtype=np.float32)
+        values[0, 0] = np.nan
+
+        rgba = decode(render_anomaly_map(values, value_range=(0.0, 1.0), alpha_follows_score=False))
+
+        assert rgba[0, 0, 3] == 0
+        assert rgba[1, 1, 3] == 255
+
 
 class TestMaskContour:
     def test_the_ground_truth_is_outlined_rather_than_filled(self) -> None:

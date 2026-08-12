@@ -39,6 +39,7 @@ from anomaly_lab.db.repositories.experiments import fail_stale_training_experime
 from anomaly_lab.db.repositories.jobs import fail_stale_running_jobs
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentWorker
+from anomaly_lab.owned_storage import remove_orphan_experiment_artifacts
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +63,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         schema_version = apply_migrations_to(conn)
         stale_jobs = fail_stale_running_jobs(conn)
         stale_experiments = fail_stale_training_experiments(conn)
+        live_experiment_ids = {
+            int(row["id"]) for row in conn.execute("SELECT id FROM experiment").fetchall()
+        }
+    removed_artifacts = remove_orphan_experiment_artifacts(settings, live_experiment_ids)
 
     logger.info("Database %s ready at schema version %d", settings.db_path, schema_version)
     if stale_jobs:
@@ -75,6 +80,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             "Marked %d experiment(s) left mid-training as failed: %s",
             len(stale_experiments),
             ", ".join(str(experiment_id) for experiment_id in stale_experiments),
+        )
+    if removed_artifacts:
+        logger.warning(
+            "Removed %d orphaned app-owned experiment artifact directorie(s): %s",
+            len(removed_artifacts),
+            ", ".join(path.name for path in removed_artifacts),
         )
 
     # Started after reconciliation, so the runner never sees a row the previous process

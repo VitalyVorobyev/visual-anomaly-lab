@@ -32,6 +32,7 @@ from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.domain.entities import (
@@ -74,9 +75,14 @@ from anomaly_lab.models.diagnostics import (
     load_index,
     prune,
 )
-from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
+from anomaly_lab.models.preprocessing import (
+    PreprocessingConfig,
+    PreprocessingOptions,
+    load_array,
+)
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
 from anomaly_lab.owned_storage import experiment_artifact_path, path_usage
+from anomaly_lab.regions.preparation import load_prepared_build, read_build_summary
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -121,6 +127,7 @@ class CreateExperimentRequest(BaseModel):
     name: str
     dataset_id: int
     split_id: int
+    region_profile_id: int
     model_type: str
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
@@ -145,6 +152,8 @@ class ExperimentSummary(BaseModel):
     name: str
     dataset_id: int
     split_id: int
+    region_profile_id: int
+    region_manifest_sha256: str
     model_type: str
     status: ExperimentStatus
     created_at: str
@@ -205,6 +214,7 @@ class ExperimentDetail(ExperimentSummary):
     artifact_dir: str
     dataset_name: str | None = None
     split_name: str | None = None
+    region_profile_name: str | None = None
     metrics: list[MetricSummary] = Field(default_factory=list)
     scored_subsets: list[Subset] = Field(default_factory=list)
     jobs: list[JobSummary] = Field(default_factory=list)
@@ -385,6 +395,8 @@ def _summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumm
         name=experiment.name,
         dataset_id=experiment.dataset_id,
         split_id=experiment.split_id,
+        region_profile_id=experiment.region_profile_id,
+        region_manifest_sha256=experiment.region_manifest_sha256,
         model_type=experiment.model_type,
         status=experiment.status,
         created_at=experiment.created_at,
@@ -396,6 +408,7 @@ def _summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumm
 def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetail:
     dataset = datasets_repo.get_dataset(conn, experiment.dataset_id)
     split = splits_repo.get_split(conn, experiment.split_id)
+    profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
     metrics = _metric_summaries(conn, experiment.id)
 
     try:
@@ -418,6 +431,7 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         artifact_dir=experiment.artifact_dir,
         dataset_name=dataset.name if dataset else None,
         split_name=split.name if split else None,
+        region_profile_name=profile.name if profile else None,
         metrics=metrics,
         scored_subsets=results_repo.scored_subsets(conn, experiment.id),
         jobs=[summary_of(job) for job in jobs_repo.list_jobs_for_experiment(conn, experiment.id)],
@@ -483,7 +497,7 @@ def list_model_types() -> MethodCatalog:
     """
     return MethodCatalog(
         methods=describe_all(),
-        preprocessing_schema=PreprocessingConfig.model_json_schema(),
+        preprocessing_schema=PreprocessingOptions.model_json_schema(),
         evaluation_schema=EvalConfig.model_json_schema(),
     )
 
@@ -504,9 +518,7 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
 
     try:
         config = model_class.config_model().model_validate(body.config).model_dump(mode="json")
-        preprocessing = PreprocessingConfig.model_validate(body.preprocessing).model_dump(
-            mode="json"
-        )
+        preprocessing_options = PreprocessingOptions.model_validate(body.preprocessing)
         evaluation = EvalConfig.model_validate(body.evaluation).model_dump(mode="json")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -522,6 +534,34 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
                 status_code=422,
                 detail=f"split {body.split_id} belongs to dataset {split.dataset_id}",
             )
+        profile = region_profiles_repo.get_profile(conn, body.region_profile_id)
+        if profile is None:
+            raise HTTPException(
+                status_code=404, detail=f"no region profile with id {body.region_profile_id}"
+            )
+        if profile.dataset_id != body.dataset_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"region profile {body.region_profile_id} belongs to dataset "
+                    f"{profile.dataset_id}"
+                ),
+            )
+        build_summary = read_build_summary(settings, profile.id)
+        if build_summary is None:
+            raise HTTPException(
+                status_code=422,
+                detail=f"region profile {profile.id} has not been built",
+            )
+        try:
+            load_prepared_build(settings, profile, manifest_sha256=build_summary.manifest_sha256)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        preprocessing = PreprocessingConfig(
+            width=profile.prepared_width,
+            height=profile.prepared_height,
+            color=preprocessing_options.color,
+        ).model_dump(mode="json")
 
         # The directory is named after the row, so it cannot be built until the row
         # exists; created first, then recorded, then made.
@@ -530,6 +570,8 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
             name=body.name,
             dataset_id=body.dataset_id,
             split_id=body.split_id,
+            region_profile_id=profile.id,
+            region_manifest_sha256=build_summary.manifest_sha256,
             model_type=body.model_type,
             model_config=config,
             preprocessing_config=preprocessing,
@@ -1030,7 +1072,10 @@ def _map_scale(map_path: str | None) -> MapScale | None:
     except (OSError, ValueError):
         # Deletable by design; the caller renders the absence rather than failing.
         return None
-    return MapScale(low=float(np.min(array)), high=float(np.max(array)))
+    finite = array[np.isfinite(array)]
+    if finite.size == 0:
+        return None
+    return MapScale(low=float(finite.min()), high=float(finite.max()))
 
 
 @router.get("/{experiment_id}/samples/{sample_id}/images", summary="Per-image scores of a sample")
@@ -1178,7 +1223,7 @@ async def clear_diagnostics(
     },
 )
 def read_source_values(request: Request, experiment_id: int, image_id: int) -> Response:
-    """`load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+    """The pinned prepared pixels as float32, every colour plane (ADR-0023).
 
     **The preprocessed array, not the display tier.** A readout taken from the rendered
     preview would report what the browser is showing — 8-bit, resampled for display — when
@@ -1189,30 +1234,56 @@ def read_source_values(request: Request, experiment_id: int, image_id: int) -> R
     property of the experiment's colour mode, and a client that had to know it in advance
     would either encode that in the UI or discover it by asking until something 404s.
 
-    Cacheable forever in practice: the source file is immutable and the preprocessing
-    config is frozen at creation, so the ETag over both can never go stale for one
-    experiment. It is one fetch per image, ever.
+    The planes are projected back through the pinned transform before encoding. They
+    therefore share the source frame with the photograph and anomaly map; pixels outside
+    the selected crop are NaN rather than invented model input.
+
+    Cacheable forever in practice: the prepared artifact is immutable and the model-input
+    config is frozen at creation, so the ETag can never go stale for one experiment. It is
+    one fetch per image, ever.
     """
     experiment, settings = _load(request, experiment_id)
     with connection(settings.db_path) as conn:
         image = images_repo.get_image(conn, image_id)
+        profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
     if image is None:
         raise HTTPException(status_code=404, detail=f"no image {image_id}")
+    if profile is None:
+        raise HTTPException(status_code=410, detail="the experiment's region profile is missing")
+
+    try:
+        build = load_prepared_build(
+            settings, profile, manifest_sha256=experiment.region_manifest_sha256
+        )
+        entry = build.entries.get(image_id)
+        if entry is None or entry.source_sha256 != image.sha256:
+            raise ValueError(f"image {image_id} is not part of the pinned region build")
+        prepared_path = build.image_path(image_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
 
     config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
-    digest = hashlib.sha256(f"{image.sha256}|{config.model_dump_json()}".encode()).hexdigest()[:16]
+    digest = hashlib.sha256(
+        f"{entry.prepared_sha256}|{config.model_dump_json()}".encode()
+    ).hexdigest()[:16]
     etag = f'W/"source-{digest}"'
     if request.headers.get("if-none-match") == etag:
         return Response(status_code=304, headers=_diagnostic_headers(etag))
 
     try:
-        array = load_array(Path(image.path), config)
+        array = load_array(prepared_path, config)
     except (OSError, ValueError) as exc:
         # The catalog references files in place, so a source file can disappear between
         # import and now — the same 410 the image tiers give.
         raise HTTPException(
             status_code=410, detail=f"the source file for image {image_id} is no longer readable"
         ) from exc
+
+    transform = build.transform_for(image_id)
+    array = np.stack(
+        [transform.project_map(array[..., channel]) for channel in range(array.shape[-1])],
+        axis=-1,
+    )
 
     return Response(
         content=encode_plane(array),

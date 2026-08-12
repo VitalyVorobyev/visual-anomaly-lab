@@ -17,7 +17,11 @@ from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import JobKind, RegionProfileRevision, SpatialResample
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.regions.base import RegionExtractorDescription
-from anomaly_lab.regions.preparation import RegionBuildSummary, read_build_summary
+from anomaly_lab.regions.preparation import (
+    RegionBuildSummary,
+    has_published_build,
+    read_build_summary,
+)
 from anomaly_lab.regions.registry import (
     UnknownRegionExtractorError,
     describe_all,
@@ -133,6 +137,14 @@ def _require_profile(request: Request, profile_id: int) -> RegionProfileRevision
 def _enqueue_preparation(request: Request, profile_id: int, mode: str) -> JobSummary:
     profile = _require_profile(request, profile_id)
     settings: Settings = request.app.state.settings
+    if mode == "build" and has_published_build(settings, profile_id):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"region profile {profile_id} already has an immutable completed build; "
+                "create a new profile revision to rebuild it"
+            ),
+        )
     with connection(settings.db_path) as conn:
         active = conn.execute(
             """

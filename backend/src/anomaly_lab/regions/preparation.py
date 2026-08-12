@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -74,19 +75,115 @@ class RegionBuildSummary(BaseModel):
     failure_examples: list[RegionPreparationEntry] = Field(default_factory=list, max_length=24)
 
 
+@dataclass(frozen=True)
+class PreparedRegionBuild:
+    """A verified immutable materialization ready to be handed to an experiment."""
+
+    root: Path
+    profile: RegionProfileRevision
+    summary: RegionBuildSummary
+    entries: dict[int, RegionPreparationEntry]
+
+    def image_path(self, image_id: int) -> Path:
+        entry = self.entries.get(image_id)
+        if entry is None or entry.prepared_sha256 is None:
+            raise ValueError(f"region build has no prepared image {image_id}")
+        path = self.root / "images" / f"{image_id}.png"
+        if path.is_symlink() or not path.is_file():
+            raise ValueError(f"prepared image {image_id} is missing from the immutable build")
+        actual_digest = sha256_file(path)
+        if actual_digest != entry.prepared_sha256:
+            raise ValueError(
+                f"prepared image {image_id} changed: "
+                f"expected {entry.prepared_sha256}, found {actual_digest}"
+            )
+        return path
+
+    def transform_for(self, image_id: int) -> SpatialTransform:
+        entry = self.entries.get(image_id)
+        if entry is None or entry.transform is None:
+            raise ValueError(f"region build has no transform for image {image_id}")
+        return entry.transform
+
+
 def preview_indices(total: int, limit: int = PREVIEW_LIMIT) -> list[int]:
     """Spread a preview over the whole image list, never its first folder."""
     return evenly_spaced(total, limit)
 
 
 def read_build_summary(settings: Settings, profile_id: int) -> RegionBuildSummary | None:
-    path = settings.region_profile_dir(profile_id) / SUMMARY_FILENAME
-    if settings.region_profiles_dir.is_symlink() or path.is_symlink():
+    root = settings.region_profile_dir(profile_id)
+    path = root / SUMMARY_FILENAME
+    if settings.region_profiles_dir.is_symlink() or root.is_symlink() or path.is_symlink():
         return None
     try:
         return RegionBuildSummary.model_validate_json(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, ValueError):
         return None
+
+
+def has_published_build(settings: Settings, profile_id: int) -> bool:
+    """Whether a profile path was published, even when its report is now corrupted."""
+    root = settings.region_profile_dir(profile_id)
+    return root.exists() or root.is_symlink()
+
+
+def load_prepared_build(
+    settings: Settings,
+    profile: RegionProfileRevision,
+    *,
+    manifest_sha256: str,
+) -> PreparedRegionBuild:
+    """Verify and load the complete materialization pinned by an experiment."""
+    root = settings.region_profile_dir(profile.id)
+    summary = read_build_summary(settings, profile.id)
+    if summary is None:
+        raise ValueError(f"region profile {profile.id} has no completed build")
+    if summary.profile_id != profile.id or summary.dataset_id != profile.dataset_id:
+        raise ValueError(
+            f"region profile {profile.id} build identity does not match its database revision"
+        )
+    if summary.manifest_sha256 != manifest_sha256:
+        raise ValueError(
+            f"region profile {profile.id} now names build {summary.manifest_sha256}, "
+            f"but the experiment pins {manifest_sha256}"
+        )
+    if summary.config_sha256 != _config_digest(profile):
+        raise ValueError(f"region profile {profile.id} no longer matches its build configuration")
+    if summary.failed or summary.succeeded != summary.total:
+        raise ValueError(
+            f"region profile {profile.id} is incomplete: "
+            f"{summary.succeeded}/{summary.total} images prepared"
+        )
+
+    manifest = root / MANIFEST_FILENAME
+    if root.is_symlink() or manifest.is_symlink() or not manifest.is_file():
+        raise ValueError(f"region profile {profile.id} has no safe transform manifest")
+    actual_digest = sha256_file(manifest)
+    if actual_digest != manifest_sha256:
+        raise ValueError(
+            f"region profile {profile.id} manifest changed: "
+            f"expected {manifest_sha256}, found {actual_digest}"
+        )
+
+    entries: dict[int, RegionPreparationEntry] = {}
+    try:
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+        for line in lines:
+            entry = RegionPreparationEntry.model_validate_json(line)
+            if entry.status != "succeeded" or entry.transform is None or not entry.prepared_sha256:
+                raise ValueError(f"image {entry.image_id} is not a complete prepared entry")
+            if entry.image_id in entries:
+                raise ValueError(f"image {entry.image_id} occurs twice in the transform manifest")
+            entries[entry.image_id] = entry
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"region profile {profile.id} has an invalid transform manifest") from exc
+    if len(entries) != summary.total:
+        raise ValueError(
+            f"region profile {profile.id} manifest has {len(entries)} entries, "
+            f"expected {summary.total}"
+        )
+    return PreparedRegionBuild(root=root, profile=profile, summary=summary, entries=entries)
 
 
 def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
@@ -141,6 +238,11 @@ def _build_all(
     *,
     extractor: Any,
 ) -> RegionBuildSummary:
+    if has_published_build(ctx.settings, profile.id):
+        raise ValueError(
+            f"region profile {profile.id} already has an immutable completed build; "
+            "create a new profile revision to rebuild it"
+        )
     destination = ctx.settings.region_profile_dir(profile.id)
     staging = ctx.settings.region_profiles_dir / f".profile-{profile.id}-job-{ctx.job_id}.staging"
     backup = ctx.settings.region_profiles_dir / f".profile-{profile.id}-job-{ctx.job_id}.previous"

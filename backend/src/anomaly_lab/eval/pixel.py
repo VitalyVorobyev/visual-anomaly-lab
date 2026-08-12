@@ -104,6 +104,9 @@ class PixelAccumulator:
     region_fraction: np.ndarray = field(init=False)
     region_count: int = field(default=0, init=False)
     image_count: int = field(default=0, init=False)
+    total_pixels: int = field(default=0, init=False)
+    uncovered_defect_pixels: int = field(default=0, init=False)
+    uncovered_normal_pixels: int = field(default=0, init=False)
 
     def __post_init__(self) -> None:
         self.positive = np.zeros(self.bins, dtype=np.int64)
@@ -116,7 +119,17 @@ class PixelAccumulator:
             msg = f"map {anomaly_map.shape} and mask {mask.shape} must have the same shape"
             raise ValueError(msg)
 
-        indices = _bin_indices(anomaly_map, self.vmin, self.vmax, self.bins)
+        valid = np.isfinite(anomaly_map)
+        uncovered = ~valid
+        self.total_pixels += int(valid.size)
+        self.uncovered_defect_pixels += int((uncovered & mask).sum())
+        self.uncovered_normal_pixels += int((uncovered & ~mask).sum())
+
+        # A crop is part of the experiment, not a reason to shrink the denominator.
+        # Pixels the method could not see receive the run floor: missed defect pixels
+        # therefore become false negatives, while uncovered background remains negative.
+        covered_values = np.where(valid, anomaly_map, self.vmin)
+        indices = _bin_indices(covered_values, self.vmin, self.vmax, self.bins)
         flat_indices = indices.ravel()
         flat_mask = mask.ravel()
 
@@ -187,6 +200,7 @@ class PixelAccumulator:
         return float(np.trapezoid(clipped_pro, clipped_fpr) / max_fpr)
 
     def summary(self) -> dict[str, float | int | None]:
+        uncovered = self.uncovered_defect_pixels + self.uncovered_normal_pixels
         return {
             "pixel_roc_auc": self.roc_auc(),
             "au_pro": self.au_pro(),
@@ -194,4 +208,9 @@ class PixelAccumulator:
             "mask_regions": self.region_count,
             "defect_pixels": int(self.positive.sum()),
             "normal_pixels": int(self.negative.sum()),
+            "covered_pixel_fraction": (
+                1.0 - uncovered / self.total_pixels if self.total_pixels else None
+            ),
+            "uncovered_defect_pixels": self.uncovered_defect_pixels,
+            "uncovered_normal_pixels": self.uncovered_normal_pixels,
         }

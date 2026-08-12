@@ -144,11 +144,24 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
             params={},
             assignments={},
         )
+        region_profile = region_profiles_repo.create_revision(
+            conn,
+            dataset_id=dataset_id,
+            name="delete-me",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=256,
+            prepared_height=256,
+            padding_fraction=0.05,
+            seed=17,
+        )
         experiment = experiments_repo.create_experiment(
             conn,
             name="owned-run",
             dataset_id=dataset_id,
             split_id=split.id,
+            region_profile_id=region_profile.id,
+            region_manifest_sha256="0" * 64,
             model_type="pixel_reference",
             model_config={},
             preprocessing_config={},
@@ -171,18 +184,6 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         job_log = settings.jobs_log_dir / f"{dataset_job.id}.log"
         jobs_repo.mark_running(conn, dataset_job.id, log_path=str(job_log))
         jobs_repo.finish_job(conn, dataset_job.id, status=JobStatus.SUCCEEDED)
-        region_profiles_repo.create_revision(
-            conn,
-            dataset_id=dataset_id,
-            name="delete-me",
-            extractor_type="identity",
-            extractor_config={},
-            prepared_width=256,
-            prepared_height=256,
-            padding_fraction=0.05,
-            seed=17,
-        )
-
     (artifact_dir / "maps").mkdir(parents=True)
     (artifact_dir / "model.bin").write_bytes(b"abc")
     (artifact_dir / "maps" / "one.npy").write_bytes(b"defg")

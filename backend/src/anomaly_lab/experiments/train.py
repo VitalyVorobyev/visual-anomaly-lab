@@ -157,7 +157,7 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         device=loaded.device.device,
         reporter=ctx,
         diagnostics=writer,
-        val=to_records(val_images),
+        val=to_records(val_images, loaded.region_build),
     )
 
     model_dir = loaded.artifact_dir / MODEL_SUBDIR
@@ -172,7 +172,7 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         )
 
     try:
-        records = to_records(train_images)
+        records = to_records(train_images, loaded.region_build)
         if resuming:
             model = loaded.model
             model.load(model_dir)

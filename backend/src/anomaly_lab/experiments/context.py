@@ -18,6 +18,7 @@ from pathlib import Path
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.repositories import experiments as experiments_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories.images import SplitImage
 from anomaly_lab.domain.entities import Experiment
 from anomaly_lab.models.base import AnomalyModel, ImageRecord, evenly_spaced
@@ -25,6 +26,7 @@ from anomaly_lab.models.device import ResolvedDevice, resolve_device
 from anomaly_lab.models.diagnostics import DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.models.registry import get_model_class
+from anomaly_lab.regions.preparation import PreparedRegionBuild, load_prepared_build
 
 
 class ExperimentJobError(Exception):
@@ -37,6 +39,7 @@ class LoadedExperiment:
     model: AnomalyModel
     model_class: type[AnomalyModel]
     preprocessing: PreprocessingConfig
+    region_build: PreparedRegionBuild
     device: ResolvedDevice
     artifact_dir: Path
     cache_dir: Path
@@ -63,11 +66,27 @@ def load_experiment(
     cache_dir = settings.model_cache_dir
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
+    if profile is None:
+        raise ExperimentJobError(
+            f"experiment {experiment.id} references missing region profile "
+            f"{experiment.region_profile_id}"
+        )
+    try:
+        region_build = load_prepared_build(
+            settings,
+            profile,
+            manifest_sha256=experiment.region_manifest_sha256,
+        )
+    except ValueError as exc:
+        raise ExperimentJobError(str(exc)) from exc
+
     return LoadedExperiment(
         experiment=experiment,
         model=model_class.build(experiment.model_config_),
         model_class=model_class,
         preprocessing=PreprocessingConfig.model_validate(experiment.preprocessing_config),
+        region_build=region_build,
         device=resolve_device(model_class.capabilities().preferred_device),
         artifact_dir=artifact_dir,
         cache_dir=cache_dir,
@@ -99,18 +118,34 @@ def diagnostics_writer(
     )
 
 
-def to_records(images: list[SplitImage]) -> list[ImageRecord]:
+def to_records(images: list[SplitImage], region_build: PreparedRegionBuild) -> list[ImageRecord]:
     """Narrow catalog rows to what a model is allowed to see.
 
     Notably absent: the label and the mask. A model is not told which images are
     defective, so a plugin cannot quietly use the answer it is being asked to find.
     """
-    return [
-        ImageRecord(
-            image_id=image.image_id,
-            sample_id=image.sample_id,
-            channel=image.channel,
-            path=Path(image.path),
+    records: list[ImageRecord] = []
+    for image in images:
+        entry = region_build.entries.get(image.image_id)
+        if entry is None:
+            raise ExperimentJobError(
+                f"region build {region_build.summary.manifest_sha256} has no image {image.image_id}"
+            )
+        if entry.source_sha256 != image.sha256:
+            raise ExperimentJobError(
+                f"source image {image.image_id} changed after region preparation; "
+                "create and build a new profile revision"
+            )
+        try:
+            path = region_build.image_path(image.image_id)
+        except ValueError as exc:
+            raise ExperimentJobError(str(exc)) from exc
+        records.append(
+            ImageRecord(
+                image_id=image.image_id,
+                sample_id=image.sample_id,
+                channel=image.channel,
+                path=path,
+            )
         )
-        for image in images
-    ]
+    return records

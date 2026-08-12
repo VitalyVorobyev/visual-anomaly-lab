@@ -377,6 +377,13 @@ def _warnings(
     """
     notes: list[str] = []
 
+    region_profiles = {run.region_profile_id for run in experiments}
+    if len(region_profiles) > 1:
+        notes.append(
+            "These runs use different prepared-region revisions. Differences below may "
+            "measure localisation or spatial preparation as well as the methods."
+        )
+
     differing = _differing_keys([run.preprocessing_config for run in experiments])
     if differing:
         notes.append(

@@ -135,11 +135,14 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         device=loaded.device.device,
         reporter=ctx,
         diagnostics=writer,
+        map_projector=lambda image_id, values: loaded.region_build.transform_for(
+            image_id
+        ).project_map(values),
     )
 
     started = time.perf_counter()
     try:
-        predictions = loaded.model.predict(to_records(selected), infer_ctx)
+        predictions = loaded.model.predict(to_records(selected, loaded.region_build), infer_ctx)
     except ModelCancelledError as exc:
         raise JobCancelledError from exc
     elapsed = time.perf_counter() - started

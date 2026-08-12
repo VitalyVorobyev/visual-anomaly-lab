@@ -8,11 +8,15 @@ operation is offered to the API.
 from __future__ import annotations
 
 import os
+import re
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
 from anomaly_lab.config import Settings
 from anomaly_lab.domain.entities import Experiment
+
+_EXPERIMENT_DIR = re.compile(r"exp-([1-9][0-9]*)")
 
 
 @dataclass(frozen=True)
@@ -67,3 +71,32 @@ def path_usage(path: Path | None) -> StorageUsage:
                 except FileNotFoundError:
                     continue
     return usage
+
+
+def remove_orphan_experiment_artifacts(
+    settings: Settings, live_experiment_ids: set[int]
+) -> list[Path]:
+    """Remove only app-named experiment directories with no corresponding DB row.
+
+    A migration may deliberately discard incompatible experiment rows.  SQLite cannot
+    remove their filesystem payloads, so startup performs this narrow reconciliation.
+    Arbitrary files, unexpected directory names, symlinks, and every source path are
+    outside the operation by construction.
+    """
+    root = settings.artifacts_dir
+    if root.is_symlink() or not root.is_dir():
+        return []
+
+    removed: list[Path] = []
+    for candidate in sorted(root.iterdir(), key=lambda path: path.name):
+        match = _EXPERIMENT_DIR.fullmatch(candidate.name)
+        if (
+            match is None
+            or candidate.is_symlink()
+            or not candidate.is_dir()
+            or int(match.group(1)) in live_experiment_ids
+        ):
+            continue
+        shutil.rmtree(candidate)
+        removed.append(candidate)
+    return removed

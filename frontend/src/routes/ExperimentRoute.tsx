@@ -136,6 +136,7 @@ export function ExperimentRoute() {
             items={[
               { label: "dataset", value: detail.dataset_name },
               { label: "split", value: detail.split_name },
+              { label: "input", value: detail.region_profile_name },
               { label: "method", value: detail.model_type },
             ]}
           />

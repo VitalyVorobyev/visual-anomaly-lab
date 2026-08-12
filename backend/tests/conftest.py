@@ -11,7 +11,7 @@ import zlib
 from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -22,11 +22,12 @@ from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connect, connection
 from anomaly_lab.db.migrate import apply_migrations
-from anomaly_lab.db.repositories import datasets, images, masks, samples, splits
+from anomaly_lab.db.repositories import datasets, images, masks, region_profiles, samples, splits
 from anomaly_lab.domain.entities import JobKind, Label, Subset
 from anomaly_lab.experiments.infer import run_infer_job
 from anomaly_lab.experiments.train import run_train_job
 from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.regions.preparation import read_build_summary, run_region_prepare_job
 
 
 @pytest.fixture(autouse=True)
@@ -205,6 +206,7 @@ def write_defect_image(path: Path, mask_path: Path, seed: int) -> None:
 class Fixture:
     dataset_id: int
     split_id: int
+    region_profile_id: int
     defect_image_ids: list[int]
     normal_image_ids: list[int]
 
@@ -270,9 +272,21 @@ def seed_synthetic_split(
         params={"strategy": "imported"},
         assignments=assignments,
     )
+    profile = region_profiles.create_revision(
+        conn,
+        dataset_id=dataset.id,
+        name="full frame",
+        extractor_type="identity",
+        extractor_config={},
+        prepared_width=FIXTURE_SIZE,
+        prepared_height=FIXTURE_SIZE,
+        padding_fraction=0.0,
+        seed=17,
+    )
     return Fixture(
         dataset_id=dataset.id,
         split_id=split.id,
+        region_profile_id=profile.id,
         defect_image_ids=defect_image_ids,
         normal_image_ids=normal_image_ids,
     )
@@ -286,13 +300,28 @@ def seeded(client: TestClient, settings: Settings, tmp_path: Path) -> Iterator[F
 
 
 def create_experiment(client: TestClient, seeded: Fixture, **overrides: object) -> dict[str, Any]:
+    settings: Settings = cast(Any, client.app).state.settings
+    if read_build_summary(settings, seeded.region_profile_id) is None:
+        run_region_prepare_job(
+            JobContext(
+                job_id=97,
+                kind=JobKind.REGION_PREPARE,
+                params={
+                    "dataset_id": seeded.dataset_id,
+                    "profile_id": seeded.region_profile_id,
+                    "mode": "build",
+                },
+                settings=settings,
+            )
+        )
     body: dict[str, Any] = {
         "name": "baseline",
         "dataset_id": seeded.dataset_id,
         "split_id": seeded.split_id,
+        "region_profile_id": seeded.region_profile_id,
         "model_type": "pixel_reference",
         "config": {"smoothing_sigma": 1.0},
-        "preprocessing": {"width": FIXTURE_SIZE, "height": FIXTURE_SIZE},
+        "preprocessing": {},
         "evaluation": {},
     }
     body.update(overrides)

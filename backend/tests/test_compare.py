@@ -18,11 +18,14 @@ from fastapi.testclient import TestClient
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.results import ScoredSample
 from anomaly_lab.domain.entities import Aggregation, JobKind, JobStatus, Label, Subset
 from anomaly_lab.eval.compare import OperatingPoint, agreement, resolve_threshold
+from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.regions.preparation import run_region_prepare_job
 from tests.conftest import Fixture, create_experiment, run_handler, seed_synthetic_split
 
 
@@ -294,20 +297,41 @@ def _duplicate_split(conn: sqlite3.Connection, seeded: Fixture) -> int:
 # ---------------------------------------------------------------------- what it warns about
 
 
-def test_different_preprocessing_is_a_warning_and_not_a_refusal(
+def test_different_spatial_input_is_a_warning_and_not_a_refusal(
     client: TestClient, settings: Settings, seeded: Fixture, two_runs: list[int]
 ) -> None:
-    """Two runs at different resolutions are a legitimate experiment whose result needs a
-    caveat — but the AUROC difference is then partly a measurement of the resize."""
-    coarse = create_experiment(
-        client, seeded, name="coarse", preprocessing={"width": 8, "height": 8}
+    """A paired region experiment is legitimate, but its metrics need a visible caveat."""
+    with connection(settings.db_path) as conn:
+        coarse_profile = profiles_repo.create_revision(
+            conn,
+            dataset_id=seeded.dataset_id,
+            name="coarse full frame",
+            extractor_type="identity",
+            extractor_config={},
+            prepared_width=8,
+            prepared_height=8,
+            padding_fraction=0.0,
+            seed=17,
+        )
+    run_region_prepare_job(
+        JobContext(
+            job_id=98,
+            kind=JobKind.REGION_PREPARE,
+            params={
+                "dataset_id": seeded.dataset_id,
+                "profile_id": coarse_profile.id,
+                "mode": "build",
+            },
+            settings=settings,
+        )
     )
+    coarse = create_experiment(client, seeded, name="coarse", region_profile_id=coarse_profile.id)
     run_handler(settings, JobKind.TRAIN, {"experiment_id": coarse["id"]})
     run_handler(settings, JobKind.INFER, {"experiment_id": coarse["id"], "subsets": ["test"]})
 
     payload = compare(client, [two_runs[0], int(coarse["id"])])
 
-    assert any("different pixels" in note for note in payload["warnings"])
+    assert any("different prepared-region" in note for note in payload["warnings"])
     assert all(run["scored"] for run in payload["runs"])
 
 

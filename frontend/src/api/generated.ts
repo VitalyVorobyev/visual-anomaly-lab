@@ -725,7 +725,7 @@ export interface paths {
         };
         /**
          * The preprocessed pixels the model actually read
-         * @description `load_array(path, preprocessing)` as float32, every colour plane (ADR-0023).
+         * @description The pinned prepared pixels as float32, every colour plane (ADR-0023).
          *
          *     **The preprocessed array, not the display tier.** A readout taken from the rendered
          *     preview would report what the browser is showing — 8-bit, resampled for display — when
@@ -736,9 +736,13 @@ export interface paths {
          *     property of the experiment's colour mode, and a client that had to know it in advance
          *     would either encode that in the UI or discover it by asking until something 404s.
          *
-         *     Cacheable forever in practice: the source file is immutable and the preprocessing
-         *     config is frozen at creation, so the ETag over both can never go stale for one
-         *     experiment. It is one fetch per image, ever.
+         *     The planes are projected back through the pinned transform before encoding. They
+         *     therefore share the source frame with the photograph and anomaly map; pixels outside
+         *     the selected crop are NaN rather than invented model input.
+         *
+         *     Cacheable forever in practice: the prepared artifact is immutable and the model-input
+         *     config is frozen at creation, so the ETag can never go stale for one experiment. It is
+         *     one fetch per image, ever.
          */
         get: operations["read_source_values_api_experiments__experiment_id__images__image_id__source_values_get"];
         put?: never;
@@ -2105,6 +2109,8 @@ export interface components {
             dataset_id: number;
             /** Split Id */
             split_id: number;
+            /** Region Profile Id */
+            region_profile_id: number;
             /** Model Type */
             model_type: string;
             /** Config */
@@ -2483,6 +2489,10 @@ export interface components {
             dataset_id: number;
             /** Split Id */
             split_id: number;
+            /** Region Profile Id */
+            region_profile_id: number;
+            /** Region Manifest Sha256 */
+            region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
             status: components["schemas"]["ExperimentStatus"];
@@ -2513,6 +2523,8 @@ export interface components {
             dataset_name: string | null;
             /** Split Name */
             split_name: string | null;
+            /** Region Profile Name */
+            region_profile_name: string | null;
             /** Metrics */
             metrics: components["schemas"]["MetricSummary"][];
             /** Scored Subsets */
@@ -2558,6 +2570,10 @@ export interface components {
             dataset_id: number;
             /** Split Id */
             split_id: number;
+            /** Region Profile Id */
+            region_profile_id: number;
+            /** Region Manifest Sha256 */
+            region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
             status: components["schemas"]["ExperimentStatus"];

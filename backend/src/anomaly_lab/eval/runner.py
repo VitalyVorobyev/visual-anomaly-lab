@@ -126,12 +126,18 @@ def _pixel_metrics(
         except (OSError, ValueError):
             missing_maps += 1
             continue
-        minimum = min(minimum, float(array.min()))
-        maximum = max(maximum, float(array.max()))
         readable.append((image, map_path, mask_path))
+        finite = array[np.isfinite(array)]
+        if finite.size:
+            minimum = min(minimum, float(finite.min()))
+            maximum = max(maximum, float(finite.max()))
 
-    if not readable or not math.isfinite(minimum):
+    if not readable:
         return None
+    if not math.isfinite(minimum):
+        # Every map is explicitly uncovered. There is still a valid result: no pixel
+        # received evidence, so every pixel is scored at one shared floor.
+        minimum, maximum = 0.0, 1.0
 
     accumulator = PixelAccumulator(vmin=minimum, vmax=maximum, bins=bins)
     unreadable_masks = 0

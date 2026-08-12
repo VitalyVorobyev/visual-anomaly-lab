@@ -74,9 +74,9 @@ export function decodePlane(buffer: ArrayBuffer): ValuePlane {
 /**
  * The value at a normalized position, or `null` outside the plane.
  *
- * `u` and `v` are fractions of the frame, which is exact here and needs no letterbox
- * correction: the preprocessing bridge resizes without preserving aspect ratio and every
- * layer is `object-fill`, so the plane covers the frame edge to edge by construction.
+ * `u` and `v` are fractions of the source frame. Stored anomaly maps and model-input
+ * planes are projected into that frame by the backend, so crop and letterbox geometry is
+ * resolved once rather than reconstructed in TypeScript. NaN marks an uncovered pixel.
  */
 export function valueAt(plane: ValuePlane, u: number, v: number, channel = 0): number | null {
   if (!(u >= 0 && u < 1 && v >= 0 && v < 1)) return null;
@@ -84,7 +84,8 @@ export function valueAt(plane: ValuePlane, u: number, v: number, channel = 0): n
   const x = Math.min(plane.width - 1, Math.floor(u * plane.width));
   const y = Math.min(plane.height - 1, Math.floor(v * plane.height));
   // Plane-major, so one channel is a single offset rather than a stride walk.
-  return plane.values[channel * plane.width * plane.height + y * plane.width + x] ?? null;
+  const value = plane.values[channel * plane.width * plane.height + y * plane.width + x];
+  return value !== undefined && Number.isFinite(value) ? value : null;
 }
 
 /** Every channel at one position, in order — one number for mono, three for RGB. */

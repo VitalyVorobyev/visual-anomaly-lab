@@ -1,14 +1,14 @@
-"""The preprocessing bridge: what every method is made to see.
+"""The model-input bridge: what every method is made to see.
 
 A comparison between two methods only means something if they were shown the same
 pixels. Left to themselves the libraries disagree — anomalib resizes to its own default,
 a numpy baseline would read the file as it lies on disk — and the resulting difference in
 AUROC would partly measure the resize.
 
-So preprocessing is **configuration of the experiment, not of the model**. It is stored
-in `Experiment.preprocessing_config`, handed to the plugin in its context, and every
-plugin loads its pixels through `load_array` here. A model that decodes an image any
-other way is a bug, not a variation.
+Spatial preparation belongs to the experiment's pinned region build. This bridge only
+applies the remaining colour policy and verifies that the prepared artifact has the
+dimensions frozen into the experiment. A model that decodes an image any other way is a
+bug, not a variation.
 """
 
 from __future__ import annotations
@@ -28,22 +28,6 @@ class ColorMode(StrEnum):
     RGB = "rgb"
     GRAYSCALE = "grayscale"
 
-
-class Resample(StrEnum):
-    """Named rather than numeric, so a stored config still reads as a decision."""
-
-    NEAREST = "nearest"
-    BILINEAR = "bilinear"
-    BICUBIC = "bicubic"
-    LANCZOS = "lanczos"
-
-
-_RESAMPLE_FILTERS = {
-    Resample.NEAREST: Image.Resampling.NEAREST,
-    Resample.BILINEAR: Image.Resampling.BILINEAR,
-    Resample.BICUBIC: Image.Resampling.BICUBIC,
-    Resample.LANCZOS: Image.Resampling.LANCZOS,
-}
 
 _UINT8_MAX = 255.0
 
@@ -67,8 +51,22 @@ internally, has to do it itself.
 """
 
 
-class PreprocessingConfig(BaseModel):
-    """How source pixels become model input. Frozen into the experiment at creation."""
+class PreprocessingOptions(BaseModel):
+    """The user-selectable model-input policy after spatial preparation."""
+
+    model_config = API_MODEL_CONFIG
+
+    color: ColorMode = Field(
+        default=ColorMode.RGB,
+        description=(
+            "Colour to feed the model. Grayscale datasets are expanded to three "
+            "identical channels under 'rgb', which is what pretrained backbones expect."
+        ),
+    )
+
+
+class PreprocessingConfig(PreprocessingOptions):
+    """Resolved prepared-image contract frozen into an experiment at creation."""
 
     model_config = API_MODEL_CONFIG
 
@@ -84,17 +82,6 @@ class PreprocessingConfig(BaseModel):
         le=2048,
         description="Model input height in pixels.",
     )
-    color: ColorMode = Field(
-        default=ColorMode.RGB,
-        description=(
-            "Colour to feed the model. Grayscale datasets are expanded to three "
-            "identical channels under 'rgb', which is what pretrained backbones expect."
-        ),
-    )
-    resample: Resample = Field(
-        default=Resample.BILINEAR,
-        description="Resampling filter used for the resize.",
-    )
 
     @property
     def size(self) -> tuple[int, int]:
@@ -107,19 +94,20 @@ class PreprocessingConfig(BaseModel):
 
 
 def load_array(path: Path, config: PreprocessingConfig) -> np.ndarray:
-    """Decode one file into `(height, width, channels)` float32 in `[0, 1]`.
+    """Decode one prepared artifact into `(height, width, channels)` float32 in `[0, 1]`.
 
-    Aspect ratio is **not** preserved: the resize goes straight to the configured size.
-    That is a deliberate choice rather than an oversight — it makes an anomaly map a
-    plain stretch back onto the source image, so an overlay aligns without the UI having
-    to reconstruct letterbox offsets, and it is what the reference implementations do.
+    No resize is permitted here. Crop, contain-resize and padding were already resolved
+    by the pinned region build; doing spatial work again would make the stored transform
+    cease to describe what the method actually saw.
     """
     image = decode.load(path)
+    if image.size != config.size:
+        raise ValueError(
+            f"prepared image {path} is {image.size}, expected frozen input {config.size}"
+        )
     target_mode = "RGB" if config.color is ColorMode.RGB else "L"
     if image.mode != target_mode:
         image = image.convert(target_mode)
-    if image.size != config.size:
-        image = image.resize(config.size, _RESAMPLE_FILTERS[config.resample])
 
     array = np.asarray(image, dtype=np.float32) / _UINT8_MAX
     if array.ndim == 2:

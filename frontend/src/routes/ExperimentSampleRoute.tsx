@@ -20,9 +20,10 @@
  * so they cannot drift apart at the zoom level where a reader is judging whether the
  * prediction lands on the defect.
  *
- * Alignment comes for free from the preprocessing bridge. Every method resizes straight to
- * the configured size without preserving aspect ratio, so the map is a plain stretch back
- * onto the source and there are no letterbox offsets to reconstruct here.
+ * Alignment is explicit. Every method sees the experiment's pinned prepared artifact, and
+ * the shared inference boundary projects its map through that image's stored transform
+ * before persistence. The browser therefore receives source-frame layers and never has to
+ * reconstruct crop, resize or letterbox offsets.
  *
  * **The diagnostic panes are generic over the index (ADR-0018).** For
  * `efficientad_anomalib` they happen to be the student-teacher and autoencoder errors,
@@ -377,9 +378,8 @@ function ChannelView({
             draggable={false}
             className="absolute inset-0 h-full w-full object-fill"
           />
-          {/* Every layer fills the identical box, so alignment is structural rather than
-              something to reconstruct: the preprocessing bridge resizes without preserving
-              aspect ratio, so a map is a plain stretch back onto its source. */}
+          {/* Every layer is already in source coordinates, projected by the backend through
+              this image's pinned region transform. Filling one box is therefore exact. */}
           {layers.map((layer) => (
             <img
               key={layer.key}

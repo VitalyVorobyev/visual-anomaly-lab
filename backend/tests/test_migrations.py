@@ -295,7 +295,11 @@ def test_the_teacher_backfill_only_touches_records_that_predate_the_field(
             )
         conn.commit()
 
-        apply_migrations_to(conn)
+        for migration in discover_migrations():
+            if 1 < migration.number <= 3:
+                conn.executescript(
+                    f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+                )
         found = dict(
             conn.execute(
                 "SELECT name, json_extract(model_config, '$.teacher_source') FROM experiment"
@@ -305,3 +309,8 @@ def test_the_teacher_backfill_only_touches_records_that_predate_the_field(
         assert found["new"] == "nelson1425"
         # A method with no such field must not grow one, or its config stops validating.
         assert found["other"] is None
+
+        # The current M10 migration deliberately discards every pre-region experiment:
+        # none of these rows can truthfully identify the prepared pixels it saw.
+        apply_migrations_to(conn)
+        assert conn.execute("SELECT COUNT(*) FROM experiment").fetchone()[0] == 0
