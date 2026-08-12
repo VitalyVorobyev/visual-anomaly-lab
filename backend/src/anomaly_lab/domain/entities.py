@@ -1,8 +1,8 @@
 """Domain entities (ADR-0005).
 
-Entities are added as the milestones that use them arrive. `001_initial.sql` remains the
-authoritative description of the data model (ADR-0004); these models are how the rest of
-the application reads it.
+Entities are added as the milestones that use them arrive. The numbered SQL migrations
+remain the authoritative description of the data model (ADR-0004); these models are how
+the rest of the application reads it.
 
 Two invariants from ADR-0005 are visible in the shapes below and must stay that way:
 
@@ -166,10 +166,9 @@ class Mask(BaseModel):
     annotated in one view and not another, and because the mask has to align with a
     specific image's pixel grid to mean anything.
 
-    There is no `sha256` here, unlike `Image`. The column does not exist in schema v1 and
-    the schema is frozen (ADR-0004), so `verify` can check that a mask file is still
-    *there* but not that it is still the same file. That limit is stated rather than
-    papered over; lifting it is a migration, not a patch.
+    Imported masks remain source provenance. Migration 005 added an optional digest:
+    old rows are hashed when first used as an annotation base, while newly discovered
+    masks may carry one immediately.
     """
 
     model_config = API_MODEL_CONFIG
@@ -178,6 +177,7 @@ class Mask(BaseModel):
     image_id: int
     path: str
     kind: MaskKind = MaskKind.GROUND_TRUTH
+    sha256: str | None = None
 
 
 class Split(BaseModel):

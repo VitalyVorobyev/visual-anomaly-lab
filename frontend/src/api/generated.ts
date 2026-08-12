@@ -4,6 +4,111 @@
  */
 
 export interface paths {
+    "/api/datasets/{dataset_id}/annotation-labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The defect-label taxonomy for one dataset */
+        get: operations["list_annotation_labels_api_datasets__dataset_id__annotation_labels_get"];
+        put?: never;
+        /** Add one stable class key to a dataset's defect taxonomy */
+        post: operations["create_annotation_label_api_datasets__dataset_id__annotation_labels_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/annotation-labels/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Rename or recolour a class without changing its stable key */
+        put: operations["update_annotation_label_api_datasets__dataset_id__annotation_labels__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the current editable annotation draft */
+        get: operations["get_annotation_draft_api_images__image_id__annotations_draft_get"];
+        /** Save a draft if the caller still owns the version it read */
+        put: operations["save_annotation_draft_api_images__image_id__annotations_draft_put"];
+        /** Open an existing draft or start one from the latest truth */
+        post: operations["open_annotation_draft_api_images__image_id__annotations_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Materialise and freeze the current draft as a revision */
+        post: operations["complete_annotation_draft_api_images__image_id__annotations_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/revisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Completed annotation history, newest first */
+        get: operations["list_annotation_revisions_api_images__image_id__annotations_revisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/revisions/{revision_id}/mask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The immutable binary PNG materialised for a completed revision */
+        get: operations["read_annotation_revision_mask_api_images__image_id__annotations_revisions__revision_id__mask_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/compare": {
         parameters: {
             query?: never;
@@ -1021,6 +1126,143 @@ export interface components {
             options_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * AnnotationDocument
+         * @description Editable vector truth in source-image pixel coordinates.
+         */
+        "AnnotationDocument-Input": {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Image Width */
+            image_width: number;
+            /** Image Height */
+            image_height: number;
+            /**
+             * Base
+             * @default empty
+             * @enum {string}
+             */
+            base: "empty" | "source_mask";
+            /** Shapes */
+            shapes?: components["schemas"]["PolygonShape-Input"][];
+        };
+        /**
+         * AnnotationDocument
+         * @description Editable vector truth in source-image pixel coordinates.
+         */
+        "AnnotationDocument-Output": {
+            /**
+             * Schema Version
+             * @default 1
+             * @constant
+             */
+            schema_version: 1;
+            /** Image Width */
+            image_width: number;
+            /** Image Height */
+            image_height: number;
+            /**
+             * Base
+             * @default empty
+             * @enum {string}
+             */
+            base: "empty" | "source_mask";
+            /** Shapes */
+            shapes: components["schemas"]["PolygonShape-Output"][];
+        };
+        /** AnnotationDraft */
+        AnnotationDraft: {
+            /** Image Id */
+            image_id: number;
+            /** Base Revision Id */
+            base_revision_id: number | null;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number;
+            /** Source Mask Id */
+            source_mask_id: number | null;
+            /** Source Mask Path */
+            source_mask_path: string | null;
+            /** Source Mask Sha256 */
+            source_mask_sha256: string | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /** AnnotationLabel */
+        AnnotationLabel: {
+            /** Id */
+            id: number;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /** Position */
+            position: number;
+            /** Created At */
+            created_at: string;
+        };
+        /** AnnotationLabelCreate */
+        AnnotationLabelCreate: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /**
+             * Position
+             * @default 0
+             */
+            position: number;
+        };
+        /** AnnotationLabelUpdate */
+        AnnotationLabelUpdate: {
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /** Position */
+            position: number;
+        };
+        /** AnnotationPoint */
+        AnnotationPoint: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /** AnnotationRevision */
+        AnnotationRevision: {
+            /** Id */
+            id: number;
+            /** Image Id */
+            image_id: number;
+            /** Revision No */
+            revision_no: number;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Document Sha256 */
+            document_sha256: string;
+            /** Mask Path */
+            mask_path: string;
+            /** Mask Sha256 */
+            mask_sha256: string;
+            /** Source Mask Id */
+            source_mask_id: number | null;
+            /** Source Mask Path */
+            source_mask_path: string | null;
+            /** Source Mask Sha256 */
+            source_mask_sha256: string | null;
+            /** Completed At */
+            completed_at: string;
         };
         /** ArtifactFile */
         ArtifactFile: {
@@ -2405,6 +2647,48 @@ export interface components {
          * @enum {string}
          */
         PayloadFormat: "png" | "raw";
+        /** PolygonShape */
+        "PolygonShape-Input": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * Kind
+             * @default polygon
+             * @constant
+             */
+            kind: "polygon";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /** Points */
+            points: components["schemas"]["AnnotationPoint"][];
+        };
+        /** PolygonShape */
+        "PolygonShape-Output": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * Kind
+             * @default polygon
+             * @constant
+             */
+            kind: "polygon";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /** Points */
+            points: components["schemas"]["AnnotationPoint"][];
+        };
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -2878,6 +3162,303 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_annotation_labels_api_datasets__dataset_id__annotation_labels_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationLabel"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_annotation_label_api_datasets__dataset_id__annotation_labels_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationLabelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationLabel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_annotation_label_api_datasets__dataset_id__annotation_labels__key__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationLabelUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationLabel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_annotation_draft_api_images__image_id__annotations_draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_annotation_draft_api_images__image_id__annotations_draft_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_annotation_draft_api_images__image_id__annotations_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_annotation_draft_api_images__image_id__annotations_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRevision"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_annotation_revisions_api_images__image_id__annotations_revisions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRevision"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_annotation_revision_mask_api_images__image_id__annotations_revisions__revision_id__mask_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+                revision_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     compare_experiments_api_compare_get: {
         parameters: {
             query: {

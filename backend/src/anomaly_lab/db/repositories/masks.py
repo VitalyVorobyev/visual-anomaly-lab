@@ -4,12 +4,13 @@ Masks are pixel-level ground truth, one row per annotated image. The table has e
 since schema v1 and went unpopulated for as long as the only dataset on hand had no
 annotations; a dataset that ships masks is what finally fills it, with no migration.
 
-Two things differ from the image repository, both forced by the frozen schema (ADR-0004):
+One thing differs from the image repository, forced by the original schema (ADR-0004):
 
   * There is no `UNIQUE (image_id, kind)` constraint, so the upsert reads before it
     writes rather than leaning on `ON CONFLICT`.
-  * There is no `sha256` column, so a mask can be checked for existence and not for
-    drift. `verify` says exactly that rather than implying a check it did not make.
+Migration 005 added a nullable digest without pretending old catalog rows had already
+been verified. Annotation draft creation fills it when that source mask becomes an
+explicit base.
 """
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ def upsert_mask(
     *,
     path: str,
     kind: MaskKind = MaskKind.GROUND_TRUTH,
+    sha256: str | None = None,
 ) -> tuple[Mask, bool]:
     """Insert or repoint one image's mask of a given kind. Returns `(mask, created)`.
 
@@ -94,13 +96,46 @@ def upsert_mask(
 
     if existing is None:
         cursor = conn.execute(
-            "INSERT INTO mask (image_id, path, kind) VALUES (?, ?, ?)",
-            (image_id, path, kind.value),
+            "INSERT INTO mask (image_id, path, kind, sha256) VALUES (?, ?, ?, ?)",
+            (image_id, path, kind.value, sha256),
         )
-        return Mask(id=int(cursor.lastrowid or 0), image_id=image_id, path=path, kind=kind), True
+        return (
+            Mask(
+                id=int(cursor.lastrowid or 0),
+                image_id=image_id,
+                path=path,
+                kind=kind,
+                sha256=sha256,
+            ),
+            True,
+        )
 
-    if existing["path"] != path:
-        conn.execute("UPDATE mask SET path = ? WHERE id = ?", (path, existing["id"]))
-        return Mask(id=int(existing["id"]), image_id=image_id, path=path, kind=kind), False
+    if existing["path"] != path or (sha256 is not None and existing["sha256"] != sha256):
+        conn.execute(
+            "UPDATE mask SET path = ?, sha256 = ? WHERE id = ?",
+            (path, sha256, existing["id"]),
+        )
+        return (
+            Mask(
+                id=int(existing["id"]),
+                image_id=image_id,
+                path=path,
+                kind=kind,
+                sha256=sha256,
+            ),
+            False,
+        )
 
     return _to_mask(existing), False
+
+
+def get_mask_for_image(conn: sqlite3.Connection, image_id: int) -> Mask | None:
+    row = conn.execute(
+        "SELECT * FROM mask WHERE image_id = ? AND kind = ? ORDER BY id LIMIT 1",
+        (image_id, MaskKind.GROUND_TRUTH.value),
+    ).fetchone()
+    return _to_mask(row) if row is not None else None
+
+
+def record_sha256(conn: sqlite3.Connection, mask_id: int, sha256: str) -> None:
+    conn.execute("UPDATE mask SET sha256 = ? WHERE id = ?", (sha256, mask_id))

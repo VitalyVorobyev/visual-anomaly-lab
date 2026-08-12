@@ -21,9 +21,12 @@ erDiagram
     Dataset ||--o{ Channel : "defines"
     Dataset ||--o{ Sample : "contains"
     Dataset ||--o{ Split : "has"
+    Dataset ||--o{ AnnotationLabel : "defines"
     Sample  ||--o{ Image : "groups"
     Channel ||--o{ Image : "tags"
     Image   ||--o{ Mask : "may have"
+    Image   ||--o| AnnotationDraft : "edits"
+    Image   ||--o{ AnnotationRevision : "versions"
     Split   ||--o{ SplitAssignment : "assigns"
     Sample  ||--o{ SplitAssignment : "belongs to"
     Dataset ||--o{ Experiment : "scored by"
@@ -67,17 +70,29 @@ inside one transaction instead.
 Dimensions, bit depth and `sha256` are captured at import: the hash makes imported files effectively immutable
 identities, which is what allows caching by `image_id` ([the media layer](media.md)) and lets `verify` detect drift or deletion.
 
-**`Mask`** — `id`, `image_id`, `path`, `kind`.
+**`Mask`** — `id`, `image_id`, `path`, `kind`, `sha256` (nullable).
 Pixel-level ground truth, referenced in place like the image it annotates. The table existed unused from the
 first migration until public datasets that ship masks were adopted (ADR-0015); defining it early is what let
 them be imported with no schema change (ADR-0016). Identity is `(image_id, kind)`, so a re-import repoints a
 mask rather than accumulating a second one; a mask the manifest no longer mentions is left alone, for the same
 reason a missing image is reported rather than deleted.
 
-There is deliberately **no `sha256` column**, and the consequence is stated rather than papered over: `verify`
-can check that a mask file is still *there* and not that it is still the same file. Its report counts masks
-apart from images so a clean result never implies a check that was not made. Lifting this is a migration, not
-a patch (ADR-0004).
+Migration 005 added the nullable digest needed to pin source-mask provenance (ADR-0032). Existing rows remain
+`NULL` until the file first becomes an annotation base; nothing pretends to have verified bytes it did not
+read. `verify` still reports existence separately from digest coverage.
+
+**`AnnotationLabel`** — `id`, `dataset_id`, `key`, `name`, `color`, `position`, `created_at`.
+The dataset's defect taxonomy. `key` is the stable identity stored in shapes; presentation fields can change
+without rewriting completed documents.
+
+**`AnnotationDraft`** — `image_id`, `base_revision_id`, `document` (JSON), `version`, source-mask provenance,
+`updated_at`. At most one mutable source-frame document per image. Its version is the optimistic-concurrency
+token exposed as an ETag.
+
+**`AnnotationRevision`** — `id`, `image_id`, `revision_no`, `document` (JSON), document and mask SHA256,
+`mask_path`, source-mask provenance, `completed_at`. Completion materialises an app-owned binary PNG and
+appends this row. A database trigger makes rows immutable; deletion remains available only as part of the
+dataset lifecycle. See [annotation truth](annotations.md).
 
 **`Split`** — `id`, `dataset_id`, `name`, `strategy`, `seed`, `params`, `created_at`.
 A named partition of a dataset's samples. `strategy`, `seed` and `params` record how it was produced so it

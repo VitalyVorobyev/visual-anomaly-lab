@@ -83,6 +83,14 @@ class Settings(BaseSettings):
         return self.data_dir / "artifacts"
 
     @property
+    def annotations_dir(self) -> Path:
+        """Materialised, app-owned annotation revisions in source-image coordinates."""
+        return self.data_dir / "annotations"
+
+    def annotation_image_dir(self, image_id: int) -> Path:
+        return self.annotations_dir / f"image-{image_id}"
+
+    @property
     def jobs_log_dir(self) -> Path:
         """Logs for jobs bound to no experiment — import, verify, prewarm (§6)."""
         return self.data_dir / "jobs" / "logs"

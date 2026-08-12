@@ -49,6 +49,8 @@ visual-anomaly-lab/
     │       ├── references/         # classical baseline per-channel reference statistics
     │       ├── maps/               # float32 .npy anomaly maps
     │       └── logs/               # <job>.log — full worker stdout stream
+    ├── annotations/
+    │   └── image-<id>/revision-<n>.png # immutable app-owned binary truth
     └── exports/                    # CSV / JSON exports of results and metrics
 ```
 
