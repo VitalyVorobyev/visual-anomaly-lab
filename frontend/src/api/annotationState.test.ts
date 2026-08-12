@@ -4,6 +4,7 @@ import type { AnnotationDocument, PolygonShape } from "./client";
 import {
   createHistory,
   historyReducer,
+  replaceShape,
   withPolygonPoint,
   withShape,
   withoutShape,
@@ -49,5 +50,19 @@ describe("annotation history", () => {
     expect((moved.shapes[0] as PolygonShape).points[1]).toEqual({ x: 8, y: 2 });
     expect((document.shapes[0] as PolygonShape).points[1]).toEqual({ x: 5, y: 1 });
     expect(withoutShape(moved, "p1").shapes).toHaveLength(0);
+  });
+
+  it("replaces one raster region with its derived contours in place", () => {
+    const second = { ...polygon, id: "p2" };
+    const document = { ...empty, shapes: [polygon, second] };
+    const replacements = [
+      { ...polygon, id: "outer" },
+      { ...polygon, id: "hole", operation: "subtract" as const },
+    ];
+    expect(replaceShape(document, "p1", replacements).shapes.map((shape) => shape.id)).toEqual([
+      "outer",
+      "hole",
+      "p2",
+    ]);
   });
 });

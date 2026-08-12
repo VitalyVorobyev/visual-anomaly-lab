@@ -65,9 +65,15 @@ content digest of the subset's sample labels and resolved mask identities in eac
 or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
 scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
 
-The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex editing, add/subtract,
-pan/zoom, undo/redo and `ETag`-guarded save/completion. Brush/eraser layers, debounced autosave and explicit
-conflict recovery extend this same contract rather than introducing another annotation store.
+The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex and brush/eraser
+editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
+separate pan mode: left-drag moves the scene while Select is active and right-drag moves it from every
+tool. Fit and source-pixel 1:1 are explicit views; a Select-mode double-click toggles Fit and the previous
+view. A finished brush gesture is cropped into a bitmap layer in source coordinates. It can be traced
+deterministically into simplified, editable outer and hole polygons; this raster-to-vector operation does
+not claim the image-aware boundary refinement reserved for MobileSAM. Dirty drafts autosave after a short
+idle period; `412` keeps the local edit visible and offers an explicit server-draft reload rather than
+choosing a winner. Keyboard traversal prefetches adjacent queue pages so their boundary is not a dead end.
 
 ---
 

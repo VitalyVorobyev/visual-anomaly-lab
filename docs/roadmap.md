@@ -490,8 +490,9 @@ versioned defect annotation the ground truth used for future evaluation.
 - Dataset label taxonomy, per-image draft document, immutable completed revisions, checksummed
   derived masks and a ground-truth digest carried by metrics.
 - PNG mask, LabelMe and COCO polygon/RLE import/export without changing source annotations.
-- Full-height editor: polygon/vertices, brush/eraser, pan/zoom, undo/redo, autosave with conflict
-  detection, completion state, keyboard queue and MobileSAM point/box assistance.
+- Full-height editor: polygon/vertices, brush/eraser with editable contour tracing, mode-free pan/zoom,
+  Fit/1:1 views, undo/redo, autosave with conflict detection, completion state, keyboard queue and
+  MobileSAM point/box assistance.
 
 **Exit criteria**
 

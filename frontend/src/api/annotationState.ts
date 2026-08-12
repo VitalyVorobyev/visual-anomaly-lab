@@ -70,6 +70,23 @@ export function withoutShape(document: AnnotationDocument, shapeId: string): Ann
   return { ...document, shapes: document.shapes.filter((shape) => shape.id !== shapeId) };
 }
 
+export function replaceShape(
+  document: AnnotationDocument,
+  shapeId: string,
+  replacements: AnnotationShape[],
+): AnnotationDocument {
+  const index = document.shapes.findIndex((shape) => shape.id === shapeId);
+  if (index < 0) return document;
+  return {
+    ...document,
+    shapes: [
+      ...document.shapes.slice(0, index),
+      ...replacements,
+      ...document.shapes.slice(index + 1),
+    ],
+  };
+}
+
 export function withPolygonPoint(
   document: AnnotationDocument,
   shapeId: string,
