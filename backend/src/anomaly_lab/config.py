@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     data_dir: Path = Field(default_factory=_default_data_dir)
     """Root of all app-managed state. Gitignored; safe to delete to reset."""
 
+    reference_datasets_dir: Path = _REPO_ROOT / "datasets"
+    """Optional local public benchmark packs. Their files remain read-only."""
+
     host: str = "127.0.0.1"
     """Loopback only (§11). Never bind 0.0.0.0 — there is no authentication."""
 
@@ -56,7 +59,7 @@ class Settings(BaseSettings):
     dev_cors: bool = True
     """Permit browser and Tauri WebView origins. Development affordance only."""
 
-    @field_validator("data_dir")
+    @field_validator("data_dir", "reference_datasets_dir")
     @classmethod
     def _absolute_data_dir(cls, value: Path) -> Path:
         return value.expanduser().resolve()

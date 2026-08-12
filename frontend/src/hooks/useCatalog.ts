@@ -15,6 +15,9 @@ import type {
   DatasetDetail,
   DatasetSummary,
   Label,
+  JobSummary,
+  ReferencePackCatalog,
+  RegisterReferencePacksParams,
   SamplePage,
   SampleSummary,
   SplitDetail,
@@ -26,6 +29,24 @@ export function useDatasets() {
   return useQuery<DatasetSummary[]>({
     queryKey: queryKeys.datasets(),
     queryFn: async () => unwrap(await api.GET("/api/datasets"), "the dataset list"),
+  });
+}
+
+export function useReferencePacks() {
+  return useQuery<ReferencePackCatalog>({
+    queryKey: queryKeys.referencePacks(),
+    queryFn: async () =>
+      unwrap(await api.GET("/api/reference-packs"), "the reference dataset catalog"),
+  });
+}
+
+export function useRegisterReferencePacks() {
+  return useMutation<JobSummary, Error, RegisterReferencePacksParams>({
+    mutationFn: async (body) =>
+      unwrap(
+        await api.POST("/api/reference-packs/register", { body }),
+        "the reference dataset registration job",
+      ),
   });
 }
 

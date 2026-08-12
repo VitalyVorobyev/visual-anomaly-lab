@@ -120,12 +120,11 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
 
     with connection(settings.db_path) as conn:
         sample_id = int(
-            conn.execute("SELECT id FROM sample WHERE dataset_id = ? LIMIT 1", (dataset_id,))
-            .fetchone()[0]
+            conn.execute(
+                "SELECT id FROM sample WHERE dataset_id = ? LIMIT 1", (dataset_id,)
+            ).fetchone()[0]
         )
-        conn.execute(
-            "UPDATE sample SET label_source = 'manual' WHERE id = ?", (sample_id,)
-        )
+        conn.execute("UPDATE sample SET label_source = 'manual' WHERE id = ?", (sample_id,))
         image_ids = [
             int(row[0])
             for row in conn.execute(
@@ -230,9 +229,7 @@ def test_active_dataset_work_blocks_preview_and_delete(
     client: TestClient, settings: Settings, dataset_id: int
 ) -> None:
     with connection(settings.db_path) as conn:
-        job = jobs_repo.create_job(
-            conn, kind=JobKind.PREWARM, params={"dataset_id": dataset_id}
-        )
+        job = jobs_repo.create_job(conn, kind=JobKind.PREWARM, params={"dataset_id": dataset_id})
         jobs_repo.mark_running(conn, job.id, log_path=str(settings.jobs_log_dir / "active.log"))
 
     preview = client.get(f"/api/datasets/{dataset_id}/deletion-preview")

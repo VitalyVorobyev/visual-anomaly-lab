@@ -571,9 +571,7 @@ def get_experiment(request: Request, experiment_id: int) -> ExperimentDetail:
     "/{experiment_id}/deletion-preview",
     summary="Preview the app-owned records and artifacts an experiment deletion removes",
 )
-def preview_experiment_deletion(
-    request: Request, experiment_id: int
-) -> ExperimentDeletionPreview:
+def preview_experiment_deletion(request: Request, experiment_id: int) -> ExperimentDeletionPreview:
     experiment, settings = _load(request, experiment_id)
     artifact_path = experiment_artifact_path(settings, experiment)
     usage = path_usage(artifact_path)
@@ -616,8 +614,7 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
         raise HTTPException(
             status_code=409,
             detail=(
-                "refusing to remove an artifact path outside this experiment's "
-                "app-owned directory"
+                "refusing to remove an artifact path outside this experiment's app-owned directory"
             ),
         )
     queue: JobQueue = request.app.state.job_queue

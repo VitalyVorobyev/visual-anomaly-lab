@@ -28,6 +28,11 @@ into existence. Active queued or running work blocks deletion and is named in th
 be cancelled first. Dataset lookup covers both experiment-bound jobs and dataset ids in kind-agnostic job
 parameters.
 
+`reference_import` is the same queue mechanism, not a parallel importer: one worker scans every missing
+dataset in the selected public packs and atomically commits the resulting manifests. The worker process
+receives both the app-data directory and the reference-data directory explicitly; relying on a
+source-checkout default would make discovery in the API disagree with execution in a packaged build.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:

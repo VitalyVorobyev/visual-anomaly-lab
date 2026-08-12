@@ -303,14 +303,10 @@ def _deletion_inventory(
             paths.append(artifact_path)
     for image in images:
         paths.extend(
-            cache_path(settings, image.id, tier)
-            for tier, spec in TIERS.items()
-            if spec.cached
+            cache_path(settings, image.id, tier) for tier, spec in TIERS.items() if spec.cached
         )
     paths.extend(
-        settings.jobs_log_dir / f"{job.id}.log"
-        for job in jobs
-        if job.experiment_id is None
+        settings.jobs_log_dir / f"{job.id}.log" for job in jobs if job.experiment_id is None
     )
 
     owned_manifest = _owned_manifest_path(settings, dataset)

@@ -24,6 +24,12 @@ def _import_scan() -> JobHandler:
     return run_scan_job
 
 
+def _reference_import() -> JobHandler:
+    from anomaly_lab.datasets.reference_packs import run_reference_pack_job
+
+    return run_reference_pack_job
+
+
 def _verify() -> JobHandler:
     from anomaly_lab.datasets.verify import run_verify_job
 
@@ -64,6 +70,7 @@ def _distill() -> JobHandler:
 # experiment, exactly as `import` does, and produces an asset rather than a result row.
 LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.IMPORT: _import_scan,
+    JobKind.REFERENCE_IMPORT: _reference_import,
     JobKind.VERIFY: _verify,
     JobKind.PREWARM: _prewarm,
     JobKind.TRAIN: _train,

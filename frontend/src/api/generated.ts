@@ -918,6 +918,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/reference-packs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Discover local public reference dataset packs */
+        get: operations["list_reference_packs_api_reference_packs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/reference-packs/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Register every missing dataset from selected local packs */
+        post: operations["register_reference_packs_api_reference_packs_register_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/splits": {
         parameters: {
             query?: never;
@@ -1968,7 +2002,7 @@ export interface components {
          * JobKind
          * @enum {string}
          */
-        JobKind: "import" | "verify" | "prewarm" | "train" | "infer" | "distill";
+        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill";
         /**
          * JobMetrics
          * @description Every scalar series a job has emitted so far.
@@ -2401,6 +2435,50 @@ export interface components {
          * @enum {string}
          */
         PruneScope: "image" | "on_demand" | "all";
+        /** ReferenceDatasetInfo */
+        ReferenceDatasetInfo: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Registered Dataset Id */
+            registered_dataset_id: number | null;
+        };
+        /** ReferencePackCatalog */
+        ReferencePackCatalog: {
+            /** Packs */
+            packs: components["schemas"]["ReferencePackInfo"][];
+            /** Available Datasets */
+            available_datasets: number;
+            /** Pending Datasets */
+            pending_datasets: number;
+        };
+        /** ReferencePackInfo */
+        ReferencePackInfo: {
+            /** Key */
+            key: string;
+            /** Title */
+            title: string;
+            /** Root Path */
+            root_path: string;
+            status: components["schemas"]["ReferencePackStatus"];
+            /** Datasets */
+            datasets: components["schemas"]["ReferenceDatasetInfo"][];
+            /** Missing */
+            missing: string[];
+            /** Install Url */
+            install_url: string;
+        };
+        /**
+         * ReferencePackStatus
+         * @enum {string}
+         */
+        ReferencePackStatus: "absent" | "incomplete" | "available" | "registered";
+        /** RegisterReferencePacksParams */
+        RegisterReferencePacksParams: {
+            /** Pack Keys */
+            pack_keys?: string[];
+        };
         /**
          * ResidentHealth
          * @description The one long-lived compute process nothing else would show (ADR-0026).
@@ -4215,6 +4293,59 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_reference_packs_api_reference_packs_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReferencePackCatalog"];
+                };
+            };
+        };
+    };
+    register_reference_packs_api_reference_packs_register_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegisterReferencePacksParams"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
