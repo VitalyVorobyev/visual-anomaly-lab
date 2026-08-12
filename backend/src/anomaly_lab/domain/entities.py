@@ -210,6 +210,36 @@ class SplitAssignment(BaseModel):
     subset: Subset
 
 
+class RegionFailurePolicy(StrEnum):
+    """A localisation failure is visible; it never silently becomes full-frame input."""
+
+    FAIL = "fail"
+
+
+class RegionProfileRevision(BaseModel):
+    """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    dataset_id: int
+    name: str
+    revision_no: int
+    extractor_type: str
+    extractor_config: dict[str, Any] = Field(default_factory=dict)
+    prepared_width: int
+    prepared_height: int
+    padding_fraction: float = 0.05
+    failure_policy: RegionFailurePolicy = RegionFailurePolicy.FAIL
+    seed: int
+    created_at: str
+
+    @field_validator("extractor_config", mode="before")
+    @classmethod
+    def _decode_extractor_config(cls, value: object) -> object:
+        return _decode_json_object(value)
+
+
 class ExperimentStatus(StrEnum):
     DRAFT = "draft"
     TRAINING = "training"

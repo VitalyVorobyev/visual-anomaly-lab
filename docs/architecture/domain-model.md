@@ -22,6 +22,7 @@ erDiagram
     Dataset ||--o{ Sample : "contains"
     Dataset ||--o{ Split : "has"
     Dataset ||--o{ AnnotationLabel : "defines"
+    Dataset ||--o{ RegionProfileRevision : "configures input"
     Sample  ||--o{ Image : "groups"
     Channel ||--o{ Image : "tags"
     Image   ||--o{ Mask : "may have"
@@ -114,6 +115,14 @@ would change the denominator of every metric.
 **`SplitAssignment`** — `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`.
 Primary key `(split_id, sample_id)`. **Sample-level by construction** — there is no image-level assignment
 table, so all channels of a part necessarily share a subset and cross-channel leakage is impossible.
+
+**`RegionProfileRevision`** — `id`, `dataset_id`, `name`, `revision_no`, `extractor_type`,
+`extractor_config` (JSON), `prepared_width`, `prepared_height`, `padding_fraction`, `failure_policy`, `seed`,
+`created_at`. One immutable dataset-owned configuration for localising and preparing image input
+(ADR-0033). The database rejects updates; changing any value appends a revision. `failure_policy` is
+currently only `fail`: an extractor failure may reduce build coverage but cannot quietly substitute the
+full source frame. Preview/build state and per-image transforms are operational records rather than mutable
+fields on this configuration row.
 
 **`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `model_type`, `model_config` (JSON),
 `preprocessing_config` (JSON), `eval_config` (JSON), `status`, `artifact_dir`, `created_at`, `notes`.

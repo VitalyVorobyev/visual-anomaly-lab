@@ -88,7 +88,7 @@ the detail is in the git history and the ADRs.
 
 ### E20 — Region profiles + spatial pipeline (M10)
 
-- [ ] **Write the region-profile/spatial-transform ADR** (S): dataset-owned profile revisions,
+- [x] **Write the region-profile/spatial-transform ADR** (S): dataset-owned profile revisions,
       experiment pinning, source-frame annotations and explicit failure policy.
 - [ ] **Replace direct resize with an invertible input transform** (M): crop, 5% padding,
       aspect-preserving contain resize, edge padding and inverse map projection.

@@ -96,6 +96,13 @@ image any other way is a bug, not a variation. Aspect ratio is deliberately not 
 straight to the configured size, which makes an anomaly map a plain stretch back onto the source image, so an
 overlay aligns without the UI reconstructing letterbox offsets.
 
+M10 introduces the replacement geometry as a reusable contract before switching method input over to it.
+`SpatialTransform` records a clipped half-open source crop, the actual integer contain-resize, and symmetric
+edge padding. Source points map with an explicit pixel-centre convention; masks and float maps project back
+through the recorded transform, with source pixels outside a crop marked uncovered. The current direct
+resize remains the live model path until region profile build artifacts and experiment pinning land; there
+is no mixed hidden rollout where some methods use the new bridge and others do not.
+
 ### Standardizing for a backbone is the model's business, not the bridge's
 
 The bridge decides decode, resize and colour, and stops there. What a method then does with those pixels is
