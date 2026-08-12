@@ -1,17 +1,13 @@
-"""Dinomaly plugin boundary without network access or a hidden image preprocessor.
+"""GLASS plugin contract without network access or private images.
 
-The real pretrained encoder is resource- and operator-gated by
-``scripts/dinomaly-smoke-test.py`` and quality-gated on public data.  CI replaces only
-timm's asset-backed extractor with a tiny seeded patch projection; anomalib's bottleneck,
-eight-layer decoder, hard-mining loss, StableAdamW, map rule and this plugin's whole pass
-remain real.  That keeps these tests about our integration contract and avoids making a
-public network service part of the test suite.
+CI replaces only the asset-backed WRN-50 feature extractor with a tiny seeded CNN and
+reduces the embedding width. Anomalib's Perlin synthesis, global perturbation and mining,
+projection, discriminator, losses, optimizers and map rule remain real.
 """
 
 from __future__ import annotations
 
 import hashlib
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -30,41 +26,80 @@ from anomaly_lab.models.base import (  # noqa: E402
     TrainContext,
 )
 from anomaly_lab.models.diagnostics import DiagnosticWriter  # noqa: E402
-from anomaly_lab.models.dinomaly_anomalib import (  # noqa: E402
+from anomaly_lab.models.glass_anomalib import (  # noqa: E402
     STATE_FILENAME,
-    DinomalyAnomalibModel,
-    DinomalyConfig,
+    GlassAnomalibModel,
+    GlassConfig,
 )
-from anomaly_lab.models.model_assets import huggingface_environment  # noqa: E402
 from anomaly_lab.models.preprocessing import PreprocessingConfig  # noqa: E402
 
-SIZE = 28
+SIZE = 64
 TorchModule: Any = torch.nn.Module
 
 
 class TinyFeatureExtractor(TorchModule):  # type: ignore[misc]
-    """The DINOv2 token contract, backed by one small seeded patch projection."""
+    """Two real feature maps behind anomalib's extractor contract."""
 
-    def __init__(self, *, layers: list[str], **_: Any) -> None:
+    def __init__(
+        self,
+        *,
+        backbone: str,
+        layers: list[str],
+        requires_grad: bool,
+        **_: Any,
+    ) -> None:
         super().__init__()
+        self.backbone = backbone
         self.layers = layers
-        self.patch_size = 14
-        self.num_register_tokens = 0
-        self.projection = torch.nn.Conv2d(3, 384, kernel_size=14, stride=14)
+        self.feature_extractor = torch.nn.Sequential(
+            torch.nn.Conv2d(3, 8, kernel_size=3, stride=4, padding=1),
+            torch.nn.LeakyReLU(0.2),
+            torch.nn.Conv2d(8, 16, kernel_size=3, stride=2, padding=1),
+            torch.nn.LeakyReLU(0.2),
+        )
+        self.feature_extractor.requires_grad_(requires_grad)
 
     def forward(self, batch: Any) -> dict[str, Any]:
-        patches = self.projection(batch).flatten(2).transpose(1, 2)
-        class_token = patches.mean(dim=1, keepdim=True)
-        tokens = torch.cat((class_token, patches), dim=1)
-        return dict.fromkeys(self.layers, tokens)
+        layer2 = self.feature_extractor[1](self.feature_extractor[0](batch))
+        layer3 = self.feature_extractor[3](self.feature_extractor[2](layer2))
+        return {"layer2": layer2, "layer3": layer3}
+
+
+class TinyGlass:
+    """Lightning-shaped holder around the real, width-reduced GlassModel."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        from anomalib.models.image.glass.torch_model import GlassModel
+
+        selected = {
+            key: value
+            for key, value in kwargs.items()
+            if key
+            in {
+                "input_shape",
+                "anomaly_source_path",
+                "backbone",
+                "layers",
+                "step",
+                "svd",
+                "mining",
+            }
+        }
+        self.model = GlassModel(
+            **selected,
+            pretrain_embed_dim=24,
+            target_embed_dim=24,
+            discriminator_hidden=16,
+        )
 
 
 @pytest.fixture(autouse=True)
-def no_network_encoder(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace the only component that resolves a downloaded asset."""
-    import anomalib.models.image.dinomaly.torch_model as torch_model
+def no_network_backbone(monkeypatch: pytest.MonkeyPatch) -> None:
+    import anomalib.models
+    import anomalib.models.image.glass.torch_model as torch_model
 
     monkeypatch.setattr(torch_model, "TimmFeatureExtractor", TinyFeatureExtractor)
+    monkeypatch.setattr(anomalib.models, "Glass", TinyGlass)
 
 
 def _write(path: Path, seed: int) -> Path:
@@ -107,10 +142,10 @@ def _records(root: Path) -> list[ImageRecord]:
     ]
 
 
-def _digest_trainable(model: DinomalyAnomalibModel) -> str:
+def _digest_optimized(model: GlassAnomalibModel) -> str:
     assert model._model is not None
     digest = hashlib.sha256()
-    for module in (model._model.bottleneck, model._model.decoder):
+    for module in (model._model.projection, model._model.discriminator):
         for key, tensor in sorted(module.state_dict().items()):
             digest.update(key.encode())
             digest.update(tensor.detach().cpu().contiguous().numpy().tobytes())
@@ -119,10 +154,18 @@ def _digest_trainable(model: DinomalyAnomalibModel) -> str:
 
 def _fit(
     root: Path, seed: int = 0, steps: int = 2
-) -> tuple[DinomalyAnomalibModel, TrainContext, InferContext]:
+) -> tuple[GlassAnomalibModel, TrainContext, InferContext]:
     root.mkdir(parents=True, exist_ok=True)
     train_ctx, infer_ctx = _contexts(root)
-    model = DinomalyAnomalibModel(DinomalyConfig(max_steps=steps, seed=seed))
+    model = GlassAnomalibModel(
+        GlassConfig(
+            max_steps=steps,
+            center_images=2,
+            center_refresh_steps=100,
+            mining_steps=1,
+            seed=seed,
+        )
+    )
     model.fit(_records(root), train_ctx)
     return model, train_ctx, infer_ctx
 
@@ -132,35 +175,28 @@ def test_same_seed_is_identical_and_a_different_seed_is_different(tmp_path: Path
     second, _, _ = _fit(tmp_path / "second", seed=7)
     different, _, _ = _fit(tmp_path / "different", seed=8)
 
-    assert _digest_trainable(first) == _digest_trainable(second)
-    assert _digest_trainable(first) != _digest_trainable(different)
-
-
-def test_asset_policy_controls_the_live_huggingface_cache(tmp_path: Path) -> None:
-    constants: Any = import_module("huggingface_hub.constants")
-
-    original_cache = constants.HF_HUB_CACHE
-    original_offline = constants.HF_HUB_OFFLINE
-    with huggingface_environment(
-        tmp_path / "cache",
-        allow_downloads=False,
-        method="test",
-        asset="fake",
-    ):
-        assert str(tmp_path / "cache" / "huggingface" / "hub") == constants.HF_HUB_CACHE
-        assert constants.HF_HUB_OFFLINE is True
-
-    assert original_cache == constants.HF_HUB_CACHE
-    assert constants.HF_HUB_OFFLINE is original_offline
+    assert _digest_optimized(first) == _digest_optimized(second)
+    assert _digest_optimized(first) != _digest_optimized(different)
 
 
 def test_fit_save_load_predict_and_continue_are_one_contract(tmp_path: Path) -> None:
     model, train_ctx, infer_ctx = _fit(tmp_path / "run")
-    probe = ImageRecord(image_id=99, sample_id=99, path=_write(tmp_path / "run" / "p.png", 99))
+    probe = ImageRecord(
+        image_id=99,
+        sample_id=99,
+        path=_write(tmp_path / "run" / "probe.png", 99),
+    )
     before = model.predict([probe], infer_ctx)[0]
     model.save(train_ctx.artifact_dir)
 
-    restored = DinomalyAnomalibModel(DinomalyConfig(max_steps=2, seed=0))
+    restored = GlassAnomalibModel(
+        GlassConfig(
+            max_steps=2,
+            center_images=2,
+            center_refresh_steps=100,
+            mining_steps=1,
+        )
+    )
     restored.load(train_ctx.artifact_dir)
     after = restored.predict([probe], infer_ctx)[0]
 
@@ -172,17 +208,24 @@ def test_fit_save_load_predict_and_continue_are_one_contract(tmp_path: Path) -> 
     restored.fit_more(_records(tmp_path / "run"), train_ctx, additional_steps=1)
     assert restored.completed_steps() == 3
     uninterrupted, _, _ = _fit(tmp_path / "uninterrupted", steps=3)
-    assert _digest_trainable(restored) == _digest_trainable(uninterrupted)
+    assert _digest_optimized(restored) == _digest_optimized(uninterrupted)
 
 
-def test_load_refuses_changed_encoder_weights(tmp_path: Path) -> None:
-    model, train_ctx, _ = _fit(tmp_path / "run")
+def test_load_refuses_changed_backbone_weights(tmp_path: Path) -> None:
+    model, train_ctx, _ = _fit(tmp_path / "run", steps=1)
     model.save(train_ctx.artifact_dir)
     checkpoint = train_ctx.artifact_dir / STATE_FILENAME
     payload = torch.load(checkpoint, map_location="cpu", weights_only=False)
-    payload["encoder_fingerprint"] = "0" * 64
+    payload["backbone_fingerprint"] = "0" * 64
     torch.save(payload, checkpoint)
 
-    restored = DinomalyAnomalibModel(DinomalyConfig(max_steps=2))
-    with pytest.raises(RuntimeError, match="encoder weights changed"):
+    restored = GlassAnomalibModel(
+        GlassConfig(
+            max_steps=1,
+            center_images=2,
+            center_refresh_steps=100,
+            mining_steps=1,
+        )
+    )
+    with pytest.raises(RuntimeError, match="backbone weights changed"):
         restored.load(train_ctx.artifact_dir)

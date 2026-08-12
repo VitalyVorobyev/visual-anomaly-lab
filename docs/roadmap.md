@@ -567,7 +567,9 @@ linearly in time while raising MPS driver memory to 4.30 GiB, so the application
 use batch one. The candidate is Mac-credible with a bounded centre pass and finite updates.
 Built-in Perlin synthesis avoids an implicit DTD download; the optional public texture corpus
 remains behind a quality gate. [`measurements-glass.md`](measurements-glass.md) records the full
-protocol, asset hash, weight fingerprint and integration invariants.
+protocol, asset hash, weight fingerprint and integration invariants. The lazy, resumable plugin
+now implements those bounds through the unchanged model interface; paired public quality remains
+the promotion gate.
 
 **Exit criteria**
 
