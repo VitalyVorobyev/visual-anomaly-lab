@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="472" viewBox="0 0 920 472">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:system-ui,sans-serif;fill:#20252b}.small{font-size:12px}.label{font-size:13px;font-weight:600}.title{font-size:18px;font-weight:700}</style>
+<text x="16" y="28" class="title">GLASS bounded public gate</text>
+<line x1="175" y1="42" x2="875" y2="42" stroke="#d8dde3"/>
+<text x="16" y="74" class="small">candle · GLASS · Image ROC-AUC</text>
+<rect x="175" y="58" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="58" width="563.9" height="20" rx="3" fill="#0f8fa8"/>
+<text x="745.9" y="73" class="label">0.8293</text>
+<text x="16" y="104" class="small">candle · GLASS · Pixel ROC-AUC</text>
+<rect x="175" y="88" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="88" width="620.3" height="20" rx="3" fill="#0f8fa8"/>
+<text x="802.3" y="103" class="label">0.9122</text>
+<text x="16" y="134" class="small">candle · GLASS · AU-PRO</text>
+<rect x="175" y="118" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="118" width="374.3" height="20" rx="3" fill="#0f8fa8"/>
+<text x="556.3" y="133" class="label">0.5505</text>
+<text x="16" y="164" class="small">candle · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="148" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="148" width="637.2" height="20" rx="3" fill="#8b6bb7"/>
+<text x="819.2" y="163" class="label">0.9371</text>
+<text x="16" y="194" class="small">candle · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="178" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="178" width="672.3" height="20" rx="3" fill="#8b6bb7"/>
+<text x="854.3" y="193" class="label">0.9887</text>
+<text x="16" y="224" class="small">candle · PatchCore · AU-PRO</text>
+<rect x="175" y="208" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="208" width="643.8" height="20" rx="3" fill="#8b6bb7"/>
+<text x="825.8" y="223" class="label">0.9467</text>
+<text x="16" y="254" class="small">pcb1 · GLASS · Image ROC-AUC</text>
+<rect x="175" y="238" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="238" width="515.6" height="20" rx="3" fill="#0f8fa8"/>
+<text x="697.6" y="253" class="label">0.7583</text>
+<text x="16" y="284" class="small">pcb1 · GLASS · Pixel ROC-AUC</text>
+<rect x="175" y="268" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="268" width="601.8" height="20" rx="3" fill="#0f8fa8"/>
+<text x="783.8" y="283" class="label">0.8850</text>
+<text x="16" y="314" class="small">pcb1 · GLASS · AU-PRO</text>
+<rect x="175" y="298" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="298" width="448.7" height="20" rx="3" fill="#0f8fa8"/>
+<text x="630.7" y="313" class="label">0.6598</text>
+<text x="16" y="344" class="small">pcb1 · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="328" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="328" width="588.5" height="20" rx="3" fill="#8b6bb7"/>
+<text x="770.5" y="343" class="label">0.8654</text>
+<text x="16" y="374" class="small">pcb1 · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="358" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="358" width="675.5" height="20" rx="3" fill="#8b6bb7"/>
+<text x="857.5" y="373" class="label">0.9934</text>
+<text x="16" y="404" class="small">pcb1 · PatchCore · AU-PRO</text>
+<rect x="175" y="388" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="388" width="547.9" height="20" rx="3" fill="#8b6bb7"/>
+<text x="729.9" y="403" class="label">0.8058</text>
+</svg>

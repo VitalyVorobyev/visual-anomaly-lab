@@ -48,7 +48,8 @@ that would otherwise combine current labels with old areas, and offers reevaluat
 comparison view carries the same signal per run and will not draw mixed-snapshot curves.
 
 **Threshold-dependent outputs are computed on demand** from the persisted scores: confusion matrix,
-precision / recall / F1, and the FP/FN sample lists. `GET /api/eval/{experiment_id}/threshold?value=…` returns
+precision / recall / F1, and the FP/FN sample lists.
+`GET /api/experiments/{experiment_id}/threshold?value=…` returns
 them for any threshold, computed in milliseconds from a few hundred stored floats. Persisting metrics per
 threshold would be storing a derived function of data already in the database — and would make the UI's
 threshold slider feel like a database write instead of an instant filter.

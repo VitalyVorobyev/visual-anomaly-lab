@@ -1048,7 +1048,11 @@ class EfficientAdCustomModel(AnomalyModel):
         weight = self.config.student_teacher_weight
         net = self._net.to("cpu").eval()
 
-        class PortableMap(torch.nn.Module):
+        # In the torch-free install ``torch`` is intentionally absent and mypy resolves
+        # this function-local lazy import as Any. Runtime export still requires the dl
+        # extra; the ignore preserves that boundary without importing torch at registry
+        # load time.
+        class PortableMap(torch.nn.Module):  # type: ignore[misc]
             def __init__(self) -> None:
                 super().__init__()
                 self.net = net

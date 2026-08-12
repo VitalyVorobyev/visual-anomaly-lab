@@ -202,6 +202,33 @@ jobs:
           ANOMALY_LAB_RUST_RUNNER: ${{ github.workspace }}/deployment/runner/target/release/anomaly-lab-runner
         run: uv run --directory backend pytest tests/test_rust_deployment_handoff.py
 
+  documentation:
+    name: User book
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
+
+      - run: uv sync --directory backend --locked
+
+      - name: Generated pages are current
+        run: uv run --directory backend python ../scripts/build-book.py --check
+
+      - name: Documentation links are valid
+        run: uv run --directory backend python ../scripts/check-doc-links.py
+
+      # Pin the official mdBook release so a renderer update cannot silently change the
+      # published navigation or break links in an unrelated application PR.
+      - name: Install mdBook
+        run: cargo install mdbook --locked --version 0.5.3
+
+      - name: Build the book
+        run: mdbook build
+
   shell:
     name: Tauri shell
     runs-on: macos-latest
