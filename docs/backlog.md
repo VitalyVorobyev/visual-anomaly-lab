@@ -122,6 +122,9 @@ the detail is in the git history and the ADRs.
       larger fixed budget or paired DTD ablation may be tested without per-category tuning.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): inventory RADIO assets, smoke CPU/MPS,
       and compare it with WinCLIP before accepting the substantially larger dependency footprint.
+      The resource gate passed: the pinned 1.421 GB, 355.36M-parameter asset runs at 591 ms/image
+      at 768 px on MPS with 2.07 GiB driver memory. App-managed offline loading, plugin integration
+      and the public quality gate remain.
 - [ ] **Evaluate SuperADD integration** (M): anomalib 2.6 ships it, but first expose and plan its hidden
       100,000-vector database bound, test a smaller DINOv3 backbone, and measure CPU/MPS behaviour. Keep it
       behind Dinomaly unless it adds value beyond the existing PatchCore memory-bank family.
