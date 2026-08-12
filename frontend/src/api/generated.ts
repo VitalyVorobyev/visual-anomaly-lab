@@ -109,6 +109,108 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}/annotations/draft/import/png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace a draft's editable layers from a binary PNG mask */
+        put: operations["import_annotation_png_api_images__image_id__annotations_draft_import_png_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/draft/import/labelme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace a draft's editable layers from LabelMe polygon or mask shapes */
+        put: operations["import_annotation_labelme_api_images__image_id__annotations_draft_import_labelme_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/draft/import/coco": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Replace a draft's editable layers from one-image COCO polygons or RLE */
+        put: operations["import_annotation_coco_api_images__image_id__annotations_draft_import_coco_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/export/png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export the current completed truth as a binary PNG mask */
+        get: operations["export_annotation_png_api_images__image_id__annotations_export_png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/export/labelme": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export the current completed truth as a LabelMe mask annotation */
+        get: operations["export_annotation_labelme_api_images__image_id__annotations_export_labelme_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/export/coco": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Export the current completed truth as one-image COCO RLE */
+        get: operations["export_annotation_coco_api_images__image_id__annotations_export_coco_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/compare": {
         parameters: {
             query?: never;
@@ -1149,7 +1251,7 @@ export interface components {
              */
             base: "empty" | "source_mask";
             /** Shapes */
-            shapes?: components["schemas"]["PolygonShape-Input"][];
+            shapes?: (components["schemas"]["PolygonShape-Input"] | components["schemas"]["BitmapShape-Input"])[];
         };
         /**
          * AnnotationDocument
@@ -1173,7 +1275,7 @@ export interface components {
              */
             base: "empty" | "source_mask";
             /** Shapes */
-            shapes: components["schemas"]["PolygonShape-Output"][];
+            shapes: (components["schemas"]["PolygonShape-Output"] | components["schemas"]["BitmapShape-Output"])[];
         };
         /** AnnotationDraft */
         AnnotationDraft: {
@@ -1324,6 +1426,68 @@ export interface components {
             reason: string | null;
         };
         /**
+         * BitmapShape
+         * @description A cropped binary PNG layer positioned in the immutable source frame.
+         */
+        "BitmapShape-Input": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "bitmap";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Png Base64 */
+            png_base64: string;
+        };
+        /**
+         * BitmapShape
+         * @description A cropped binary PNG layer positioned in the immutable source frame.
+         */
+        "BitmapShape-Output": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "bitmap";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Png Base64 */
+            png_base64: string;
+        };
+        /**
          * BulkLabelFilter
          * @description The browser's filters, as a request body rather than a query string.
          */
@@ -1433,6 +1597,82 @@ export interface components {
             channel: string;
             /** Matched By */
             matched_by: string;
+        };
+        /** CocoAnnotation */
+        CocoAnnotation: {
+            /** Id */
+            id: number;
+            /** Image Id */
+            image_id: number;
+            /** Category Id */
+            category_id: number;
+            /** Segmentation */
+            segmentation: components["schemas"]["CocoRle"] | number[][];
+            /** Area */
+            area: number;
+            /** Bbox */
+            bbox: [
+                number,
+                number,
+                number,
+                number
+            ];
+            /**
+             * Iscrowd
+             * @default 0
+             * @enum {integer}
+             */
+            iscrowd: 0 | 1;
+        };
+        /** CocoCategory */
+        CocoCategory: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /**
+             * Supercategory
+             * @default defect
+             */
+            supercategory: string;
+        };
+        /** CocoDocument */
+        CocoDocument: {
+            /** Info */
+            info?: {
+                [key: string]: unknown;
+            };
+            /** Licenses */
+            licenses?: {
+                [key: string]: unknown;
+            }[];
+            /** Images */
+            images: components["schemas"]["CocoImage"][];
+            /** Annotations */
+            annotations?: components["schemas"]["CocoAnnotation"][];
+            /** Categories */
+            categories: components["schemas"]["CocoCategory"][];
+        };
+        /** CocoImage */
+        CocoImage: {
+            /** Id */
+            id: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** File Name */
+            file_name: string;
+        };
+        /** CocoRle */
+        CocoRle: {
+            /** Size */
+            size: [
+                number,
+                number
+            ];
+            /** Counts */
+            counts: number[] | string;
         };
         /** CommitRequest */
         CommitRequest: {
@@ -2292,6 +2532,51 @@ export interface components {
          * @enum {string}
          */
         Label: "normal" | "defect" | "unlabeled";
+        /** LabelMeDocument */
+        LabelMeDocument: {
+            /** Version */
+            version?: string | null;
+            /** Flags */
+            flags?: {
+                [key: string]: boolean;
+            };
+            /** Shapes */
+            shapes?: components["schemas"]["LabelMeShape"][];
+            /** Imagepath */
+            imagePath: string;
+            /** Imagedata */
+            imageData?: string | null;
+            /** Imageheight */
+            imageHeight: number;
+            /** Imagewidth */
+            imageWidth: number;
+        } & {
+            [key: string]: unknown;
+        };
+        /** LabelMeShape */
+        LabelMeShape: {
+            /** Label */
+            label: string;
+            /** Points */
+            points: number[][];
+            /** Group Id */
+            group_id?: number | null;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Shape Type */
+            shape_type: string;
+            /** Flags */
+            flags?: {
+                [key: string]: boolean;
+            };
+            /** Mask */
+            mask?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
         /**
          * LabelSource
          * @description Where a label came from, so hand corrections survive a re-import (ADR-0013).
@@ -2666,9 +2951,8 @@ export interface components {
             /** Label Key */
             label_key: string;
             /**
-             * Kind
-             * @default polygon
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             kind: "polygon";
             /**
@@ -2687,9 +2971,8 @@ export interface components {
             /** Label Key */
             label_key: string;
             /**
-             * Kind
-             * @default polygon
-             * @constant
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
              */
             kind: "polygon";
             /**
@@ -3458,6 +3741,212 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_annotation_png_api_images__image_id__annotations_draft_import_png_put: {
+        parameters: {
+            query?: {
+                label_key?: string;
+            };
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "image/png": string;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_annotation_labelme_api_images__image_id__annotations_draft_import_labelme_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LabelMeDocument"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    import_annotation_coco_api_images__image_id__annotations_draft_import_coco_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CocoDocument"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_annotation_png_api_images__image_id__annotations_export_png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_annotation_labelme_api_images__image_id__annotations_export_labelme_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabelMeDocument"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_annotation_coco_api_images__image_id__annotations_export_coco_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CocoDocument"];
                 };
             };
             /** @description Validation Error */

@@ -4,12 +4,26 @@ from __future__ import annotations
 
 import hashlib
 import sqlite3
+from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Header, HTTPException, Request, Response
+import numpy as np
+from fastapi import APIRouter, Body, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse
 
+from anomaly_lab.annotation_bitmap import AnnotationBitmapError, decode_shape, encode_png
+from anomaly_lab.annotation_interchange import (
+    AnnotationInterchangeError,
+    CocoDocument,
+    LabelMeDocument,
+    coco_from_mask,
+    imported_document,
+    labelme_from_mask,
+    shapes_from_coco,
+    shapes_from_labelme,
+    shapes_from_png,
+)
 from anomaly_lab.annotation_render import AnnotationRenderError, render_binary_mask
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
@@ -24,8 +38,11 @@ from anomaly_lab.domain.annotations import (
     AnnotationLabelCreate,
     AnnotationLabelUpdate,
     AnnotationRevision,
+    AnnotationShape,
+    BitmapShape,
 )
-from anomaly_lab.media.decode import sha256_of
+from anomaly_lab.media.decode import UnreadableImageError, sha256_of
+from anomaly_lab.models.preprocessing import load_mask
 
 router = APIRouter(tags=["annotations"])
 
@@ -85,6 +102,97 @@ def _validate_document(
         raise HTTPException(
             status_code=422, detail=f"unknown annotation labels: {', '.join(unknown)}"
         )
+    for shape in document.shapes:
+        if isinstance(shape, BitmapShape):
+            try:
+                decode_shape(shape)
+            except AnnotationBitmapError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+def _save_import(
+    request: Request,
+    response: Response,
+    image_id: int,
+    expected: str,
+    build_shapes: Callable[
+        [tuple[int, int], dict[str, str]],
+        list[AnnotationShape],
+    ],
+) -> AnnotationDraft:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _image_dataset_id(conn, image_id)
+            current = annotations_repo.get_draft(conn, image_id)
+            if current is None:
+                raise HTTPException(
+                    status_code=404, detail=f"image {image_id} has no annotation draft"
+                )
+            if expected != _etag(current):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            labels = annotations_repo.list_labels(conn, dataset_id)
+            known = {label.key: label.name for label in labels}
+            default_key = labels[0].key if labels else "defect"
+            try:
+                shapes = build_shapes(
+                    (current.document.image_width, current.document.image_height), known
+                )
+                document = imported_document(
+                    current.document,
+                    shapes,
+                    clear_label_key=default_key,
+                )
+            except AnnotationInterchangeError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
+            _validate_document(
+                conn,
+                image_id,
+                dataset_id,
+                document,
+                expected_base=current.document.base,
+            )
+            saved = annotations_repo.update_draft(conn, image_id, current.version, document)
+            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    _set_draft_etag(response, saved)
+    return saved
+
+
+def _resolved_mask(
+    conn: sqlite3.Connection,
+    image_id: int,
+    *,
+    size: tuple[int, int],
+) -> np.ndarray:
+    try:
+        truth = annotations_repo.resolve_ground_truth_masks(
+            conn, [image_id], verify_bytes=True
+        ).get(image_id)
+    except annotations_repo.GroundTruthDriftError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if truth is None:
+        raise HTTPException(status_code=404, detail=f"image {image_id} has no completed annotation")
+    try:
+        mask = load_mask(Path(truth.path))
+    except UnreadableImageError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if mask.shape != (size[1], size[0]):
+        raise HTTPException(
+            status_code=409,
+            detail="the resolved annotation mask does not match the source image dimensions",
+        )
+    return mask
 
 
 @router.get(
@@ -375,3 +483,134 @@ def read_annotation_revision_mask(
             "Cache-Control": "public, max-age=31536000, immutable",
         },
     )
+
+
+@router.put(
+    "/api/images/{image_id}/annotations/draft/import/png",
+    summary="Replace a draft's editable layers from a binary PNG mask",
+)
+def import_annotation_png(
+    request: Request,
+    response: Response,
+    image_id: int,
+    payload: Annotated[bytes, Body(media_type="image/png")],
+    label_key: str = "defect",
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> AnnotationDraft:
+    expected = _require_if_match(if_match)
+    return _save_import(
+        request,
+        response,
+        image_id,
+        expected,
+        lambda size, known: shapes_from_png(
+            payload,
+            size=size,
+            label_key=(label_key if label_key in known else (_raise_unknown_label(label_key))),
+        ),
+    )
+
+
+def _raise_unknown_label(label_key: str) -> str:
+    raise AnnotationInterchangeError(
+        f"annotation label {label_key!r} is not in this dataset's taxonomy"
+    )
+
+
+@router.put(
+    "/api/images/{image_id}/annotations/draft/import/labelme",
+    summary="Replace a draft's editable layers from LabelMe polygon or mask shapes",
+)
+def import_annotation_labelme(
+    request: Request,
+    response: Response,
+    image_id: int,
+    payload: LabelMeDocument,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> AnnotationDraft:
+    return _save_import(
+        request,
+        response,
+        image_id,
+        _require_if_match(if_match),
+        lambda size, known: shapes_from_labelme(
+            payload,
+            size=size,
+            known_labels=known,
+        ),
+    )
+
+
+@router.put(
+    "/api/images/{image_id}/annotations/draft/import/coco",
+    summary="Replace a draft's editable layers from one-image COCO polygons or RLE",
+)
+def import_annotation_coco(
+    request: Request,
+    response: Response,
+    image_id: int,
+    payload: CocoDocument,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> AnnotationDraft:
+    return _save_import(
+        request,
+        response,
+        image_id,
+        _require_if_match(if_match),
+        lambda size, known: shapes_from_coco(
+            payload,
+            size=size,
+            known_labels=known,
+        ),
+    )
+
+
+def _export_context(
+    request: Request,
+    image_id: int,
+) -> tuple[np.ndarray, str, str]:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        dataset_id = _image_dataset_id(conn, image_id)
+        image = images_repo.get_image(conn, image_id)
+        if image is None:  # pragma: no cover - ownership join already found it
+            raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+        labels = annotations_repo.list_labels(conn, dataset_id)
+        label = next(
+            (item for item in labels if item.key == "defect"), labels[0] if labels else None
+        )
+        mask = _resolved_mask(conn, image_id, size=(image.width, image.height))
+    return mask, Path(image.path).name, label.key if label is not None else "defect"
+
+
+@router.get(
+    "/api/images/{image_id}/annotations/export/png",
+    summary="Export the current completed truth as a binary PNG mask",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def export_annotation_png(request: Request, image_id: int) -> Response:
+    mask, _, _ = _export_context(request, image_id)
+    return Response(
+        content=encode_png(mask),
+        media_type="image/png",
+        headers={"Content-Disposition": f'attachment; filename="annotation-{image_id}.png"'},
+    )
+
+
+@router.get(
+    "/api/images/{image_id}/annotations/export/labelme",
+    summary="Export the current completed truth as a LabelMe mask annotation",
+)
+def export_annotation_labelme(request: Request, image_id: int) -> LabelMeDocument:
+    mask, image_path, label = _export_context(request, image_id)
+    return labelme_from_mask(mask, image_path=image_path, label=label)
+
+
+@router.get(
+    "/api/images/{image_id}/annotations/export/coco",
+    summary="Export the current completed truth as one-image COCO RLE",
+)
+def export_annotation_coco(request: Request, image_id: int) -> CocoDocument:
+    mask, image_path, label = _export_context(request, image_id)
+    return coco_from_mask(mask, image_path=image_path, label=label)

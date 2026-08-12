@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw
 
-from anomaly_lab.domain.annotations import AnnotationDocument
+from anomaly_lab.annotation_bitmap import AnnotationBitmapError, decode_shape
+from anomaly_lab.domain.annotations import AnnotationDocument, BitmapShape
 from anomaly_lab.media.decode import sha256_of
 
 
@@ -47,7 +49,23 @@ def render_binary_mask(
     draw = ImageDraw.Draw(canvas)
     for shape in document.shapes:
         fill = 255 if shape.operation == "add" else 0
-        draw.polygon([(point.x, point.y) for point in shape.points], fill=fill)
+        if isinstance(shape, BitmapShape):
+            try:
+                bitmap = decode_shape(shape)
+            except AnnotationBitmapError as exc:
+                raise AnnotationRenderError(str(exc)) from exc
+            region = np.asarray(canvas)[
+                shape.y : shape.y + shape.height,
+                shape.x : shape.x + shape.width,
+            ].copy()
+            region[bitmap] = fill
+            canvas.paste(
+                Image.fromarray(region.astype(np.uint8), mode="L"),
+                (shape.x, shape.y),
+            )
+            draw = ImageDraw.Draw(canvas)
+        else:
+            draw.polygon([(point.x, point.y) for point in shape.points], fill=fill)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
     temporary = destination.with_suffix(".tmp.png")
