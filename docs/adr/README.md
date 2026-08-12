@@ -18,7 +18,7 @@ frontend and the docs. A number is an address; it is never reused and never with
 
 ## Decisions
 
-The twenty-one that still settle something.
+The twenty-two that still settle something.
 
 | # | Title | Area |
 |---|---|---|
@@ -43,6 +43,7 @@ The twenty-one that still settle something.
 | [0031](0031-the-teacher-is-an-experiment-variable-and-we-produce-it.md) | The teacher is an experiment variable, and we produce it | Methods |
 | [0032](0032-annotation-truth-is-versioned-and-source-frame.md) | Annotation truth is versioned and source-frame | Annotation |
 | [0033](0033-region-profiles-pin-an-invertible-source-transform.md) | Region profiles pin an invertible source transform | Spatial input |
+| [0034](0034-portable-models-are-verified-deployment-bundles.md) | Portable models are verified deployment bundles | Deployment |
 
 ## Folded
 

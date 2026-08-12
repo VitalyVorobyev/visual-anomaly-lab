@@ -590,15 +590,24 @@ records the protocol and SHA-256; plugin integration and paired public quality a
 
 ---
 
-### M12 — Polish + reproducible onboarding
+### M12 — Portable deployment + reproducible onboarding
 
-**Goal.** Make the finished workbench coherent, accessible and reproducible from a fresh machine.
+**Goal.** Make an experiment reproducible from a fresh machine and deployable to a Rust consumer without
+silently changing its inference semantics.
 
-**Scope:** responsive light/dark visual QA, loading/empty/error states, keyboard and focus pass,
-performance, README setup and reference-data credits, method-extension guide and documentation audit.
+**Scope:** a versioned ONNX deployment bundle with method-declared support and numerical parity; a small
+Rust reference runner; an mdBook-style user and extension guide; generated benchmark plots; responsive
+light/dark visual QA, loading/empty/error states, keyboard and focus pass; a user-facing README and
+reference-data credits.
 
 **Exit criteria**
 
 - [ ] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
+- [ ] A supported fitted method exports atomically, passes Python-versus-portable parity, and runs through
+      the Rust reference consumer from the documented command.
+- [ ] The deployment manifest is sufficient to reproduce tensor preparation, scoring, operating point and
+      source-map projection without importing application Python.
+- [ ] The book explains the system, every pipeline, method and preprocessing extension, a new-dataset
+      workflow, supported methods and generated public benchmark evidence.
 - [ ] Key screens pass visual review at both target sizes and in both themes.
 - [ ] The method-extension guide has been followed end to end, and the handbook matches the code.

@@ -129,13 +129,42 @@ the detail is in the git history and the ADRs.
       100,000-vector database bound, test a smaller DINOv3 backbone, and measure CPU/MPS behaviour. Keep it
       behind Dinomaly unless it adds value beyond the existing PatchCore memory-bank family.
 
-### E12 — Polish + reproducible onboarding (M12)
+### E22 — Portable model deployment (M12)
+
+- [ ] **Define the deployment bundle schema and method capability** (M): versioned manifest, ONNX graph,
+      auxiliary tensors, checksums, source/prepared-frame contract, score reducer, threshold provenance and
+      parity fixtures; validate with pydantic and JSON Schema.
+- [ ] **Ship one complete export vertical slice** (M): generic export job/API/UI and an atomic,
+      parity-checked `pixel_reference` bundle. The generic layers branch only on capability.
+- [ ] **Build the Rust reference runner** (M): validate manifest and hashes, run the pinned ONNX Runtime
+      binding, reproduce preprocessing/scoring, emit a machine-readable result and verify the fixture.
+- [ ] **Add deep and memory-bank exporters** (M each): implement and prove parity for the supported method;
+      leave every unproven method visibly unsupported. Record operator/runtime limitations.
+- [ ] **Test a dedicated-hardware handoff** (M): copy only the bundle and runner, run offline on a second
+      target, record latency, memory, provider and parity.
+
+### E23 — User book + lean project documentation (M12)
+
+- [ ] **Create the mdBook source and CI build** (S): quick start, system design, concepts and task-oriented
+      navigation; generated output is not committed.
+- [ ] **Document the complete pipelines** (M): import, annotation, region preparation, experiment,
+      training/inference/evaluation/comparison, model assets and portable export, with failure semantics.
+- [ ] **Exercise extension guides end to end** (M): add a model, add model-owned transforms, add shared
+      preprocessing/region extraction, and solve a new dataset from import adapter to deployment.
+- [ ] **Generate the method and benchmark chapters** (M): supported/experimental/exportable capability
+      tables from registry metadata; plots and performance reports from checked measurement data, never
+      hand-copied claims.
+- [ ] **Rewrite the root README for users** (S): product purpose, screenshots, five-minute public-data
+      start, supported workflows and links into the book. Move contributor detail into the book/development
+      docs and remove duplicated instructions.
+- [ ] **Audit handbook, development docs, roadmap and backlog against code** (S): one current description
+      per fact, valid links, no stale method list or historical implementation narrative.
+
+### E12 — Interface polish (M12)
 
 - [ ] Visual QA in light/dark at 1440×900 and 1024×768: hierarchy, density, contrast, focus,
       loading/empty/error/disabled states and no same-axis nested scroll (M)
-- [ ] Fresh public-data onboarding and full README workflow (M)
-- [ ] "How to add a method" guide exercised against the real plugin boundary (S)
-- [ ] Handbook/ADR consistency audit and final backlog re-triage (S)
+- [ ] Final backlog re-triage after the portable workflow and book are exercised (S)
 
 ## Research follow-ups
 
