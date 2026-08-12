@@ -6,7 +6,7 @@ This page is generated from the live model registry and checked method metadata.
 | Key | Method | Family | Maturity | Resume | ONNX/export |
 |---|---|---|---|---:|---|
 | `pixel_reference` | Pixel reference (baseline) | statistical reference | supported | no | onnx |
-| `efficientad_anomalib` | EfficientAD (anomalib) | student–teacher + reconstruction | supported | yes | — |
+| `efficientad_anomalib` | EfficientAD (anomalib) | student–teacher + reconstruction | supported | yes | onnx |
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
 | `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | — |
@@ -40,7 +40,7 @@ Student-teacher distillation with an autoencoder branch, from Intel's anomalib. 
 - Diagnostics: yes
 - Exact continuation: yes
 - Dataset-specific: no
-- Portable formats: —
+- Portable formats: onnx
 
 ## EfficientAD (ours)
 

@@ -49,6 +49,8 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import MaxReducer
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -56,6 +58,7 @@ from anomaly_lab.models.base import (
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     evenly_spaced,
@@ -64,7 +67,7 @@ from anomaly_lab.models.base import (
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
-from anomaly_lab.models.preprocessing import load_array, to_chw
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array, to_chw
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is the whole point of deferring it
@@ -220,6 +223,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
             channel_aware=False,
             dataset_specific=False,
             preferred_device=Device.MPS,
+            portable_formats=[PortableFormat.ONNX],
         )
 
     @classmethod
@@ -794,6 +798,75 @@ class EfficientAdAnomalibModel(AnomalyModel):
             ctx.progress((index + 1) / len(images), f"scored {index + 1}/{len(images)}")
 
         return predictions
+
+    # -------------------------------------------------------------- deployment
+
+    def _portable_module(self) -> Any:
+        """Expose anomalib's fitted inference arithmetic as a tensor-only module."""
+        import torch
+
+        if self._module is None:
+            raise RuntimeError("efficientad_anomalib has no fitted model to export")
+        model = self._module.model.to("cpu").eval()
+
+        # The lazy import is intentionally Any in a torch-free install. Export itself
+        # requires the dl extra, while the registry must remain importable without it.
+        class PortableEfficientAd(torch.nn.Module):  # type: ignore[misc,unused-ignore]
+            def __init__(self) -> None:
+                super().__init__()
+                self.model = model
+
+            def forward(self, image: Any) -> Any:
+                map_st, map_stae = self.model.get_maps(image, normalize=True)
+                return 0.5 * map_st + 0.5 * map_stae
+
+        return PortableEfficientAd().eval()
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export the fitted two-branch map and its explicit max score contract."""
+        import torch
+
+        module = self._portable_module()
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        input_name = "image"
+        output_name = "anomaly_map"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            module,
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[output_name],
+            opset_version=18,
+            dynamo=False,
+        )
+        return OnnxGraphContract(
+            opset=18,
+            input_name=input_name,
+            output_name=output_name,
+            score=MaxReducer(),
+            absolute_tolerance=1e-4,
+            relative_tolerance=1e-4,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """Run the fitted deployment path on an already-prepared parity tensor."""
+        import torch
+
+        with torch.no_grad():
+            anomaly_map = self._portable_module()(torch.from_numpy(input_nchw))
+        array = anomaly_map[0, 0].numpy().astype(np.float32)
+        return array, float(array.max())
 
     # ---------------------------------------------------------------- persistence
 

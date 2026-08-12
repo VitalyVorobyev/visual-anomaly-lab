@@ -115,7 +115,43 @@ def weights(model: EfficientAdAnomalibModel) -> dict[str, Any]:
 def test_the_protocol_and_the_flag_agree() -> None:
     """A flag without the methods is a plugin bug the handler is entitled to trust."""
     assert EfficientAdAnomalibModel.capabilities().supports_resume is True
+    assert [value.value for value in EfficientAdAnomalibModel.capabilities().portable_formats] == [
+        "onnx"
+    ]
     assert isinstance(build(10), SupportsResume)
+
+
+def test_fitted_inference_path_exports_with_map_and_score_parity(tmp_path: Path) -> None:
+    """The anomalib wrapper exports its complete normalized two-branch map."""
+    import importlib
+
+    from anomalib.models import EfficientAd
+
+    model = build(10)
+    model._module = EfficientAd(model_size="small")
+    with torch.no_grad():
+        # Make the random test module structurally fitted: non-zero teacher statistics
+        # and quantiles exercise both normalization branches in the exported graph.
+        model._module.model.mean_std["std"].fill_(1.0)
+        for key in ("qa_ae", "qa_st"):
+            model._module.model.quantiles[key].fill_(0.1)
+        for key in ("qb_ae", "qb_st"):
+            model._module.model.quantiles[key].fill_(1.1)
+
+    destination = tmp_path / "efficientad-anomalib.onnx"
+    preprocessing = PreprocessingConfig(width=SIZE, height=SIZE)
+    contract = model.export_onnx(destination, preprocessing)
+    fixture = np.linspace(0.0, 1.0, 3 * SIZE * SIZE, dtype=np.float32).reshape(1, 3, SIZE, SIZE)
+    expected_map, expected_score = model.portable_reference(fixture)
+    ort: Any = importlib.import_module("onnxruntime")
+    session = ort.InferenceSession(str(destination), providers=["CPUExecutionProvider"])
+    actual = np.asarray(session.run([contract.output_name], {contract.input_name: fixture})[0])[
+        0, 0
+    ]
+
+    assert contract.score.kind == "max"
+    np.testing.assert_allclose(actual, expected_map, atol=1e-4, rtol=1e-4)
+    assert abs(float(actual.max()) - expected_score) <= 1e-4
 
 
 @pytest.mark.usefixtures("pinned_external_inputs")

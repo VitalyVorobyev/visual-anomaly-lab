@@ -34,6 +34,7 @@ contract, operating point, pinned region revision, parity tolerances, and SHA-25
 Image score is a discriminated contract:
 
 - `percentile_linear` for `pixel_reference`;
+- `max` for `efficientad_anomalib`;
 - `max` or `top_k_mean` for `efficientad_custom`;
 - `tensor` for PatchCore's graph-produced, memory-bank-reweighted paper score.
 
