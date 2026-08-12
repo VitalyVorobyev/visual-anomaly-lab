@@ -67,6 +67,7 @@ import { useDataset } from "../hooks/useCatalog";
 import {
   useCreateExperiment,
   useDeleteExperiment,
+  useExperimentDeletionPreview,
   useExperiments,
   useModelTypes,
 } from "../hooks/useExperiments";
@@ -81,6 +82,7 @@ export function ExperimentsRoute() {
   const methods = useModelTypes();
   const remove = useDeleteExperiment();
   const [pendingDelete, setPendingDelete] = useState<ExperimentRow | null>(null);
+  const deletionPreview = useExperimentDeletionPreview(pendingDelete?.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const state = readExperimentCatalogState(searchParams);
   const experiments = useExperiments(toExperimentListQuery(state, datasetId));
@@ -295,14 +297,39 @@ export function ExperimentsRoute() {
               <span className="font-medium text-fg">{pendingDelete.name}</span>, its metrics,
               diagnostics and generated artifacts will be removed. Source dataset files are
               never touched.
+              {deletionPreview.isPending && (
+                <span className="mt-3 block text-fg-subtle">Inspecting generated files…</span>
+              )}
+              {deletionPreview.error && (
+                <span className="mt-3 block text-defect">{deletionPreview.error.message}</span>
+              )}
+              {deletionPreview.data && (
+                <span className="mt-3 block rounded-control border border-line bg-raised px-3 py-2">
+                  <span className="block font-mono text-xs text-fg">
+                    {deletionPreview.data.generated_files} generated files ·{" "}
+                    {formatBytes(deletionPreview.data.generated_bytes)}
+                  </span>
+                  {deletionPreview.data.resident_loaded && (
+                    <span className="mt-1 block text-xs">
+                      The loaded inference worker will be evicted first.
+                    </span>
+                  )}
+                  {deletionPreview.data.blocker && (
+                    <span className="mt-1 block text-xs text-warn">
+                      {deletionPreview.data.blocker}
+                    </span>
+                  )}
+                </span>
+              )}
             </>
           )
         }
         confirmLabel="Delete experiment"
         destructive
         loading={remove.isPending}
+        disabled={!deletionPreview.data?.can_delete}
         onConfirm={() => {
-          if (pendingDelete === null) return;
+          if (pendingDelete === null || !deletionPreview.data?.can_delete) return;
           remove.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
         }}
       />
@@ -346,6 +373,19 @@ const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
 function formatDate(value: string): string {
   const date = new Date(value);
   return Number.isNaN(date.getTime()) ? value : DATE_FORMAT.format(date);
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = value / 1024;
+  let unit = units[0];
+  for (const next of units.slice(1)) {
+    if (amount < 1024) break;
+    amount /= 1024;
+    unit = next;
+  }
+  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
 }
 
 type ConfigTab = "method" | "preprocessing" | "evaluation";

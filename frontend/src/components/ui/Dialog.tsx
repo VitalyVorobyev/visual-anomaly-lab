@@ -20,6 +20,7 @@ export function ConfirmDialog({
   confirmLabel,
   onConfirm,
   loading = false,
+  disabled = false,
   destructive = false,
 }: {
   open: boolean;
@@ -30,6 +31,7 @@ export function ConfirmDialog({
   confirmLabel: string;
   onConfirm: () => void;
   loading?: boolean;
+  disabled?: boolean;
   destructive?: boolean;
 }) {
   return (
@@ -56,6 +58,7 @@ export function ConfirmDialog({
             <Button
               variant={destructive ? "danger" : "primary"}
               loading={loading}
+              disabled={disabled}
               onClick={onConfirm}
             >
               {confirmLabel}

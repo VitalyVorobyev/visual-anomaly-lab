@@ -91,6 +91,19 @@ def list_jobs_for_experiment(
     return [_to_job(row) for row in rows]
 
 
+def active_jobs_for_experiment(conn: sqlite3.Connection, experiment_id: int) -> list[Job]:
+    """Queued or running work that makes deleting the experiment unsafe."""
+    rows = conn.execute(
+        """
+        SELECT * FROM job
+         WHERE experiment_id = ? AND status IN ('queued', 'running')
+         ORDER BY id
+        """,
+        (experiment_id,),
+    ).fetchall()
+    return [_to_job(row) for row in rows]
+
+
 def next_queued_job(conn: sqlite3.Connection) -> Job | None:
     """The oldest queued job. FIFO, one at a time, no priority lane (ADR-0009)."""
     row = conn.execute("SELECT * FROM job WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()
