@@ -11,6 +11,7 @@ public network service part of the test suite.
 from __future__ import annotations
 
 import hashlib
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -136,7 +137,7 @@ def test_same_seed_is_identical_and_a_different_seed_is_different(tmp_path: Path
 
 
 def test_asset_policy_controls_the_live_huggingface_cache(tmp_path: Path) -> None:
-    import huggingface_hub.constants as constants
+    constants: Any = import_module("huggingface_hub.constants")
 
     original_cache = constants.HF_HUB_CACHE
     original_offline = constants.HF_HUB_OFFLINE
