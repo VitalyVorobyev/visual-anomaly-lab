@@ -14,9 +14,11 @@ per-run budget and the first run already spent its own learning-rate decay. That
 fact has a test of its own, so nobody later mistakes it for a bug and files the
 difference away.
 
-The penalty batch is pinned throughout. Its iterator position is **not** in the
-checkpoint — stated in the ADR and on screen — so leaving it free would make this test
-measure the one thing resume does not control, fail intermittently, and get deleted.
+The external teacher and penalty inputs are pinned throughout. The penalty iterator's
+position is **not** in the checkpoint — stated in the ADR and on screen — so leaving it
+free would make this test measure the one thing resume does not control, fail
+intermittently, and get deleted. Keeping the teacher in memory also makes the test
+independent of a public download service.
 """
 
 from __future__ import annotations
@@ -81,11 +83,13 @@ def context(tmp_path: Path) -> TrainContext:
 
 
 @pytest.fixture
-def pinned_penalty(monkeypatch: pytest.MonkeyPatch) -> None:
-    """One fixed penalty batch, and no 1.5 GB download.
+def pinned_external_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Seeded in-memory teacher and penalty inputs, with no network dependency.
 
     The iterator's position is outside the checkpoint by decision, so pinning it is what
-    isolates the thing resume actually controls.
+    isolates the thing resume actually controls. The teacher is initialized after the
+    plugin seeds torch, so retaining that initialized module gives every path identical
+    fixed weights without making a public download service part of this test.
     """
     import anomaly_lab.models.efficientad_anomalib as plugin
 
@@ -93,6 +97,9 @@ def pinned_penalty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(plugin, "_next_penalty_batch", lambda module: batch.clone())
     monkeypatch.setattr(
         EfficientAdAnomalibModel, "_ensure_penalty_set", lambda self, module, ctx: None
+    )
+    monkeypatch.setattr(
+        EfficientAdAnomalibModel, "_ensure_teacher", lambda self, module, ctx: None
     )
 
 
@@ -106,14 +113,14 @@ def weights(model: EfficientAdAnomalibModel) -> dict[str, Any]:
     return {key: value.clone() for key, value in model._module.model.student.state_dict().items()}
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_the_protocol_and_the_flag_agree() -> None:
     """A flag without the methods is a plugin bug the handler is entitled to trust."""
     assert EfficientAdAnomalibModel.capabilities().supports_resume is True
     assert isinstance(build(10), SupportsResume)
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_a_checkpoint_round_trips_the_state_a_continuation_needs(
     tmp_path: Path, images: list[ImageRecord]
 ) -> None:
@@ -133,7 +140,7 @@ def test_a_checkpoint_round_trips_the_state_a_continuation_needs(
     assert restored._torch_rng_state is not None
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_a_format_one_checkpoint_is_refused_by_name(
     tmp_path: Path, images: list[ImageRecord]
 ) -> None:
@@ -160,7 +167,7 @@ def test_a_format_one_checkpoint_is_refused_by_name(
         restored.fit_more(images, context(tmp_path), additional_steps=2)
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_the_checkpoint_loses_nothing(tmp_path: Path, images: list[ImageRecord]) -> None:
     """The claim resume actually makes, measured.
 
@@ -197,7 +204,7 @@ def test_the_checkpoint_loses_nothing(tmp_path: Path, images: list[ImageRecord])
         torch.testing.assert_close(actual[key], value, rtol=0, atol=0, msg=key)
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_the_continuation_actually_trains(tmp_path: Path, images: list[ImageRecord]) -> None:
     """A resume that loaded everything and then moved nothing would pass the test above."""
     base = build(10)
@@ -217,7 +224,7 @@ def test_the_continuation_actually_trains(tmp_path: Path, images: list[ImageReco
     )
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_the_first_run_already_spent_its_own_schedule(
     tmp_path: Path, images: list[ImageRecord]
 ) -> None:
@@ -254,7 +261,7 @@ def test_the_first_run_already_spent_its_own_schedule(
     )
 
 
-@pytest.mark.usefixtures("pinned_penalty")
+@pytest.mark.usefixtures("pinned_external_inputs")
 def test_a_continued_run_reports_absolute_steps(tmp_path: Path, images: list[ImageRecord]) -> None:
     """So the chart is one curve, with no stitching and no extra log reads (ADR-0020)."""
 

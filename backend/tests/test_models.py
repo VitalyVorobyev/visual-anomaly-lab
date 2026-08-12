@@ -38,7 +38,7 @@ from anomaly_lab.models.dinomaly_anomalib import (
     validate_prepared_size,
 )
 from anomaly_lab.models.feature_view import pca_to_rgb
-from anomaly_lab.models.glass_anomalib import GlassConfig
+from anomaly_lab.models.glass_anomalib import GlassConfig, planned_center_refreshes
 from anomaly_lab.models.glass_anomalib import plan_training as plan_glass_training
 from anomaly_lab.models.patchcore_anomalib import plan_bank
 from anomaly_lab.models.pixel_reference import PixelReferenceConfig, PixelReferenceModel
@@ -388,6 +388,21 @@ def test_glass_plan_bounds_and_announces_every_center_pass() -> None:
 def test_glass_refuses_an_unusable_prepared_frame_before_importing_torch() -> None:
     with pytest.raises(ValueError, match=r"at least 64 pixels.*63x288"):
         plan_glass_training(GlassConfig(max_steps=1), 5, 63, 288)
+
+
+def test_glass_center_refresh_schedule_is_absolute_across_continuations() -> None:
+    assert planned_center_refreshes(0, 1_000, 392) == 3
+    assert planned_center_refreshes(650, 500, 392) == 1
+    assert planned_center_refreshes(784, 1, 392) == 1
+    assert planned_center_refreshes(785, 100, 392) == 0
+
+
+@pytest.mark.parametrize("values", [(-1, 1, 1), (0, 0, 1), (0, 1, 0)])
+def test_glass_center_refresh_schedule_rejects_invalid_bounds(
+    values: tuple[int, int, int],
+) -> None:
+    with pytest.raises(ValueError, match="start step"):
+        planned_center_refreshes(*values)
 
 
 def test_every_registered_method_describes_itself_without_importing_torch() -> None:

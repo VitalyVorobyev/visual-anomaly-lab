@@ -115,10 +115,11 @@ the detail is in the git history and the ADRs.
       bounded training, exact continuation and dependency/weight fingerprints. The paired public VisA
       gate cleared all quality floors with mean image ROC-AUC 0.9634, pixel ROC-AUC 0.9953 and AU-PRO
       0.9514; 392 px runs at about 122 ms/step on MPS with 0.62 GiB driver memory.
-- [ ] **Evaluate GLASS** (M): the CPU/MPS resource gate passed and selected batch one, finite
-      updates, a bounded centre pass and Perlin-only synthesis by default. The lazy plugin now
-      resumes exactly, fingerprints its WRN-50, manages downloads in the app cache and preserves
-      the torch-free boundary. Run the paired public-data quality gate before promotion.
+- [x] **Evaluate GLASS** (M): the CPU/MPS resource gate selected batch one, finite updates, a
+      bounded centre pass and Perlin-only synthesis. The 5,000-update paired public gate reached
+      mean image ROC-AUC 0.7938, pixel ROC-AUC 0.8986 and AU-PRO 0.6052, missing the image floor
+      and trailing PatchCore throughout. Keep the resumable plugin explicitly experimental; a
+      larger fixed budget or paired DTD ablation may be tested without per-category tuning.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): inventory RADIO assets, smoke CPU/MPS,
       and compare it with WinCLIP before accepting the substantially larger dependency footprint.
 - [ ] **Evaluate SuperADD integration** (M): anomalib 2.6 ships it, but first expose and plan its hidden

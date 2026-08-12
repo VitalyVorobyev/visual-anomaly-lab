@@ -175,6 +175,20 @@ def plan_training(config: GlassConfig, train_count: int, width: int, height: int
     )
 
 
+def planned_center_refreshes(start_step: int, steps: int, interval: int) -> int:
+    """Count absolute refresh boundaries in ``[start_step, start_step + steps)``."""
+    if start_step < 0 or steps < 1 or interval < 1:
+        raise ValueError(
+            "GLASS start step must be non-negative; steps and centre interval must be positive"
+        )
+    remainder = start_step % interval
+    first = start_step if remainder == 0 else start_step + interval - remainder
+    stop = start_step + steps
+    if first >= stop:
+        return 0
+    return 1 + (stop - 1 - first) // interval
+
+
 def _normalised_chw(record: ImageRecord, ctx: TrainContext | InferContext) -> np.ndarray:
     array = to_chw(load_array(record.path, ctx.preprocessing))
     if array.shape[0] == 1:
@@ -189,10 +203,11 @@ def _normalised_chw(record: ImageRecord, ctx: TrainContext | InferContext) -> np
 class GlassAnomalibModel(AnomalyModel):
     """GLASS arithmetic with a workbench-owned bounded pass."""
 
-    title = "GLASS (anomalib)"
+    title = "GLASS (experimental)"
     summary = (
         "A frozen WRN-50 feature extractor with learned global and local anomaly "
-        "synthesis; a discriminator turns their feature boundary into anomaly maps."
+        "synthesis. Its bounded public gate missed the image-level promotion floor; "
+        "keep it as an experimental learned-synthesis comparison."
     )
 
     def __init__(self, config: GlassConfig) -> None:
@@ -313,6 +328,9 @@ class GlassAnomalibModel(AnomalyModel):
                 "GLASS continuation must use the checkpoint's prepared dimensions "
                 f"{self._width}x{self._height}"
             )
+        refreshes = planned_center_refreshes(
+            self._completed, additional_steps, self.config.center_refresh_steps
+        )
         import torch
 
         self._model = self._model.to(ctx.device.value)
@@ -323,7 +341,8 @@ class GlassAnomalibModel(AnomalyModel):
         self._restore_rng(torch)
         ctx.log(
             f"continuing GLASS from step {self._completed} for {additional_steps} more; "
-            "optimizers, synthesis RNG and image order resume exactly"
+            f"{refreshes} bounded centre refreshes; optimizers, synthesis RNG and image "
+            "order resume exactly"
         )
         self._run_steps(train, ctx, optimizers, additional_steps)
         self._capture_resume_state(optimizers)

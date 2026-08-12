@@ -559,7 +559,7 @@ divisible by 14, and the default fusion topology requires exactly eight decoder 
 Mac-credible; [`measurements-dinomaly.md`](measurements-dinomaly.md) records the complete protocol and
 weight fingerprint. On the paired public VisA gate it reached mean image ROC-AUC 0.9634, pixel ROC-AUC
 0.9953 and AU-PRO 0.9514, clearing every predeclared quality floor and materially exceeding the PatchCore
-control. The lazy, resumable plugin is integrated; GLASS is next.
+control. The lazy, resumable plugin is integrated.
 
 **GLASS feasibility.** The complete 20-step mining update runs at 200 ms for a 288 × 288 image on
 MPS with 1.19 GiB driver memory; CPU takes 304 ms. The upstream batch of eight scales almost
@@ -568,8 +568,11 @@ use batch one. The candidate is Mac-credible with a bounded centre pass and fini
 Built-in Perlin synthesis avoids an implicit DTD download; the optional public texture corpus
 remains behind a quality gate. [`measurements-glass.md`](measurements-glass.md) records the full
 protocol, asset hash, weight fingerprint and integration invariants. The lazy, resumable plugin
-now implements those bounds through the unchanged model interface; paired public quality remains
-the promotion gate.
+implements those bounds through the unchanged model interface. Its paired public gate reached mean
+image ROC-AUC 0.7938, pixel ROC-AUC 0.8986 and AU-PRO 0.6052: it passed the two localisation floors but
+missed the 0.80 image floor and trailed PatchCore on every metric. GLASS therefore stays explicitly
+experimental. A larger fixed budget or DTD ablation may be evaluated later without category-specific
+geometry or labelled-checkpoint selection; AnomalyVFM is the next M11 candidate.
 
 **Exit criteria**
 
