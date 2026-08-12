@@ -98,9 +98,7 @@ def pinned_external_inputs(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         EfficientAdAnomalibModel, "_ensure_penalty_set", lambda self, module, ctx: None
     )
-    monkeypatch.setattr(
-        EfficientAdAnomalibModel, "_ensure_teacher", lambda self, module, ctx: None
-    )
+    monkeypatch.setattr(EfficientAdAnomalibModel, "_ensure_teacher", lambda self, module, ctx: None)
 
 
 def build(steps: int) -> EfficientAdAnomalibModel:
