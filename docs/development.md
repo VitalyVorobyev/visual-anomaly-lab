@@ -71,6 +71,16 @@ Public reference datasets live under `/datasets/` and are also uncommitted — f
 Note the leading slash: an unanchored pattern would also match `backend/src/anomaly_lab/datasets/`,
 which is the adapter package.
 
+The M10 localisation gate consumes those public files read-only and writes every database row and artifact
+to a new isolated directory. The default compares identity with the classical threshold extractor; pass
+the catalog-verified MobileSAM checkpoint explicitly for the deep localiser:
+
+```bash
+./scripts/region-value-gate.py --data-dir /tmp/region-gate
+./scripts/region-value-gate.py --data-dir /tmp/mobile-sam-gate \
+  --localizer mobile_sam --mobile-sam-asset data/model-cache/assets/mobile-sam-vit-t/mobile_sam.pt
+```
+
 ## Adding a method
 
 A method is one module implementing `AnomalyModel` and one entry in `models/registry.py`. It must
@@ -114,6 +124,7 @@ boundary is wrong — fix the boundary, not the caller.
 | [`roadmap.md`](roadmap.md) | What is built, what is next, and what each stage has to satisfy |
 | [`backlog.md`](backlog.md) | Task-level breakdown |
 | [`measurements-efficientad.md`](measurements-efficientad.md) | The append-only evidence log behind ADR-0029 |
+| [`measurements-region-profiles.md`](measurements-region-profiles.md) | The paired public-data localisation gate behind ADR-0033 |
 | [`teacher-distillation.md`](teacher-distillation.md) | Distilling the EfficientAD teacher here, with the exact commands |
 
 **Read the handbook to learn the system; read a record to learn why.** When the two disagree, the

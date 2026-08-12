@@ -8,9 +8,10 @@ visual-anomaly-lab/
 ├── docs/
 │   ├── architecture/               # the handbook — how the system works now (this document)
 │   ├── adr/                        # decision records: why it is shaped this way
-│   ├── roadmap.md                  # milestones M0–M10
+│   ├── roadmap.md                  # milestones M0–M12
 │   ├── backlog.md                  # task breakdown by epic
 │   ├── measurements-efficientad.md # the append-only evidence log behind ADR-0029
+│   ├── measurements-region-profiles.md # the M10 localisation value gate behind ADR-0033
 │   ├── development.md              # how to run, test and check the thing
 │   └── papers.md                   # method references
 │
@@ -52,6 +53,8 @@ visual-anomaly-lab/
     │       └── logs/               # <job>.log — full worker stdout stream
     ├── annotations/
     │   └── image-<id>/revision-<n>.png # immutable app-owned binary truth
+    ├── region-profiles/
+    │   └── profile-<id>/build/         # lossless prepared PNGs + source/prepared transforms
     ├── model-cache/
     │   └── assets/                 # verified shared weights + external-source metadata
     └── exports/                    # CSV / JSON exports of results and metrics

@@ -525,12 +525,17 @@ improves the result while keeping annotations and maps in source-image coordinat
 - Paired identity/localised experiments on public data with quality, latency, memory and failure-rate
   reporting. A negative result still closes the milestone.
 
+**Measured result.** The frozen VisA `candle`/`pcb1` gate kept identity as the default. The threshold
+extractor lost 0.300 mean pixel ROC-AUC and 0.478 mean AU-PRO by excluding real defect pixels. MobileSAM's
+largest credible masks produced full-frame boxes in both classes, adding 16.9 minutes of preparation with
+zero metric change. Both remain opt-in; selection refinement must be calibrated independently of this test.
+
 **Exit criteria**
 
 - [x] Points and masks round-trip through every transform within the stated synthetic tolerance.
 - [x] Every method consumes identical prepared pixels and persisted maps align with source masks.
 - [x] A profile revision is previewed, built, pinned and reproducible; no failure silently becomes identity.
-- [ ] Evidence, not preference, decides whether localisation becomes a default.
+- [x] Evidence, not preference, decides whether localisation becomes a default.
 
 ---
 
@@ -539,10 +544,13 @@ improves the result while keeping annotations and maps in source-image coordinat
 **Goal.** Add a small set of methods that represent different anomaly-detection principles and are
 useful quality references on Apple Silicon.
 
-**Order:** SuperADD → Dinomaly → GLASS → one zero/few-shot VLM method. Each remains one lazy model
-module plus one registry entry, with resource planning, shared preprocessing, CPU/MPS smoke tests,
-same/different-seed assertions and a public benchmark. AnomalyDINO stays lower priority because its
-principle overlaps more with the existing memory-bank methods.
+**Order:** Dinomaly → GLASS → AnomalyVFM, with SuperADD evaluated before it is promoted. This prioritises
+three genuinely different references—transformer reconstruction, learned anomaly synthesis and zero-shot
+foundation features—over another memory bank merely because it is newer. SuperADD remains the current
+distribution-shift candidate, but anomalib's default huge DINOv3 backbone and non-public 100,000-vector cap
+must be made bounded and Mac-credible first. Each integration remains one lazy model module plus one registry
+entry, with resource planning, shared preprocessing, CPU/MPS smoke tests, same/different-seed assertions and
+a public benchmark.
 
 **Exit criteria**
 

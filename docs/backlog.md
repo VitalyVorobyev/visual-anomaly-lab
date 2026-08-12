@@ -100,19 +100,26 @@ the detail is in the git history and the ADRs.
 - [x] **Pin a built profile revision to an experiment** (M): store the immutable profile id,
       require a complete build, feed every method the same prepared PNGs and project maps back through
       the recorded transforms.
-- [ ] **Run the paired value gate** (M): identity versus localisation on at least two VisA classes,
+- [x] **Run the paired value gate** (M): identity versus localisation on at least two VisA classes,
       matching protocol/config/seed, with quality, latency, memory, ROI and failure rate reported.
+- [ ] **Revisit automatic mask selection without test leakage** (M): MobileSAM's largest credible mask
+      can be a background segment whose mask covers 63% but whose bounding box is the full frame. Design the
+      boundary/objectness rule on training normals, freeze it, then validate on different public classes.
+- [ ] **Measure compact source-map persistence** (M): projected float32 maps consume about 1.23 GB for a
+      200-image VisA test set. Compare compressed source maps with prepared-frame map + pinned-transform
+      projection while preserving constant-memory evaluation and exact overlay semantics.
 
 ### E21 — Modern method references (M11)
 
-- [ ] **Evaluate SuperADD integration** (M): measure candidate-pool memory and MPS/CPU behaviour
-      before implementation; preserve the one-module plugin boundary.
 - [ ] **Evaluate Dinomaly with a small backbone first** (M): reconstruction-family reference with
       bounded training memory and exact dependency/weight fingerprints.
 - [ ] **Evaluate GLASS** (M): manage synthetic texture assets explicitly and prove the torch-free
       boundary still holds without the `dl` extra.
-- [ ] **Choose one zero/few-shot VLM reference** (S): compare WinCLIP and AnomalyVFM on packaging,
-      Apple Silicon execution and public-data quality before choosing.
+- [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): inventory RADIO assets, smoke CPU/MPS,
+      and compare it with WinCLIP before accepting the substantially larger dependency footprint.
+- [ ] **Evaluate SuperADD integration** (M): anomalib 2.6 ships it, but first expose and plan its hidden
+      100,000-vector database bound, test a smaller DINOv3 backbone, and measure CPU/MPS behaviour. Keep it
+      behind Dinomaly unless it adds value beyond the existing PatchCore memory-bank family.
 
 ### E12 — Polish + reproducible onboarding (M12)
 
