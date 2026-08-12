@@ -5,9 +5,10 @@ right for training and scoring, and wrong for "show me what the branches did on 
 image": the model load dominates, so a job per request would pay eleven seconds of startup
 to do a hundred milliseconds of work, and would queue behind whatever is training.
 
-So one process is kept alive per experiment, and requests are written to its stdin. It is
-the only long-lived compute state in this application, and everything below exists to keep
-that from being a problem.
+So one process is kept alive for whichever interactive compute target is current: an
+experiment inspector or a promptable segmentation asset. Requests are written to its
+stdin. It is the only long-lived compute state in this application, and everything below
+exists to keep that from becoming two competing device owners.
 
 **One lock, not a check.** `diagnose` and `evict` take the same `asyncio.Lock`, and the
 job queue awaits `evict` before it spawns a worker. A resident and a job worker therefore
@@ -16,10 +17,10 @@ the lock an in-flight request holds. The failure this prevents is the expensive 
 out of memory during training because a resident still held the device. The cost is
 honest: a train job can be delayed by up to one request, bounded by `REQUEST_TIMEOUT`.
 
-**Keyed by `(experiment_id, generation)`.** The generation is a fingerprint of the model
-directory. A retrain changes it, the manager sees a different key, and the resident is
-replaced — so serving from stale weights is impossible by construction rather than by an
-eviction hook firing in time.
+**Keyed by `(kind, key, generation)`.** The generation fingerprints the experiment model
+directory or catalogued asset. A retrain or asset replacement changes it, the manager sees
+a different key, and the resident is replaced — so serving from stale weights is
+impossible by construction rather than by an eviction hook firing in time.
 
 **A crash is normal.** There is no supervision and no restart policy: the process is
 killed for any protocol deviation, and the next request spawns another.
@@ -30,6 +31,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import hashlib
+import json
 import logging
 import os
 import signal
@@ -73,7 +75,9 @@ class ResidentError(Exception):
 class ResidentSnapshot:
     """What `/api/health` reports. A plain read, so it never waits on the lock."""
 
-    experiment_id: int
+    kind: str
+    key: str
+    experiment_id: int | None
     generation: str
     evicted_in_seconds: float
     requests_served: int
@@ -97,13 +101,25 @@ def generation_of(model_dir: Path) -> str:
     return digest.hexdigest()[:16]
 
 
+def generation_of_file(path: Path) -> str:
+    """A cheap resident generation for an already SHA-verified catalogued asset."""
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return "none"
+    digest = hashlib.sha256(f"{path.name}:{stat.st_size}:{stat.st_mtime_ns}".encode())
+    return digest.hexdigest()[:16]
+
+
 class ResidentWorker:
-    """Owns at most one live inspector process, and serialises everything about it."""
+    """Own at most one interactive compute process and serialise access to it."""
 
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._lock = asyncio.Lock()
         self._process: asyncio.subprocess.Process | None = None
+        self._kind: str | None = None
+        self._key: str | None = None
         self._experiment_id: int | None = None
         self._generation: str | None = None
         self._stderr: list[str] = []
@@ -129,9 +145,11 @@ class ResidentWorker:
         process = self._process
         if process is None or process.returncode is not None:
             return None
-        if self._experiment_id is None or self._generation is None:
+        if self._kind is None or self._key is None or self._generation is None:
             return None
         return ResidentSnapshot(
+            kind=self._kind,
+            key=self._key,
             experiment_id=self._experiment_id,
             generation=self._generation,
             evicted_in_seconds=max(self._idle_deadline - time.monotonic(), 0.0),
@@ -174,33 +192,98 @@ class ResidentWorker:
             generation = await asyncio.to_thread(
                 generation_of, self._settings.experiment_dir(experiment_id) / MODEL_SUBDIR
             )
-            warm = self._matches(experiment_id, generation)
+            warm = self._matches("experiment", str(experiment_id), generation)
 
             try:
                 if not warm:
                     await self._kill()
-                    await self._spawn(experiment_id, generation)
-                keys = await self._exchange(image_id)
+                    await self._spawn(
+                        kind="experiment",
+                        key=str(experiment_id),
+                        generation=generation,
+                        module="anomaly_lab.jobs.inspector",
+                        args=(str(experiment_id),),
+                        experiment_id=experiment_id,
+                    )
+                result = await self._exchange({"image_id": image_id})
             except ResidentError:
                 await self._kill()
                 raise
 
             self._requests += 1
             self._arm_idle_timer()
-            return keys, warm
+            keys = result.get("keys")
+            return ([str(key) for key in keys] if isinstance(keys, list) else []), warm
+
+    async def segment(
+        self,
+        *,
+        asset_key: str,
+        asset_path: Path,
+        image_id: int,
+        points: list[dict[str, object]],
+        box: dict[str, float] | None,
+        label_key: str,
+        operation: str,
+    ) -> tuple[dict[str, object], bool]:
+        """Ask the one resident process for MobileSAM candidates.
+
+        The asset path is used only to fingerprint the resident. The child resolves the
+        catalogued key independently, so the request channel cannot choose a checkpoint.
+        """
+        async with self._lock:
+            generation = await asyncio.to_thread(generation_of_file, asset_path)
+            warm = self._matches("model_assist", asset_key, generation)
+            try:
+                if not warm:
+                    await self._kill()
+                    await self._spawn(
+                        kind="model_assist",
+                        key=asset_key,
+                        generation=generation,
+                        module="anomaly_lab.jobs.segmenter",
+                        args=(asset_key,),
+                        experiment_id=None,
+                    )
+                result = await self._exchange(
+                    {
+                        "image_id": image_id,
+                        "points": points,
+                        "box": box,
+                        "label_key": label_key,
+                        "operation": operation,
+                    }
+                )
+            except ResidentError:
+                await self._kill()
+                raise
+
+            self._requests += 1
+            self._arm_idle_timer()
+            return result, warm
 
     # -- process management ------------------------------------------------------
 
-    def _matches(self, experiment_id: int, generation: str) -> bool:
+    def _matches(self, kind: str, key: str, generation: str) -> bool:
         process = self._process
         return (
             process is not None
             and process.returncode is None
-            and self._experiment_id == experiment_id
+            and self._kind == kind
+            and self._key == key
             and self._generation == generation
         )
 
-    async def _spawn(self, experiment_id: int, generation: str) -> None:
+    async def _spawn(
+        self,
+        *,
+        kind: str,
+        key: str,
+        generation: str,
+        module: str,
+        args: tuple[str, ...],
+        experiment_id: int | None,
+    ) -> None:
         env = dict(os.environ)
         env["ANOMALY_LAB_DATA_DIR"] = str(self._settings.data_dir)
         env["PYTHONUNBUFFERED"] = "1"
@@ -209,8 +292,8 @@ class ResidentWorker:
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 "-m",
-                "anomaly_lab.jobs.inspector",
-                str(experiment_id),
+                module,
+                *args,
                 stdin=asyncio.subprocess.PIPE,
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
@@ -224,10 +307,11 @@ class ResidentWorker:
             raise ResidentError(msg) from exc
 
         self._process = process
+        self._kind = kind
+        self._key = key
         self._experiment_id = experiment_id
         self._generation = generation
         self._stderr = []
-        self._loop = asyncio.get_running_loop()
         if process.stderr is not None:
             self._stderr_task = asyncio.create_task(self._drain_stderr(process.stderr))
 
@@ -239,11 +323,13 @@ class ResidentWorker:
     async def _await_ready(self) -> None:
         event = await self._read_until_terminal(expect_ready=True)
         if isinstance(event, ErrorEvent):
-            msg = f"the resident worker could not load experiment: {event.message}"
+            msg = f"the resident worker could not load its target: {event.message}"
             raise ResidentError(msg)
 
     async def _kill(self) -> None:
         process, self._process = self._process, None
+        self._kind = None
+        self._key = None
         self._experiment_id = None
         self._generation = None
         self._cancel_idle_timer()
@@ -268,7 +354,7 @@ class ResidentWorker:
 
     # -- the request exchange ----------------------------------------------------
 
-    async def _exchange(self, image_id: int) -> list[str]:
+    async def _exchange(self, payload: dict[str, object]) -> dict[str, object]:
         process = self._process
         if process is None or process.stdin is None:
             msg = "the resident worker is not running"
@@ -276,7 +362,7 @@ class ResidentWorker:
 
         self._next_rid += 1
         rid = self._next_rid
-        frame = f'{{"{REQUEST_ID}": {rid}, "image_id": {image_id}}}\n'
+        frame = json.dumps({REQUEST_ID: rid, **payload}, separators=(",", ":")) + "\n"
         try:
             process.stdin.write(frame.encode())
             await process.stdin.drain()
@@ -297,8 +383,7 @@ class ResidentWorker:
             # answer is to stop trusting the process.
             msg = "the resident worker answered a question that was not asked"
             raise ResidentError(msg)
-        keys = event.result.get("keys")
-        return [str(key) for key in keys] if isinstance(keys, list) else []
+        return dict(event.result)
 
     async def _read_until_terminal(
         self, *, expect_ready: bool = False

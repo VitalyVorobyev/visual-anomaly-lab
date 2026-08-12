@@ -80,8 +80,9 @@ the detail is in the git history and the ADRs.
 - [x] **Add a generic model-asset store** (M): immutable upstream revision, explicit licence acceptance,
       size/SHA256 verification, progress/cancel, atomic install, safe removal and a verified external-path
       override. The API catalogues assets without importing torch.
-- [ ] **Add MobileSAM point/box assist** (M): source-coordinate prompts and returned mask, editable contour
-      acceptance, CPU fallback and the one resident-worker lock.
+- [x] **Add MobileSAM point/box assist** (M): source-coordinate positive/negative points or box,
+      up to three ephemeral ranked masks, mask/editable-contour acceptance, MPS with transparent CPU
+      fallback and the one resident-worker lock. The verified asset remains a catalogue concern.
 
 ### E20 — Region profiles + spatial pipeline (M10)
 

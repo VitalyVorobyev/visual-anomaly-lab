@@ -24,13 +24,15 @@ router = APIRouter(prefix="/api", tags=["health"])
 class ResidentHealth(BaseModel):
     """The one long-lived compute process nothing else would show (ADR-0026).
 
-    A resident inference worker holds a loaded checkpoint — and on this machine, the MPS
-    device — between browse requests. Without this block the only evidence it exists is a
-    second Python process in Activity Monitor, which is the wrong place to discover that
-    something is holding your accelerator.
+    The resident holds either an experiment checkpoint or a promptable segmentation model
+    — and on this machine, the MPS device — between interactive requests. Without this
+    block the only evidence it exists is a second Python process in Activity Monitor,
+    which is the wrong place to discover that something is holding your accelerator.
     """
 
-    experiment_id: int
+    kind: str = Field(description="The resident target family.")
+    key: str = Field(description="The experiment id or model-asset key.")
+    experiment_id: int | None = None
     generation: str = Field(description="Checkpoint fingerprint; a retrain changes it.")
     evicted_in_seconds: float = Field(description="Until the idle timeout takes it down.")
     requests_served: int
@@ -44,7 +46,7 @@ class HealthResponse(BaseModel):
     data_dir: str
     started_at: datetime
     resident: ResidentHealth | None = Field(
-        default=None, description="The resident inference worker, when one is live."
+        default=None, description="The resident compute worker, when one is live."
     )
 
 

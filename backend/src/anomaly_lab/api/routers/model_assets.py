@@ -86,12 +86,8 @@ def _require_spec(key: str) -> ModelAssetSpec:
 def _active_downloads(settings: Settings) -> dict[str, JobSummary]:
     with connection(settings.db_path) as conn:
         jobs = [
-            *jobs_repo.list_jobs(
-                conn, kind=JobKind.MODEL_ASSET_DOWNLOAD, status=JobStatus.QUEUED
-            ),
-            *jobs_repo.list_jobs(
-                conn, kind=JobKind.MODEL_ASSET_DOWNLOAD, status=JobStatus.RUNNING
-            ),
+            *jobs_repo.list_jobs(conn, kind=JobKind.MODEL_ASSET_DOWNLOAD, status=JobStatus.QUEUED),
+            *jobs_repo.list_jobs(conn, kind=JobKind.MODEL_ASSET_DOWNLOAD, status=JobStatus.RUNNING),
         ]
     return {
         str(job.params.get("asset_key")): summary_of(job)
@@ -131,9 +127,7 @@ def _info(settings: Settings, spec: ModelAssetSpec, active: JobSummary | None) -
 def list_model_assets(request: Request) -> ModelAssetCatalog:
     settings: Settings = request.app.state.settings
     active = _active_downloads(settings)
-    return ModelAssetCatalog(
-        assets=[_info(settings, spec, active.get(spec.key)) for spec in SPECS]
-    )
+    return ModelAssetCatalog(assets=[_info(settings, spec, active.get(spec.key)) for spec in SPECS])
 
 
 @router.post("/{asset_key}/install", summary="Download and verify a catalogued model asset")

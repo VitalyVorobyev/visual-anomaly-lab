@@ -31,6 +31,8 @@ export const queryKeys = {
 
   datasets: () => ["datasets"] as const,
   referencePacks: () => ["reference-packs"] as const,
+  modelAssets: () => ["model-assets"] as const,
+  segmentAssist: () => ["segment-assist"] as const,
   dataset: (datasetId: number) => ["datasets", datasetId] as const,
   datasetDeletion: (datasetId: number) =>
     ["datasets", datasetId, "deletion-preview"] as const,

@@ -120,3 +120,15 @@ Negative consequences, accepted honestly:
 - **Eviction correctness rests on tests, not on types.** `tests/test_resident.py` covers the three
   cases that matter — a job start evicts, a hook that cannot evict fails the job, nothing outlives the
   application — and they are the only thing standing between this design and a mysterious OOM.
+
+## Changelog
+
+### 2026-08-12 — Generalised target, unchanged single-resident decision
+
+MobileSAM contour assistance introduced a second interactive workload with the same expensive-load,
+short-request shape. The resident is now keyed by `(kind, target key, artifact generation)` and may
+hold either an experiment inspector or the promptable segmentation model. Switching targets replaces
+the child process. There is still exactly one resident, the same lock still excludes every queued
+job, requests still persist no job rows, and the asset catalogue — not the request — chooses the
+checkpoint. This amends the target-specific wording; it does not change the decision or add another
+device owner.

@@ -51,6 +51,15 @@ export type AnnotationPoint = Schemas["AnnotationPoint"];
 export type PolygonShape = Schemas["PolygonShape-Output"];
 export type BitmapShape = Schemas["BitmapShape-Output"];
 export type AnnotationShape = PolygonShape | BitmapShape;
+export type AssistPoint = Schemas["AssistPoint"];
+export type AssistBox = Schemas["AssistBox"];
+export type SegmentAssistRequest = Schemas["SegmentAssistRequest"];
+export type SegmentAssistResponse = Schemas["SegmentAssistResponse"];
+export type SegmentCandidate = Schemas["SegmentCandidate"];
+export type SegmentAssistCapability = Schemas["SegmentAssistCapability"];
+
+export type ModelAssetCatalog = Schemas["ModelAssetCatalog"];
+export type ModelAssetInfo = Schemas["ModelAssetInfo"];
 
 export type JobSummary = Schemas["JobSummary"];
 export type JobDetail = Schemas["JobDetail"];
@@ -138,6 +147,10 @@ function describeError(error: unknown, what: string): string {
   if (error && typeof error === "object" && "detail" in error) {
     const { detail } = error as { detail?: unknown };
     if (typeof detail === "string") return detail;
+    if (detail && typeof detail === "object" && "reason" in detail) {
+      const { reason } = detail as { reason?: unknown };
+      if (typeof reason === "string") return reason;
+    }
     // FastAPI's validation errors are a list of per-field objects; the first one is
     // almost always the one worth showing.
     if (Array.isArray(detail) && detail.length > 0) {
