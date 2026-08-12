@@ -384,6 +384,13 @@ function EditorReady({
     const onKey = (event: KeyboardEvent) => {
       const target = event.target;
       if (
+        target instanceof HTMLElement &&
+        target.closest("[data-annotation-canvas]") &&
+        ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Enter", " "].includes(event.key)
+      ) {
+        return;
+      }
+      if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
         target instanceof HTMLSelectElement
@@ -422,6 +429,10 @@ function EditorReady({
       } else if (event.key === "ArrowRight" && !dirty) {
         openQueueItem(queueIndex + 1);
       } else if (event.key === "ArrowLeft" && !dirty) {
+        openQueueItem(queueIndex - 1);
+      } else if (key === "j" && !dirty) {
+        openQueueItem(queueIndex + 1);
+      } else if (key === "k" && !dirty) {
         openQueueItem(queueIndex - 1);
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
@@ -587,6 +598,7 @@ function EditorReady({
             dispatch({ type: "commit", document: withShape(history.present, shape) });
             setSelectedId(shape.id);
           }}
+          onFinishPolygon={finishPolygon}
           onAssistPoint={(point) => {
             assist.reset();
             setCandidateIndex(0);
@@ -871,7 +883,7 @@ function EditorReady({
               aria-label="Previous image"
             />
             <span className="text-center font-mono text-[10px] text-fg-subtle">
-              ← → after save · C completes
+              J/K after save · C completes
             </span>
             <Button
               icon={<ArrowRight />}
