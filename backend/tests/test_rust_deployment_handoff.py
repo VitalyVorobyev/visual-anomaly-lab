@@ -45,7 +45,7 @@ def test_python_bundle_passes_rust_runtime_parity(
     assert completed.returncode == 0, completed.stderr
     report = json.loads(completed.stdout)
     assert report["status"] == "ok"
-    assert report["format_version"] == 1
+    assert report["format_version"] == 2
     assert report["checked_files"] == 3
     assert report["map_max_absolute_error"] <= 2e-5
     assert report["score_absolute_error"] <= 2e-5

@@ -776,6 +776,25 @@ def test_an_unknown_checkpoint_format_is_refused_by_name(saved: Saved, tmp_path:
         EfficientAdCustomModel(_config()).load(artifacts)
 
 
+def test_fitted_model_exports_with_map_and_score_parity(trained: Trained, tmp_path: Path) -> None:
+    """The deployment graph preserves both the heatmap and configured reducer."""
+    import importlib
+
+    destination = tmp_path / "efficientad.onnx"
+    contract = trained.model.export_onnx(destination, trained.infer_ctx.preprocessing)
+    fixture = np.linspace(0.0, 1.0, 3 * SIZE * SIZE, dtype=np.float32).reshape(1, 3, SIZE, SIZE)
+    expected_map, expected_score = trained.model.portable_reference(fixture)
+    ort: Any = importlib.import_module("onnxruntime")
+    session = ort.InferenceSession(str(destination), providers=["CPUExecutionProvider"])
+    actual = np.asarray(session.run([contract.output_name], {contract.input_name: fixture})[0])[
+        0, 0
+    ]
+
+    assert contract.score.kind == trained.model.config.score_reduction
+    np.testing.assert_allclose(actual, expected_map, atol=5e-5, rtol=5e-5)
+    assert abs(float(actual.max()) - expected_score) <= 5e-5
+
+
 # ------------------------------------------------------------------ independence
 
 

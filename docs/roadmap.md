@@ -603,9 +603,9 @@ reference-data credits.
 **Exit criteria**
 
 - [ ] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
-- [ ] A supported fitted method exports atomically, passes Python-versus-portable parity, and runs through
+- [x] A supported fitted method exports atomically, passes Python-versus-portable parity, and runs through
       the Rust reference consumer from the documented command.
-- [ ] The deployment manifest is sufficient to reproduce tensor preparation, scoring, operating point and
+- [x] The deployment manifest is sufficient to reproduce tensor preparation, scoring, operating point and
       source-map projection without importing application Python.
 - [ ] The book explains the system, every pipeline, method and preprocessing extension, a new-dataset
       workflow, supported methods and generated public benchmark evidence.

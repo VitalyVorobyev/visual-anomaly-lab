@@ -16,8 +16,10 @@ pinned against the one it replaced.
 
 from __future__ import annotations
 
+import importlib
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -385,6 +387,25 @@ def test_a_saved_model_reloads_to_the_same_scores(fitted: Fitted) -> None:
 
     for before, after in zip(fitted.predictions, again, strict=True):
         assert after.score == pytest.approx(before.score, rel=1e-6)
+
+
+def test_fitted_bank_exports_with_map_and_paper_score_parity(
+    fitted: Fitted, tmp_path: Path
+) -> None:
+    """The reweighted score is exported as a graph output, not guessed from its map."""
+    destination = tmp_path / "patchcore.onnx"
+    contract = fitted.model.export_onnx(destination, fitted.infer_ctx.preprocessing)
+    fixture = np.linspace(0.0, 1.0, 3 * SIZE * SIZE, dtype=np.float32).reshape(1, 3, SIZE, SIZE)
+    expected_map, expected_score = fitted.model.portable_reference(fixture)
+    ort: Any = importlib.import_module("onnxruntime")
+    session = ort.InferenceSession(str(destination), providers=["CPUExecutionProvider"])
+    values = session.run(None, {contract.input_name: fixture})
+    actual_map = np.asarray(values[0])
+    actual_score = np.asarray(values[1])
+
+    assert contract.score.kind == "tensor"
+    np.testing.assert_allclose(actual_map[0, 0], expected_map, atol=1e-4, rtol=1e-4)
+    assert abs(float(actual_score[0]) - expected_score) <= 1e-4
 
 
 def test_a_changed_backbone_is_refused_by_name(fitted: Fitted, tmp_path: Path) -> None:

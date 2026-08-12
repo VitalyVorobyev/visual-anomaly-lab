@@ -4,7 +4,7 @@ The deployable unit is a **verified bundle**, not a bare model file (ADR-0034). 
 method's prepared-frame anomaly map; `manifest.json` carries the semantics a graph cannot: pixels, tensor
 layout, score reduction, operating point, region provenance and parity tolerances.
 
-## Bundle version 1
+## Bundle version 2
 
 ```
 onnx-YYYYMMDDTHHMMSSZ/
@@ -30,7 +30,7 @@ and colour, so dynamic dimensions add runtime ambiguity without enabling a curre
 2. checks `Capabilities.portable_formats` and the `SupportsOnnxExport` protocol agree;
 3. writes into a job-specific staging directory;
 4. creates a deterministic, dataset-free tensor and runs the Python reference path;
-5. runs the ONNX graph with the CPU execution provider and checks map and percentile-score parity;
+5. runs the ONNX graph with the CPU execution provider and checks map and image-score parity;
 6. hashes every payload, writes the manifest, then atomically renames staging into `exports/`.
 
 Cancellation or any exception removes staging. A parity failure publishes no bundle. Export is therefore a
@@ -43,14 +43,19 @@ belong to the pinned region profile and are identified in the manifest; a produc
 materialise that same transform or feed the exact prepared frame. Decode and colour conversion produce the
 manifest's `[0,1]` NCHW tensor. Method-specific normalization stays inside the graph.
 
-The graph emits one prepared-frame anomaly map. The host applies the named linear percentile reducer to get
-the image score and compares it with the recorded operating point when one was available. Source-frame
-projection is a host operation because production systems may own their source geometry independently.
+The graph emits one prepared-frame anomaly map. Its score contract is explicit: the host applies a linear
+percentile, maximum or top-k mean reducer, or reads a named scalar graph output when the method's score is
+not a function of its displayed map. This distinction is load-bearing for PatchCore, whose paper score
+reweights its most anomalous patch using neighbours in the memory bank. A consumer compares the resolved
+score with the recorded operating point when one was available. Source-frame projection is a host operation
+because production systems may own their source geometry independently.
 An operating point is resolved from one named subset rather than a mixture: test first, then validation,
 then train as an explicit last resort. The chosen subset and rule travel with the value.
 
-`pixel_reference` is the first supported exporter. Other methods truthfully report no portable format until
-their graph or auxiliary-tensor representation and parity tolerance have been implemented. The planned Rust
+Three exporter families are proven: `pixel_reference` (explicit statistics and a percentile host reducer),
+`efficientad_custom` (a deep graph and max/top-k host reducer), and `patchcore_anomalib` (a frozen backbone,
+embedded memory bank and graph-produced paper score). Other methods truthfully report no portable format
+until their graph or auxiliary-tensor representation and parity tolerance have been implemented. The Rust
 reference runner validates the same manifest and hashes before using pinned `ort` 2.0.0-rc.13 and ONNX
 Runtime. `verify` executes the deterministic fixture and enforces both map and score tolerances; `infer`
 accepts a prepared little-endian NCHW float32 tensor and emits a JSON score/verdict plus an optional raw map.
@@ -59,7 +64,7 @@ that Rust crate or execution provider; a production runner may register the targ
 without changing the bundle.
 
 The CI handoff is deliberately cross-language: Python fits and exports the real baseline, then the compiled
-Rust binary validates and executes that output. Rust-only tests would not catch schema or percentile drift
+Rust binary validates and executes that output. Rust-only tests would not catch schema or score-contract drift
 between the two implementations.
 
 ---

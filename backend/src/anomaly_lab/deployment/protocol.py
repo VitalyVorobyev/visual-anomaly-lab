@@ -8,6 +8,7 @@ from typing import Protocol, runtime_checkable
 import numpy as np
 from pydantic import BaseModel
 
+from anomaly_lab.deployment.schema import ScoreContract
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 
 
@@ -17,7 +18,9 @@ class OnnxGraphContract(BaseModel):
     opset: int
     input_name: str
     output_name: str
-    score_percentile: float
+    score: ScoreContract
+    absolute_tolerance: float = 2e-5
+    relative_tolerance: float = 2e-5
 
 
 @runtime_checkable

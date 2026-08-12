@@ -79,7 +79,7 @@ def test_manifest_is_plain_json_with_no_python_type_tags(
     )
     payload = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
 
-    assert payload["format_version"] == 1
+    assert payload["format_version"] == 2
     assert payload["portable_format"] == "onnx"
     assert payload["score"]["kind"] == "percentile_linear"
     assert not any(key.startswith("__") for key in payload)
