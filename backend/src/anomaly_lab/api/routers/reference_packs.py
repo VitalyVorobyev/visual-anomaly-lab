@@ -97,9 +97,7 @@ def _catalog(settings: Settings) -> ReferencePackCatalog:
                 install_url=pack.install_url,
             )
         )
-    return ReferencePackCatalog(
-        packs=packs, available_datasets=available, pending_datasets=pending
-    )
+    return ReferencePackCatalog(packs=packs, available_datasets=available, pending_datasets=pending)
 
 
 @router.get("", summary="Discover local public reference dataset packs")
@@ -108,9 +106,7 @@ def list_reference_packs(request: Request) -> ReferencePackCatalog:
 
 
 @router.post("/register", summary="Register every missing dataset from selected local packs")
-def register_reference_packs(
-    request: Request, body: RegisterReferencePacksParams
-) -> JobSummary:
+def register_reference_packs(request: Request, body: RegisterReferencePacksParams) -> JobSummary:
     settings: Settings = request.app.state.settings
     catalog = _catalog(settings)
     selected = [pack for pack in catalog.packs if pack.key in set(body.pack_keys)]
@@ -124,9 +120,7 @@ def register_reference_packs(
             detail=f"reference packs are not ready: {', '.join(unavailable)}",
         )
     if not any(
-        dataset.registered_dataset_id is None
-        for pack in selected
-        for dataset in pack.datasets
+        dataset.registered_dataset_id is None for pack in selected for dataset in pack.datasets
     ):
         raise HTTPException(
             status_code=409, detail="all selected reference datasets are registered"

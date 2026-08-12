@@ -196,15 +196,11 @@ def run_reference_pack_job(context: JobContext) -> dict[str, Any]:
 
     context.raise_if_cancelled()
     with connection(context.settings.db_path) as conn:
-        results: list[CommitResult] = commit_manifests_atomically(
-            conn, context.settings, manifests
-        )
+        results: list[CommitResult] = commit_manifests_atomically(conn, context.settings, manifests)
     context.progress(1.0, f"registered {len(results)} datasets")
     return {
         "registered": len(results),
-        "already_registered": sum(
-            len(known[key].datasets) for key in params.pack_keys
-        )
+        "already_registered": sum(len(known[key].datasets) for key in params.pack_keys)
         - len(results),
         "dataset_ids": [result.dataset_id for result in results],
     }

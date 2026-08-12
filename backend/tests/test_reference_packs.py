@@ -35,9 +35,7 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
     _write_image(gkn / "Good" / "good.png")
     _write_image(gkn / "Nick" / "nick.png")
     _write_image(gkn / "Scratch" / "scratch.png")
-    settings = Settings(
-        data_dir=tmp_path / "data", reference_datasets_dir=references
-    )
+    settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=references)
 
     with TestClient(create_app(settings)) as client:
         catalog = client.get("/api/reference-packs").json()
@@ -48,9 +46,7 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
         assert catalog["pending_datasets"] == 1
         assert catalog["packs"][0]["install_url"].startswith("https://")
 
-        started = client.post(
-            "/api/reference-packs/register", json={"pack_keys": ["gkn"]}
-        )
+        started = client.post("/api/reference-packs/register", json={"pack_keys": ["gkn"]})
         assert started.status_code == 200, started.text
         job = _wait(client, started.json()["id"])
         assert job["status"] == "succeeded", job
@@ -70,9 +66,7 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
         assert after["packs"][1]["status"] == "registered"
         assert after["pending_datasets"] == 0
         assert (
-            client.post(
-                "/api/reference-packs/register", json={"pack_keys": ["gkn"]}
-            ).status_code
+            client.post("/api/reference-packs/register", json={"pack_keys": ["gkn"]}).status_code
             == 409
         )
 
@@ -80,14 +74,10 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
 def test_an_incomplete_pack_is_not_offered_for_registration(tmp_path: Path) -> None:
     references = tmp_path / "references"
     (references / "VisA_20220922").mkdir(parents=True)
-    settings = Settings(
-        data_dir=tmp_path / "data", reference_datasets_dir=references
-    )
+    settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=references)
     with TestClient(create_app(settings)) as client:
         visa = client.get("/api/reference-packs").json()["packs"][0]
         assert visa["status"] == "incomplete"
         assert visa["missing"]
-        response = client.post(
-            "/api/reference-packs/register", json={"pack_keys": ["visa"]}
-        )
+        response = client.post("/api/reference-packs/register", json={"pack_keys": ["visa"]})
         assert response.status_code == 409

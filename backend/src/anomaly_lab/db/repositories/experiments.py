@@ -69,9 +69,7 @@ def list_experiments(
     return [_to_experiment(row) for row in rows]
 
 
-def list_experiments_for_dataset(
-    conn: sqlite3.Connection, dataset_id: int
-) -> list[Experiment]:
+def list_experiments_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[Experiment]:
     """Every experiment owned by one dataset, without catalogue pagination."""
     rows = conn.execute(
         "SELECT * FROM experiment WHERE dataset_id = ? ORDER BY id", (dataset_id,)
