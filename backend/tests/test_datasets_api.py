@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -10,10 +11,13 @@ from fastapi.testclient import TestClient
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
-from anomaly_lab.domain.entities import Label, Subset
+from anomaly_lab.domain.entities import JobKind, JobStatus, Label, Subset
+from anomaly_lab.media.cache import ImageTier, cache_path
 
 
 @pytest.fixture
@@ -93,16 +97,166 @@ def test_an_unknown_dataset_is_a_404(client: TestClient) -> None:
     assert client.get("/api/datasets/4242").status_code == 404
     assert client.get("/api/datasets/4242/samples").status_code == 404
     assert client.delete("/api/datasets/4242").status_code == 404
+    assert client.get("/api/datasets/4242/deletion-preview").status_code == 404
 
 
 def test_deleting_a_dataset_removes_its_rows(
     client: TestClient, settings: Settings, dataset_id: int
 ) -> None:
-    assert client.delete(f"/api/datasets/{dataset_id}").status_code == 204
+    response = client.delete(f"/api/datasets/{dataset_id}")
+    assert response.status_code == 200
+    assert response.json()["deleted"] is True
 
     assert client.get("/api/datasets").json() == []
     with connection(settings.db_path) as conn:
         assert samples_repo.count_samples(conn, dataset_id) == 0
+
+
+def test_dataset_deletion_previews_and_removes_only_app_owned_state(
+    client: TestClient, settings: Settings, dataset_id: int, tmp_path: Path
+) -> None:
+    source = tmp_path / "external-source.png"
+    source.write_bytes(b"source-sentinel")
+
+    with connection(settings.db_path) as conn:
+        sample_id = int(
+            conn.execute("SELECT id FROM sample WHERE dataset_id = ? LIMIT 1", (dataset_id,))
+            .fetchone()[0]
+        )
+        conn.execute(
+            "UPDATE sample SET label_source = 'manual' WHERE id = ?", (sample_id,)
+        )
+        image_ids = [
+            int(row[0])
+            for row in conn.execute(
+                "SELECT image.id FROM image JOIN sample ON sample.id = image.sample_id "
+                "WHERE sample.dataset_id = ? ORDER BY image.id",
+                (dataset_id,),
+            )
+        ]
+        conn.execute("UPDATE image SET path = ? WHERE id = ?", (str(source), image_ids[0]))
+        split = splits_repo.create_split(
+            conn,
+            dataset_id,
+            name="delete-me",
+            strategy="manual",
+            seed=0,
+            params={},
+            assignments={},
+        )
+        experiment = experiments_repo.create_experiment(
+            conn,
+            name="owned-run",
+            dataset_id=dataset_id,
+            split_id=split.id,
+            model_type="pixel_reference",
+            model_config={},
+            preprocessing_config={},
+            eval_config={},
+            artifact_dir="pending",
+        )
+        artifact_dir = settings.experiment_dir(experiment.id)
+        conn.execute(
+            "UPDATE experiment SET artifact_dir = ? WHERE id = ?",
+            (str(artifact_dir), experiment.id),
+        )
+        manifest = settings.manifests_dir / f"dataset-{dataset_id}-20260812T120000Z.json"
+        conn.execute(
+            "UPDATE dataset SET root_path = ?, manifest_path = ? WHERE id = ?",
+            (str(tmp_path), str(manifest), dataset_id),
+        )
+        dataset_job = jobs_repo.create_job(
+            conn, kind=JobKind.PREWARM, params={"dataset_id": dataset_id}
+        )
+        job_log = settings.jobs_log_dir / f"{dataset_job.id}.log"
+        jobs_repo.mark_running(conn, dataset_job.id, log_path=str(job_log))
+        jobs_repo.finish_job(conn, dataset_job.id, status=JobStatus.SUCCEEDED)
+
+    (artifact_dir / "maps").mkdir(parents=True)
+    (artifact_dir / "model.bin").write_bytes(b"abc")
+    (artifact_dir / "maps" / "one.npy").write_bytes(b"defg")
+    manifest.parent.mkdir(parents=True)
+    manifest.write_bytes(b"manifest")
+    thumb = cache_path(settings, image_ids[0], ImageTier.THUMB)
+    preview = cache_path(settings, image_ids[1], ImageTier.PREVIEW)
+    thumb.parent.mkdir(parents=True)
+    preview.parent.mkdir(parents=True)
+    thumb.write_bytes(b"123")
+    preview.write_bytes(b"4567")
+    job_log.parent.mkdir(parents=True, exist_ok=True)
+    job_log.write_bytes(b"job")
+
+    deletion = client.get(f"/api/datasets/{dataset_id}/deletion-preview")
+    assert deletion.status_code == 200
+    assert deletion.json() == {
+        "dataset_id": dataset_id,
+        "name": "fixture",
+        "samples": 6,
+        "images": 17,
+        "splits": 1,
+        "experiments": 1,
+        "jobs": 1,
+        "manual_labels": 1,
+        "generated_files": 6,
+        "generated_bytes": 25,
+        "active_jobs": [],
+        "resident_loaded": False,
+        "storage_locations_safe": True,
+        "can_delete": True,
+        "blocker": None,
+    }
+
+    result = client.delete(f"/api/datasets/{dataset_id}")
+    assert result.status_code == 200
+    assert result.json() == {
+        "deleted": True,
+        "freed_files": 6,
+        "freed_bytes": 25,
+        "cleanup_errors": [],
+    }
+    assert source.read_bytes() == b"source-sentinel"
+    assert not artifact_dir.exists()
+    assert not manifest.exists()
+    assert not thumb.exists()
+    assert not preview.exists()
+    assert not job_log.exists()
+    with connection(settings.db_path) as conn:
+        assert datasets_repo.get_dataset(conn, dataset_id) is None
+        assert experiments_repo.get_experiment(conn, experiment.id) is None
+        assert jobs_repo.get_job(conn, dataset_job.id) is None
+
+
+def test_active_dataset_work_blocks_preview_and_delete(
+    client: TestClient, settings: Settings, dataset_id: int
+) -> None:
+    with connection(settings.db_path) as conn:
+        job = jobs_repo.create_job(
+            conn, kind=JobKind.PREWARM, params={"dataset_id": dataset_id}
+        )
+        jobs_repo.mark_running(conn, job.id, log_path=str(settings.jobs_log_dir / "active.log"))
+
+    preview = client.get(f"/api/datasets/{dataset_id}/deletion-preview")
+    assert preview.json()["can_delete"] is False
+    assert [job["id"] for job in preview.json()["active_jobs"]] == [job.id]
+    assert client.delete(f"/api/datasets/{dataset_id}").status_code == 409
+    assert client.get(f"/api/datasets/{dataset_id}").status_code == 200
+
+
+def test_dataset_deletion_refuses_a_manifest_path_outside_app_storage(
+    client: TestClient, settings: Settings, dataset_id: int, tmp_path: Path
+) -> None:
+    sentinel = tmp_path / "external-manifest.json"
+    sentinel.write_text("leave me", encoding="utf-8")
+    with connection(settings.db_path) as conn:
+        conn.execute(
+            "UPDATE dataset SET manifest_path = ? WHERE id = ?", (str(sentinel), dataset_id)
+        )
+
+    preview = client.get(f"/api/datasets/{dataset_id}/deletion-preview").json()
+    assert preview["storage_locations_safe"] is False
+    assert preview["can_delete"] is False
+    assert client.delete(f"/api/datasets/{dataset_id}").status_code == 409
+    assert sentinel.read_text(encoding="utf-8") == "leave me"
 
 
 # -- samples -------------------------------------------------------------------------

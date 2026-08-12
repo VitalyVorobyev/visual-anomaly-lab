@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import os
 import shutil
 import sqlite3
 import time
@@ -74,6 +73,7 @@ from anomaly_lab.models.diagnostics import (
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
+from anomaly_lab.owned_storage import experiment_artifact_path, path_usage
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -567,43 +567,6 @@ def get_experiment(request: Request, experiment_id: int) -> ExperimentDetail:
         return _detail(conn, experiment)
 
 
-def _owned_artifact_path(settings: Settings, experiment: Experiment) -> Path | None:
-    """The exact app-owned directory this experiment is allowed to delete."""
-    if not experiment.artifact_dir:
-        return None
-    stored = Path(experiment.artifact_dir).resolve()
-    expected = settings.experiment_dir(experiment.id).resolve()
-    return stored if stored == expected else None
-
-
-def _artifact_usage(root: Path | None) -> tuple[int, int]:
-    """File count and payload bytes without following any symlink out of the tree."""
-    if root is None or not root.is_dir():
-        return 0, 0
-    files = 0
-    total = 0
-    pending = [root]
-    while pending:
-        directory = pending.pop()
-        try:
-            entries = os.scandir(directory)
-        except FileNotFoundError:
-            continue
-        with entries:
-            for entry in entries:
-                try:
-                    if entry.is_dir(follow_symlinks=False):
-                        pending.append(Path(entry.path))
-                    else:
-                        files += 1
-                        total += entry.stat(follow_symlinks=False).st_size
-                except FileNotFoundError:
-                    # A job finishing while the preview is open may move a temporary
-                    # file. The next preview will include the stable result.
-                    continue
-    return files, total
-
-
 @router.get(
     "/{experiment_id}/deletion-preview",
     summary="Preview the app-owned records and artifacts an experiment deletion removes",
@@ -612,8 +575,8 @@ def preview_experiment_deletion(
     request: Request, experiment_id: int
 ) -> ExperimentDeletionPreview:
     experiment, settings = _load(request, experiment_id)
-    artifact_path = _owned_artifact_path(settings, experiment)
-    files, size = _artifact_usage(artifact_path)
+    artifact_path = experiment_artifact_path(settings, experiment)
+    usage = path_usage(artifact_path)
     with connection(settings.db_path) as conn:
         active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
     resident: ResidentWorker = request.app.state.resident
@@ -629,8 +592,8 @@ def preview_experiment_deletion(
     return ExperimentDeletionPreview(
         experiment_id=experiment.id,
         name=experiment.name,
-        generated_files=files,
-        generated_bytes=size,
+        generated_files=usage.files,
+        generated_bytes=usage.bytes,
         active_jobs=[summary_of(job) for job in active],
         resident_loaded=snapshot is not None and snapshot.experiment_id == experiment.id,
         artifact_location_safe=location_safe,
@@ -648,7 +611,7 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
     is a broken screen.
     """
     experiment, settings = _load(request, experiment_id)
-    artifact_path = _owned_artifact_path(settings, experiment)
+    artifact_path = experiment_artifact_path(settings, experiment)
     if experiment.artifact_dir and artifact_path is None:
         raise HTTPException(
             status_code=409,
@@ -663,7 +626,7 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
     async with queue.lifecycle_guard(), resident.eviction_guard():
         # Stable now: no worker or resident can write into the directory while it is
         # measured and removed, so the result reports what was actually reclaimed.
-        files, size = await asyncio.to_thread(_artifact_usage, artifact_path)
+        usage = await asyncio.to_thread(path_usage, artifact_path)
         with connection(settings.db_path) as conn:
             conn.execute("BEGIN IMMEDIATE")
             try:
@@ -692,8 +655,8 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
     return ExperimentDeletionResult(
         deleted=deleted,
         artifacts_removed=removed,
-        freed_files=files if removed else 0,
-        freed_bytes=size if removed else 0,
+        freed_files=usage.files if removed else 0,
+        freed_bytes=usage.bytes if removed else 0,
         artifact_error=artifact_error,
     )
 

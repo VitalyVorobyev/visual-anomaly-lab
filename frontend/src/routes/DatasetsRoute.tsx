@@ -10,11 +10,16 @@ import {
   CountRun,
   Empty,
   ErrorBox,
+  Input,
   PageHeader,
   Panel,
   SkeletonRows,
 } from "../components/ui";
-import { useDatasets, useDeleteDataset } from "../hooks/useCatalog";
+import {
+  useDatasetDeletionPreview,
+  useDatasets,
+  useDeleteDataset,
+} from "../hooks/useCatalog";
 
 type Dataset = NonNullable<ReturnType<typeof useDatasets>["data"]>[number];
 
@@ -22,6 +27,8 @@ export function DatasetsRoute() {
   const datasets = useDatasets();
   const remove = useDeleteDataset();
   const [pendingDelete, setPendingDelete] = useState<Dataset | null>(null);
+  const [confirmation, setConfirmation] = useState("");
+  const deletionPreview = useDatasetDeletionPreview(pendingDelete?.id);
 
   return (
     <div className="flex flex-col gap-6">
@@ -74,7 +81,10 @@ export function DatasetsRoute() {
                     size="sm"
                     aria-label={`Delete ${dataset.name}`}
                     icon={<Trash2 />}
-                    onClick={() => setPendingDelete(dataset)}
+                    onClick={() => {
+                      setConfirmation("");
+                      setPendingDelete(dataset);
+                    }}
                   />
                 }
               >
@@ -101,29 +111,103 @@ export function DatasetsRoute() {
         </ul>
       )}
 
-      {/* A dataset owns its samples, its splits and every experiment run against them, and
-          this used to fire on one click of a red button. */}
       <ConfirmDialog
         open={pendingDelete !== null}
-        onOpenChange={(open) => !open && setPendingDelete(null)}
+        onOpenChange={(open) => {
+          if (!open) {
+            setPendingDelete(null);
+            setConfirmation("");
+          }
+        }}
         title="Delete this dataset?"
         description={
           pendingDelete && (
             <>
-              <span className="font-medium text-fg">{pendingDelete.name}</span> and its{" "}
-              {pendingDelete.samples} samples leave the catalog, along with every split and
-              experiment built on them. The image files on disk are not touched.
+              <span className="font-medium text-fg">{pendingDelete.name}</span> will leave the
+              catalog. Source images and source masks are never touched.
+              {deletionPreview.isPending && (
+                <span className="mt-3 block text-fg-subtle">Inspecting app-owned storage…</span>
+              )}
+              {deletionPreview.error && (
+                <span className="mt-3 block text-defect">{deletionPreview.error.message}</span>
+              )}
+              {deletionPreview.data && (
+                <span className="mt-3 block rounded-control border border-line bg-raised px-3 py-2">
+                  <span className="block font-mono text-xs text-fg">
+                    {deletionPreview.data.samples} samples · {deletionPreview.data.images} images
+                    {" · "}
+                    {deletionPreview.data.splits} splits · {deletionPreview.data.experiments}{" "}
+                    experiments · {deletionPreview.data.jobs} jobs
+                  </span>
+                  <span className="mt-1 block font-mono text-xs text-fg-muted">
+                    {deletionPreview.data.generated_files} generated files ·{" "}
+                    {formatBytes(deletionPreview.data.generated_bytes)}
+                  </span>
+                  {deletionPreview.data.manual_labels > 0 && (
+                    <span className="mt-1 block text-xs">
+                      {deletionPreview.data.manual_labels} manual labels are part of the catalog
+                      deletion.
+                    </span>
+                  )}
+                  {deletionPreview.data.resident_loaded && (
+                    <span className="mt-1 block text-xs">
+                      The loaded inference worker will be evicted first.
+                    </span>
+                  )}
+                  {deletionPreview.data.blocker && (
+                    <span className="mt-1 block text-xs text-warn">
+                      {deletionPreview.data.blocker}
+                    </span>
+                  )}
+                </span>
+              )}
+              <label className="mt-3 block text-xs font-medium text-fg">
+                Type <span className="font-mono">{pendingDelete.name}</span> to confirm
+                <Input
+                  className="mt-1 font-mono"
+                  aria-label="Type dataset name to confirm"
+                  value={confirmation}
+                  autoComplete="off"
+                  onChange={(event) => setConfirmation(event.target.value)}
+                />
+              </label>
             </>
           )
         }
         confirmLabel="Delete dataset"
         destructive
         loading={remove.isPending}
+        disabled={
+          !deletionPreview.data?.can_delete || confirmation !== pendingDelete?.name
+        }
         onConfirm={() => {
-          if (pendingDelete === null) return;
-          remove.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+          if (
+            pendingDelete === null ||
+            confirmation !== pendingDelete.name ||
+            !deletionPreview.data?.can_delete
+          )
+            return;
+          remove.mutate(pendingDelete.id, {
+            onSettled: () => {
+              setPendingDelete(null);
+              setConfirmation("");
+            },
+          });
         }}
       />
     </div>
   );
+}
+
+function formatBytes(value: number): string {
+  if (value < 1024) return `${value} B`;
+  const units = ["KB", "MB", "GB", "TB"];
+  let amount = value / 1024;
+  let unit = units[0];
+  for (const next of units.slice(1)) {
+    if (amount < 1024) break;
+    amount /= 1024;
+    unit = next;
+  }
+  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
 }

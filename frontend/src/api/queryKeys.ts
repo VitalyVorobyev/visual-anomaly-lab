@@ -31,6 +31,8 @@ export const queryKeys = {
 
   datasets: () => ["datasets"] as const,
   dataset: (datasetId: number) => ["datasets", datasetId] as const,
+  datasetDeletion: (datasetId: number) =>
+    ["datasets", datasetId, "deletion-preview"] as const,
   samples: (datasetId: number, query: SampleQuery = {}) =>
     ["datasets", datasetId, "samples", query] as const,
   sample: (datasetId: number, sampleId: number) =>
@@ -83,4 +85,5 @@ export const queryKeys = {
     at: string,
     recallTarget: number,
   ) => ["comparison", [...ids].join(","), subset ?? null, at, recallTarget] as const,
+  comparisons: () => ["comparison"] as const,
 } as const;

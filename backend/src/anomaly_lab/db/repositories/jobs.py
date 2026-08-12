@@ -104,6 +104,41 @@ def active_jobs_for_experiment(conn: sqlite3.Connection, experiment_id: int) -> 
     return [_to_job(row) for row in rows]
 
 
+def active_jobs_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[Job]:
+    """Queued or running work that reads a dataset or one of its experiments."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT job.*
+          FROM job
+          LEFT JOIN experiment ON experiment.id = job.experiment_id
+         WHERE job.status IN ('queued', 'running')
+           AND (
+                experiment.dataset_id = ?
+                OR CAST(json_extract(job.params, '$.dataset_id') AS INTEGER) = ?
+           )
+         ORDER BY job.id
+        """,
+        (dataset_id, dataset_id),
+    ).fetchall()
+    return [_to_job(row) for row in rows]
+
+
+def list_jobs_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[Job]:
+    """Every job whose durable history belongs to a dataset or one of its experiments."""
+    rows = conn.execute(
+        """
+        SELECT DISTINCT job.*
+          FROM job
+          LEFT JOIN experiment ON experiment.id = job.experiment_id
+         WHERE experiment.dataset_id = ?
+            OR CAST(json_extract(job.params, '$.dataset_id') AS INTEGER) = ?
+         ORDER BY job.id
+        """,
+        (dataset_id, dataset_id),
+    ).fetchall()
+    return [_to_job(row) for row in rows]
+
+
 def next_queued_job(conn: sqlite3.Connection) -> Job | None:
     """The oldest queued job. FIFO, one at a time, no priority lane (ADR-0009)."""
     row = conn.execute("SELECT * FROM job WHERE status = 'queued' ORDER BY id LIMIT 1").fetchone()

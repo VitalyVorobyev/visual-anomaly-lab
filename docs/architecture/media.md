@@ -19,6 +19,8 @@ defects and to align anomaly-map overlays, where JPEG-style artifacts could be m
 **Cache layout:** `data/thumbnails/{thumb,preview}/{image_id}.webp`. Keying by `image_id` alone is safe
 **because imported files are immutable**: paths are recorded once, `sha256` is stored at import, and `verify`
 ([import](import.md)) detects any drift. There is no invalidation problem to solve, so none is built.
+Deleting a dataset inventories and removes these exact image-id cache files after its database transaction;
+it never derives a deletion target from an image's source path.
 
 **Only `thumb` and `preview` are cached.** A cached `full` tier costs roughly 1.2 MB per image — most of a
 gigabyte for one dataset — to avoid re-rendering something that is looked at once, so it is rendered per

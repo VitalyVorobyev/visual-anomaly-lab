@@ -89,21 +89,46 @@ def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> bool:
 
     conn.execute("BEGIN")
     try:
-        conn.execute(
-            """
-            DELETE FROM image
-             WHERE sample_id IN (SELECT id FROM sample WHERE dataset_id = ?)
-            """,
-            (dataset_id,),
-        )
-        conn.execute("DELETE FROM sample WHERE dataset_id = ?", (dataset_id,))
-        conn.execute("DELETE FROM channel WHERE dataset_id = ?", (dataset_id,))
-        conn.execute("DELETE FROM split WHERE dataset_id = ?", (dataset_id,))
-        conn.execute("DELETE FROM dataset WHERE id = ?", (dataset_id,))
+        delete_dataset_rows(conn, dataset_id)
     except Exception:
         conn.execute("ROLLBACK")
         raise
     conn.execute("COMMIT")
+    return True
+
+
+def delete_dataset_rows(
+    conn: sqlite3.Connection, dataset_id: int, *, include_experiments: bool = False
+) -> bool:
+    """Delete one dataset's rows inside a transaction owned by the caller.
+
+    The ordinary repository operation preserves experiments and therefore refuses on
+    the schema's ``RESTRICT`` boundary.  The explicit destructive API opts into the
+    larger cascade after it has previewed the consequences and excluded live work.
+    """
+    if get_dataset(conn, dataset_id) is None:
+        return False
+    if include_experiments:
+        conn.execute(
+            """
+            DELETE FROM job
+             WHERE experiment_id IS NULL
+               AND CAST(json_extract(params, '$.dataset_id') AS INTEGER) = ?
+            """,
+            (dataset_id,),
+        )
+        conn.execute("DELETE FROM experiment WHERE dataset_id = ?", (dataset_id,))
+    conn.execute(
+        """
+        DELETE FROM image
+         WHERE sample_id IN (SELECT id FROM sample WHERE dataset_id = ?)
+        """,
+        (dataset_id,),
+    )
+    conn.execute("DELETE FROM sample WHERE dataset_id = ?", (dataset_id,))
+    conn.execute("DELETE FROM channel WHERE dataset_id = ?", (dataset_id,))
+    conn.execute("DELETE FROM split WHERE dataset_id = ?", (dataset_id,))
+    conn.execute("DELETE FROM dataset WHERE id = ?", (dataset_id,))
     return True
 
 

@@ -10,6 +10,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, unwrap } from "../api/client";
 import type {
   BulkLabelRequest,
+  DatasetDeletionPreview,
+  DatasetDeletionResult,
   DatasetDetail,
   DatasetSummary,
   Label,
@@ -130,18 +132,33 @@ export function useSetLabels(datasetId: number) {
 
 export function useDeleteDataset() {
   const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: async (datasetId: number) => {
-      const { error } = await api.DELETE("/api/datasets/{dataset_id}", {
-        params: { path: { dataset_id: datasetId } },
-      });
-      if (error !== undefined) {
-        throw new Error("The dataset could not be deleted.");
-      }
-    },
+  return useMutation<DatasetDeletionResult, Error, number>({
+    mutationFn: async (datasetId) =>
+      unwrap(
+        await api.DELETE("/api/datasets/{dataset_id}", {
+          params: { path: { dataset_id: datasetId } },
+        }),
+        "the dataset deletion",
+      ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.datasets() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.experimentLists() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.comparisons() });
     },
+  });
+}
+
+export function useDatasetDeletionPreview(datasetId: number | undefined) {
+  return useQuery<DatasetDeletionPreview>({
+    queryKey: queryKeys.datasetDeletion(datasetId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/datasets/{dataset_id}/deletion-preview", {
+          params: { path: { dataset_id: datasetId as number } },
+        }),
+        "the dataset deletion preview",
+      ),
+    enabled: datasetId !== undefined,
   });
 }
 

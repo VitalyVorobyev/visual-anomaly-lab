@@ -475,7 +475,7 @@ experiment and read its history without crossing between unrelated top-level scr
 - [x] Dataset browse has exactly one visible vertical scrollbar at 1440×900 and 1024×768.
 - [x] A new experiment starts inside one dataset and its history is visible beside that action.
 - [x] `method=…` returns every matching experiment from SQLite and survives reload/back/forward.
-- [ ] Destructive previews name every application-owned consequence, and source trees survive tests.
+- [x] Destructive previews name every application-owned consequence, and source trees survive tests.
 - [ ] A present VisA/GKN pack registers in one action; a missing pack is an instructional state.
 
 ---
