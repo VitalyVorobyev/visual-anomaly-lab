@@ -32,6 +32,8 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import ScalarTensorSpec, TensorDtype, TensorScore
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -39,6 +41,7 @@ from anomaly_lab.models.base import (
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     module_available,
@@ -47,6 +50,7 @@ from anomaly_lab.models.model_assets import fingerprint_state, huggingface_envir
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
+    PreprocessingConfig,
     load_array,
     to_chw,
 )
@@ -205,6 +209,7 @@ class DinomalyAnomalibModel(AnomalyModel):
             channel_aware=False,
             dataset_specific=False,
             preferred_device=Device.MPS,
+            portable_formats=[PortableFormat.ONNX],
         )
 
     @classmethod
@@ -405,6 +410,81 @@ class DinomalyAnomalibModel(AnomalyModel):
                     f"scored {index + 1}/{len(images)} images",
                 )
         return predictions
+
+    # -------------------------------------------------------------- deployment
+
+    def _portable_module(self) -> Any:
+        """Embed input normalization and expose map plus Dinomaly's paper score."""
+        import torch
+
+        if self._model is None:
+            raise RuntimeError("dinomaly_anomalib has no fitted model to export")
+        model = self._model.to("cpu").eval()
+
+        # The lazy import is intentionally Any in a torch-free install. Export itself
+        # requires the dl extra, while the registry must remain importable without it.
+        class PortableDinomaly(torch.nn.Module):  # type: ignore[misc,unused-ignore]
+            def __init__(self) -> None:
+                super().__init__()
+                self.model = model
+                self.register_buffer("input_mean", torch.tensor(IMAGENET_MEAN).view(1, 3, 1, 1))
+                self.register_buffer("input_std", torch.tensor(IMAGENET_STD).view(1, 3, 1, 1))
+
+            def forward(self, image: Any) -> tuple[Any, Any]:
+                if image.shape[1] == 1:
+                    image = image.expand(-1, 3, -1, -1)
+                output = self.model((image - self.input_mean) / self.input_std)
+                return output.anomaly_map, output.pred_score
+
+        return PortableDinomaly().eval()
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export reconstruction, source-sized map and smoothed top-one-percent score."""
+        import torch
+
+        validate_prepared_size(preprocessing.width, preprocessing.height)
+        module = self._portable_module()
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        input_name = "image"
+        map_name = "anomaly_map"
+        score_name = "score"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            module,
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[map_name, score_name],
+            opset_version=18,
+            dynamo=False,
+        )
+        return OnnxGraphContract(
+            opset=18,
+            input_name=input_name,
+            output_name=map_name,
+            score=TensorScore(tensor=ScalarTensorSpec(name=score_name, dtype=TensorDtype.FLOAT32)),
+            absolute_tolerance=2e-4,
+            relative_tolerance=2e-4,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """Run the exact fitted deployment path on an already-prepared tensor."""
+        import torch
+
+        validate_prepared_size(int(input_nchw.shape[3]), int(input_nchw.shape[2]))
+        with torch.no_grad():
+            anomaly_map, score = self._portable_module()(torch.from_numpy(input_nchw))
+        return anomaly_map[0, 0].numpy().astype(np.float32), float(score[0])
 
     def save(self, artifact_dir: Path) -> None:
         import torch

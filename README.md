@@ -62,7 +62,7 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 | Statistical reference | `pixel_reference` | Fast CPU floor; ONNX export |
 | Student–teacher + reconstruction | `efficientad_anomalib`, `efficientad_custom` | Compact deep references; both export to ONNX |
 | Feature memory bank | `patchcore_anomalib` | Short bounded fit; bank and paper score export to ONNX |
-| Transformer reconstruction | `dinomaly_anomalib` | High-quality public-data reference; longer fit |
+| Transformer reconstruction | `dinomaly_anomalib` | High-quality public-data reference; longer fit; ONNX export |
 | Learned anomaly synthesis | `glass_anomalib` | Experimental; public gate did not promote it |
 
 See the generated [method catalogue](docs/book/generated/methods.md),

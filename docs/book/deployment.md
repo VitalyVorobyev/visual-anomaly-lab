@@ -37,6 +37,7 @@ Image score is a discriminated contract:
 - `max` for `efficientad_anomalib`;
 - `max` or `top_k_mean` for `efficientad_custom`;
 - `tensor` for PatchCore's graph-produced, memory-bank-reweighted paper score.
+- `tensor` for Dinomaly's graph-produced, smoothed top-one-percent score.
 
 This prevents a consumer from reproducing a heatmap while silently changing the accept/reject decision.
 
