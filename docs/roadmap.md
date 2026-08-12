@@ -574,6 +574,14 @@ missed the 0.80 image floor and trailed PatchCore on every metric. GLASS therefo
 experimental. A larger fixed budget or DTD ablation may be evaluated later without category-specific
 geometry or labelled-checkpoint selection; AnomalyVFM is the next M11 candidate.
 
+**AnomalyVFM feasibility.** The pinned adapted-RADIO checkpoint contains 355.36 million
+parameters and is a 1,421,491,228-byte public asset. At the published 768 × 768 shape, cached
+construction takes 0.80s and inference 591 ms on MPS with 2.07 GiB driver memory; CPU takes
+1.11s per image. The graph is Mac-credible but intentionally large. The lazy plugin must make
+the pinned asset app-managed, prove offline replay, validate the 16 px patch geometry and use
+the existing single-resident-worker boundary. [`measurements-anomalyvfm.md`](measurements-anomalyvfm.md)
+records the protocol and SHA-256; plugin integration and paired public quality are next.
+
 **Exit criteria**
 
 - [x] At least three distinct method families run through the unchanged vertical slice.
