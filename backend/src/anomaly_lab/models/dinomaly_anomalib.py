@@ -27,6 +27,7 @@ import os
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
+from importlib import import_module
 from importlib.metadata import version
 from pathlib import Path
 from typing import Any
@@ -168,7 +169,18 @@ def _asset_environment(cache_dir: Path, *, allow_downloads: bool) -> Iterator[No
         updates["HF_HUB_OFFLINE"] = "1"
     previous = {key: os.environ.get(key) for key in updates}
     os.environ.update(updates)
+    hub_constants: Any = None
+    constant_previous: dict[str, Any] = {}
     try:
+        # huggingface_hub snapshots these environment variables at import time. A
+        # resident worker may already have imported it for another model, so update
+        # both the process environment and the live constants for this construction.
+        hub_constants = import_module("huggingface_hub.constants")
+        constant_previous["HF_HUB_CACHE"] = hub_constants.HF_HUB_CACHE
+        hub_constants.HF_HUB_CACHE = str(hub_cache)
+        if not allow_downloads:
+            constant_previous["HF_HUB_OFFLINE"] = hub_constants.HF_HUB_OFFLINE
+            hub_constants.HF_HUB_OFFLINE = True
         yield
     except Exception as exc:
         if not allow_downloads:
@@ -179,6 +191,9 @@ def _asset_environment(cache_dir: Path, *, allow_downloads: bool) -> Iterator[No
             ) from exc
         raise
     finally:
+        if hub_constants is not None:
+            for key, value in constant_previous.items():
+                setattr(hub_constants, key, value)
         for key, value in previous.items():
             if value is None:
                 os.environ.pop(key, None)
@@ -254,10 +269,11 @@ class DinomalyAnomalibModel(AnomalyModel):
 
     def _build_model(self, device: str, cache_dir: Path) -> Any:
         import torch
-        from anomalib.models import Dinomaly
 
         torch.manual_seed(self.config.seed)
         with _asset_environment(cache_dir, allow_downloads=self.config.allow_downloads):
+            from anomalib.models import Dinomaly
+
             module = Dinomaly(
                 encoder_name=ENCODER_NAME,
                 decoder_depth=DECODER_DEPTH,

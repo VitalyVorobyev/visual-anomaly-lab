@@ -33,6 +33,7 @@ from anomaly_lab.models.dinomaly_anomalib import (  # noqa: E402
     STATE_FILENAME,
     DinomalyAnomalibModel,
     DinomalyConfig,
+    _asset_environment,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig  # noqa: E402
 
@@ -132,6 +133,19 @@ def test_same_seed_is_identical_and_a_different_seed_is_different(tmp_path: Path
 
     assert _digest_trainable(first) == _digest_trainable(second)
     assert _digest_trainable(first) != _digest_trainable(different)
+
+
+def test_asset_policy_controls_the_live_huggingface_cache(tmp_path: Path) -> None:
+    import huggingface_hub.constants as constants
+
+    original_cache = constants.HF_HUB_CACHE
+    original_offline = constants.HF_HUB_OFFLINE
+    with _asset_environment(tmp_path / "cache", allow_downloads=False):
+        assert str(tmp_path / "cache" / "huggingface" / "hub") == constants.HF_HUB_CACHE
+        assert constants.HF_HUB_OFFLINE is True
+
+    assert original_cache == constants.HF_HUB_CACHE
+    assert constants.HF_HUB_OFFLINE is original_offline
 
 
 def test_fit_save_load_predict_and_continue_are_one_contract(tmp_path: Path) -> None:
