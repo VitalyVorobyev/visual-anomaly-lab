@@ -111,10 +111,10 @@ the detail is in the git history and the ADRs.
 
 ### E21 — Modern method references (M11)
 
-- [ ] **Evaluate Dinomaly with a small backbone first** (M): reconstruction-family reference with
-      bounded training memory and exact dependency/weight fingerprints. The resource gate is complete:
-      392 px runs at 122 ms/step on MPS with 0.62 GiB driver memory. Implement the lazy plugin, prove
-      same/different-seed behaviour and save/load continuation, then run the public-data quality gate.
+- [x] **Evaluate Dinomaly with a small backbone first** (M): the lazy reconstruction-family plugin has
+      bounded training, exact continuation and dependency/weight fingerprints. The paired public VisA
+      gate cleared all quality floors with mean image ROC-AUC 0.9634, pixel ROC-AUC 0.9953 and AU-PRO
+      0.9514; 392 px runs at about 122 ms/step on MPS with 0.62 GiB driver memory.
 - [ ] **Evaluate GLASS** (M): manage synthetic texture assets explicitly and prove the torch-free
       boundary still holds without the `dl` extra.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): inventory RADIO assets, smoke CPU/MPS,

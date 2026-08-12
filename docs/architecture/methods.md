@@ -47,7 +47,8 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference":       _pixel_reference,       # numpy + Pillow, the floor
     "efficientad_anomalib":  _efficientad_anomalib,  # the wrapper, and the baseline (ADR-0029)
     "efficientad_custom":    _efficientad_custom,    # ours, same interface (ADR-0008)
-    # "patchcore_anomalib":  M7
+    "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
+    "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
     # "classical_circular":  M8, optional (ADR-0015)
 }
 ```
@@ -202,6 +203,26 @@ experiment form that does not control the result puts unattributable noise under
 it. `patchcore_anomalib` pins both streams, and a test asserts the bank is identical across two fits at one
 seed and different at another — both directions, because pinning a seed is only meaningful if changing it
 changes the answer.
+
+## A reconstruction method needs a fixed training horizon
+
+`dinomaly_anomalib` freezes a small registered DINOv2 encoder and trains anomalib's bottleneck and
+eight-layer decoder against normal feature maps. Its plugin owns the bounded batch-1 loop while anomalib
+owns the network, loss, optimizer and anomaly-map arithmetic. Prepared dimensions must be divisible by
+the encoder's 14-pixel patch size; the plugin rejects an incompatible experiment before allocating the
+model.
+
+The exposed controls are deliberately small: finite steps, seed and the first-download policy. Decoder
+depth is fixed at eight because anomalib's fusion topology indexes eight outputs even when its constructor
+accepts a shallower value. Learning rate follows one fixed 5,000-step warm-cosine schedule independent of
+where a run is paused. Consequently, 1,000 steps plus a 1,000-step continuation is the same experiment as
+2,000 uninterrupted steps, rather than a schedule whose past changes when the user resumes it.
+
+The checkpoint stores the bottleneck, decoder, optimizer, CPU/MPS random streams, NumPy image-order stream
+and completed step. The frozen encoder remains in the app-managed asset cache and is represented by its
+name, exact tensor fingerprint and dependency versions. Reload refuses a changed encoder rather than
+silently attaching old decoder weights to a different feature space. Public VisA evidence and the exact
+resource protocol are recorded in [`measurements-dinomaly.md`](../measurements-dinomaly.md).
 
 ## A downloaded asset can be a hyperparameter
 
