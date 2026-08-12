@@ -51,8 +51,16 @@ then train as an explicit last resort. The chosen subset and rule travel with th
 
 `pixel_reference` is the first supported exporter. Other methods truthfully report no portable format until
 their graph or auxiliary-tensor representation and parity tolerance have been implemented. The planned Rust
-reference runner validates the same manifest and hashes before using a pinned ONNX Runtime binding; the
-bundle itself does not depend on that Rust crate or execution provider.
+reference runner validates the same manifest and hashes before using pinned `ort` 2.0.0-rc.13 and ONNX
+Runtime. `verify` executes the deterministic fixture and enforces both map and score tolerances; `infer`
+accepts a prepared little-endian NCHW float32 tensor and emits a JSON score/verdict plus an optional raw map.
+The reference binary uses CPU so it is a portable conformance oracle. The bundle itself does not depend on
+that Rust crate or execution provider; a production runner may register the target's ONNX Runtime provider
+without changing the bundle.
+
+The CI handoff is deliberately cross-language: Python fits and exports the real baseline, then the compiled
+Rust binary validates and executes that output. Rust-only tests would not catch schema or percentile drift
+between the two implementations.
 
 ---
 
