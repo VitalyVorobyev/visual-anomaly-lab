@@ -9,7 +9,7 @@ This page is generated from the live model registry and checked method metadata.
 | `efficientad_anomalib` | EfficientAD (anomalib) | student–teacher + reconstruction | supported | yes | onnx |
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
-| `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | — |
+| `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | onnx |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
@@ -82,7 +82,7 @@ A frozen DINOv2 encoder with a trainable transformer decoder that reconstructs n
 - Diagnostics: no
 - Exact continuation: yes
 - Dataset-specific: no
-- Portable formats: —
+- Portable formats: onnx
 
 ## GLASS (experimental)
 
