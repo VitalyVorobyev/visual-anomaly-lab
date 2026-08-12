@@ -1052,7 +1052,7 @@ class EfficientAdCustomModel(AnomalyModel):
         # this function-local lazy import as Any. Runtime export still requires the dl
         # extra; the ignore preserves that boundary without importing torch at registry
         # load time.
-        class PortableMap(torch.nn.Module):  # type: ignore[misc]
+        class PortableMap(torch.nn.Module):  # type: ignore[misc,unused-ignore]
             def __init__(self) -> None:
                 super().__init__()
                 self.net = net

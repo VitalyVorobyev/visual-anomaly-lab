@@ -52,7 +52,8 @@ because production systems may own their source geometry independently.
 An operating point is resolved from one named subset rather than a mixture: test first, then validation,
 then train as an explicit last resort. The chosen subset and rule travel with the value.
 
-Three exporter families are proven: `pixel_reference` (explicit statistics and a percentile host reducer),
+Four exporters across three families are proven: `pixel_reference` (explicit statistics and a percentile
+host reducer), both `efficientad_anomalib` (normalized two-branch map with a max reducer) and
 `efficientad_custom` (a deep graph and max/top-k host reducer), and `patchcore_anomalib` (a frozen backbone,
 embedded memory bank and graph-produced paper score). Other methods truthfully report no portable format
 until their graph or auxiliary-tensor representation and parity tolerance have been implemented. The Rust
