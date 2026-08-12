@@ -18,10 +18,8 @@ import { readThemeChoice, setThemeChoice, type ThemeChoice } from "./theme";
 
 const NAV = [
   { to: "/", label: "Datasets", end: true },
-  { to: "/import", label: "Import", end: false },
   { to: "/experiments", label: "Experiments", end: false },
   { to: "/compare", label: "Compare", end: false },
-  { to: "/health", label: "Health", end: false },
 ];
 
 /**
@@ -71,7 +69,7 @@ export function App() {
           </div>
         </header>
 
-        <main className="flex min-h-0 flex-1 flex-col overflow-y-auto">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden">
           <Outlet />
         </main>
       </div>
@@ -87,7 +85,30 @@ export function App() {
  */
 export function ReadingLayout() {
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
+    <div
+      data-layout="reading"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+    >
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
+        <Outlet />
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The layout for dataset work: controls support the content instead of pushing it down.
+ *
+ * A workspace owns the remaining viewport and lets the route name its one scroll region.
+ * Keeping this contract separate from `ReadingLayout` is what prevents the dataset grid
+ * from growing an inner scrollbar inside a page that already scrolls.
+ */
+export function WorkspaceLayout() {
+  return (
+    <div
+      data-layout="workspace"
+      className="flex min-h-0 flex-1 flex-col overflow-hidden"
+    >
       <Outlet />
     </div>
   );
@@ -107,7 +128,10 @@ export function ReadingLayout() {
  */
 export function CanvasLayout() {
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 px-4 py-3">
+    <div
+      data-layout="canvas"
+      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3"
+    >
       <Outlet />
     </div>
   );

@@ -10,7 +10,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
-import { App, CanvasLayout, ReadingLayout } from "./App";
+import { App, CanvasLayout, ReadingLayout, WorkspaceLayout } from "./App";
 import { CompareRoute } from "./routes/CompareRoute";
 import { CompareSampleRoute } from "./routes/compare/CompareSampleRoute";
 import { DatasetRoute } from "./routes/DatasetRoute";
@@ -53,7 +53,6 @@ createRoot(container).render(
             <Route element={<ReadingLayout />}>
               <Route index element={<DatasetsRoute />} />
               <Route path="import" element={<ImportRoute />} />
-              <Route path="datasets/:datasetId" element={<DatasetRoute />} />
               <Route path="datasets/:datasetId/splits" element={<SplitsRoute />} />
               <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
               <Route path="experiments" element={<ExperimentsRoute />} />
@@ -64,6 +63,11 @@ createRoot(container).render(
               <Route path="echo" element={<EchoRoute />} />
               {/* Never fail to an empty document again. */}
               <Route path="*" element={<NotFoundRoute />} />
+            </Route>
+
+            {/* Dataset work owns the viewport: its data surface is the one scroll region. */}
+            <Route element={<WorkspaceLayout />}>
+              <Route path="datasets/:datasetId" element={<DatasetRoute />} />
             </Route>
 
             {/* The image is the content: full window width, and the viewport's height. */}

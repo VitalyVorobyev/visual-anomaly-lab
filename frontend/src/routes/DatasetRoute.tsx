@@ -29,18 +29,18 @@ import {
   writeBrowseState,
 } from "../api/browseState";
 import { imageUrl } from "../api/imageUrl";
-import type { Label, SampleSummary, Subset } from "../api/client";
-import { Scissors } from "lucide-react";
+import type { DatasetDetail, Label, SampleSummary, SplitDetail, Subset } from "../api/client";
+import { Scissors, SlidersHorizontal } from "lucide-react";
 
 import {
   Badge,
   Button,
   CountRun,
+  Disclosure,
   Empty,
   ErrorBox,
   Field,
   PageHeader,
-  Panel,
   ReadoutStrip,
   Select,
   SkeletonRows,
@@ -87,6 +87,9 @@ export function DatasetRoute() {
   const detail = dataset.data;
   const items = page.data?.items ?? [];
   const total = page.data?.total ?? 0;
+  const activeFilters = [browse.label, browse.channelId, browse.splitId, browse.subset].filter(
+    (value) => value !== undefined,
+  ).length;
 
   /** Changing a filter returns to the first page; the old offset would be meaningless. */
   const setFilter = (patch: Partial<BrowseState>) =>
@@ -106,204 +109,266 @@ export function DatasetRoute() {
       { onSuccess: () => setLabellingAll(false) },
     );
 
+  const filters = (
+    <DatasetFilters
+      browse={browse}
+      detail={detail}
+      splits={splits.data ?? []}
+      onChange={setFilter}
+    />
+  );
+
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        title={detail.name}
-        actions={
-          <Link to={`/datasets/${datasetId}/splits`}>
-            <Button icon={<Scissors />}>Splits ({detail.splits})</Button>
-          </Link>
-        }
-        meta={
-          <ReadoutStrip
-            items={[
-              { label: "samples", value: detail.samples },
-              { label: "images", value: detail.images },
-              // A dataset with one image per sample has no channel dictionary, and
-              // "channels 0" states a fact about a concept that does not apply to it.
-              ...(detail.channels.length > 0
-                ? [{ label: "channels", value: detail.channels.length }]
-                : []),
-              { value: detail.root_path },
+    <div className="flex min-h-0 flex-1 flex-col bg-ground">
+      <header className="border-b border-line bg-ground px-5 py-4 lg:px-6">
+        <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-3">
+          <PageHeader
+            title={detail.name}
+            actions={
+              <Link to={`/datasets/${datasetId}/splits`}>
+                <Button icon={<Scissors />}>Splits ({detail.splits})</Button>
+              </Link>
+            }
+            meta={
+              <ReadoutStrip
+                items={[
+                  { label: "samples", value: detail.samples },
+                  { label: "images", value: detail.images },
+                  ...(detail.channels.length > 0
+                    ? [{ label: "channels", value: detail.channels.length }]
+                    : []),
+                  { value: detail.root_path },
+                ]}
+              />
+            }
+          />
+          <CountRun
+            counts={[
+              ["normal", detail.label_counts["normal"] ?? 0, "normal"],
+              ["defect", detail.label_counts["defect"] ?? 0, "defect"],
+              ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
             ]}
           />
-        }
-      />
-
-      <CountRun
-        counts={[
-          ["normal", detail.label_counts["normal"] ?? 0, "normal"],
-          ["defect", detail.label_counts["defect"] ?? 0, "defect"],
-          ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
-        ]}
-      />
-
-      <Panel title="Filters">
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <Field as="group" label="Label">
-            <Select
-              aria-label="Label"
-              value={browse.label ?? ""}
-              placeholder="Any label"
-              unsetLabel="Any label"
-              options={LABELS.map((label) => ({ value: label, label }))}
-              onValueChange={(value) =>
-                setFilter({ label: (value || undefined) as Label | undefined })
-              }
-            />
-          </Field>
-
-          {/* Options come from the dataset's channel dictionary, whatever its length. */}
-          <Field as="group" label="Channel">
-            <Select
-              aria-label="Channel"
-              value={browse.channelId === undefined ? "" : String(browse.channelId)}
-              placeholder="Any channel"
-              unsetLabel="Any channel"
-              options={detail.channels.map((channel) => ({
-                value: String(channel.id),
-                label: channel.name,
-              }))}
-              onValueChange={(value) =>
-                setFilter({ channelId: value === "" ? undefined : Number(value) })
-              }
-            />
-          </Field>
-
-          <Field as="group" label="Split">
-            <Select
-              aria-label="Split"
-              value={browse.splitId === undefined ? "" : String(browse.splitId)}
-              placeholder="No split"
-              unsetLabel="No split"
-              options={(splits.data ?? []).map((split) => ({
-                value: String(split.id),
-                label: split.name,
-              }))}
-              onValueChange={(value) =>
-                setFilter({
-                  splitId: value === "" ? undefined : Number(value),
-                  // A subset without a split is meaningless.
-                  ...(value === "" ? { subset: undefined } : {}),
-                })
-              }
-            />
-          </Field>
-
-          <Field as="group" label="Subset">
-            <Select
-              aria-label="Subset"
-              value={browse.subset ?? ""}
-              placeholder={browse.splitId === undefined ? "Pick a split first" : "Any subset"}
-              unsetLabel="Any subset"
-              disabled={browse.splitId === undefined}
-              options={[
-                { value: "train", label: "train" },
-                { value: "val", label: "val" },
-                { value: "test", label: "test" },
-              ]}
-              onValueChange={(value) =>
-                setFilter({ subset: (value || undefined) as Subset | undefined })
-              }
-            />
-          </Field>
         </div>
-      </Panel>
+      </header>
 
-      {page.error && <ErrorBox>{page.error.message}</ErrorBox>}
-      {setLabels.error && <ErrorBox>{setLabels.error.message}</ErrorBox>}
-
-      {page.data && (
-        <>
-          <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-fg-muted">
-            <span className="flex flex-wrap items-center gap-2">
-              <span>
-                {total} sample{total === 1 ? "" : "s"}
-                {total > PAGE_SIZE &&
-                  ` · showing ${browse.offset + 1}–${Math.min(browse.offset + PAGE_SIZE, total)}`}
-              </span>
-
-              {/* The count in the sentence is the confirmation: you cannot press the
-                  label without having read how many samples it will touch. */}
-              {total > 0 &&
-                (labellingAll ? (
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-fg">
-                      Label all {total} as
-                    </span>
-                    {LABELS.map((label) => (
-                      <Button
-                        key={label}
-                        variant="primary"
-                        disabled={setLabels.isPending}
-                        onClick={() => labelEverythingMatching(label)}
-                      >
-                        {label}
-                      </Button>
-                    ))}
-                    <Button onClick={() => setLabellingAll(false)}>Cancel</Button>
-                  </span>
-                ) : (
-                  <Button onClick={() => setLabellingAll(true)}>Label all {total}…</Button>
-                ))}
+      <div className="border-b border-line bg-surface px-4 py-2 lg:hidden">
+        <Disclosure
+          summary={
+            <span className="flex items-center gap-1.5">
+              <SlidersHorizontal className="size-3.5" aria-hidden /> Filters
             </span>
-
-            {total > PAGE_SIZE && (
-              <span className="flex gap-2">
-                <Button
-                  disabled={browse.offset === 0}
-                  onClick={() => setOffset(Math.max(0, browse.offset - PAGE_SIZE))}
-                >
-                  Previous
-                </Button>
-                <Button
-                  disabled={browse.offset + PAGE_SIZE >= total}
-                  onClick={() => setOffset(browse.offset + PAGE_SIZE)}
-                >
-                  Next
-                </Button>
-              </span>
+          }
+          count={activeFilters > 0 ? activeFilters : undefined}
+        >
+          <div className="pb-2">
+            {filters}
+            {activeFilters > 0 && (
+              <Button className="mt-3" size="sm" onClick={() => setSearchParams({})}>
+                Clear filters
+              </Button>
             )}
           </div>
+        </Disclosure>
+      </div>
 
-          {items.length === 0 ? (
-            <Empty>No samples match these filters.</Empty>
-          ) : (
-            <SampleGrid
-              datasetId={datasetId}
-              samples={items}
-              search={search}
-              selected={selected}
-              onSelected={setSelected}
-            />
-          )}
-        </>
-      )}
-
-      {selected.size > 0 && (
-        <div className="sticky bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-line-strong bg-white/95 px-4 py-3 shadow-lg backdrop-blur ">
-          <span className="text-sm font-medium">
-            {selected.size} selected
-            <span className="ml-2 font-normal text-fg-muted">
-              shift-click for a range · ⌘/ctrl-click to toggle
-            </span>
-          </span>
-          <span className="flex flex-wrap gap-2">
-            {LABELS.map((label) => (
-              <Button
-                key={label}
-                variant="primary"
-                disabled={setLabels.isPending}
-                onClick={() => labelSelected(label)}
-              >
-                {label}
+      <div className="mx-auto flex min-h-0 w-full max-w-[100rem] flex-1">
+        <aside
+          aria-label="Dataset filters"
+          className="hidden w-64 shrink-0 border-r border-line bg-surface lg:flex lg:flex-col"
+        >
+          <div className="flex items-center justify-between border-b border-line px-4 py-3">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal className="size-4 text-fg-muted" aria-hidden />
+              <h2 className="text-sm font-semibold tracking-tight">Filters</h2>
+              {activeFilters > 0 && (
+                <span className="font-mono text-xs text-fg-subtle">{activeFilters}</span>
+              )}
+            </div>
+            {activeFilters > 0 && (
+              <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
+                Clear
               </Button>
-            ))}
-            <Button onClick={() => setSelected(new Set())}>Clear</Button>
-          </span>
-        </div>
-      )}
+            )}
+          </div>
+          <div className="p-4">{filters}</div>
+        </aside>
+
+        <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
+          {page.error && <div className="p-4"><ErrorBox>{page.error.message}</ErrorBox></div>}
+          {setLabels.error && (
+            <div className="p-4"><ErrorBox>{setLabels.error.message}</ErrorBox></div>
+          )}
+
+          {page.isPending && !page.data && <div className="p-4"><SkeletonRows rows={6} /></div>}
+
+          {page.data && (
+            <>
+              <div className="flex min-h-14 flex-wrap items-center justify-between gap-2 border-b border-line px-4 py-2.5 text-sm text-fg-muted">
+                <span className="flex flex-wrap items-center gap-2">
+                  <span>
+                    {total} sample{total === 1 ? "" : "s"}
+                    {total > PAGE_SIZE &&
+                      ` · ${browse.offset + 1}–${Math.min(browse.offset + PAGE_SIZE, total)}`}
+                  </span>
+
+                  {total > 0 &&
+                    (labellingAll ? (
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        <span className="text-fg">Label all {total} as</span>
+                        {LABELS.map((label) => (
+                          <Button
+                            key={label}
+                            variant="primary"
+                            disabled={setLabels.isPending}
+                            onClick={() => labelEverythingMatching(label)}
+                          >
+                            {label}
+                          </Button>
+                        ))}
+                        <Button onClick={() => setLabellingAll(false)}>Cancel</Button>
+                      </span>
+                    ) : (
+                      <Button onClick={() => setLabellingAll(true)}>Label all {total}…</Button>
+                    ))}
+                </span>
+
+                {total > PAGE_SIZE && (
+                  <span className="flex gap-2">
+                    <Button
+                      disabled={browse.offset === 0}
+                      onClick={() => setOffset(Math.max(0, browse.offset - PAGE_SIZE))}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      disabled={browse.offset + PAGE_SIZE >= total}
+                      onClick={() => setOffset(browse.offset + PAGE_SIZE)}
+                    >
+                      Next
+                    </Button>
+                  </span>
+                )}
+              </div>
+
+              {items.length === 0 ? (
+                <div className="p-4"><Empty>No samples match these filters.</Empty></div>
+              ) : (
+                <SampleGrid
+                  datasetId={datasetId}
+                  samples={items}
+                  search={search}
+                  selected={selected}
+                  onSelected={setSelected}
+                />
+              )}
+            </>
+          )}
+
+          {selected.size > 0 && (
+            <div className="absolute inset-x-4 bottom-4 z-10 flex flex-wrap items-center justify-between gap-3 rounded-panel border border-line-strong bg-overlay/95 px-4 py-3 shadow-lg shadow-black/10 backdrop-blur">
+              <span className="text-sm font-medium">
+                {selected.size} selected
+                <span className="ml-2 font-normal text-fg-muted">
+                  shift-click for a range · ⌘/ctrl-click to toggle
+                </span>
+              </span>
+              <span className="flex flex-wrap gap-2">
+                {LABELS.map((label) => (
+                  <Button
+                    key={label}
+                    variant="primary"
+                    disabled={setLabels.isPending}
+                    onClick={() => labelSelected(label)}
+                  >
+                    {label}
+                  </Button>
+                ))}
+                <Button onClick={() => setSelected(new Set())}>Clear</Button>
+              </span>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function DatasetFilters({
+  browse,
+  detail,
+  splits,
+  onChange,
+}: {
+  browse: BrowseState;
+  detail: DatasetDetail;
+  splits: SplitDetail[];
+  onChange: (patch: Partial<BrowseState>) => void;
+}) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+      <Field as="group" label="Label">
+        <Select
+          aria-label="Label"
+          value={browse.label ?? ""}
+          placeholder="Any label"
+          unsetLabel="Any label"
+          options={LABELS.map((label) => ({ value: label, label }))}
+          onValueChange={(value) =>
+            onChange({ label: (value || undefined) as Label | undefined })
+          }
+        />
+      </Field>
+
+      <Field as="group" label="Channel">
+        <Select
+          aria-label="Channel"
+          value={browse.channelId === undefined ? "" : String(browse.channelId)}
+          placeholder="Any channel"
+          unsetLabel="Any channel"
+          options={detail.channels.map((channel) => ({
+            value: String(channel.id),
+            label: channel.name,
+          }))}
+          onValueChange={(value) =>
+            onChange({ channelId: value === "" ? undefined : Number(value) })
+          }
+        />
+      </Field>
+
+      <Field as="group" label="Split">
+        <Select
+          aria-label="Split"
+          value={browse.splitId === undefined ? "" : String(browse.splitId)}
+          placeholder="No split"
+          unsetLabel="No split"
+          options={splits.map((split) => ({ value: String(split.id), label: split.name }))}
+          onValueChange={(value) =>
+            onChange({
+              splitId: value === "" ? undefined : Number(value),
+              ...(value === "" ? { subset: undefined } : {}),
+            })
+          }
+        />
+      </Field>
+
+      <Field as="group" label="Subset">
+        <Select
+          aria-label="Subset"
+          value={browse.subset ?? ""}
+          placeholder={browse.splitId === undefined ? "Pick a split first" : "Any subset"}
+          unsetLabel="Any subset"
+          disabled={browse.splitId === undefined}
+          options={[
+            { value: "train", label: "train" },
+            { value: "val", label: "val" },
+            { value: "test", label: "test" },
+          ]}
+          onValueChange={(value) =>
+            onChange({ subset: (value || undefined) as Subset | undefined })
+          }
+        />
+      </Field>
     </div>
   );
 }
@@ -373,7 +438,7 @@ function SampleGrid({
           selectAll();
         }
       }}
-      className="h-[60vh] overflow-y-auto rounded-lg border border-line"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((row) => (

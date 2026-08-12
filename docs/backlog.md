@@ -35,7 +35,76 @@ the detail is in the git history and the ADRs.
 
 ---
 
-## Open
+## Ready
+
+### E18 — Dataset-first workbench + lifecycle (M8)
+
+- [x] **Make scroll ownership a route contract** (S): `ReadingLayout` scrolls, `WorkspaceLayout`
+      and `CanvasLayout` do not. Move dataset filters into a supporting rail and make the virtual
+      grid the one data scroller. Validate at 1440×900 and 1024×768.
+- [ ] **Create dataset-local navigation** (M): Browse, Annotate, Splits and Experiments. Preserve a
+      compact global `Datasets / Experiments / Compare` shell; Import is a dataset action and Health
+      is a status popover/direct route.
+- [ ] **Separate experiment history from creation** (M): `/datasets/:id/experiments` is a table and
+      `/datasets/:id/experiments/new` is the schema-driven form, with dataset fixed by context.
+- [ ] **Search experiments in SQLite** (M): name/id query, multi-select `method_key`, dataset,
+      status and date filters; sortable columns, cursor pagination and URL query state. Selection
+      hands compatible experiments to Compare.
+- [ ] **Preview and perform experiment deletion** (M): cancel/evict live work first, delete records
+      transactionally, then app-owned artifacts, and report freed bytes.
+- [ ] **Preview and perform dataset deletion** (M): typed-name confirmation; cascade through
+      app-owned splits, experiments, results, caches, annotations and profiles while a synthetic
+      sentinel proves the external source tree is untouched.
+- [ ] **Discover and register local reference packs** (M): schema-driven providers for VisA and
+      GKN, metadata-only detection, atomic/idempotent `Register all`, and instructional absent/error
+      states. No automatic download.
+
+### E19 — Versioned annotation + editor (M9)
+
+- [ ] **Write the annotation-truth ADR and schema v2 reset path** (M): app-owned drafts and immutable
+      completed revisions, source-mask provenance, derived-mask SHA256 and metric ground-truth digest.
+- [ ] **Implement draft/revision APIs with optimistic concurrency** (M): `ETag` / `If-Match`, explicit
+      completion, stale-metric signalling and only synthetic PNG fixtures.
+- [ ] **Implement PNG, LabelMe and COCO interchange** (M): polygons, RLE and bitmap layers round-trip
+      to the same binary evaluation mask; original source files never change.
+- [ ] **Build the manual editor** (L, split before starting): controlled Konva scene, polygon/vertex,
+      brush/eraser, add/subtract, pan/zoom, undo/redo, autosave, conflict and keyboard queue.
+- [ ] **Add a generic model-asset store and MobileSAM assist** (M): licensed on-demand download,
+      size/SHA256/progress/cancel, local override, CPU fallback and the one resident-worker lock.
+
+### E20 — Region profiles + spatial pipeline (M10)
+
+- [ ] **Write the region-profile/spatial-transform ADR** (S): dataset-owned profile revisions,
+      experiment pinning, source-frame annotations and explicit failure policy.
+- [ ] **Replace direct resize with an invertible input transform** (M): crop, 5% padding,
+      aspect-preserving contain resize, edge padding and inverse map projection.
+- [ ] **Add the `RegionExtractor` registry** (M): identity, foreground-threshold baseline and
+      MobileSAM; schemas drive controls and heavy imports remain lazy.
+- [ ] **Build profile preview and preparation jobs** (M): 24 evenly spaced calibration images,
+      coverage/failure/runtime/storage report, cancellation and bounded full-dataset output.
+- [ ] **Run the paired value gate** (M): identity versus localisation on at least two VisA classes,
+      matching protocol/config/seed, with quality, latency, memory, ROI and failure rate reported.
+
+### E21 — Modern method references (M11)
+
+- [ ] **Evaluate SuperADD integration** (M): measure candidate-pool memory and MPS/CPU behaviour
+      before implementation; preserve the one-module plugin boundary.
+- [ ] **Evaluate Dinomaly with a small backbone first** (M): reconstruction-family reference with
+      bounded training memory and exact dependency/weight fingerprints.
+- [ ] **Evaluate GLASS** (M): manage synthetic texture assets explicitly and prove the torch-free
+      boundary still holds without the `dl` extra.
+- [ ] **Choose one zero/few-shot VLM reference** (S): compare WinCLIP and AnomalyVFM on packaging,
+      Apple Silicon execution and public-data quality before choosing.
+
+### E12 — Polish + reproducible onboarding (M12)
+
+- [ ] Visual QA in light/dark at 1440×900 and 1024×768: hierarchy, density, contrast, focus,
+      loading/empty/error/disabled states and no same-axis nested scroll (M)
+- [ ] Fresh public-data onboarding and full README workflow (M)
+- [ ] "How to add a method" guide exercised against the real plugin boundary (S)
+- [ ] Handbook/ADR consistency audit and final backlog re-triage (S)
+
+## Research follow-ups
 
 ### E7 — Evaluation (M3)
 
@@ -121,7 +190,7 @@ same 2.7M-parameter PDN.
 - [ ] Consider the same input-size guard for `efficientad_anomalib`, which fails inside `conv2d` with a message about a padded input size (S).
 - [ ] Batched inference for the deep methods — one image per forward pass today (M).
 
-### E6 — `classical_circular` (M8, optional)
+### E6 — `classical_circular` (Later, optional)
 
 - [ ] Circle detection: Hough seed → radial-ray subpixel edges → robust circle fit (RANSAC + Taubin), with a median-prior fallback (M) — **ADR-0010**
 - [ ] Polar transform + FFT angular-correlation orientation, with a bootstrapped reference (M) — **ADR-0010**
@@ -129,17 +198,6 @@ same 2.7M-parameter PDN.
 - [ ] Predict path: z-map → smoothing → inverse-polar warp → high-percentile score (M)
 - [ ] Parameter defaults sweep; record the chosen values and the numbers that justified them (M)
 - [ ] Unit tests on synthetic discs: centre, radius and rotation recovered within tolerance; an injected blob raises the score (S)
-
-### E12 — README & polish (M9)
-
-- [ ] "How to add a new anomaly-detection method", written against the real interface with a worked example (S) — **ADR-0007**
-- [ ] Docs refresh: handbook pages and ADR amendments where the implementation diverged (S)
-- [ ] Loading and empty states, error surfaces, keyboard navigation, cross-screen layout consistency (M)
-- [ ] Backlog re-triage and a refreshed *Later / ideas* list (S)
-
-*The user-facing README was rewritten in M4.6 and is no longer an M9 task.*
-
----
 
 ## Later / ideas
 
