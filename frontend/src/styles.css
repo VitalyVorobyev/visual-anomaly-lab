@@ -33,6 +33,7 @@
   --color-overlay: var(--overlay);
   --color-line: var(--line);
   --color-line-strong: var(--line-strong);
+  --color-canvas: var(--canvas);
 
   --color-fg: var(--fg);
   --color-fg-muted: var(--fg-muted);
@@ -67,6 +68,7 @@
   --overlay: #ffffff;
   --line: #e3e6e8;
   --line-strong: #c8cdd1;
+  --canvas: #101214;
 
   --fg: #14171a;
   --fg-muted: #5f6871;
@@ -88,6 +90,7 @@
   --overlay: #1f242a;
   --line: #23282d;
   --line-strong: #3a4147;
+  --canvas: #080a0b;
 
   --fg: #e8ebed;
   --fg-muted: #8b949b;

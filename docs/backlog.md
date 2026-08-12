@@ -72,8 +72,10 @@ the detail is in the git history and the ADRs.
       completion, stale-metric signalling and only synthetic PNG fixtures.
 - [x] **Implement PNG, LabelMe and COCO interchange** (M): polygons, RLE and bitmap layers round-trip
       to the same binary evaluation mask; original source files never change.
-- [ ] **Build the manual editor** (L, split before starting): controlled Konva scene, polygon/vertex,
-      brush/eraser, add/subtract, pan/zoom, undo/redo, autosave, conflict and keyboard queue.
+- [x] **Build the editor foundation** (M): dataset-local queue, full-height controlled Konva scene,
+      polygon/vertex editing, add/subtract, pan/zoom, undo/redo, guarded save/completion and keyboard tools.
+- [ ] **Finish raster editing and resilient passes** (M): brush/eraser bitmap layers, debounced autosave,
+      explicit conflict recovery and keyboard page-boundary traversal.
 - [ ] **Add a generic model-asset store and MobileSAM assist** (M): licensed on-demand download,
       size/SHA256/progress/cancel, local override, CPU fallback and the one resident-worker lock.
 

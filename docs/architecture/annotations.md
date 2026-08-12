@@ -58,15 +58,16 @@ layers. Completing the result therefore creates another app-owned revision and n
 
 ## Current boundary
 
-The annotation API, taxonomy, renderer, revision store and evaluation integration are live. One resolver is
+The annotation API, taxonomy, renderer, revision store, evaluation integration and editor foundation are live. One resolver is
 used by pixel metrics, image overlays and `has_mask` reads: the newest completed `AnnotationRevision` wins,
 then the imported `Mask`, then no mask. Evaluation verifies pinned bytes before reading them and stores a
 content digest of the subset's sample labels and resolved mask identities in each `MetricSet`. A later label
 or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
 scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
 
-Brush layers and the full-height editor extend this contract rather than introducing another annotation
-store.
+The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex editing, add/subtract,
+pan/zoom, undo/redo and `ETag`-guarded save/completion. Brush/eraser layers, debounced autosave and explicit
+conflict recovery extend this same contract rather than introducing another annotation store.
 
 ---
 

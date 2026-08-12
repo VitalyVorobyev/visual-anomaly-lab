@@ -114,6 +114,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
+            # Draft concurrency is an HTTP contract, not a JSON field. Browser clients
+            # may only read a cross-origin response header when CORS exposes it.
+            expose_headers=["ETag"],
         )
 
     app.include_router(annotation_routes.router)

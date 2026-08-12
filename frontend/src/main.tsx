@@ -6,13 +6,14 @@ import "@fontsource/ibm-plex-mono/latin-500.css";
 import "@fontsource/ibm-plex-mono/latin-600.css";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { StrictMode } from "react";
+import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
 import { App, CanvasLayout, ReadingLayout, WorkspaceLayout } from "./App";
 import { CompareRoute } from "./routes/CompareRoute";
 import { CompareSampleRoute } from "./routes/compare/CompareSampleRoute";
+import { AnnotationQueueRoute } from "./routes/AnnotationQueueRoute";
 import { DatasetRoute } from "./routes/DatasetRoute";
 import { DatasetsRoute } from "./routes/DatasetsRoute";
 import { EchoRoute } from "./routes/EchoRoute";
@@ -28,6 +29,10 @@ import "./styles.css";
 import { initTheme } from "./theme";
 
 const queryClient = new QueryClient();
+const AnnotationEditorRoute = lazy(async () => {
+  const module = await import("./routes/AnnotationEditorRoute");
+  return { default: module.AnnotationEditorRoute };
+});
 
 const container = document.getElementById("root");
 if (container === null) {
@@ -77,6 +82,28 @@ createRoot(container).render(
             {/* Dataset work owns the viewport: its data surface is the one scroll region. */}
             <Route element={<WorkspaceLayout />}>
               <Route path="datasets/:datasetId" element={<DatasetRoute />} />
+              <Route
+                path="datasets/:datasetId/annotate"
+                element={<AnnotationQueueRoute />}
+              />
+            </Route>
+
+            {/* Annotation is a flush workbench: its rails own every edge of the viewport. */}
+            <Route element={<CanvasLayout flush />}>
+              <Route
+                path="datasets/:datasetId/annotate/:sampleId/:imageId"
+                element={
+                  <Suspense
+                    fallback={
+                      <div className="grid min-h-0 flex-1 place-items-center bg-canvas text-sm text-fg-muted">
+                        Loading annotation editor…
+                      </div>
+                    }
+                  >
+                    <AnnotationEditorRoute />
+                  </Suspense>
+                }
+              />
             </Route>
 
             {/* The image is the content: full window width, and the viewport's height. */}
