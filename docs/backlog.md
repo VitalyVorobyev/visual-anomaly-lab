@@ -52,10 +52,10 @@ the detail is in the git history and the ADRs.
       dataset-scoped catalogues.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination, sortable column headers and compatible selection handed to Compare.
-- [x] **Expose experiment deletion in the catalogue** (S): an explicit destructive confirmation
-      removes rows first and app-owned artifacts second; source datasets are stated as untouched.
-- [ ] **Preview and perform experiment deletion** (M): cancel/evict live work first, delete records
-      transactionally, then app-owned artifacts, and report freed bytes.
+- [x] **Preview and perform experiment deletion** (M): exact generated file/byte count; active jobs
+      block with an instruction to cancel or wait; queue enqueue is excluded across the transaction;
+      a resident is evicted under its lock; records commit before app-owned artifacts are removed.
+      A corrupt artifact path is refused and an external synthetic sentinel proves source safety.
 - [ ] **Preview and perform dataset deletion** (M): typed-name confirmation; cascade through
       app-owned splits, experiments, results, caches, annotations and profiles while a synthetic
       sentinel proves the external source tree is untouched.

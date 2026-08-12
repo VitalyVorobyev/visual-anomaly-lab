@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import os
+import shutil
 import sqlite3
 import time
 from enum import StrEnum
@@ -146,6 +148,34 @@ class ExperimentSummary(BaseModel):
         default=None,
         description="Sample-level ROC-AUC on test, or on the best subset scored so far.",
     )
+
+
+class ExperimentDeletionPreview(BaseModel):
+    """What an experiment deletion will remove, and what currently blocks it."""
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    name: str
+    generated_files: int
+    generated_bytes: int
+    active_jobs: list[JobSummary] = Field(default_factory=list)
+    resident_loaded: bool = False
+    artifact_location_safe: bool = True
+    can_delete: bool
+    blocker: str | None = None
+
+
+class ExperimentDeletionResult(BaseModel):
+    """The completed database deletion and best-effort artifact cleanup."""
+
+    model_config = API_MODEL_CONFIG
+
+    deleted: bool
+    artifacts_removed: bool
+    freed_files: int
+    freed_bytes: int
+    artifact_error: str | None = None
 
 
 class MapScale(BaseModel):
@@ -537,22 +567,135 @@ def get_experiment(request: Request, experiment_id: int) -> ExperimentDetail:
         return _detail(conn, experiment)
 
 
+def _owned_artifact_path(settings: Settings, experiment: Experiment) -> Path | None:
+    """The exact app-owned directory this experiment is allowed to delete."""
+    if not experiment.artifact_dir:
+        return None
+    stored = Path(experiment.artifact_dir).resolve()
+    expected = settings.experiment_dir(experiment.id).resolve()
+    return stored if stored == expected else None
+
+
+def _artifact_usage(root: Path | None) -> tuple[int, int]:
+    """File count and payload bytes without following any symlink out of the tree."""
+    if root is None or not root.is_dir():
+        return 0, 0
+    files = 0
+    total = 0
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        try:
+            entries = os.scandir(directory)
+        except FileNotFoundError:
+            continue
+        with entries:
+            for entry in entries:
+                try:
+                    if entry.is_dir(follow_symlinks=False):
+                        pending.append(Path(entry.path))
+                    else:
+                        files += 1
+                        total += entry.stat(follow_symlinks=False).st_size
+                except FileNotFoundError:
+                    # A job finishing while the preview is open may move a temporary
+                    # file. The next preview will include the stable result.
+                    continue
+    return files, total
+
+
+@router.get(
+    "/{experiment_id}/deletion-preview",
+    summary="Preview the app-owned records and artifacts an experiment deletion removes",
+)
+def preview_experiment_deletion(
+    request: Request, experiment_id: int
+) -> ExperimentDeletionPreview:
+    experiment, settings = _load(request, experiment_id)
+    artifact_path = _owned_artifact_path(settings, experiment)
+    files, size = _artifact_usage(artifact_path)
+    with connection(settings.db_path) as conn:
+        active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
+    resident: ResidentWorker = request.app.state.resident
+    snapshot = resident.snapshot()
+    location_safe = not experiment.artifact_dir or artifact_path is not None
+
+    blocker: str | None = None
+    if active:
+        blocker = "Cancel or wait for the active job before deleting this experiment."
+    elif not location_safe:
+        blocker = "The stored artifact path is outside this experiment's app-owned directory."
+
+    return ExperimentDeletionPreview(
+        experiment_id=experiment.id,
+        name=experiment.name,
+        generated_files=files,
+        generated_bytes=size,
+        active_jobs=[summary_of(job) for job in active],
+        resident_loaded=snapshot is not None and snapshot.experiment_id == experiment.id,
+        artifact_location_safe=location_safe,
+        can_delete=blocker is None,
+        blocker=blocker,
+    )
+
+
 @router.delete("/{experiment_id}", summary="Delete an experiment and its artifacts")
-def delete_experiment(request: Request, experiment_id: int) -> dict[str, bool]:
+async def delete_experiment(request: Request, experiment_id: int) -> ExperimentDeletionResult:
     """Remove the rows, then the directory — in that order, and never the other way.
 
     The filesystem cannot join a database transaction, so the deletion that can be rolled
     back goes first. A leftover directory is inert; a row pointing at deleted artifacts
     is a broken screen.
     """
-    import shutil
-
     experiment, settings = _load(request, experiment_id)
-    with connection(settings.db_path) as conn:
-        deleted = experiments_repo.delete_experiment(conn, experiment_id)
-    if deleted and experiment.artifact_dir:
-        shutil.rmtree(experiment.artifact_dir, ignore_errors=True)
-    return {"deleted": deleted}
+    artifact_path = _owned_artifact_path(settings, experiment)
+    if experiment.artifact_dir and artifact_path is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "refusing to remove an artifact path outside this experiment's "
+                "app-owned directory"
+            ),
+        )
+    queue: JobQueue = request.app.state.job_queue
+    resident: ResidentWorker = request.app.state.resident
+
+    async with queue.lifecycle_guard(), resident.eviction_guard():
+        # Stable now: no worker or resident can write into the directory while it is
+        # measured and removed, so the result reports what was actually reclaimed.
+        files, size = await asyncio.to_thread(_artifact_usage, artifact_path)
+        with connection(settings.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
+                if active:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="cancel or wait for the active job before deleting this experiment",
+                    )
+                deleted = experiments_repo.delete_experiment(conn, experiment_id)
+                conn.execute("COMMIT")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+
+        removed = True
+        artifact_error: str | None = None
+        if deleted and artifact_path is not None and artifact_path.exists():
+            try:
+                await asyncio.to_thread(shutil.rmtree, artifact_path)
+            except OSError as exc:
+                removed = False
+                artifact_error = str(exc)
+
+    return ExperimentDeletionResult(
+        deleted=deleted,
+        artifacts_removed=removed,
+        freed_files=files if removed else 0,
+        freed_bytes=size if removed else 0,
+        artifact_error=artifact_error,
+    )
 
 
 @router.post("/{experiment_id}/train", summary="Queue a training job")

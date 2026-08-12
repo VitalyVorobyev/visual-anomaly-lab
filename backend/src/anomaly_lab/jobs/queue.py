@@ -21,6 +21,7 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from pathlib import Path
@@ -101,6 +102,10 @@ class JobQueue:
         self._current_process: asyncio.subprocess.Process | None = None
         self._cancelled: set[int] = set()
         self._escalations: set[asyncio.Task[None]] = set()
+        # Serialises creation of experiment-bound jobs with destructive lifecycle work.
+        # It is a threading lock because enqueue runs in FastAPI's threadpool; the async
+        # guard acquires it through `to_thread` so the event loop never blocks on it.
+        self._lifecycle_lock = threading.Lock()
 
     # -- lifecycle ---------------------------------------------------------------
 
@@ -143,10 +148,24 @@ class JobQueue:
         Synchronous, because it is called from synchronous route handlers running in
         FastAPI's threadpool. The nudge crosses back to the loop thread explicitly.
         """
-        with connection(self._settings.db_path) as conn:
+        with self._lifecycle_lock, connection(self._settings.db_path) as conn:
             job = jobs_repo.create_job(conn, kind=kind, params=params, experiment_id=experiment_id)
         self._notify()
         return job
+
+    @contextlib.asynccontextmanager
+    async def lifecycle_guard(self) -> AsyncIterator[None]:
+        """Exclude job creation while an experiment is being removed.
+
+        Without this, deletion could observe no active job and then race a train request
+        that inserts one against the row being deleted. The database transaction protects
+        its own rows; this guard protects the interval between the API operations.
+        """
+        await asyncio.to_thread(self._lifecycle_lock.acquire)
+        try:
+            yield
+        finally:
+            self._lifecycle_lock.release()
 
     def request_cancel(self, job_id: int) -> bool:
         """Cancel a queued or running job. Returns False if it already finished.

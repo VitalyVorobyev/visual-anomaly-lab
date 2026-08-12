@@ -35,6 +35,7 @@ import os
 import signal
 import sys
 import time
+from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -148,6 +149,18 @@ class ResidentWorker:
         """
         async with self._lock:
             await self._kill()
+
+    @contextlib.asynccontextmanager
+    async def eviction_guard(self) -> AsyncIterator[None]:
+        """Keep the resident absent across a destructive artifact operation.
+
+        `evict()` alone releases the lock before its caller can remove files, which leaves
+        a narrow window for a diagnosis request to spawn against that directory. Deletion
+        holds this guard until the row and its app-owned artifacts are both gone.
+        """
+        async with self._lock:
+            await self._kill()
+            yield
 
     async def request(self, experiment_id: int, image_id: int) -> tuple[list[str], bool]:
         """Diagnose one image; return its keys and whether the resident was already warm.

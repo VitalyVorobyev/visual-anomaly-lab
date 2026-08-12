@@ -22,6 +22,10 @@ MPS device — concurrency would only cause contention and confusing timing meas
 visible and cancellable before they start. The queue is intentionally in-process: no Celery, no Redis, no
 broker (ADR-0009).
 
+Experiment deletion takes the queue's **lifecycle guard**. `enqueue` takes the same cross-thread lock, so
+the delete operation cannot observe an idle experiment and race a new train request into existence. Active
+queued or running work blocks deletion and is named in the preview; it must finish or be cancelled first.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:
@@ -148,6 +152,9 @@ is the work — as `jobs/queue.py`, `jobs/worker.py` and `experiments/infer.py` 
 - **Any deviation kills the process** — a timeout, a broken pipe, a mismatched `rid`. Each is a state
   in which the next answer might belong to a different question, and respawning costs one model load.
 - **Idle eviction after ten minutes**, torn down with the application's lifespan before the queue's.
+- **Destructive artifact work holds an eviction guard**, not merely a one-shot `evict`: the resident is
+  killed and its lock remains held until the database row and app-owned artifact directory are gone. A
+  diagnostic request therefore cannot respawn into the interval between those two operations.
   `GET /api/health` reports which experiment, which generation, time to eviction and requests served
   — the only place the one invisible process in the system becomes visible, and a lock-free field
   read, because a health check that can block behind a model load is not a health check.

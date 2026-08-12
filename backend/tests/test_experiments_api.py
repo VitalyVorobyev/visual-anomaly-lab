@@ -27,7 +27,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import samples as samples_repo
-from anomaly_lab.domain.entities import JobKind, Label
+from anomaly_lab.domain.entities import JobKind, JobStatus, Label
 
 from .conftest import FIXTURE_SIZE as SIZE
 from .conftest import TEST_DEFECTS, TEST_NORMALS, TRAIN_NORMALS, Fixture
@@ -743,9 +743,85 @@ def test_deleting_an_experiment_removes_its_artifacts_too(
     artifact_dir = Path(client.get(f"/api/experiments/{scored['id']}").json()["artifact_dir"])
     assert artifact_dir.is_dir()
 
-    assert client.delete(f"/api/experiments/{scored['id']}").json() == {"deleted": True}
+    deleted = client.delete(f"/api/experiments/{scored['id']}")
+    assert deleted.status_code == 200
+    assert deleted.json()["deleted"] is True
+    assert deleted.json()["artifacts_removed"] is True
     assert client.get(f"/api/experiments/{scored['id']}").status_code == 404
     assert not artifact_dir.exists()
+
+
+def test_deletion_preview_reports_exact_app_owned_payload(
+    client: TestClient, seeded: Fixture
+) -> None:
+    experiment = _create(client, seeded, name="preview me")
+    artifact_dir = Path(experiment["artifact_dir"])
+    (artifact_dir / "nested").mkdir()
+    (artifact_dir / "model.bin").write_bytes(b"1234")
+    (artifact_dir / "nested" / "metrics.json").write_bytes(b"567")
+
+    preview = client.get(f"/api/experiments/{experiment['id']}/deletion-preview")
+
+    assert preview.status_code == 200
+    assert preview.json() == {
+        "experiment_id": experiment["id"],
+        "name": "preview me",
+        "generated_files": 2,
+        "generated_bytes": 7,
+        "active_jobs": [],
+        "resident_loaded": False,
+        "artifact_location_safe": True,
+        "can_delete": True,
+        "blocker": None,
+    }
+
+    result = client.delete(f"/api/experiments/{experiment['id']}").json()
+    assert result["freed_files"] == 2
+    assert result["freed_bytes"] == 7
+
+
+def test_active_work_blocks_experiment_deletion(
+    client: TestClient, seeded: Fixture, migrated_db: sqlite3.Connection
+) -> None:
+    experiment = _create(client, seeded, name="busy")
+    cursor = migrated_db.execute(
+        "INSERT INTO job (kind, experiment_id, status, params) VALUES (?, ?, ?, '{}')",
+        (JobKind.TRAIN.value, experiment["id"], JobStatus.RUNNING.value),
+    )
+    job_id = int(cursor.lastrowid or 0)
+
+    preview = client.get(f"/api/experiments/{experiment['id']}/deletion-preview").json()
+    assert preview["can_delete"] is False
+    assert [job["id"] for job in preview["active_jobs"]] == [job_id]
+
+    refused = client.delete(f"/api/experiments/{experiment['id']}")
+    assert refused.status_code == 409
+    assert client.get(f"/api/experiments/{experiment['id']}").status_code == 200
+
+
+def test_deletion_never_follows_a_corrupt_artifact_path(
+    client: TestClient,
+    seeded: Fixture,
+    migrated_db: sqlite3.Connection,
+    tmp_path: Path,
+) -> None:
+    experiment = _create(client, seeded, name="unsafe path")
+    external = tmp_path / "external-source"
+    external.mkdir()
+    sentinel = external / "source-image-sentinel.png"
+    sentinel.write_bytes(b"synthetic sentinel")
+    migrated_db.execute(
+        "UPDATE experiment SET artifact_dir = ? WHERE id = ?",
+        (str(external), experiment["id"]),
+    )
+
+    preview = client.get(f"/api/experiments/{experiment['id']}/deletion-preview").json()
+    assert preview["artifact_location_safe"] is False
+    assert preview["can_delete"] is False
+
+    refused = client.delete(f"/api/experiments/{experiment['id']}")
+    assert refused.status_code == 409
+    assert sentinel.read_bytes() == b"synthetic sentinel"
 
 
 def test_the_queue_carries_a_train_job_with_no_change_to_itself(

@@ -20,6 +20,9 @@ This is a single-user, local research tool, and the security model is stated pla
 - **Path handling.** Import roots come from the user via a native picker. Media endpoints serve files only by
   `image_id` through the database — never by a client-supplied path — so no request can be used to read an
   arbitrary file.
+- **Destructive path handling.** Experiment deletion removes artifacts only when the stored path resolves
+  exactly to `data/artifacts/exp-<id>`. A corrupt or edited row is refused with 409; deletion never follows
+  symlinks while measuring a preview, and tests keep an external synthetic sentinel intact.
 - **No sandboxing claims.** Job workers run with the user's own privileges. Datasets and model configurations
   are treated as trusted local input; this tool is not designed to run untrusted content.
 

@@ -18,6 +18,8 @@ import type {
   CurveSet,
   DiagnoseResponse,
   ExperimentDetail,
+  ExperimentDeletionPreview,
+  ExperimentDeletionResult,
   ExperimentSummary,
   DiagnosticIndex,
   ImageScore,
@@ -72,6 +74,20 @@ export function useExperiment(experimentId: number | undefined) {
           params: { path: { experiment_id: experimentId as number } },
         }),
         "the experiment",
+      ),
+    enabled: experimentId !== undefined,
+  });
+}
+
+export function useExperimentDeletionPreview(experimentId: number | undefined) {
+  return useQuery<ExperimentDeletionPreview>({
+    queryKey: queryKeys.experimentDeletion(experimentId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/deletion-preview", {
+          params: { path: { experiment_id: experimentId as number } },
+        }),
+        "the deletion preview",
       ),
     enabled: experimentId !== undefined,
   });
@@ -332,12 +348,14 @@ export function useCancelJob(experimentId?: number) {
 
 export function useDeleteExperiment() {
   const queryClient = useQueryClient();
-  return useMutation({
+  return useMutation<ExperimentDeletionResult, Error, number>({
     mutationFn: async (experimentId: number) => {
-      const { error } = await api.DELETE("/api/experiments/{experiment_id}", {
-        params: { path: { experiment_id: experimentId } },
-      });
-      if (error !== undefined) throw new Error("The experiment could not be deleted.");
+      return unwrap(
+        await api.DELETE("/api/experiments/{experiment_id}", {
+          params: { path: { experiment_id: experimentId } },
+        }),
+        "the deletion result",
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ["experiments"] });
