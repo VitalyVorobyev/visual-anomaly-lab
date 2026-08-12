@@ -77,8 +77,9 @@ is visible in the route table rather than emerging from nested `overflow` declar
 
 The main navigation contains `Datasets`, `Experiments` and `Compare`. Import is an action in the
 dataset catalogue, not a peer destination; backend health remains visible in the shell and the full
-health route remains directly addressable. A same-axis scroller may not be placed inside another
-same-axis scroller.
+health route remains directly addressable. Inside a dataset, a quiet local strip moves between
+`Browse`, `Splits` and `Experiments`; annotation joins that strip when its route exists. A same-axis
+scroller may not be placed inside another same-axis scroller.
 
 ## Screens
 
@@ -89,7 +90,8 @@ Each screen from the brief maps onto the API surface as follows.
 | **Dataset browser + import** | List datasets; native folder picker → scan → **manifest review** (edit channel mapping, fix labels, inspect warnings) → commit. The browser keeps label/channel/split/subset filters in a left rail and makes its virtual image grid the only vertical data scroller. | `POST /api/import/scan`, `POST /api/import/commit`, `GET /api/datasets`, `GET /api/datasets/{id}/samples`, `GET /api/images/{id}/thumb` |
 | **Sample viewer (grouped)** | One part, all its channels side by side, channel count driven by data. Label editing (normal / defect / unlabeled) with keyboard shortcuts for fast passes over unlabeled data. Full-resolution zoom. | `GET /api/datasets/{id}/samples/{sid}`, `PATCH …/label`, `GET /api/images/{id}/preview`, `…/full` |
 | **Split management** | Create a seeded, stratified split; per-subset counts by label; splits are immutable once created. | `POST /api/splits`, `GET /api/splits?dataset_id=` |
-| **Experiment creation** | Pick dataset + split + model; the configuration form is **generated from the model's JSON Schema** ([methods](methods.md)), so new hyperparameters appear with no frontend change. Capability flags drive the UI (a `dataset_specific` model shows a warning; a model without anomaly maps hides overlay options). | `GET /api/experiments/model-types`, `POST /api/experiments` |
+| **Experiment catalogue** | Dataset-scoped history is the primary view; the global catalogue is a secondary cross-dataset view. Name/notes, exact method and status filters plus ordering live in the URL, are applied in SQLite, and survive reload/back/forward. Confirmed deletion removes only the experiment's records and generated artifacts. | `GET /api/experiments?dataset_id=&q=&model_type=&status=&sort=`, `DELETE /api/experiments/{id}` |
+| **Experiment creation** | A dedicated route separates the large form from history. Inside a dataset the dataset is fixed; the user picks split + model. The configuration form is **generated from the model's JSON Schema** ([methods](methods.md)), so new hyperparameters appear with no frontend change. Capability flags drive the UI. | `GET /api/experiments/model-types`, `POST /api/experiments` |
 | **Progress & logs** | Live job progress bar, streaming log console, cancel button. Snapshot-then-subscribe on mount and on reconnect ([the job system](jobs.md)). | `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`, `POST /api/jobs/{id}/cancel` |
 | **Training charts** (M4) | Per-branch loss curves and learning rate, live and after the fact; a series reported once is printed as a value rather than plotted as one dot. Survives a reload mid-run because the history is re-read from the job's log (**ADR-0020**). | `GET /api/jobs/{id}/metrics`, `WS /ws/jobs/{id}` |
 | **Benchmark charts** (M4) | ROC and PR curves at sample and image level, score histogram by class with the threshold drawn on it, confusion matrix, per-defect-type breakdown, timing. Every curve integrates to a number the metrics table already shows. | `GET /api/experiments/{id}/curves?subset=`, `GET /api/experiments/{id}/results`, `…/threshold` |

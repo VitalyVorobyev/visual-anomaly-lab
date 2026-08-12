@@ -20,10 +20,17 @@
  * uppercase summaries over eight fields that nobody has to touch.
  */
 
+import { Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate } from "react-router";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import type { ModelDescription } from "../api/client";
+import {
+  EMPTY_EXPERIMENT_CATALOG,
+  readExperimentCatalogState,
+  toExperimentListQuery,
+  writeExperimentCatalogState,
+} from "../api/experimentState";
 import {
   describeFields,
   initialValues,
@@ -34,12 +41,14 @@ import {
   toOptions,
 } from "../api/schemaForm";
 import type { RawValues } from "../api/schemaForm";
+import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import { SchemaForm } from "../components/SchemaForm";
 import { Tabs } from "../components/Tabs";
 import {
   Badge,
   Button,
   Callout,
+  ConfirmDialog,
   ErrorBox,
   Field,
   Input,
@@ -54,12 +63,34 @@ import {
   type Tone,
 } from "../components/ui";
 import { useDatasets, useSplits } from "../hooks/useCatalog";
-import { useCreateExperiment, useExperiments, useModelTypes } from "../hooks/useExperiments";
+import { useDataset } from "../hooks/useCatalog";
+import {
+  useCreateExperiment,
+  useDeleteExperiment,
+  useExperiments,
+  useModelTypes,
+} from "../hooks/useExperiments";
 
 type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
 
 export function ExperimentsRoute() {
-  const experiments = useExperiments();
+  const params = useParams();
+  const datasetId = params["datasetId"] === undefined ? undefined : Number(params["datasetId"]);
+  const dataset = useDataset(datasetId);
+  const datasets = useDatasets();
+  const methods = useModelTypes();
+  const remove = useDeleteExperiment();
+  const [pendingDelete, setPendingDelete] = useState<ExperimentRow | null>(null);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const state = readExperimentCatalogState(searchParams);
+  const experiments = useExperiments(toExperimentListQuery(state, datasetId));
+
+  const datasetNames = new Map((datasets.data ?? []).map((entry) => [entry.id, entry.name]));
+  const methodNames = new Map((methods.data?.methods ?? []).map((entry) => [entry.key, entry.title]));
+  const activeFilters = [state.query || undefined, state.modelType, state.status].filter(Boolean).length;
+
+  const update = (patch: Partial<typeof state>) =>
+    setSearchParams(writeExperimentCatalogState({ ...state, ...patch }), { replace: true });
 
   const columns: Column<ExperimentRow>[] = [
     {
@@ -74,10 +105,40 @@ export function ExperimentsRoute() {
         </Link>
       ),
     },
+    ...(datasetId === undefined
+      ? [
+          {
+            key: "dataset",
+            header: "Dataset",
+            cell: (row: ExperimentRow) => (
+              <Link
+                to={`/datasets/${row.dataset_id}/experiments`}
+                className="text-fg-muted transition-colors hover:text-signal"
+              >
+                {datasetNames.get(row.dataset_id) ?? `Dataset ${row.dataset_id}`}
+              </Link>
+            ),
+          },
+        ]
+      : []),
     {
       key: "method",
       header: "Method",
-      cell: (row) => <span className="font-mono text-xs text-fg-muted">{row.model_type}</span>,
+      cell: (row) => (
+        <span className="flex flex-col">
+          <span>{methodNames.get(row.model_type) ?? row.model_type}</span>
+          <span className="font-mono text-[11px] text-fg-subtle">{row.model_type}</span>
+        </span>
+      ),
+    },
+    {
+      key: "created",
+      header: "Created",
+      cell: (row) => (
+        <time dateTime={row.created_at} className="whitespace-nowrap text-xs text-fg-muted">
+          {formatDate(row.created_at)}
+        </time>
+      ),
     },
     {
       key: "status",
@@ -97,15 +158,116 @@ export function ExperimentsRoute() {
           row.headline_roc_auc.toFixed(3)
         ),
     },
+    {
+      key: "actions",
+      header: <span className="sr-only">Actions</span>,
+      width: "2.25rem",
+      cell: (row) => (
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-label={`Delete ${row.name}`}
+          icon={<Trash2 />}
+          onClick={() => setPendingDelete(row)}
+        />
+      ),
+    },
   ];
 
   return (
-    <div className="flex flex-col gap-6">
-      <PageHeader title="Experiments" />
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        title="Experiments"
+        meta={dataset.data ? <span>Dataset · {dataset.data.name}</span> : undefined}
+        actions={
+          <Link
+            to={
+              datasetId === undefined
+                ? "/experiments/new"
+                : `/datasets/${datasetId}/experiments/new`
+            }
+          >
+            <Button variant="primary" icon={<Plus />}>
+              New experiment
+            </Button>
+          </Link>
+        }
+      />
+      {datasetId !== undefined && <DatasetSectionNav datasetId={datasetId} />}
 
-      <CreateExperiment />
+      <Panel
+        title={experiments.data ? `${experiments.data.length} experiments` : "Experiment history"}
+        actions={
+          activeFilters > 0 ? (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setSearchParams(writeExperimentCatalogState(EMPTY_EXPERIMENT_CATALOG))}
+            >
+              Clear {activeFilters}
+            </Button>
+          ) : undefined
+        }
+      >
+        <div className="mb-4 grid gap-3 border-b border-line pb-4 sm:grid-cols-2 lg:grid-cols-4">
+          <Field label="Search">
+            <div className="relative">
+              <Search
+                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle"
+                aria-hidden
+              />
+              <Input
+                value={state.query}
+                onChange={(event) => update({ query: event.target.value })}
+                placeholder="Name or notes"
+                className="pl-8"
+              />
+            </div>
+          </Field>
+          <Field as="group" label="Method">
+            <Select
+              aria-label="Method"
+              value={state.modelType ?? ""}
+              placeholder="Any method"
+              options={(methods.data?.methods ?? []).map((method) => ({
+                value: method.key,
+                label: method.title,
+                note: method.key,
+              }))}
+              onValueChange={(value) => update({ modelType: value || undefined })}
+            />
+          </Field>
+          <Field as="group" label="Status">
+            <Select
+              aria-label="Status"
+              value={state.status ?? ""}
+              placeholder="Any status"
+              options={[
+                { value: "draft", label: "Draft" },
+                { value: "training", label: "Training" },
+                { value: "trained", label: "Trained" },
+                { value: "failed", label: "Failed" },
+              ]}
+              onValueChange={(value) =>
+                update({ status: value ? (value as typeof state.status) : undefined })
+              }
+            />
+          </Field>
+          <Field as="group" label="Order">
+            <Select
+              aria-label="Order"
+              value={state.sort}
+              options={[
+                { value: "newest", label: "Newest first" },
+                { value: "oldest", label: "Oldest first" },
+                { value: "name", label: "Name" },
+              ]}
+              onValueChange={(value) => update({ sort: value as typeof state.sort })}
+            />
+          </Field>
+        </div>
 
-      <Panel title="All experiments">
+        {remove.error && <ErrorBox>{remove.error.message}</ErrorBox>}
         {experiments.isPending && <SkeletonRows rows={3} />}
         {experiments.error && <ErrorBox>{experiments.error.message}</ErrorBox>}
         {experiments.data && (
@@ -114,10 +276,57 @@ export function ExperimentsRoute() {
             rows={experiments.data}
             rowKey={(row) => row.id}
             caption="Experiments"
-            empty="No experiments yet. Create one above to train a method on a split."
+            empty={
+              activeFilters > 0
+                ? "No experiments match these filters."
+                : "No experiments yet. Create one to train a method on a split."
+            }
           />
         )}
       </Panel>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this experiment?"
+        description={
+          pendingDelete && (
+            <>
+              <span className="font-medium text-fg">{pendingDelete.name}</span>, its metrics,
+              diagnostics and generated artifacts will be removed. Source dataset files are
+              never touched.
+            </>
+          )
+        }
+        confirmLabel="Delete experiment"
+        destructive
+        loading={remove.isPending}
+        onConfirm={() => {
+          if (pendingDelete === null) return;
+          remove.mutate(pendingDelete.id, { onSettled: () => setPendingDelete(null) });
+        }}
+      />
+    </div>
+  );
+}
+
+export function CreateExperimentRoute() {
+  const params = useParams();
+  const datasetId = params["datasetId"] === undefined ? undefined : Number(params["datasetId"]);
+  const dataset = useDataset(datasetId);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        back={{
+          to: datasetId === undefined ? "/experiments" : `/datasets/${datasetId}/experiments`,
+          label: "Back to experiments",
+        }}
+        title="New experiment"
+        meta={dataset.data ? <span>Dataset · {dataset.data.name}</span> : undefined}
+      />
+      {datasetId !== undefined && <DatasetSectionNav datasetId={datasetId} />}
+      <CreateExperiment initialDatasetId={datasetId} />
     </div>
   );
 }
@@ -129,16 +338,26 @@ function statusTone(status: string): Tone {
   return "unlabeled";
 }
 
+const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
+  dateStyle: "medium",
+  timeStyle: "short",
+});
+
+function formatDate(value: string): string {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : DATE_FORMAT.format(date);
+}
+
 type ConfigTab = "method" | "preprocessing" | "evaluation";
 
-function CreateExperiment() {
+function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   const navigate = useNavigate();
   const catalog = useModelTypes();
   const datasets = useDatasets();
   const create = useCreateExperiment();
 
   const [name, setName] = useState("");
-  const [datasetId, setDatasetId] = useState<number | undefined>();
+  const [datasetId, setDatasetId] = useState<number | undefined>(initialDatasetId);
   const [splitId, setSplitId] = useState<number | undefined>();
   const [methodKey, setMethodKey] = useState<string | undefined>();
   const [configValues, setConfigValues] = useState<RawValues>({});
@@ -216,7 +435,7 @@ function CreateExperiment() {
   const noSplits = datasetId !== undefined && splits.data?.length === 0;
 
   return (
-    <Panel title="New experiment">
+    <Panel>
       <div className="flex flex-col gap-7">
         {catalog.error && <ErrorBox>{catalog.error.message}</ErrorBox>}
 
@@ -236,6 +455,7 @@ function CreateExperiment() {
                 aria-label="Dataset"
                 value={datasetId === undefined ? "" : String(datasetId)}
                 placeholder="Choose a dataset…"
+                disabled={initialDatasetId !== undefined}
                 options={(datasets.data ?? []).map((dataset) => ({
                   value: String(dataset.id),
                   label: dataset.name,

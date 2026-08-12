@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, Literal
 
 from anomaly_lab.domain.entities import Experiment, ExperimentStatus
 
@@ -29,19 +29,43 @@ def list_experiments(
     conn: sqlite3.Connection,
     *,
     dataset_id: int | None = None,
+    model_type: str | None = None,
+    status: ExperimentStatus | None = None,
+    query: str | None = None,
+    sort: Literal["newest", "oldest", "name"] = "newest",
     limit: int = 200,
 ) -> list[Experiment]:
-    """Experiments, newest first — the order the list screen wants."""
-    if dataset_id is None:
-        rows = conn.execute(
-            "SELECT * FROM experiment ORDER BY id DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            "SELECT * FROM experiment WHERE dataset_id = ? ORDER BY id DESC LIMIT ?",
-            (dataset_id, limit),
-        ).fetchall()
+    """Experiments matching the catalogue's composable filters."""
+    clauses: list[str] = []
+    params: list[object] = []
+    if dataset_id is not None:
+        clauses.append("dataset_id = ?")
+        params.append(dataset_id)
+    if model_type is not None:
+        clauses.append("model_type = ?")
+        params.append(model_type)
+    if status is not None:
+        clauses.append("status = ?")
+        params.append(status.value)
+    if query is not None and query.strip():
+        # Search is intentionally limited to human-authored text. A method has its own
+        # exact filter, and searching serialized configuration would make a typo look like
+        # a supported query language.
+        clauses.append("(name LIKE ? COLLATE NOCASE OR notes LIKE ? COLLATE NOCASE)")
+        needle = f"%{query.strip()}%"
+        params.extend([needle, needle])
+
+    order_by = {
+        "newest": "id DESC",
+        "oldest": "id ASC",
+        "name": "name COLLATE NOCASE ASC, id DESC",
+    }[sort]
+    where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+    params.append(limit)
+    rows = conn.execute(
+        f"SELECT * FROM experiment{where} ORDER BY {order_by} LIMIT ?",
+        params,
+    ).fetchall()
     return [_to_experiment(row) for row in rows]
 
 

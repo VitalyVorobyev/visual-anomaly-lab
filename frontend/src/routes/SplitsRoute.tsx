@@ -14,6 +14,7 @@ import { Link, useParams } from "react-router";
 import { api, unwrap } from "../api/client";
 import type { SplitDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import {
   Badge,
   Button,
@@ -98,6 +99,7 @@ export function SplitsRoute() {
           )
         }
       />
+      <DatasetSectionNav datasetId={datasetId} />
 
       <Panel title="Create a split">
         <form

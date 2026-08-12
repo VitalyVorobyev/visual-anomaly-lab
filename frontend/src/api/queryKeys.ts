@@ -12,6 +12,7 @@
  */
 
 import type { Label, Subset } from "./client";
+import type { ExperimentListQuery } from "./experimentState";
 
 export interface SampleQuery {
   label?: Label | undefined;
@@ -42,7 +43,7 @@ export const queryKeys = {
   jobMetrics: (jobId: number) => ["jobs", jobId, "metrics"] as const,
 
   modelTypes: () => ["experiments", "model-types"] as const,
-  experiments: (datasetId?: number) => ["experiments", "list", datasetId ?? null] as const,
+  experiments: (query: ExperimentListQuery = {}) => ["experiments", "list", query] as const,
   /**
    * Every experiment list, whichever dataset it was filtered to.
    *

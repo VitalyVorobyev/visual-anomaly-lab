@@ -30,8 +30,9 @@ import {
 } from "../api/browseState";
 import { imageUrl } from "../api/imageUrl";
 import type { DatasetDetail, Label, SampleSummary, SplitDetail, Subset } from "../api/client";
-import { Scissors, SlidersHorizontal } from "lucide-react";
+import { Plus, SlidersHorizontal } from "lucide-react";
 
+import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import {
   Badge,
   Button,
@@ -125,8 +126,10 @@ export function DatasetRoute() {
           <PageHeader
             title={detail.name}
             actions={
-              <Link to={`/datasets/${datasetId}/splits`}>
-                <Button icon={<Scissors />}>Splits ({detail.splits})</Button>
+              <Link to={`/datasets/${datasetId}/experiments/new`}>
+                <Button variant="primary" icon={<Plus />}>
+                  New experiment
+                </Button>
               </Link>
             }
             meta={
@@ -142,6 +145,7 @@ export function DatasetRoute() {
               />
             }
           />
+          <DatasetSectionNav datasetId={datasetId} />
           <CountRun
             counts={[
               ["normal", detail.label_counts["normal"] ?? 0, "normal"],
