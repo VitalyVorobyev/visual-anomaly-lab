@@ -1280,6 +1280,58 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/region-profiles/{profile_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Preview a profile on 24 images */
+        post: operations["preview_region_profile_api_region_profiles__profile_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}/build": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** The latest complete profile build report */
+        get: operations["get_region_profile_build_api_region_profiles__profile_id__build_get"];
+        put?: never;
+        /** Prepare a profile for every image */
+        post: operations["build_region_profile_api_region_profiles__profile_id__build_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}/prepared/{image_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One lossless prepared image from a completed profile build */
+        get: operations["get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/segment-assist": {
         parameters: {
             query?: never;
@@ -2683,7 +2735,7 @@ export interface components {
          * JobKind
          * @enum {string}
          */
-        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill" | "model_asset_download";
+        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill" | "model_asset_download" | "region_prepare";
         /**
          * JobMetrics
          * @description Every scalar series a job has emitted so far.
@@ -3300,6 +3352,38 @@ export interface components {
             /** Reason */
             reason: string | null;
         };
+        /** RegionBuildSummary */
+        RegionBuildSummary: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Profile Id */
+            profile_id: number;
+            /** Dataset Id */
+            dataset_id: number;
+            /** Total */
+            total: number;
+            /** Succeeded */
+            succeeded: number;
+            /** Failed */
+            failed: number;
+            /** Manifest Sha256 */
+            manifest_sha256: string;
+            /** Config Sha256 */
+            config_sha256: string;
+            /** Storage Files */
+            storage_files: number;
+            /** Storage Bytes */
+            storage_bytes: number;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Preview Entries */
+            preview_entries: components["schemas"]["RegionPreparationEntry"][];
+            /** Failure Examples */
+            failure_examples: components["schemas"]["RegionPreparationEntry"][];
+        };
         /** RegionExtractorDescription */
         RegionExtractorDescription: {
             /** Key */
@@ -3322,6 +3406,31 @@ export interface components {
          * @enum {string}
          */
         RegionFailurePolicy: "fail";
+        /** RegionPreparationEntry */
+        RegionPreparationEntry: {
+            /** Image Id */
+            image_id: number;
+            /** Source Sha256 */
+            source_sha256: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "failed";
+            transform: components["schemas"]["SpatialTransform"] | null;
+            /** Prepared Sha256 */
+            prepared_sha256: string | null;
+            /** Extractor Confidence */
+            extractor_confidence: number | null;
+            /** Extractor Metadata */
+            extractor_metadata: {
+                [key: string]: unknown;
+            };
+            /** Error */
+            error: string | null;
+            /** Elapsed Ms */
+            elapsed_ms: number | null;
+        };
         /** RegionProfileCreate */
         RegionProfileCreate: {
             /** Name */
@@ -3347,6 +3456,8 @@ export interface components {
              * @default 0.05
              */
             padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
             /**
              * Seed
              * @default 17
@@ -3381,6 +3492,8 @@ export interface components {
              * @default 0.05
              */
             padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
             /** @default fail */
             failure_policy: components["schemas"]["RegionFailurePolicy"];
             /** Seed */
@@ -3624,6 +3737,54 @@ export interface components {
              * @description Candidate area in source-image pixels.
              */
             area: number;
+        };
+        /**
+         * SpatialResample
+         * @enum {string}
+         */
+        SpatialResample: "nearest" | "bilinear" | "bicubic" | "lanczos";
+        /**
+         * SpatialTransform
+         * @description A fully resolved crop, contain-resize and symmetric edge-pad transform.
+         *
+         *     Only integers that were actually used by the image operation are persisted. Derived
+         *     scales therefore describe Pillow's realised resize rather than an ideal scale that
+         *     may differ after integer rounding.
+         */
+        SpatialTransform: {
+            /**
+             * Schema Version
+             * @default 1
+             */
+            schema_version: number;
+            /** Source Width */
+            source_width: number;
+            /** Source Height */
+            source_height: number;
+            /** Crop Left */
+            crop_left: number;
+            /** Crop Top */
+            crop_top: number;
+            /** Crop Right */
+            crop_right: number;
+            /** Crop Bottom */
+            crop_bottom: number;
+            /** Prepared Width */
+            prepared_width: number;
+            /** Prepared Height */
+            prepared_height: number;
+            /** Resized Width */
+            resized_width: number;
+            /** Resized Height */
+            resized_height: number;
+            /** Pad Left */
+            pad_left: number;
+            /** Pad Top */
+            pad_top: number;
+            /** Pad Right */
+            pad_right: number;
+            /** Pad Bottom */
+            pad_bottom: number;
         };
         /** SplitDetail */
         SplitDetail: {
@@ -6125,6 +6286,129 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RegionProfileRevision"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_region_profile_api_region_profiles__profile_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_region_profile_build_api_region_profiles__profile_id__build_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionBuildSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    build_region_profile_api_region_profiles__profile_id__build_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

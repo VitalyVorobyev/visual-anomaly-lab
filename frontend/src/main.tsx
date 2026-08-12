@@ -25,6 +25,7 @@ import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
 import { SampleRoute } from "./routes/SampleRoute";
 import { SplitsRoute } from "./routes/SplitsRoute";
+import { RegionPreparationRoute } from "./routes/RegionPreparationRoute";
 import "./styles.css";
 import { initTheme } from "./theme";
 
@@ -85,6 +86,10 @@ createRoot(container).render(
               <Route
                 path="datasets/:datasetId/annotate"
                 element={<AnnotationQueueRoute />}
+              />
+              <Route
+                path="datasets/:datasetId/prepare"
+                element={<RegionPreparationRoute />}
               />
             </Route>
 

@@ -110,6 +110,14 @@ class Settings(BaseSettings):
         """Licensed, integrity-checked assets used by interactive model tools."""
         return self.model_cache_dir / "assets"
 
+    @property
+    def region_profiles_dir(self) -> Path:
+        """App-owned prepared pixels and transforms, keyed by immutable profile revision."""
+        return self.data_dir / "region-profiles"
+
+    def region_profile_dir(self, profile_id: int) -> Path:
+        return self.region_profiles_dir / f"profile-{profile_id}"
+
     def experiment_dir(self, experiment_id: int) -> Path:
         return self.artifacts_dir / f"exp-{experiment_id}"
 

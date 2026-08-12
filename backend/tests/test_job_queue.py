@@ -59,6 +59,10 @@ def test_enqueue_creates_a_visible_queued_job(settings: Settings) -> None:
     assert job.started_at is None
 
 
+def test_region_prepare_is_a_supported_generic_job_kind() -> None:
+    assert JobKind.REGION_PREPARE in supported_kinds()
+
+
 def test_the_queue_is_fifo(settings: Settings) -> None:
     apply_migrations(settings.db_path)
     queue = JobQueue(settings)

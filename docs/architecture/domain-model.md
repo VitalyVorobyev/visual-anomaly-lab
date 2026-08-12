@@ -117,12 +117,14 @@ Primary key `(split_id, sample_id)`. **Sample-level by construction** — there 
 table, so all channels of a part necessarily share a subset and cross-channel leakage is impossible.
 
 **`RegionProfileRevision`** — `id`, `dataset_id`, `name`, `revision_no`, `extractor_type`,
-`extractor_config` (JSON), `prepared_width`, `prepared_height`, `padding_fraction`, `failure_policy`, `seed`,
-`created_at`. One immutable dataset-owned configuration for localising and preparing image input
+`extractor_config` (JSON), `prepared_width`, `prepared_height`, `padding_fraction`, `resample`,
+`failure_policy`, `seed`, `created_at`. One immutable dataset-owned configuration for localising and preparing image input
 (ADR-0033). The database rejects updates; changing any value appends a revision. `failure_policy` is
 currently only `fail`: an extractor failure may reduce build coverage but cannot quietly substitute the
 full source frame. Preview/build state and per-image transforms are operational records rather than mutable
-fields on this configuration row.
+fields on this configuration row. A completed build lives under app-managed profile storage as one lossless
+PNG per successful source image, a deterministic JSON-lines transform manifest and a bounded summary whose
+digests make both configuration and materialisation auditable.
 
 **`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `model_type`, `model_config` (JSON),
 `preprocessing_config` (JSON), `eval_config` (JSON), `status`, `artifact_dir`, `created_at`, `notes`.
@@ -131,7 +133,8 @@ fields on this configuration row.
 unambiguously attributable to one immutable configuration, which is the whole point of a comparison workbench.
 `artifact_dir` points at `data/artifacts/exp-<id>/`.
 
-**`Job`** — `id`, `kind ∈ {import, verify, prewarm, train, infer}`, `experiment_id` (nullable — only
+**`Job`** — `id`, `kind ∈ {import, reference_import, verify, prewarm, train, infer, distill,
+model_asset_download, region_prepare}`, `experiment_id` (nullable — only
 train and infer jobs have one),
 `status ∈ {queued, running, succeeded, failed, cancelled}`, `progress` (0–1), `message`, `log_path`,
 `params` (JSON), `started_at`, `finished_at`, `error`.

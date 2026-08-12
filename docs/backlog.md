@@ -90,12 +90,16 @@ the detail is in the git history and the ADRs.
 
 - [x] **Write the region-profile/spatial-transform ADR** (S): dataset-owned profile revisions,
       experiment pinning, source-frame annotations and explicit failure policy.
-- [ ] **Replace direct resize with an invertible input transform** (M): crop, 5% padding,
-      aspect-preserving contain resize, edge padding and inverse map projection.
+- [x] **Define and verify the invertible input transform** (M): crop, configurable padding,
+      aspect-preserving contain resize, edge padding and inverse map projection. Switching every
+      method from the direct-resize bridge waits for experiment pinning so there is no mixed rollout.
 - [x] **Add the `RegionExtractor` registry** (M): identity, foreground-threshold baseline and
       MobileSAM; schemas drive controls and heavy imports remain lazy.
-- [ ] **Build profile preview and preparation jobs** (M): 24 evenly spaced calibration images,
+- [x] **Build profile preview and preparation jobs** (M): 24 evenly spaced calibration images,
       coverage/failure/runtime/storage report, cancellation and bounded full-dataset output.
+- [ ] **Pin a built profile revision to an experiment** (M): store the immutable profile id,
+      require a complete build, feed every method the same prepared PNGs and project maps back through
+      the recorded transforms.
 - [ ] **Run the paired value gate** (M): identity versus localisation on at least two VisA classes,
       matching protocol/config/seed, with quality, latency, memory, ROI and failure rate reported.
 

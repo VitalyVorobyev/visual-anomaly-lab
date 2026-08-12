@@ -527,7 +527,7 @@ improves the result while keeping annotations and maps in source-image coordinat
 
 **Exit criteria**
 
-- [ ] Points and masks round-trip through every transform within the stated synthetic tolerance.
+- [x] Points and masks round-trip through every transform within the stated synthetic tolerance.
 - [ ] Every method consumes identical prepared pixels and persisted maps align with source masks.
 - [ ] A profile revision is previewed, built, pinned and reproducible; no failure silently becomes identity.
 - [ ] Evidence, not preference, decides whether localisation becomes a default.

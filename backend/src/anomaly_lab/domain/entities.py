@@ -40,6 +40,7 @@ class JobKind(StrEnum):
     INFER = "infer"
     DISTILL = "distill"
     MODEL_ASSET_DOWNLOAD = "model_asset_download"
+    REGION_PREPARE = "region_prepare"
 
 
 class JobStatus(StrEnum):
@@ -216,6 +217,13 @@ class RegionFailurePolicy(StrEnum):
     FAIL = "fail"
 
 
+class SpatialResample(StrEnum):
+    NEAREST = "nearest"
+    BILINEAR = "bilinear"
+    BICUBIC = "bicubic"
+    LANCZOS = "lanczos"
+
+
 class RegionProfileRevision(BaseModel):
     """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
 
@@ -230,6 +238,7 @@ class RegionProfileRevision(BaseModel):
     prepared_width: int
     prepared_height: int
     padding_fraction: float = 0.05
+    resample: SpatialResample = SpatialResample.BILINEAR
     failure_policy: RegionFailurePolicy = RegionFailurePolicy.FAIL
     seed: int
     created_at: str

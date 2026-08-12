@@ -53,6 +53,7 @@ class MobileSamRegionExtractor(RegionExtractor):
     def __init__(self, config: BaseModel, *, assets: dict[str, Path] | None = None) -> None:
         super().__init__(config, assets=assets)
         self._generator: Any | None = None
+        self._device: str | None = None
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
@@ -73,7 +74,16 @@ class MobileSamRegionExtractor(RegionExtractor):
         if image.ndim != 3 or image.shape[2] != 3 or image.dtype != np.uint8:
             raise RegionExtractionError("region extractors require an RGB uint8 HxWx3 source image")
         generator = self._load_generator()
-        records: list[dict[str, Any]] = generator.generate(image)
+        try:
+            records: list[dict[str, Any]] = generator.generate(image)
+        except RuntimeError:
+            if self._device != "mps":
+                raise
+            # The first real image is the only meaningful end-to-end smoke test. Rebuild
+            # on CPU rather than move a generator that may retain failed device tensors.
+            self._generator = None
+            generator = self._load_generator(force_cpu=True)
+            records = generator.generate(image)
         height, width = image.shape[:2]
         config = MobileSamRegionConfig.model_validate(self.config)
         candidates: list[tuple[float, dict[str, Any]]] = []
@@ -99,10 +109,11 @@ class MobileSamRegionExtractor(RegionExtractor):
                 "area_pixels": int(chosen["area"]),
                 "coverage_fraction": area_fraction,
                 "stability_score": float(chosen["stability_score"]),
+                "device": self._device,
             },
         )
 
-    def _load_generator(self) -> Any:
+    def _load_generator(self, *, force_cpu: bool = False) -> Any:
         if self._generator is not None:
             return self._generator
         checkpoint = self.assets.get(ASSET_KEY)
@@ -110,7 +121,7 @@ class MobileSamRegionExtractor(RegionExtractor):
             raise RegionExtractionError(f"required model asset {ASSET_KEY!r} was not provided")
         package = importlib.import_module("mobile_sam")
         torch = importlib.import_module("torch")
-        device = "mps" if torch.backends.mps.is_available() else "cpu"
+        device = "mps" if not force_cpu and torch.backends.mps.is_available() else "cpu"
         model = package.sam_model_registry["vit_t"](checkpoint=str(checkpoint))
         model.to(device=device)
         model.eval()
@@ -125,4 +136,5 @@ class MobileSamRegionExtractor(RegionExtractor):
             min_mask_region_area=0,
             output_mode="binary_mask",
         )
+        self._device = device
         return self._generator

@@ -99,9 +99,9 @@ overlay aligns without the UI reconstructing letterbox offsets.
 M10 introduces the replacement geometry as a reusable contract before switching method input over to it.
 `SpatialTransform` records a clipped half-open source crop, the actual integer contain-resize, and symmetric
 edge padding. Source points map with an explicit pixel-centre convention; masks and float maps project back
-through the recorded transform, with source pixels outside a crop marked uncovered. The current direct
-resize remains the live model path until region profile build artifacts and experiment pinning land; there
-is no mixed hidden rollout where some methods use the new bridge and others do not.
+through the recorded transform, with source pixels outside a crop marked uncovered. Profile preview and
+atomic full-build artifacts now exist; the current direct resize remains the live model path until experiment
+pinning lands. There is no mixed hidden rollout where some methods use the new bridge and others do not.
 
 ## Region extractor plugins
 
@@ -120,6 +120,15 @@ of equal quality:
 Extractor confidence is method-specific and cannot be compared between registry entries. Profile preview
 reports coverage, box geometry, runtime and failures; it does not turn those confidence values into a shared
 score they are not.
+
+Preview selects at most 24 images evenly across the dataset and writes no prepared pixels. Full build is a
+single cancellable `region_prepare` job: it writes into a job-specific staging directory, records successful
+and failed images in a deterministic JSON-lines manifest, then atomically replaces the previous build for
+that immutable revision. Each successful entry pins the source digest, realised transform, extractor
+metadata and prepared-image digest. The summary retains a bounded visual-audit sample and failure examples;
+the dataset-local **Prepare** screen overlays each source crop and can switch to the materialised pixels.
+MobileSAM attempts MPS for the first real image and transparently reconstructs on CPU after an MPS runtime
+failure; that chosen device is reported as extractor metadata rather than hidden.
 
 ### Standardizing for a backbone is the model's business, not the bridge's
 
