@@ -53,3 +53,6 @@ operation is represented by a persisted, invertible source/prepared transform.**
 - **2026-08-12:** Completed experiment pinning: a run freezes the profile and manifest digests, methods read
   only prepared artifacts, and shared persistence projects maps back to source coordinates. Completed builds
   are now immutable; a rebuild is a new profile revision.
+- **2026-08-12:** Closed the public-data value gate with identity as the default. Foreground thresholding
+  excluded defect pixels and materially reduced both source-frame localisation metrics; MobileSAM's largest
+  masks yielded full-frame boxes and no metric change. Both extractors therefore remain explicit opt-ins.
