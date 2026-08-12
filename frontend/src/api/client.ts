@@ -42,6 +42,16 @@ export type SampleSummary = Schemas["SampleSummary"];
 export type SamplePage = Schemas["SamplePage"];
 export type ImageSummary = Schemas["ImageSummary"];
 
+export type AnnotationDraft = Schemas["AnnotationDraft"];
+export type AnnotationDocument = Schemas["AnnotationDocument-Output"];
+export type AnnotationDocumentInput = Schemas["AnnotationDocument-Input"];
+export type AnnotationLabel = Schemas["AnnotationLabel"];
+export type AnnotationRevision = Schemas["AnnotationRevision"];
+export type AnnotationPoint = Schemas["AnnotationPoint"];
+export type PolygonShape = Schemas["PolygonShape-Output"];
+export type BitmapShape = Schemas["BitmapShape-Output"];
+export type AnnotationShape = PolygonShape | BitmapShape;
+
 export type JobSummary = Schemas["JobSummary"];
 export type JobDetail = Schemas["JobDetail"];
 export type JobStatus = Schemas["JobStatus"];

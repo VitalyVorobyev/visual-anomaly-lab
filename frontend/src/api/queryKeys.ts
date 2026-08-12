@@ -38,6 +38,10 @@ export const queryKeys = {
     ["datasets", datasetId, "samples", query] as const,
   sample: (datasetId: number, sampleId: number) =>
     ["datasets", datasetId, "sample", sampleId] as const,
+  annotationLabels: (datasetId: number) =>
+    ["datasets", datasetId, "annotation-labels"] as const,
+  annotationDraft: (imageId: number) => ["annotations", imageId, "draft"] as const,
+  annotationRevisions: (imageId: number) => ["annotations", imageId, "revisions"] as const,
 
   splits: (datasetId: number) => ["datasets", datasetId, "splits"] as const,
 

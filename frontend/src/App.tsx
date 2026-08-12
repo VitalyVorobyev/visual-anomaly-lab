@@ -126,11 +126,14 @@ export function WorkspaceLayout() {
  * A nested layout route rather than a flag the shell reads off the URL: the routes that
  * want this are listed in one place, in `main.tsx`, next to the ones that do not.
  */
-export function CanvasLayout() {
+export function CanvasLayout({ flush = false }: { flush?: boolean }) {
   return (
     <div
       data-layout="canvas"
-      className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden px-4 py-3"
+      className={cn(
+        "flex min-h-0 flex-1 flex-col overflow-hidden",
+        !flush && "gap-3 px-4 py-3",
+      )}
     >
       <Outlet />
     </div>

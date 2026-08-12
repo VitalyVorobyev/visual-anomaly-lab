@@ -43,6 +43,14 @@ def test_dev_cors_allows_the_vite_dev_server(client: TestClient) -> None:
     assert response.headers["access-control-allow-origin"] == "http://localhost:5173"
 
 
+def test_dev_cors_exposes_annotation_etags(client: TestClient) -> None:
+    response = client.get(
+        "/api/health",
+        headers={"Origin": "http://localhost:5173"},
+    )
+    assert response.headers["access-control-expose-headers"] == "ETag"
+
+
 def test_dev_cors_rejects_a_foreign_origin(client: TestClient) -> None:
     response = client.get("/api/health", headers={"Origin": "https://example.com"})
     assert "access-control-allow-origin" not in response.headers
