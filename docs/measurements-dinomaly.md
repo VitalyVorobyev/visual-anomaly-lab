@@ -60,3 +60,40 @@ quality, not resource pressure, will decide whether the base encoder deserves a 
 fixed depth eight, 392 × 392 as the documented reference size, finite steps, resumable optimiser state,
 MPS preferred with CPU supported, and an exact public-data quality benchmark before M11 calls the method
 integrated.
+
+## 2026-08-12 — Paired public VisA quality gate
+
+`scripts/dinomaly-public-gate.py` ran Dinomaly and PatchCore through the application's real import,
+preparation, training, inference and evaluation path. The two methods received the same immutable
+392 × 392 prepared pixels from the official VisA one-class split. Each method ran in a fresh child
+process so peak RSS remained comparable. The gate used two structurally different public classes,
+`candle` and `pcb1`, seed 20260812, and no private images.
+
+| Method | Configuration |
+|---|---|
+| Dinomaly | small registered DINOv2 encoder, depth 8, batch 1, 5,000 steps |
+| PatchCore | WRN-50, layer2+layer3, 256 training images, 50,000 candidates, 10% coreset |
+
+| Class | Method | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | Train | Infer | Peak RSS |
+|---|---|---:|---:|---:|---:|---:|---:|
+| candle | Dinomaly | 0.9618 | 0.9940 | 0.9541 | 611.7 s | 13.7 s | 1.13 GiB |
+| candle | PatchCore | 0.7082 | 0.9437 | 0.8452 | 16.3 s | 13.6 s | 1.61 GiB |
+| pcb1 | Dinomaly | 0.9649 | 0.9966 | 0.9488 | 596.0 s | 15.6 s | 1.15 GiB |
+| pcb1 | PatchCore | 0.6710 | 0.9816 | 0.7560 | 16.8 s | 15.9 s | 1.61 GiB |
+
+| Mean | Dinomaly | PatchCore | Difference |
+|---|---:|---:|---:|
+| Image ROC-AUC | 0.9634 | 0.6896 | +0.2738 |
+| Pixel ROC-AUC | 0.9953 | 0.9626 | +0.0326 |
+| AU-PRO | 0.9514 | 0.8006 | +0.1508 |
+
+The predeclared promotion floors were mean image ROC-AUC 0.80, pixel ROC-AUC 0.85 and AU-PRO 0.60.
+Dinomaly cleared all three and saved a resumable 234 MiB checkpoint per class. Its frozen encoder was
+not duplicated into the checkpoint; the exact SHA-256 and anomalib, torch and timm versions were stored
+and verified during reload. A real two-step MPS save/load check produced an identical score before and
+after reload.
+
+**Decision:** promote `dinomaly_anomalib` as the transformer-reconstruction reference. It is markedly
+slower to fit than PatchCore, but it is bounded, Mac-feasible, resumable, and adds a useful high-quality
+failure mode rather than another variation of the existing memory-bank family. GLASS is the next M11
+resource gate.

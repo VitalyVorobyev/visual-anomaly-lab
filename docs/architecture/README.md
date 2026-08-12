@@ -178,9 +178,9 @@ a server-visible absolute directory path.
 | `eval` | `/api/eval` | threshold-independent metrics, on-demand threshold outputs, rankings, comparison |
 
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
-identifiers persisted in `Experiment.model_type`: `classical_circular`, `efficientad_anomalib`,
-`patchcore_anomalib`, `efficientad_custom`. Adding a method means adding a module and a registry entry —
-nothing else in the application changes.
+identifiers persisted in `Experiment.model_type`: `pixel_reference`, `efficientad_anomalib`,
+`efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`. Adding a method means adding a module and
+a registry entry — nothing else in the application changes.
 
 **SQLite** at `data/app.sqlite3` — metadata, configuration, scores, paths ([the domain model](domain-model.md)). **Artifact store** at
 `data/artifacts/exp-<id>/` — checkpoints, reference statistics, anomaly maps, logs. **Thumbnail cache** at

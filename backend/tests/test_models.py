@@ -29,6 +29,14 @@ from anomaly_lab.models.diagnostics import (
     DiagnosticWriter,
     load_index,
 )
+from anomaly_lab.models.dinomaly_anomalib import (
+    BASE_LR,
+    FINAL_LR,
+    DinomalyConfig,
+    learning_rate,
+    plan_training,
+    validate_prepared_size,
+)
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.patchcore_anomalib import plan_bank
 from anomaly_lab.models.pixel_reference import PixelReferenceConfig, PixelReferenceModel
@@ -333,11 +341,33 @@ def test_an_index_written_before_ranges_existed_still_loads(tmp_path: Path) -> N
 # ----------------------------------------------------------------- registry
 
 
+def test_dinomaly_plan_is_bounded_and_torch_free() -> None:
+    plan = plan_training(DinomalyConfig(max_steps=123), 17, 392, 196)
+
+    assert plan.steps == 123
+    assert plan.images_available == 17
+    assert "123 batch-1 steps" in plan.describe()
+    assert "246 MB" in plan.describe()
+
+
+def test_dinomaly_refuses_a_partial_patch_before_training() -> None:
+    with pytest.raises(ValueError, match=r"divisible by 14.*390x392"):
+        validate_prepared_size(390, 392)
+
+
+def test_dinomaly_schedule_has_a_fixed_resume_safe_horizon() -> None:
+    assert learning_rate(0) == 0.0
+    assert learning_rate(99) == pytest.approx(BASE_LR)
+    assert learning_rate(100) == pytest.approx(BASE_LR)
+    assert learning_rate(5_000) == pytest.approx(FINAL_LR)
+    assert learning_rate(50_000) == pytest.approx(FINAL_LR)
+
+
 def test_every_registered_method_describes_itself_without_importing_torch() -> None:
     """`describe_all` is called whenever the picker opens; it must stay cheap."""
     described = describe_all()
     keys = {entry.key for entry in described}
-    assert {"pixel_reference", "efficientad_anomalib"} <= keys
+    assert {"pixel_reference", "efficientad_anomalib", "dinomaly_anomalib"} <= keys
 
     for entry in described:
         assert entry.title

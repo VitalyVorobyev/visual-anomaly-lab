@@ -557,11 +557,13 @@ a public benchmark.
 gate also found two integration invariants anomalib does not validate up front: input dimensions must be
 divisible by 14, and the default fusion topology requires exactly eight decoder layers. The candidate is
 Mac-credible; [`measurements-dinomaly.md`](measurements-dinomaly.md) records the complete protocol and
-weight fingerprint. Integration and the public-data quality gate remain open.
+weight fingerprint. On the paired public VisA gate it reached mean image ROC-AUC 0.9634, pixel ROC-AUC
+0.9953 and AU-PRO 0.9514, clearing every predeclared quality floor and materially exceeding the PatchCore
+control. The lazy, resumable plugin is integrated; GLASS is next.
 
 **Exit criteria**
 
-- [ ] At least three distinct method families run through the unchanged vertical slice.
+- [x] At least three distinct method families run through the unchanged vertical slice.
 - [ ] Every unbounded candidate pool or external asset is planned and printed before execution.
 - [ ] Results record the exact package, weights, preprocessing and public protocol used.
 
