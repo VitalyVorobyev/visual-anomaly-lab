@@ -22,9 +22,9 @@ from pydantic import BaseModel, Field
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.db.repositories import masks as masks_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Image, JobKind
 from anomaly_lab.jobs.queue import JobQueue
@@ -258,13 +258,17 @@ def read_mask(request: Request, image_id: int) -> Response:
     """
     image, settings = _load_image(request, image_id)
     with connection(settings.db_path) as conn:
-        masks = masks_repo.list_masks_for_images(conn, [image_id])
-    found = masks.get(image_id) or []
-    if not found:
+        try:
+            truth = annotations_repo.resolve_ground_truth_masks(
+                conn, [image_id], verify_bytes=True
+            ).get(image_id)
+        except annotations_repo.GroundTruthDriftError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if truth is None:
         raise HTTPException(status_code=404, detail=f"image {image_id} has no ground-truth mask")
 
     try:
-        mask = load_mask(Path(found[0].path))
+        mask = load_mask(Path(truth.path))
     except UnreadableImageError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
 
@@ -272,7 +276,7 @@ def read_mask(request: Request, image_id: int) -> Response:
     return Response(
         content=payload,
         media_type="image/png",
-        headers=_headers(f'W/"mask-{image.sha256[:16]}"'),
+        headers=_headers(f'"ground-truth-{truth.sha256}"'),
     )
 
 

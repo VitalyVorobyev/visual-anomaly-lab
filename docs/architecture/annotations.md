@@ -40,10 +40,15 @@ image and mask trees are outside that inventory and survive unchanged.
 
 ## Current boundary
 
-The annotation API, taxonomy, renderer and revision store are live. The evaluation path still reads imported
-`Mask` rows until its ground-truth resolver and `MetricSet` digest land; the editor route will not claim that
-completed revisions affect metrics before that integration exists. PNG / LabelMe / COCO interchange, brush
-layers and the full-height editor extend this contract rather than introducing another annotation store.
+The annotation API, taxonomy, renderer, revision store and evaluation integration are live. One resolver is
+used by pixel metrics, image overlays and `has_mask` reads: the newest completed `AnnotationRevision` wins,
+then the imported `Mask`, then no mask. Evaluation verifies pinned bytes before reading them and stores a
+content digest of the subset's sample labels and resolved mask identities in each `MetricSet`. A later label
+or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
+scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
+
+PNG / LabelMe / COCO interchange, brush layers and the full-height editor extend this contract rather than
+introducing another annotation store.
 
 ---
 

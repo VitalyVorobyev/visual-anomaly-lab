@@ -23,8 +23,11 @@ from PIL import Image
 from pydantic import BaseModel, Field
 
 from anomaly_lab.db.repositories import results as results_repo
+from anomaly_lab.db.repositories.annotations import GroundTruthMask
 from anomaly_lab.db.repositories.results import ScoredImage, ScoredSample
 from anomaly_lab.domain.entities import Aggregation, Experiment, Label, Subset
+from anomaly_lab.eval.ground_truth import digest as ground_truth_digest
+from anomaly_lab.eval.ground_truth import resolved_masks
 from anomaly_lab.eval.metrics import average_precision, roc_auc, timing_summary
 from anomaly_lab.eval.pixel import DEFAULT_BINS, PixelAccumulator
 from anomaly_lab.media.decode import UnreadableImageError
@@ -74,8 +77,8 @@ def _resize_map(array: np.ndarray, shape: tuple[int, int]) -> np.ndarray:
 
 
 def _pixel_metrics(
-    conn: sqlite3.Connection,
     images: Sequence[ScoredImage],
+    masks: dict[int, GroundTruthMask],
     *,
     bins: int,
 ) -> dict[str, Any] | None:
@@ -94,8 +97,7 @@ def _pixel_metrics(
     if not scored_with_maps:
         return None
 
-    mask_paths = results_repo.masks_for_images(conn, [image.image_id for image in scored_with_maps])
-    if not mask_paths:
+    if not masks:
         return None
 
     # (image, its map file, its mask file or None for an all-normal image).
@@ -104,9 +106,9 @@ def _pixel_metrics(
     for image in scored_with_maps:
         if image.map_path is None:  # pragma: no cover - filtered above, narrows the type
             continue
-        mask_path = mask_paths.get(image.image_id)
-        if mask_path is not None:
-            evaluable.append((image, image.map_path, mask_path))
+        truth = masks.get(image.image_id)
+        if truth is not None:
+            evaluable.append((image, image.map_path, truth.path))
         elif image.label is Label.NORMAL:
             evaluable.append((image, image.map_path, None))
         else:
@@ -159,10 +161,10 @@ def _label_array(labels: Sequence[Label]) -> np.ndarray:
 
 
 def _subset_metrics(
-    conn: sqlite3.Connection,
     images: Sequence[ScoredImage],
     samples: Sequence[ScoredSample],
     config: EvalConfig,
+    masks: dict[int, GroundTruthMask],
 ) -> dict[str, Any]:
     labelled_samples = [s for s in samples if s.label is not Label.UNLABELED]
     labelled_images = [i for i in images if i.label is not Label.UNLABELED]
@@ -189,26 +191,37 @@ def _subset_metrics(
     }
 
     if config.pixel_metrics:
-        pixel = _pixel_metrics(conn, images, bins=config.pixel_bins)
+        pixel = _pixel_metrics(images, masks, bins=config.pixel_bins)
         if pixel is not None:
             metrics["pixel"] = pixel
 
     return metrics
 
 
-def evaluate_experiment(
+def _evaluate_with_digests(
     conn: sqlite3.Connection,
     experiment: Experiment,
-) -> dict[Subset, dict[str, Any]]:
-    """Compute every subset's metrics from stored scores. Does not write."""
+) -> tuple[dict[Subset, dict[str, Any]], dict[Subset, str]]:
     config = EvalConfig.model_validate(experiment.eval_config)
     computed: dict[Subset, dict[str, Any]] = {}
+    digests: dict[Subset, str] = {}
     for subset in results_repo.scored_subsets(conn, experiment.id):
         images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
         samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
         if not samples:
             continue
-        computed[subset] = _subset_metrics(conn, images, samples, config)
+        masks = resolved_masks(conn, images, verify_bytes=True)
+        computed[subset] = _subset_metrics(images, samples, config, masks)
+        digests[subset] = ground_truth_digest(images, masks)
+    return computed, digests
+
+
+def evaluate_experiment(
+    conn: sqlite3.Connection,
+    experiment: Experiment,
+) -> dict[Subset, dict[str, Any]]:
+    """Compute every subset's metrics from stored scores. Does not store metrics."""
+    computed, _ = _evaluate_with_digests(conn, experiment)
     return computed
 
 
@@ -217,6 +230,6 @@ def evaluate_and_store(
     experiment: Experiment,
 ) -> dict[Subset, dict[str, Any]]:
     """Compute and persist. The `infer` job's last act, and re-runnable on its own."""
-    computed = evaluate_experiment(conn, experiment)
-    results_repo.replace_metric_sets(conn, experiment.id, computed)
+    computed, digests = _evaluate_with_digests(conn, experiment)
+    results_repo.replace_metric_sets(conn, experiment.id, computed, ground_truth_digests=digests)
     return computed

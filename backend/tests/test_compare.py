@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.results import ScoredSample
 from anomaly_lab.domain.entities import Aggregation, JobKind, JobStatus, Label, Subset
@@ -334,6 +335,25 @@ def test_a_run_trained_after_it_was_scored_says_so(
     payload = compare(client, two_runs)
 
     assert any("older checkpoint" in note for note in payload["warnings"])
+
+
+def test_changed_ground_truth_marks_every_affected_comparison_column(
+    client: TestClient,
+    settings: Settings,
+    seeded: Fixture,
+    two_runs: list[int],
+) -> None:
+    with connection(settings.db_path) as conn:
+        image = conn.execute(
+            "SELECT sample_id FROM image WHERE id = ?", (seeded.defect_image_ids[0],)
+        ).fetchone()
+        assert image is not None
+        samples_repo.set_label(conn, int(image["sample_id"]), Label.NORMAL)
+
+    payload = compare(client, two_runs)
+
+    assert all(run["ground_truth_stale"] for run in payload["runs"])
+    assert any("Ground truth changed" in note for note in payload["warnings"])
 
 
 def test_an_evaluation_difference_is_named(

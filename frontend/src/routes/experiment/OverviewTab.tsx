@@ -14,7 +14,7 @@ import type { MetricValue } from "../../api/metrics";
 import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { MetricSummary, Subset, TrainingState } from "../../api/client";
-import { Button, CountRun, Disclosure, Panel } from "../../components/ui";
+import { Button, Callout, CountRun, Disclosure, Panel } from "../../components/ui";
 import type { Tone } from "../../components/ui";
 import { useReevaluate } from "../../hooks/useExperiments";
 
@@ -71,6 +71,9 @@ export function Headline({
       <div className="flex flex-col gap-0.5">
         <span className="text-xs text-fg-muted">subset</span>
         <span className="font-mono text-xl">{entry.subset}</span>
+        {entry.ground_truth_stale && (
+          <span className="text-xs text-warn">truth changed</span>
+        )}
       </div>
     </div>
   );
@@ -145,6 +148,7 @@ export function Metrics({
   aggregation: string;
 }) {
   const reevaluate = useReevaluate(experimentId);
+  const stale = metrics.some((entry) => entry.ground_truth_stale);
 
   return (
     <Panel
@@ -155,6 +159,12 @@ export function Metrics({
         </Button>
       }
     >
+      {stale && (
+        <Callout className="mb-4" tone="warning" title="Ground truth changed">
+          These metrics describe an older set of labels or masks. Recompute them before
+          using the numbers for a decision or comparison.
+        </Callout>
+      )}
       <p className="mb-3 text-xs text-fg-muted">
         Threshold-independent, computed from stored scores. Channels aggregate to a part by{" "}
         <span className="font-mono">{aggregation}</span>; recomputing re-reads without

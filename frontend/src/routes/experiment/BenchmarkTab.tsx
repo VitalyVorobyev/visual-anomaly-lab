@@ -12,7 +12,7 @@ import { useState } from "react";
 import type { MetricSummary, Subset } from "../../api/client";
 import { groupingNote } from "../../api/metrics";
 import { CurveChart } from "../../components/charts/CurveChart";
-import { Empty, Panel, SkeletonRows } from "../../components/ui";
+import { Callout, Empty, Panel, SkeletonRows } from "../../components/ui";
 import { useCurves } from "../../hooks/useExperiments";
 import { Results } from "./ResultsPanel";
 
@@ -31,8 +31,9 @@ export function BenchmarkTab({
   metrics: MetricSummary[];
 }) {
   const [subset, setSubset] = useState<Subset>(subsets[subsets.length - 1] ?? "test");
-  const curves = useCurves(experimentId, subset);
   const forSubset = metrics.find((entry) => entry.subset === subset);
+  const stale = forSubset?.ground_truth_stale ?? false;
+  const curves = useCurves(experimentId, subset, !stale);
 
   const absent = "This subset has only one class in it, so there is no curve to draw.";
   /* One image per sample means `max` over a single value, so the image-level curve is the
@@ -43,8 +44,14 @@ export function BenchmarkTab({
   return (
     <div className="flex flex-col gap-6">
       <Panel title={`Curves — ${subset}`}>
-        {curves.isPending && <SkeletonRows rows={3} />}
-        {curves.data && (
+        {stale && (
+          <Callout tone="warning" title="Recompute before reading these curves">
+            Labels or masks changed after the stored metrics were computed. The charts
+            stay hidden so a current curve is never paired with an older area value.
+          </Callout>
+        )}
+        {!stale && curves.isPending && <SkeletonRows rows={3} />}
+        {!stale && curves.data && (
           <div className="grid gap-8 lg:grid-cols-2">
             <CurveChart
               curve={curves.data.sample_roc}
@@ -84,14 +91,18 @@ export function BenchmarkTab({
             )}
           </div>
         )}
-        {ungrouped !== null && <p className="mt-4 text-xs text-fg-muted">{ungrouped}</p>}
-        <p className="mt-4 text-xs text-fg-muted">
-          {/* Stating the gap rather than leaving a reader to wonder where it went. */}
-          Pixel-level curves are not drawn. The pixel metrics stream their histograms and
-          discard them so memory stays constant in the number of test images (ADR-0017);
-          reconstructing the curve would mean re-reading every anomaly map. The pixel
-          ROC-AUC and AU-PRO themselves are on the Overview tab.
-        </p>
+        {!stale && ungrouped !== null && (
+          <p className="mt-4 text-xs text-fg-muted">{ungrouped}</p>
+        )}
+        {!stale && (
+          <p className="mt-4 text-xs text-fg-muted">
+            {/* Stating the gap rather than leaving a reader to wonder where it went. */}
+            Pixel-level curves are not drawn. The pixel metrics stream their histograms
+            and discard them so memory stays constant in the number of test images
+            (ADR-0017); reconstructing the curve would mean re-reading every anomaly map.
+            The pixel ROC-AUC and AU-PRO themselves are on the Overview tab.
+          </p>
+        )}
       </Panel>
 
       {subsets.length === 0 ? (

@@ -137,9 +137,12 @@ Per-image model output. `map_path` references a float32 `.npy` under the experim
 The sample-level score derived by the evaluation layer from that sample's `ImageResult` rows. `aggregation`
 records the method used (`max` / `mean`) so a stored result is self-describing.
 
-**`MetricSet`** — `(experiment_id, subset)`, `metrics` (JSON), `computed_at`.
+**`MetricSet`** — `(experiment_id, subset)`, `metrics` (JSON), `ground_truth_digest` (nullable for legacy
+rows), `computed_at`.
 **Threshold-independent metrics only** — ROC-AUC (sample-level and image-level), average precision, sample
-counts, timing summaries. Nothing that depends on a decision threshold is persisted here ([the evaluation layer](evaluation.md)).
+counts, timing summaries. The digest identifies the exact labels and resolved revision/source masks measured;
+it is compared with current metadata to mark an older metric set stale. Nothing that depends on a decision
+threshold is persisted here ([the evaluation layer](evaluation.md)).
 
 ---
 

@@ -66,9 +66,9 @@ the detail is in the git history and the ADRs.
 
 ### E19 — Versioned annotation + editor (M9)
 
-- [x] **Write the annotation-truth ADR and migration 005** (M): app-owned drafts and immutable
+- [x] **Write the annotation-truth ADR and migrations 005–006** (M): app-owned drafts and immutable
       completed revisions, source-mask provenance, derived-mask SHA256 and metric ground-truth digest.
-- [ ] **Implement draft/revision APIs with optimistic concurrency** (M): `ETag` / `If-Match`, explicit
+- [x] **Implement draft/revision APIs with optimistic concurrency** (M): `ETag` / `If-Match`, explicit
       completion, stale-metric signalling and only synthetic PNG fixtures.
 - [ ] **Implement PNG, LabelMe and COCO interchange** (M): polygons, RLE and bitmap layers round-trip
       to the same binary evaluation mask; original source files never change.

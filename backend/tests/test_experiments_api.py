@@ -197,6 +197,8 @@ def test_metrics_are_computed_and_stored_per_subset(
     assert test["aggregation"] == "max"
     assert test["timing"]["mean_ms"] > 0
     assert detail["headline_roc_auc"] == pytest.approx(1.0)
+    assert detail["metrics"][0]["ground_truth_digest"]
+    assert detail["metrics"][0]["ground_truth_stale"] is False
 
 
 def test_pixel_metrics_appear_because_this_dataset_has_masks(

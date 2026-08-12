@@ -61,6 +61,8 @@ def test_applies_schema_v1(settings: Settings) -> None:
     with connect(settings.db_path) as conn:
         assert current_schema_version(conn) == version
         assert _table_names(conn) >= EXPECTED_TABLES
+        columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(metric_set)")}
+        assert "ground_truth_digest" in columns
 
 
 def test_is_idempotent(settings: Settings) -> None:

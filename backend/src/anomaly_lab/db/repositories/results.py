@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
@@ -110,15 +110,25 @@ def replace_metric_sets(
     conn: sqlite3.Connection,
     experiment_id: int,
     metrics_by_subset: Mapping[Subset, Mapping[str, Any]],
+    *,
+    ground_truth_digests: Mapping[Subset, str] | None = None,
 ) -> int:
     """Replace this experiment's metric sets. Subsets with no metrics are simply absent."""
     conn.execute("BEGIN")
     try:
         conn.execute("DELETE FROM metric_set WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
-            "INSERT INTO metric_set (experiment_id, subset, metrics) VALUES (?, ?, ?)",
+            """
+            INSERT INTO metric_set (experiment_id, subset, metrics, ground_truth_digest)
+                 VALUES (?, ?, ?, ?)
+            """,
             [
-                (experiment_id, subset.value, json.dumps(dict(metrics), sort_keys=True))
+                (
+                    experiment_id,
+                    subset.value,
+                    json.dumps(dict(metrics), sort_keys=True),
+                    ground_truth_digests.get(subset) if ground_truth_digests else None,
+                )
                 for subset, metrics in metrics_by_subset.items()
             ],
         )
@@ -281,29 +291,3 @@ def scored_subsets(conn: sqlite3.Connection, experiment_id: int) -> list[Subset]
     ).fetchall()
     found = {Subset(row["subset"]) for row in rows if row["subset"]}
     return [subset for subset in Subset if subset in found]
-
-
-def masks_for_images(
-    conn: sqlite3.Connection,
-    image_ids: Iterable[int],
-) -> dict[int, str]:
-    """Ground-truth mask path per image id, for the images that have one."""
-    ids = list(image_ids)
-    found: dict[int, str] = {}
-    for start in range(0, len(ids), 900):
-        chunk = ids[start : start + 900]
-        if not chunk:
-            continue
-        placeholders = ",".join("?" * len(chunk))
-        rows = conn.execute(
-            f"""
-            SELECT image_id, path
-              FROM mask
-             WHERE kind = 'ground_truth' AND image_id IN ({placeholders})
-             ORDER BY id
-            """,
-            chunk,
-        ).fetchall()
-        for row in rows:
-            found.setdefault(int(row["image_id"]), str(row["path"]))
-    return found

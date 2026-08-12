@@ -1500,6 +1500,11 @@ export interface components {
             metrics: {
                 [key: string]: unknown;
             };
+            /**
+             * Ground Truth Stale
+             * @default false
+             */
+            ground_truth_stale: boolean;
             /** @description This run's own display range. Never reconciled with another run's — what transfers across runs is a fraction of the range, not a value (ADR-0028). */
             map_range: components["schemas"]["MapScale"] | null;
             /**
@@ -2616,6 +2621,13 @@ export interface components {
             };
             /** Computed At */
             computed_at: string;
+            /** Ground Truth Digest */
+            ground_truth_digest: string | null;
+            /**
+             * Ground Truth Stale
+             * @default false
+             */
+            ground_truth_stale: boolean;
         };
         /**
          * ModelDescription
