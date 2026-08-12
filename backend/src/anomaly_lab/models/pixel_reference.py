@@ -27,18 +27,20 @@ from pathlib import Path
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
 from anomaly_lab.models.base import (
     AnomalyModel,
     Capabilities,
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     evenly_spaced,
 )
 from anomaly_lab.models.diagnostics import DiagnosticKind
-from anomaly_lab.models.preprocessing import load_array
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 # MAD times this estimates the standard deviation of a normal distribution, which is what
@@ -138,6 +140,7 @@ class PixelReferenceModel(AnomalyModel):
             produces_diagnostics=True,
             channel_aware=False,
             dataset_specific=False,
+            portable_formats=[PortableFormat.ONNX],
             preferred_device=Device.CPU,
         )
 
@@ -257,3 +260,151 @@ class PixelReferenceModel(AnomalyModel):
         with np.load(artifact_dir / REFERENCE_FILENAME) as stored:
             self._median = stored["median"]
             self._scale = stored["scale"]
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Write the complete robust z-map computation as a static ONNX graph.
+
+        The graph owns method-specific normalization, channel reduction and smoothing.
+        Decode/colour conversion and the percentile score remain explicit bundle
+        contracts, so the Rust consumer performs exactly the same host operations.
+        """
+        if self._median is None or self._scale is None:
+            raise RuntimeError("pixel_reference has no fitted reference to export")
+        if self._median.shape != (
+            preprocessing.height,
+            preprocessing.width,
+            preprocessing.channels,
+        ):
+            raise ValueError(
+                "stored pixel reference shape does not match the experiment preprocessing contract"
+            )
+
+        # Lazy even though ONNX is a normal application dependency: reading the method
+        # catalogue must stay a cheap pydantic operation (ADR-0007).
+        import onnx
+        from onnx import TensorProto, helper, numpy_helper
+
+        opset = 18
+        input_name = "image"
+        output_name = "anomaly_map"
+        initializers = [
+            numpy_helper.from_array(
+                np.ascontiguousarray(self._median.transpose(2, 0, 1)[np.newaxis]),
+                name="reference_median",
+            ),
+            numpy_helper.from_array(
+                np.ascontiguousarray(self._scale.transpose(2, 0, 1)[np.newaxis]),
+                name="reference_scale",
+            ),
+            numpy_helper.from_array(np.asarray([1], dtype=np.int64), name="channel_axis"),
+            numpy_helper.from_array(np.asarray([1], dtype=np.int64), name="map_axis"),
+        ]
+        nodes = [
+            helper.make_node("Sub", [input_name, "reference_median"], ["difference"]),
+            helper.make_node("Abs", ["difference"], ["absolute_difference"]),
+            helper.make_node("Div", ["absolute_difference", "reference_scale"], ["channel_z"]),
+            helper.make_node("ReduceMax", ["channel_z", "channel_axis"], ["raw_map"], keepdims=0),
+            helper.make_node("Unsqueeze", ["raw_map", "map_axis"], ["map_nchw"]),
+        ]
+
+        sigma = self.config.smoothing_sigma
+        graph_output = "map_nchw"
+        if sigma > 0:
+            radius = max(1, round(3.0 * sigma))
+            offsets = np.arange(-radius, radius + 1, dtype=np.float64)
+            kernel = np.exp(-(offsets**2) / (2.0 * sigma * sigma))
+            kernel = np.asarray(kernel / kernel.sum(), dtype=np.float32)
+            initializers.extend(
+                [
+                    numpy_helper.from_array(
+                        kernel.reshape(1, 1, kernel.size, 1), name="vertical_kernel"
+                    ),
+                    numpy_helper.from_array(
+                        kernel.reshape(1, 1, 1, kernel.size), name="horizontal_kernel"
+                    ),
+                    numpy_helper.from_array(
+                        np.asarray([0, 0, radius, 0, 0, 0, radius, 0], dtype=np.int64),
+                        name="vertical_pads",
+                    ),
+                    numpy_helper.from_array(
+                        np.asarray([0, 0, 0, radius, 0, 0, 0, radius], dtype=np.int64),
+                        name="horizontal_pads",
+                    ),
+                ]
+            )
+            nodes.extend(
+                [
+                    helper.make_node(
+                        "Pad", ["map_nchw", "vertical_pads"], ["vertical_padded"], mode="edge"
+                    ),
+                    helper.make_node(
+                        "Conv", ["vertical_padded", "vertical_kernel"], ["vertical_blur"]
+                    ),
+                    helper.make_node(
+                        "Pad",
+                        ["vertical_blur", "horizontal_pads"],
+                        ["horizontal_padded"],
+                        mode="edge",
+                    ),
+                    helper.make_node(
+                        "Conv", ["horizontal_padded", "horizontal_kernel"], [output_name]
+                    ),
+                ]
+            )
+            graph_output = output_name
+        else:
+            nodes.append(helper.make_node("Identity", ["map_nchw"], [output_name]))
+            graph_output = output_name
+
+        graph = helper.make_graph(
+            nodes,
+            "visual-anomaly-lab pixel_reference",
+            [
+                helper.make_tensor_value_info(
+                    input_name,
+                    TensorProto.FLOAT,
+                    [1, preprocessing.channels, preprocessing.height, preprocessing.width],
+                )
+            ],
+            [
+                helper.make_tensor_value_info(
+                    graph_output,
+                    TensorProto.FLOAT,
+                    [1, 1, preprocessing.height, preprocessing.width],
+                )
+            ],
+            initializer=initializers,
+        )
+        model = helper.make_model(
+            graph,
+            opset_imports=[helper.make_opsetid("", opset)],
+            producer_name="visual-anomaly-lab",
+            producer_version="0.1.0",
+        )
+        onnx.checker.check_model(model)
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        onnx.save_model(model, destination)
+        return OnnxGraphContract(
+            opset=opset,
+            input_name=input_name,
+            output_name=output_name,
+            score_percentile=self.config.score_percentile,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """The fitted Python path over the tensor used by deployment parity."""
+        if self._median is None or self._scale is None:
+            raise RuntimeError("pixel_reference has no fitted reference for parity")
+        if input_nchw.shape != (1, self._median.shape[2], *self._median.shape[:2]):
+            raise ValueError("portable parity input shape does not match the stored reference")
+        array = np.ascontiguousarray(input_nchw[0].transpose(1, 2, 0), dtype=np.float32)
+        deviation = np.abs(array - self._median) / self._scale
+        raw = deviation.max(axis=2)
+        anomaly_map = gaussian_blur(raw.astype(np.float64), self.config.smoothing_sigma).astype(
+            np.float32
+        )
+        return anomaly_map, float(np.percentile(anomaly_map, self.config.score_percentile))

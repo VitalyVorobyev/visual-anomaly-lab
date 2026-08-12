@@ -41,6 +41,7 @@ class JobKind(StrEnum):
     DISTILL = "distill"
     MODEL_ASSET_DOWNLOAD = "model_asset_download"
     REGION_PREPARE = "region_prepare"
+    EXPORT = "export"
 
 
 class JobStatus(StrEnum):

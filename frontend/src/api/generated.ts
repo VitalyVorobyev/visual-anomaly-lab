@@ -477,6 +477,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue a verified portable-model export */
+        post: operations["start_export_api_experiments__experiment_id__export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/reevaluate": {
         parameters: {
             query?: never;
@@ -1797,6 +1814,8 @@ export interface components {
              * @default false
              */
             supports_resume: boolean;
+            /** Portable Formats */
+            portable_formats: components["schemas"]["PortableFormat"][];
             /** @default cpu */
             preferred_device: components["schemas"]["Device"];
         };
@@ -2546,6 +2565,8 @@ export interface components {
              * @default false
              */
             supports_resume: boolean;
+            /** Portable Formats */
+            portable_formats: components["schemas"]["PortableFormat"][];
             training_state: components["schemas"]["TrainingState"] | null;
             map_range: components["schemas"]["MapScale"] | null;
         };
@@ -2586,6 +2607,13 @@ export interface components {
              * @description Sample-level ROC-AUC on test, or on the best subset scored so far.
              */
             headline_roc_auc: number | null;
+        };
+        /** ExportParams */
+        ExportParams: {
+            /** Experiment Id */
+            experiment_id: number;
+            /** @default onnx */
+            format: components["schemas"]["PortableFormat"];
         };
         /** ExternalModelAssetSource */
         ExternalModelAssetSource: {
@@ -2751,7 +2779,7 @@ export interface components {
          * JobKind
          * @enum {string}
          */
-        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill" | "model_asset_download" | "region_prepare";
+        JobKind: "import" | "reference_import" | "verify" | "prewarm" | "train" | "infer" | "distill" | "model_asset_download" | "region_prepare" | "export";
         /**
          * JobMetrics
          * @description Every scalar series a job has emitted so far.
@@ -3289,6 +3317,12 @@ export interface components {
             /** Points */
             points: components["schemas"]["AnnotationPoint"][];
         };
+        /**
+         * PortableFormat
+         * @description A deployment representation a fitted method can prove it emits.
+         * @enum {string}
+         */
+        PortableFormat: "onnx";
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -5079,6 +5113,41 @@ export interface operations {
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["InferParams"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    start_export_api_experiments__experiment_id__export_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ExportParams"] | null;
             };
         };
         responses: {

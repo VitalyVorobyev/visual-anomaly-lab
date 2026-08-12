@@ -759,6 +759,11 @@ function MethodCard({
         {capabilities.produces_anomaly_map && <Badge tone="info">anomaly maps</Badge>}
         {capabilities.produces_diagnostics && <Badge tone="info">diagnostics</Badge>}
         {capabilities.channel_aware && <Badge tone="info">channel-aware</Badge>}
+        {capabilities.portable_formats.map((format) => (
+          <Badge key={format} tone="neutral">
+            {format.toUpperCase()} export
+          </Badge>
+        ))}
         {!capabilities.requires_training && <Badge tone="neutral">no training</Badge>}
         <Badge tone="neutral">
           <span className="font-mono">{capabilities.preferred_device}</span>

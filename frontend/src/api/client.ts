@@ -101,6 +101,7 @@ export type ImageTier = Schemas["ImageTier"];
 
 export type ModelDescription = Schemas["ModelDescription"];
 export type Capabilities = Schemas["Capabilities"];
+export type PortableFormat = Schemas["PortableFormat"];
 export type MethodCatalog = Schemas["MethodCatalog"];
 export type ExperimentSummary = Schemas["ExperimentSummary"];
 export type ExperimentDetail = Schemas["ExperimentDetail"];

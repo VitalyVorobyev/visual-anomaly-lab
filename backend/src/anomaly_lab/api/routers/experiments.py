@@ -35,6 +35,7 @@ from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import splits as splits_repo
+from anomaly_lab.deployment.export import ExportParams
 from anomaly_lab.domain.entities import (
     Experiment,
     ExperimentStatus,
@@ -64,7 +65,7 @@ from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
 from anomaly_lab.media.overlay import read_display_range, render_anomaly_map, render_rgb_image
 from anomaly_lab.media.values import encode_plane
-from anomaly_lab.models.base import ModelDescription, evenly_spaced
+from anomaly_lab.models.base import ModelDescription, PortableFormat, evenly_spaced
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
     DiagnosticIndex,
@@ -222,6 +223,8 @@ class ExperimentDetail(ExperimentSummary):
     produces_diagnostics: bool = False
     supports_resume: bool = False
     """Whether this method can continue a finished run (ADR-0025)."""
+    portable_formats: list[PortableFormat] = Field(default_factory=list)
+    """Verified deployment formats this fitted method can produce (ADR-0034)."""
     training_state: TrainingState | None = None
     """
     How much training the stored checkpoint has actually had.
@@ -416,12 +419,14 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         produces_map = capabilities.produces_anomaly_map
         produces_diagnostics = capabilities.produces_diagnostics
         supports_resume = capabilities.supports_resume
+        portable_formats = capabilities.portable_formats
     except UnknownModelError:
         # A method can be removed from the registry while its experiments remain. The
         # record stays readable; only the capability-driven affordances go away.
         produces_map = False
         produces_diagnostics = False
         supports_resume = False
+        portable_formats = []
 
     return ExperimentDetail(
         **_summary(conn, experiment).model_dump(),
@@ -438,6 +443,7 @@ def _detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetai
         produces_anomaly_map=produces_map,
         produces_diagnostics=produces_diagnostics,
         supports_resume=supports_resume,
+        portable_formats=portable_formats,
         # Read from a JSON sidecar, never from the checkpoint: this process has no torch,
         # by design, and a `.pt` is unreadable without it.
         training_state=read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR),
@@ -834,6 +840,39 @@ def start_infer(
     )
 
 
+@router.post("/{experiment_id}/export", summary="Queue a verified portable-model export")
+def start_export(
+    request: Request,
+    experiment_id: int,
+    body: ExportParams | None = None,
+) -> JobSummary:
+    experiment, _ = _load(request, experiment_id)
+    params = body or ExportParams(experiment_id=experiment.id)
+    params = params.model_copy(update={"experiment_id": experiment.id})
+    try:
+        capabilities = get_model_class(experiment.model_type).capabilities()
+    except UnknownModelError as exc:
+        raise HTTPException(
+            status_code=422, detail=f"method {experiment.model_type} is not registered"
+        ) from exc
+    if params.format not in capabilities.portable_formats:
+        raise HTTPException(
+            status_code=422,
+            detail=f"method {experiment.model_type} does not support {params.format.value} export",
+        )
+    if experiment.status is not ExperimentStatus.TRAINED:
+        raise HTTPException(status_code=422, detail="train the experiment before exporting it")
+
+    queue: JobQueue = request.app.state.job_queue
+    return summary_of(
+        queue.enqueue(
+            kind=JobKind.EXPORT,
+            params=params.model_dump(mode="json"),
+            experiment_id=experiment.id,
+        )
+    )
+
+
 @router.post("/{experiment_id}/reevaluate", summary="Recompute metrics from stored scores")
 def reevaluate(request: Request, experiment_id: int) -> list[MetricSummary]:
     """Re-read the results without re-running inference.
@@ -912,6 +951,7 @@ def get_artifacts(request: Request, experiment_id: int) -> ArtifactListing:
         _artifact_group(root, "model", "Trained weights"),
         _artifact_group(root, "maps", "Anomaly maps", summarize_from=32),
         _artifact_group(root, "diagnostics", "Diagnostics", summarize_from=32),
+        _artifact_group(root, "exports", "Portable exports"),
         _artifact_group(root, "logs", "Job logs"),
     ]
     return ArtifactListing(

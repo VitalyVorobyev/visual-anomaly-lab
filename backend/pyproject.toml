@@ -10,6 +10,8 @@ dependencies = [
     "pydantic-settings>=2.14",
     "pillow>=12.3.0",
     "numpy>=2.5.1",
+    "onnx>=1.19",
+    "onnxruntime>=1.23",
 ]
 
 [project.optional-dependencies]
@@ -99,8 +101,19 @@ files = ["src", "tests"]
 # extra, so the environment CI type-checks in does not have it installed at all. Without
 # this, mypy fails on the two lazy `import torch` statements on any checkout that did not
 # opt into the extra — which is every checkout that follows the documented default.
+# `onnxruntime` is a normal dependency but publishes no complete typed public surface;
+# deployment imports it lazily through `importlib` and narrows the returned numpy array.
 [[tool.mypy.overrides]]
-module = ["anomalib.*", "mobile_sam", "mobile_sam.*", "torch", "torch.*", "torchvision.*"]
+module = [
+    "anomalib.*",
+    "mobile_sam",
+    "mobile_sam.*",
+    "onnxruntime",
+    "onnxruntime.*",
+    "torch",
+    "torch.*",
+    "torchvision.*",
+]
 ignore_missing_imports = true
 follow_untyped_imports = true
 

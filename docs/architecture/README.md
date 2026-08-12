@@ -16,6 +16,7 @@ code does and the record is right about what was chosen** (ADR-0030).
 | [Diagnostics](diagnostics.md) | What a method shows about itself, and the two ways to read it |
 | [Jobs](jobs.md) | The queue, the subprocess protocol, resume, and the one process that is not a job |
 | [Evaluation](evaluation.md) | Aggregation, image- and pixel-level metrics, thresholds, rankings |
+| [Portable deployment](deployment.md) | Verified ONNX bundles, parity, and the Rust-consumer boundary |
 | [Media](media.md) | Thumbnail and preview cache, ETags, the full-resolution tier |
 | [Frontend](frontend.md) | Stack, the token layer, shell capabilities, every screen |
 | [Security](security.md) | The local attack surface, and what is deliberately not defended |
@@ -51,6 +52,7 @@ The workbench supports one loop, end to end:
 | **Infer** | Score a subset (or individual samples) with a trained experiment, producing per-image scores and anomaly maps. |
 | **Evaluate** | Compute threshold-independent metrics; explore a threshold interactively; inspect FP/FN; view ranked most-normal / most-anomalous lists. |
 | **Compare** | Put several experiments side by side under one protocol. |
+| **Export** | Publish a supported fitted method as a checksummed ONNX deployment bundle after parity. |
 
 ## Non-goals
 
@@ -91,7 +93,7 @@ flowchart TB
     end
 
     subgraph backend["FastAPI sidecar — 127.0.0.1, no auth"]
-        API["App factory + routers<br/>datasets · import · splits ·<br/>experiments · jobs · images · eval"]
+        API["App factory + routers<br/>datasets · import · splits ·<br/>experiments · jobs · images · eval · export"]
         WS["WebSocket /ws/jobs/{id}"]
         REG["Model plugin registry"]
         QUEUE["Job queue (single-slot FIFO)"]
@@ -180,8 +182,8 @@ a server-visible absolute directory path.
 
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
 identifiers persisted in `Experiment.model_type`: `pixel_reference`, `efficientad_anomalib`,
-`efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`. Adding a method means adding a module and
-a registry entry — nothing else in the application changes.
+`efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`. Adding a method means
+adding a module and a registry entry — nothing else in the application changes.
 
 **SQLite** at `data/app.sqlite3` — metadata, configuration, scores, paths ([the domain model](domain-model.md)). **Artifact store** at
 `data/artifacts/exp-<id>/` — checkpoints, reference statistics, anomaly maps, logs. **Thumbnail cache** at

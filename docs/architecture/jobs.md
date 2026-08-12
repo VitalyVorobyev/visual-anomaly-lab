@@ -47,6 +47,11 @@ are complete. Per-image extraction/decode failures are persisted in the result a
 not fail over to identity. A malformed job, missing model asset or extractor construction failure fails the
 job before processing, which keeps a partially configured profile from looking like a low-coverage success.
 
+`export` is experiment-bound and follows the same one-entry rule. It loads the fitted method, writes an ONNX
+bundle into app-owned staging, executes graph parity on CPU, hashes the payloads and atomically publishes only
+after the manifest is valid. Failure or cancellation removes staging. The queue and protocol have no
+export-specific branch; the kind costs one lazy handler and one migration that widens SQLite's `kind` check.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:

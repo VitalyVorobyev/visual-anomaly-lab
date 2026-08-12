@@ -52,6 +52,7 @@ def test_the_method_catalog_carries_schemas_rather_than_field_lists(client: Test
     baseline = next(m for m in payload["methods"] if m["key"] == "pixel_reference")
     assert baseline["config_schema"]["properties"]["smoothing_sigma"]["description"]
     assert baseline["capabilities"]["produces_anomaly_map"] is True
+    assert baseline["capabilities"]["portable_formats"] == ["onnx"]
     assert baseline["availability"]["available"] is True
 
 
@@ -988,6 +989,24 @@ def test_a_method_without_resume_reports_so_and_carries_no_training_state(
 
     assert detail["supports_resume"] is False
     assert detail["training_state"] is None
+    assert detail["portable_formats"] == ["onnx"]
+
+
+def test_export_is_refused_before_training(client: TestClient, seeded: Fixture) -> None:
+    experiment = _create(client, seeded, name="not fitted")
+
+    response = client.post(f"/api/experiments/{experiment['id']}/export")
+
+    assert response.status_code == 422
+    assert "train the experiment" in response.text
+
+
+def test_export_uses_the_generic_job_queue(client: TestClient, scored: dict[str, Any]) -> None:
+    queued = client.post(f"/api/experiments/{scored['id']}/export")
+
+    assert queued.status_code == 200
+    assert queued.json()["kind"] == "export"
+    assert queued.json()["experiment_id"] == scored["id"]
 
 
 def test_training_without_additional_steps_is_unaffected(

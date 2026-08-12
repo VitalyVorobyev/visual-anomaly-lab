@@ -12,6 +12,7 @@ class Capabilities(BaseModel):
     produces_diagnostics: bool       # drives whether the UI offers the inspector views (ADR-0018)
     channel_aware: bool              # model consumes channel metadata internally
     dataset_specific: bool           # True for classical_circular — surfaced as a UI warning
+    portable_formats: list[Literal["onnx"]] # only parity-proven method exporters
     preferred_device: Literal["cpu", "mps", "cuda"]
 
 
@@ -57,6 +58,11 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
 A method whose optional dependencies are missing reports `availability.available = false` with the
 command that installs them, and is **listed rather than hidden**: "why can't I pick EfficientAD"
 should be answerable from the screen.
+
+Portable export is a second, optional structural protocol rather than another abstract method on every
+model. A class lists `onnx` only when its fitted instance implements `SupportsOnnxExport` and its graph has
+passed the generic Python-versus-runtime parity gate. The API and UI branch on that capability, never on the
+registry key. See [portable deployment](deployment.md).
 
 ## Schema-driven configuration
 
