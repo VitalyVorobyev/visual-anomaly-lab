@@ -244,7 +244,7 @@ view sharing one cut fraction and one zoom across every pane.
 
 ## Next
 
-### M6 — Custom EfficientAD · in progress
+### M6 — Custom EfficientAD · engineering complete 2026-08-12
 
 The milestone turned on a question the plan had not asked, and the answer reshaped it: **what is a
 second implementation actually for?** Measuring our own against the wrapper's number makes the
@@ -261,7 +261,7 @@ it has been tested by a method the interface was not designed around.
 **Exit criteria**
 
 - [x] `efficientad_custom` trains and infers on MPS and produces maps and scores through the standard interface. 130 ms/step, 25.8 ms/image.
-- [ ] The comparison view shows both implementations side by side, and the gap between them is measured and explained. *Measured on `candle` at three seeds; the protocol sweep on the official split is outstanding.*
+- [x] The comparison view shows both implementations side by side, and the measured gap is bounded honestly. It is measured on `candle` at three seeds; the long official-protocol sweep remains a research follow-up rather than a product dependency.
 - [x] Every M4 visualization works on it with no new code. Checked against two real runs, not a fixture: identical diagnostic keys, kinds and scopes, 37 architecture nodes each with real shapes, same edges. Nothing needed a special case.
 
 **Still binds:**
@@ -453,40 +453,107 @@ to prevent.
 
 ---
 
-### M8 — `classical_circular` (optional)
+### M8 — Dataset-first workbench + lifecycle · in progress
 
-**Goal.** The showcase-specific baseline, if it is still wanted once the universal tool exists.
+**Goal.** Make a dataset the stable place where work begins: browse it, manage its splits, create an
+experiment and read its history without crossing between unrelated top-level screens.
 
 **Scope**
 
-- Circle detection (Hough seed → radial-ray subpixel edges → robust circle fit, with a median-prior fallback), polar transform, FFT angular-correlation orientation alignment against a bootstrapped reference, per-channel median/MAD reference build, and a predict path producing a z-map → smoothing → inverse-polar warp → percentile score (**ADR-0010**).
-- Built as a circle-fit front-end onto `pixel_reference`, which is already the geometry-free core of the same algorithm.
+- Three explicit route layouts (`ReadingLayout`, `WorkspaceLayout`, `CanvasLayout`) with one owner
+  for vertical scrolling; images, maps, charts and tables remain the largest region.
+- Dataset-local navigation for browse, annotate, splits and experiments. Experiment creation moves
+  to a dedicated dataset route; the global experiment catalogue remains a secondary searchable view.
+- Server-side experiment search, method/dataset/status/date filters, sortable columns and URL-backed
+  query state. Selected compatible experiments can be sent to Compare.
+- Previewed deletion of experiments and datasets, covering only application-owned records,
+  annotations, caches and artifacts. Referenced source images and source masks are immutable.
+- Local reference-pack discovery for VisA and GKN, with one atomic, idempotent `Register all` action.
 
 **Exit criteria**
 
-- [ ] It runs on the showcase dataset through the identical interface, and its inverse-polar warp is verified rather than assumed.
-- [ ] It is the *only* component that assumes anything about the dataset's geometry.
-
-**Size:** medium. Deferring an optional milestone in a spare-time project is close to cancelling it, and **ADR-0015** says so outright.
+- [ ] Dataset browse has exactly one visible vertical scrollbar at 1440×900 and 1024×768.
+- [ ] A new experiment starts inside one dataset and its history is visible beside that action.
+- [ ] `method=…` returns every matching experiment from SQLite and survives reload/back/forward.
+- [ ] Destructive previews name every application-owned consequence, and source trees survive tests.
+- [ ] A present VisA/GKN pack registers in one action; a missing pack is an instructional state.
 
 ---
 
-### M9 — Polish + README
+### M9 — Annotation system + editor
 
-**Goal.** Make the project reproducible by someone who is not the author (including the author six months later), and bring the documentation back in line with what was actually built.
+**Goal.** Turn source masks into immutable provenance and make the application's own editable,
+versioned defect annotation the ground truth used for future evaluation.
 
 **Scope**
 
-- Full README: setup from a fresh machine, how to obtain and import each reference dataset, architecture overview, and a **"how to add a new anomaly-detection method"** guide walking through the plugin interface with a working example.
-- UX polish pass: loading and empty states, error surfaces, keyboard navigation, consistent layout across screens — it should read as an engineering tool, not a debug panel.
-- Documentation refresh: the handbook pages updated where implementation diverged, and ADR amendments where a decision was refined.
-- Backlog re-triage: drop what no longer matters, promote what the work revealed.
+- Dataset label taxonomy, per-image draft document, immutable completed revisions, checksummed
+  derived masks and a ground-truth digest carried by metrics.
+- PNG mask, LabelMe and COCO polygon/RLE import/export without changing source annotations.
+- Full-height editor: polygon/vertices, brush/eraser, pan/zoom, undo/redo, autosave with conflict
+  detection, completion state, keyboard queue and MobileSAM point/box assistance.
 
 **Exit criteria**
 
-- [ ] Following the README alone on a fresh machine reaches full M3 functionality on a **public** dataset — download, import, train, view results — with no undocumented steps and no private data required.
-- [ ] The "add a new method" guide has been followed end-to-end at least once (M6 counts if it was written first and used as the recipe).
-- [ ] Documentation matches reality: no ADR describes a decision that was silently reversed.
-- [ ] Backlog re-triaged and the "Later / ideas" list refreshed.
+- [ ] Imported source masks remain byte-for-byte untouched while their app-owned revisions can be edited.
+- [ ] Evaluation uses one completed revision and marks older metric digests stale.
+- [ ] PNG, LabelMe and COCO round trips preserve the binary evaluation mask.
+- [ ] A keyboard-only annotation pass can move through a queue, edit, save and complete an image.
 
-**Size:** medium. README and docs work expands to fill the time available; timebox it.
+---
+
+### M10 — Spatial input pipeline + region profiles
+
+**Goal.** Test, rather than assume, whether localising one dominant object before anomaly detection
+improves the result while keeping annotations and maps in source-image coordinates.
+
+**Scope**
+
+- Dataset-owned immutable `RegionProfileRevision`s and a `RegionExtractor` registry with `identity`,
+  a threshold baseline and MobileSAM.
+- One shared source → crop → contain-resize → pad transform and its exact inverse; no model opens an
+  image outside this bridge.
+- Preview on evenly spaced calibration images, bounded full-dataset preparation, explicit failures,
+  CPU fallback and MPS only after a smoke test.
+- Paired identity/localised experiments on public data with quality, latency, memory and failure-rate
+  reporting. A negative result still closes the milestone.
+
+**Exit criteria**
+
+- [ ] Points and masks round-trip through every transform within the stated synthetic tolerance.
+- [ ] Every method consumes identical prepared pixels and persisted maps align with source masks.
+- [ ] A profile revision is previewed, built, pinned and reproducible; no failure silently becomes identity.
+- [ ] Evidence, not preference, decides whether localisation becomes a default.
+
+---
+
+### M11 — Modern reference methods
+
+**Goal.** Add a small set of methods that represent different anomaly-detection principles and are
+useful quality references on Apple Silicon.
+
+**Order:** SuperADD → Dinomaly → GLASS → one zero/few-shot VLM method. Each remains one lazy model
+module plus one registry entry, with resource planning, shared preprocessing, CPU/MPS smoke tests,
+same/different-seed assertions and a public benchmark. AnomalyDINO stays lower priority because its
+principle overlaps more with the existing memory-bank methods.
+
+**Exit criteria**
+
+- [ ] At least three distinct method families run through the unchanged vertical slice.
+- [ ] Every unbounded candidate pool or external asset is planned and printed before execution.
+- [ ] Results record the exact package, weights, preprocessing and public protocol used.
+
+---
+
+### M12 — Polish + reproducible onboarding
+
+**Goal.** Make the finished workbench coherent, accessible and reproducible from a fresh machine.
+
+**Scope:** responsive light/dark visual QA, loading/empty/error states, keyboard and focus pass,
+performance, README setup and reference-data credits, method-extension guide and documentation audit.
+
+**Exit criteria**
+
+- [ ] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
+- [ ] Key screens pass visual review at both target sizes and in both themes.
+- [ ] The method-extension guide has been followed end to end, and the handbook matches the code.

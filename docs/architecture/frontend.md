@@ -3,6 +3,11 @@
 The frontend is a professional engineering tool, not a debug panel: dense, keyboard-friendly, responsive, with
 no configuration screens beyond what an experiment actually requires.
 
+Its composition follows the data: images, maps, charts and result tables are the focal surface;
+navigation, filters and configuration are subordinate. The visual direction is a calm technical
+instrument at balanced density — hierarchy comes from alignment, type and spacing before borders or
+colour.
+
 ## Stack
 
 A deliberately small one — `react-router`, TanStack Query, Tailwind — with the API client generated
@@ -58,13 +63,30 @@ over HTTP belongs in the sidecar, which both hosts reach identically.
 The cost, accepted: the contract is a hand-written global rather than a type-checked interface. A
 renamed Rust command fails at runtime, in the desktop build only, where the browser tests never look.
 
+## Scroll and layout ownership
+
+The shell never scrolls. Every route belongs to one of three explicit layouts, so scroll ownership
+is visible in the route table rather than emerging from nested `overflow` declarations:
+
+- **`ReadingLayout`** owns one outer vertical scroller for catalogues, forms and tables.
+- **`WorkspaceLayout`** owns the remaining viewport but does not scroll; the route gives its main
+  data surface the single vertical scroller. The dataset browser uses this layout, with filters in a
+  256 px supporting rail and the virtual grid filling the rest.
+- **`CanvasLayout`** does not scroll; an image canvas fills the viewport and any supporting pane
+  scrolls only when its own content requires it.
+
+The main navigation contains `Datasets`, `Experiments` and `Compare`. Import is an action in the
+dataset catalogue, not a peer destination; backend health remains visible in the shell and the full
+health route remains directly addressable. A same-axis scroller may not be placed inside another
+same-axis scroller.
+
 ## Screens
 
 Each screen from the brief maps onto the API surface as follows.
 
 | Screen | Purpose | Primary API |
 | --- | --- | --- |
-| **Dataset browser + import** | List datasets; native folder picker → scan → **manifest review** (edit channel mapping, fix labels, inspect warnings) → commit. Grid of samples with label/channel/subset filters. | `POST /api/import/scan`, `POST /api/import/commit`, `GET /api/datasets`, `GET /api/datasets/{id}/samples`, `GET /api/images/{id}/thumb` |
+| **Dataset browser + import** | List datasets; native folder picker → scan → **manifest review** (edit channel mapping, fix labels, inspect warnings) → commit. The browser keeps label/channel/split/subset filters in a left rail and makes its virtual image grid the only vertical data scroller. | `POST /api/import/scan`, `POST /api/import/commit`, `GET /api/datasets`, `GET /api/datasets/{id}/samples`, `GET /api/images/{id}/thumb` |
 | **Sample viewer (grouped)** | One part, all its channels side by side, channel count driven by data. Label editing (normal / defect / unlabeled) with keyboard shortcuts for fast passes over unlabeled data. Full-resolution zoom. | `GET /api/datasets/{id}/samples/{sid}`, `PATCH …/label`, `GET /api/images/{id}/preview`, `…/full` |
 | **Split management** | Create a seeded, stratified split; per-subset counts by label; splits are immutable once created. | `POST /api/splits`, `GET /api/splits?dataset_id=` |
 | **Experiment creation** | Pick dataset + split + model; the configuration form is **generated from the model's JSON Schema** ([methods](methods.md)), so new hyperparameters appear with no frontend change. Capability flags drive the UI (a `dataset_specific` model shows a warning; a model without anomaly maps hides overlay options). | `GET /api/experiments/model-types`, `POST /api/experiments` |
