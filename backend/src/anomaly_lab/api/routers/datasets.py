@@ -178,6 +178,7 @@ class DatasetDeletionPreview(BaseModel):
     splits: int
     experiments: int
     jobs: int
+    region_profiles: int
     manual_labels: int
     generated_files: int
     generated_bytes: int
@@ -210,6 +211,7 @@ class _DeletionInventory:
     storage_safe: bool
     samples: int
     splits: int
+    region_profiles: int
     manual_labels: int
 
 
@@ -337,6 +339,12 @@ def _deletion_inventory(
         storage_safe=safe,
         samples=samples_repo.count_samples(conn, dataset_id),
         splits=len(splits_repo.list_splits(conn, dataset_id)),
+        region_profiles=int(
+            conn.execute(
+                "SELECT COUNT(*) FROM region_profile_revision WHERE dataset_id = ?",
+                (dataset_id,),
+            ).fetchone()[0]
+        ),
         manual_labels=manual_labels,
     )
 
@@ -398,6 +406,7 @@ def preview_dataset_deletion(request: Request, dataset_id: int) -> DatasetDeleti
         splits=inventory.splits,
         experiments=len(inventory.experiment_ids),
         jobs=inventory.jobs,
+        region_profiles=inventory.region_profiles,
         manual_labels=inventory.manual_labels,
         generated_files=inventory.usage.files,
         generated_bytes=inventory.usage.bytes,
