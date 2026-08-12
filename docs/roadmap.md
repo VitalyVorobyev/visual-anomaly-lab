@@ -552,6 +552,13 @@ must be made bounded and Mac-credible first. Each integration remains one lazy m
 entry, with resource planning, shared preprocessing, CPU/MPS smoke tests, same/different-seed assertions and
 a public benchmark.
 
+**Dinomaly feasibility.** The small registered DINOv2 encoder completes a real 392 × 392 train step in
+122 ms on MPS and 131 ms on CPU, with 0.62 GiB MPS driver memory and a 246 MB resumable checkpoint. The
+gate also found two integration invariants anomalib does not validate up front: input dimensions must be
+divisible by 14, and the default fusion topology requires exactly eight decoder layers. The candidate is
+Mac-credible; [`measurements-dinomaly.md`](measurements-dinomaly.md) records the complete protocol and
+weight fingerprint. Integration and the public-data quality gate remain open.
+
 **Exit criteria**
 
 - [ ] At least three distinct method families run through the unchanged vertical slice.
