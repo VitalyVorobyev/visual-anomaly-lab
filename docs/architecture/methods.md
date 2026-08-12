@@ -258,6 +258,9 @@ Resource evidence and the external-asset policy are recorded in
 [`measurements-glass.md`](../measurements-glass.md). The bounded paired public gate missed
 its image-level quality floor, so the method remains available as an explicitly experimental
 comparison rather than the recommended learned-synthesis reference.
+Its portable graph embeds ImageNet normalization, the fitted projection and discriminator, and emits both
+the source-sized prepared-frame map and GLASS's own image score. Direct ONNX Runtime parity pins both
+outputs; experimental quality status does not weaken the deployment contract.
 
 ## A downloaded asset can be a hyperparameter
 

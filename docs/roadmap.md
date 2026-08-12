@@ -605,6 +605,8 @@ reference-data credits.
 - [x] A fresh public-data workspace reaches register/import → annotate → split → experiment → compare from the README alone.
 - [x] A supported fitted method exports atomically, passes Python-versus-portable parity, and runs through
       the Rust reference consumer from the documented command.
+- [x] Every currently registered method declares ONNX only after direct map-and-score parity; adding a
+      future method leaves export absent until its plugin proves the same contract.
 - [x] The deployment manifest is sufficient to reproduce tensor preparation, scoring, operating point and
       source-map projection without importing application Python.
 - [x] The book explains the system, every pipeline, method and preprocessing extension, a new-dataset

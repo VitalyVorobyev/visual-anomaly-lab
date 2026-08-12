@@ -10,7 +10,7 @@ This page is generated from the live model registry and checked method metadata.
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
 | `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | onnx |
-| `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | — |
+| `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -96,7 +96,7 @@ A frozen WRN-50 feature extractor with learned global and local anomaly synthesi
 - Diagnostics: no
 - Exact continuation: yes
 - Dataset-specific: no
-- Portable formats: —
+- Portable formats: onnx
 
 ## Adding another method
 

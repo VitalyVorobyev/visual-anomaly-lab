@@ -38,8 +38,13 @@ Image score is a discriminated contract:
 - `max` or `top_k_mean` for `efficientad_custom`;
 - `tensor` for PatchCore's graph-produced, memory-bank-reweighted paper score.
 - `tensor` for Dinomaly's graph-produced, smoothed top-one-percent score.
+- `tensor` for GLASS's graph-produced discriminator score.
 
 This prevents a consumer from reproducing a heatmap while silently changing the accept/reject decision.
+
+Every method currently shown in the workbench catalogue has one of these parity-tested export paths. A new
+plugin is not exportable by default: it must implement and verify the same contract before the UI offers the
+action.
 
 ## Rust reference runner
 

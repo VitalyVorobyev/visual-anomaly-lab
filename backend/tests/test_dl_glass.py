@@ -8,6 +8,7 @@ projection, discriminator, losses, optimizers and map rule remain real.
 from __future__ import annotations
 
 import hashlib
+from importlib import import_module
 from pathlib import Path
 from typing import Any
 
@@ -209,6 +210,24 @@ def test_fit_save_load_predict_and_continue_are_one_contract(tmp_path: Path) -> 
     assert restored.completed_steps() == 3
     uninterrupted, _, _ = _fit(tmp_path / "uninterrupted", steps=3)
     assert _digest_optimized(restored) == _digest_optimized(uninterrupted)
+
+
+def test_fitted_model_exports_map_and_graph_score_with_parity(tmp_path: Path) -> None:
+    """GLASS's discriminator score travels in the graph beside its anomaly map."""
+    model, _, infer_ctx = _fit(tmp_path / "run")
+    destination = tmp_path / "glass.onnx"
+    contract = model.export_onnx(destination, infer_ctx.preprocessing)
+    fixture = np.linspace(0.0, 1.0, 3 * SIZE * SIZE, dtype=np.float32).reshape(1, 3, SIZE, SIZE)
+    expected_map, expected_score = model.portable_reference(fixture)
+    ort: Any = import_module("onnxruntime")
+    session = ort.InferenceSession(str(destination), providers=["CPUExecutionProvider"])
+    values = session.run(None, {contract.input_name: fixture})
+    actual_map = np.asarray(values[0])[0, 0]
+    actual_score = float(np.asarray(values[1])[0])
+
+    assert contract.score.kind == "tensor"
+    np.testing.assert_allclose(actual_map, expected_map, atol=2e-4, rtol=2e-4)
+    assert abs(actual_score - expected_score) <= 2e-4
 
 
 def test_load_refuses_changed_backbone_weights(tmp_path: Path) -> None:
