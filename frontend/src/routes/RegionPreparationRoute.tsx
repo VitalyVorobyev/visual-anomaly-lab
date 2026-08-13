@@ -20,7 +20,6 @@ import type {
   SpatialResample,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
-import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import { JobProgress } from "../components/JobProgress";
 import { SchemaForm } from "../components/SchemaForm";
 import {
@@ -32,14 +31,13 @@ import {
   Field,
   Input,
   NumberInput,
-  PageHeader,
   Panel,
   ReadoutStrip,
   SegmentedControl,
   Select,
-  SkeletonRows,
 } from "../components/ui";
 import { useDataset } from "../hooks/useCatalog";
+import { TabScroll } from "./dataset/TabScroll";
 import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 import {
@@ -117,9 +115,6 @@ export function RegionPreparationRoute() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.modelAssets() });
     }
   }, [job.job, jobMode, jobProfileId, queryClient]);
-
-  if (dataset.error) return <ErrorBox>{dataset.error.message}</ErrorBox>;
-  if (dataset.isPending || !dataset.data) return <SkeletonRows rows={6} />;
 
   const previewResult =
     jobMode === "preview" && jobProfileId === selectedId ? asPreviewResult(job.job) : null;
@@ -210,30 +205,25 @@ export function RegionPreparationRoute() {
     !Number.isInteger(Number(seed));
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-ground">
-      <header className="shrink-0 border-b border-line bg-ground px-6 py-4">
-        <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-3">
-          <PageHeader
-            title="Prepare model input"
-            back={{ to: `/datasets/${datasetId}`, label: dataset.data.name }}
-            meta={
-              <ReadoutStrip
-                items={[
-                  { label: "images", value: dataset.data.images },
-                  { label: "profiles", value: profiles.data?.length ?? 0 },
-                  { value: "source-pixel transforms · immutable revisions" },
-                ]}
-              />
-            }
-          />
-          <DatasetSectionNav datasetId={datasetId} />
+    <TabScroll
+      measure="wide"
+      className="grid items-start gap-5 lg:grid-cols-[21rem_minmax(0,1fr)]"
+    >
+      {dataset.error && (
+        <div className="lg:col-span-2">
+          <ErrorBox>{dataset.error.message}</ErrorBox>
         </div>
-      </header>
-
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
-        <div className="mx-auto grid w-full max-w-[100rem] items-start gap-5 p-5 lg:grid-cols-[21rem_minmax(0,1fr)]">
+      )}
           <aside className="flex flex-col gap-4 lg:sticky lg:top-5">
-            <Panel title="Profile revision" bodyClassName="flex flex-col gap-4">
+            <Panel
+              title="Profile revision"
+              actions={
+                <span className="font-mono text-xs text-fg-subtle">
+                  {profiles.data?.length ?? 0} revisions
+                </span>
+              }
+              bodyClassName="flex flex-col gap-4"
+            >
               <Field label="Saved profile">
                 <Select
                   aria-label="Saved profile"
@@ -396,9 +386,7 @@ export function RegionPreparationRoute() {
               </Panel>
             )}
           </main>
-        </div>
-      </div>
-    </div>
+    </TabScroll>
   );
 }
 

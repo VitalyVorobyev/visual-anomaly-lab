@@ -94,11 +94,70 @@ def test_dataset_detail_carries_the_channel_dictionary_and_groups(
     assert detail["splits"] == 0
 
 
+def test_the_cover_prefers_a_normal_sample_and_is_stable(
+    client: TestClient, settings: Settings, dataset_id: int
+) -> None:
+    """The card asks "what am I looking at", and a healthy part answers it better."""
+    listed = client.get("/api/datasets").json()
+    cover = listed[0]["cover_image_id"]
+
+    with connection(settings.db_path) as conn:
+        image = images_repo.get_image(conn, cover)
+        assert image is not None
+        sample = samples_repo.get_sample(conn, image.sample_id)
+        assert sample is not None
+
+    assert sample.label == Label.NORMAL
+    # The same picture on every read, so a card does not change between visits.
+    assert client.get("/api/datasets").json()[0]["cover_image_id"] == cover
+
+
+def test_a_dataset_with_no_images_has_no_cover(client: TestClient, settings: Settings) -> None:
+    with connection(settings.db_path) as conn:
+        empty = datasets_repo.create_dataset(conn, name="empty", root_path="/roots/empty")
+
+    detail = client.get(f"/api/datasets/{empty.id}").json()
+    assert detail["cover_image_id"] is None
+
+
+def test_editing_writes_only_the_fields_the_request_named(
+    client: TestClient, dataset_id: int
+) -> None:
+    described = client.patch(
+        f"/api/datasets/{dataset_id}", json={"notes": "Six parts under three illuminations."}
+    )
+    assert described.status_code == 200, described.text
+    assert described.json()["description"] == "Six parts under three illuminations."
+    assert described.json()["collection"] is None
+
+    # `collection` alone: the description it did not mention must survive.
+    filed = client.patch(f"/api/datasets/{dataset_id}", json={"collection": "Can ends"}).json()
+    assert filed["collection"] == "Can ends"
+    assert filed["description"] == "Six parts under three illuminations."
+
+
+def test_clearing_a_field_differs_from_leaving_it_out(client: TestClient, dataset_id: int) -> None:
+    """The whole reason the update model is read with `exclude_unset`."""
+    client.patch(f"/api/datasets/{dataset_id}", json={"notes": "written", "collection": "filed"})
+
+    untouched = client.patch(f"/api/datasets/{dataset_id}", json={}).json()
+    assert (untouched["description"], untouched["collection"]) == ("written", "filed")
+
+    cleared = client.patch(f"/api/datasets/{dataset_id}", json={"notes": None}).json()
+    assert cleared["description"] is None
+    assert cleared["collection"] == "filed"
+
+    # Blank reads as cleared too: an editor emptied by hand submits "" rather than null.
+    blanked = client.patch(f"/api/datasets/{dataset_id}", json={"collection": "   "}).json()
+    assert blanked["collection"] is None
+
+
 def test_an_unknown_dataset_is_a_404(client: TestClient) -> None:
     assert client.get("/api/datasets/4242").status_code == 404
     assert client.get("/api/datasets/4242/samples").status_code == 404
     assert client.delete("/api/datasets/4242").status_code == 404
     assert client.get("/api/datasets/4242/deletion-preview").status_code == 404
+    assert client.patch("/api/datasets/4242", json={"notes": "x"}).status_code == 404
 
 
 def test_deleting_a_dataset_removes_its_rows(

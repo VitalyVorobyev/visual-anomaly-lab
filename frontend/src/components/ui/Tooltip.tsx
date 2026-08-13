@@ -10,7 +10,7 @@
  */
 
 import * as RadixTooltip from "@radix-ui/react-tooltip";
-import { HelpCircle } from "lucide-react";
+import { HelpCircle, type LucideIcon } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn, focusRing } from "./cn";
@@ -40,8 +40,23 @@ export function Tooltip({ content, children }: { content: ReactNode; children: R
   );
 }
 
-/** The standard affordance: a quiet mark that yields the explanation on hover or focus. */
-export function InfoHint({ children, label = "More information" }: { children: ReactNode; label?: string }) {
+/**
+ * The standard affordance: a quiet mark that yields the explanation on hover or focus.
+ *
+ * `icon` exists because the mark answers two different questions. The default `?` offers
+ * help with a control; `Info` offers *facts about the thing on screen* -- where a dataset
+ * came from, which adapter read it -- which the band demotes here rather than spending a
+ * permanent line on. Reading them as the same affordance would be a small lie.
+ */
+export function InfoHint({
+  children,
+  label = "More information",
+  icon: Icon = HelpCircle,
+}: {
+  children: ReactNode;
+  label?: string;
+  icon?: LucideIcon;
+}) {
   return (
     <Tooltip content={children}>
       <button
@@ -49,7 +64,7 @@ export function InfoHint({ children, label = "More information" }: { children: R
         aria-label={label}
         className={cn("rounded-full text-fg-subtle transition-colors hover:text-fg", focusRing)}
       >
-        <HelpCircle className="size-3.5" />
+        <Icon className="size-3.5" />
       </button>
     </Tooltip>
   );

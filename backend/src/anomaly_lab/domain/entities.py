@@ -111,7 +111,12 @@ class Dataset(BaseModel):
     adapter: str | None = None
     manifest_path: str | None = None
     created_at: str
+    # The two free-text fields the catalogue reads. Both are *overrides*: `None` means the
+    # displayed value is derived instead -- the reference pack's title and its built-in
+    # blurb -- so a dataset registered before either existed still groups and describes
+    # itself. See `datasets.reference_packs.collection_for`.
     notes: str | None = None
+    collection: str | None = None
 
 
 class Channel(BaseModel):

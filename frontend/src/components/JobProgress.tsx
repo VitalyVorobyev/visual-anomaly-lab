@@ -7,13 +7,12 @@
  */
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useRef } from "react";
 
 import { api } from "../api/client";
 import type { JobDetail, JobStatus } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, ErrorBox, ProgressBar, SkeletonRows } from "./ui";
+import { Badge, Button, Disclosure, ErrorBox, ProgressBar, SkeletonRows, cn } from "./ui";
 import type { Tone } from "./ui";
 
 const STATUS_TONE: Record<JobStatus, Tone> = {
@@ -23,6 +22,9 @@ const STATUS_TONE: Record<JobStatus, Tone> = {
   failed: "defect",
   cancelled: "unlabeled",
 };
+
+/** How much of the log is worth seeing without asking for the rest. */
+const TAIL_LINES = 12;
 
 export function JobProgress({
   jobId,
@@ -36,7 +38,6 @@ export function JobProgress({
   error: Error | null;
 }) {
   const queryClient = useQueryClient();
-  const consoleRef = useRef<HTMLPreElement>(null);
 
   const cancel = useMutation({
     mutationFn: async () => {
@@ -46,12 +47,6 @@ export function JobProgress({
       void queryClient.invalidateQueries({ queryKey: queryKeys.job(jobId) });
     },
   });
-
-  // Follow the tail, the way a terminal does.
-  useEffect(() => {
-    const element = consoleRef.current;
-    if (element) element.scrollTop = element.scrollHeight;
-  }, [lines.length]);
 
   if (error) return <ErrorBox>{error.message}</ErrorBox>;
   if (!job) return <SkeletonRows rows={2} />;
@@ -80,16 +75,40 @@ export function JobProgress({
 
       {job.error && <ErrorBox>{job.error}</ErrorBox>}
 
+      {/*
+        The tail is clipped, not scrolled. This sits inside a page that already scrolls, and
+        a scroller inside a scroller on the same axis is the thing that puts two bars on
+        screen at once. Clipping to the last few lines *is* following the tail — it needs no
+        ref and no scroll effect — and the disclosure puts every line back in the page's own
+        flow, where the one scroller that exists can reach them.
+      */}
       {lines.length > 0 && (
-        <pre
-          ref={consoleRef}
-          /* Held on a near-black field regardless of theme: this is a terminal, and a log
-             tail that changes colour with the app reads as chrome rather than as output. */
-          className="max-h-56 overflow-y-auto rounded-control border border-line bg-[#08090a] p-3 font-mono text-xs whitespace-pre-wrap text-[#c9d1d9]"
-        >
-          {lines.join("\n")}
-        </pre>
+        <>
+          <LogPre lines={lines.slice(-TAIL_LINES)} className="overflow-hidden" />
+          {lines.length > TAIL_LINES && (
+            <Disclosure summary="Full log" count={lines.length}>
+              <LogPre lines={lines} />
+            </Disclosure>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+/**
+ * Held on a near-black field regardless of theme: this is a terminal, and a log tail that
+ * changes colour with the app reads as chrome rather than as output.
+ */
+function LogPre({ lines, className }: { lines: string[]; className?: string }) {
+  return (
+    <pre
+      className={cn(
+        "rounded-control border border-line bg-[#08090a] p-3 font-mono text-xs whitespace-pre-wrap text-[#c9d1d9]",
+        className,
+      )}
+    >
+      {lines.join("\n")}
+    </pre>
   );
 }

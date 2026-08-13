@@ -15,7 +15,7 @@ export { cn, focusRing, focusRingInset } from "./cn";
 
 export { Badge, CountRun, StatusDot, type Tone } from "./Badge";
 export { Button } from "./Button";
-export { ConfirmDialog } from "./Dialog";
+export { ConfirmDialog, Dialog, DialogClose } from "./Dialog";
 export { Disclosure } from "./Disclosure";
 export { Callout, Empty, ErrorBox, ProgressBar, Skeleton, SkeletonRows } from "./Feedback";
 export { Field } from "./Field";

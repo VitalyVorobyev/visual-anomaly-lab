@@ -75,6 +75,35 @@ def record_manifest(
     )
 
 
+def update_dataset(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    *,
+    fields: dict[str, str | None],
+) -> Dataset | None:
+    """Write the caller's chosen subset of the editable columns.
+
+    `fields` carries only what the request actually named, which is the whole point: an
+    absent key leaves its column alone, and a key set to `None` clears the override so the
+    derived value takes over again. A signature of optional parameters could not express
+    the difference -- "not mentioned" and "set to null" would arrive identically.
+    """
+    editable = {"notes", "collection"}
+    unknown = set(fields) - editable
+    if unknown:  # pragma: no cover - the API model already constrains the keys
+        msg = f"dataset has no editable column {sorted(unknown)!r}"
+        raise ValueError(msg)
+    if fields:
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        conn.execute(
+            # The column names are interpolated, the values are not: `editable` above is
+            # what keeps this from being a string-built query over user input.
+            f"UPDATE dataset SET {assignments} WHERE id = ?",
+            (*fields.values(), dataset_id),
+        )
+    return get_dataset(conn, dataset_id)
+
+
 def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> bool:
     """Delete a dataset and everything under it, children first.
 
@@ -186,6 +215,28 @@ def label_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[Label, int]:
     for row in rows:
         counts[Label(row["label"])] = int(row["n"])
     return counts
+
+
+def cover_image_id(conn: sqlite3.Connection, dataset_id: int) -> int | None:
+    """One image that stands for the dataset in the catalogue, or `None` if it has none.
+
+    A normal sample is preferred over a defective one: the cover answers "what am I looking
+    at", and the healthy part is the better answer to that. Within a label the order is the
+    insertion order, so the same image comes back on every read and a card does not change
+    picture between visits.
+    """
+    row = conn.execute(
+        """
+        SELECT image.id AS id
+          FROM image
+          JOIN sample ON sample.id = image.sample_id
+         WHERE sample.dataset_id = ?
+         ORDER BY (sample.label = 'normal') DESC, sample.id, image.id
+         LIMIT 1
+        """,
+        (dataset_id,),
+    ).fetchone()
+    return int(row["id"]) if row is not None else None
 
 
 def count_images(conn: sqlite3.Connection, dataset_id: int) -> int:

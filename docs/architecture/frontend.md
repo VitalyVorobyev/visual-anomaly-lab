@@ -65,21 +65,61 @@ renamed Rust command fails at runtime, in the desktop build only, where the brow
 
 ## Scroll and layout ownership
 
-The shell never scrolls. Every route belongs to one of three explicit layouts, so scroll ownership
-is visible in the route table rather than emerging from nested `overflow` declarations:
+**The document cannot scroll, by construction.** `html`, `body` and `#root` are pinned to `height:
+100%; overflow: hidden` in `styles.css`, and the shell frame is `h-full` rather than `h-screen`.
+`100vh` is measured against the initial containing block: it does not subtract a horizontal
+scrollbar and does not track a fractional-device-pixel viewport, so with nothing clipping `body` the
+document could grow a scrollbar *beside* the layout's, and the window would narrow by its width —
+which is what put two bars on screen and shifted the shell header on one tab and not its neighbour.
+
+Every route belongs to one of three explicit layouts, so scroll ownership is visible in the route
+table rather than emerging from nested `overflow` declarations:
 
 - **`ReadingLayout`** owns one outer vertical scroller for catalogues, forms and tables.
-- **`WorkspaceLayout`** owns the remaining viewport but does not scroll; the route gives its main
-  data surface the single vertical scroller. The dataset browser uses this layout, with filters in a
-  256 px supporting rail and the virtual grid filling the rest.
+- **`DatasetLayout`** (`routes/dataset/`) owns the remaining viewport but does not scroll. It also
+  renders the dataset's identity band — name, one run of facts, the one dataset-level action — and
+  the section strip, **exactly once, above all five tabs**. The facts are counted in **samples**,
+  never images: `label_counts` and split membership are stored per sample (ADR-0005), so the badges
+  beside the count share its denominator. A channel count appears only when a sample is more than
+  one image; the root path, the adapter and the import date are behind an information mark, because
+  they are consulted rather than read. A tab renders no page heading, no
+  strip and no back link of its own; it gives its main data surface the single vertical scroller,
+  through `TabScroll` or, where the surface is full-bleed, its own. The dataset browser is the
+  full-bleed case, with filters in a 256 px supporting rail and the virtual grid filling the rest.
 - **`CanvasLayout`** does not scroll; an image canvas fills the viewport and any supporting pane
-  scrolls only when its own content requires it.
+  scrolls only when its own content requires it. The single-sample viewer belongs here, not to the
+  reading measure: it was four stacked panels in a 72 rem column with the image third, boxed at a
+  fixed 384 px, so the one thing the screen exists for was the smallest element on it. It is now a
+  thin band of identity and paging, the image taking every pixel that is left, and the label,
+  channel and file controls in a 288 px rail beside it.
+
+**Exactly one page-level scroller per screen.** A bounded pane may scroll on the same axis only when
+it is a peer *column* beside the page's content — the dataset browser's filter rail and the sample
+viewer's control rail are the two such cases — never when it is stacked inside the page's own flow. A log tail, a warnings list or a ranked
+list in the flow is clipped and given a disclosure instead, so its lines land in the page's own
+scroller rather than behind a second one. `data-scroll="tab"` marks a dataset tab's single region;
+`frontend/src/routes/dataset/tabScroll.test.tsx` asserts there is one per tab and nothing scrolling
+inside it.
+
+**A control never nests inside a link.** The catalogue card's edit and delete buttons and the browse
+tile's selection box are absolutely-positioned siblings of their `<Link>`, not children of it. This
+is a correctness rule, not a styling preference: a control inside an anchor has to cancel the click
+to stop the navigation, and cancelling a checkbox's click makes the browser restore its previous
+state *after* React has written the new one — the tick then arrives one render late. Outside the
+anchor there is nothing to cancel.
+
+**A collection is created by naming it and filling it, in one dialog.** `collection` is a string on
+each dataset ([the domain model](domain-model.md)), so a collection exists for exactly as long as
+some dataset names it and an empty one cannot be stored. `CollectionDialog` therefore asks for the
+name and the membership together, serves renaming and re-filing through the same form, and writes a
+sequence of `PATCH /api/datasets/{id}` calls. Unticking clears the *override*, which returns a
+reference dataset to its pack and a user's own to no group at all.
 
 The main navigation contains `Datasets`, `Experiments` and `Compare`. Import is an action in the
 dataset catalogue, not a peer destination; backend health remains visible in the shell and the full
-health route remains directly addressable. Inside a dataset, a quiet local strip moves between
-`Browse`, `Annotate`, `Prepare`, `Splits` and `Experiments`. A same-axis
-scroller may not be placed inside another same-axis scroller.
+health route remains directly addressable. Inside a dataset, the layout's strip moves between
+`Browse`, `Annotate`, `Prepare`, `Splits` and `Experiments`; it is underlined rather than pilled,
+because a pill in this application marks an in-page state switch and these are navigations.
 
 ## Screens
 
@@ -87,7 +127,7 @@ Each screen from the brief maps onto the API surface as follows.
 
 | Screen | Purpose | Primary API |
 | --- | --- | --- |
-| **Dataset browser + import** | List datasets; discover local VisA/GKN packs and register every missing class in one job; native folder picker → scan → **manifest review** (edit channel mapping, fix labels, inspect warnings) → commit. The browser keeps label/channel/split/subset filters in a left rail and makes its virtual image grid the only vertical data scroller. Dataset deletion requires its exact name and previews the row cascade plus app-owned manifest, thumbnails, job logs and experiment artifacts; source images and masks are immutable. | `GET /api/reference-packs`, `POST /api/reference-packs/register`, `POST /api/import/scan`, `POST /api/import/commit`, `GET /api/datasets`, `GET /api/datasets/{id}/samples`, `GET /api/datasets/{id}/deletion-preview`, `DELETE /api/datasets/{id}`, `GET /api/images/{id}/thumb` |
+| **Dataset browser + import** | The catalogue is a grid of covers grouped by collection — a card carries a thumbnail, a name and a sentence, and nothing else. Discover local VisA/GKN packs and register every missing class in one job; native folder picker → scan → **manifest review** (edit channel mapping, fix labels, inspect warnings) → commit. The browser keeps label/channel/split/subset filters in a left rail and makes its virtual image grid the only vertical data scroller. Dataset deletion requires its exact name and previews the row cascade plus app-owned manifest, thumbnails, job logs and experiment artifacts; source images and masks are immutable. | `GET /api/reference-packs`, `POST /api/reference-packs/register`, `POST /api/import/scan`, `POST /api/import/commit`, `GET /api/datasets`, `PATCH /api/datasets/{id}`, `GET /api/datasets/{id}/samples`, `GET /api/datasets/{id}/deletion-preview`, `DELETE /api/datasets/{id}`, `GET /api/images/{id}/thumb` |
 | **Sample viewer (grouped)** | One part, all its channels side by side, channel count driven by data. Label editing (normal / defect / unlabeled) with keyboard shortcuts for fast passes over unlabeled data. Full-resolution zoom. | `GET /api/datasets/{id}/samples/{sid}`, `PATCH …/label`, `GET /api/images/{id}/preview`, `…/full` |
 | **Annotation queue + editor** | A dataset-local image queue opens a flush `CanvasLayout`: source image central, narrow tool rail, supporting region inspector. The controlled Konva scene emits source-pixel polygons and cropped bitmap brush/eraser layers; selection, vertices, add/subtract and undo/redo never become a second truth store. Select-mode left-drag and universal right-drag pan without a dedicated tool; Fit, source-pixel 1:1 and reversible double-click Fit make view state explicit. The focusable canvas adds a visible source-pixel keyboard cursor: arrows move one pixel, Shift moves ten, Space applies the current drawing tool and Enter closes a polygon; J/K cross queue pages and C completes. A rough bitmap mark can be traced into simplified editable contours. MobileSAM takes source-pixel positive/negative points or a box and previews up to three ranked masks without mutating the draft; acceptance keeps the compact mask or immediately traces it to editable polygons. The verified checkpoint is downloaded from the fixed model-asset catalogue only after explicit licence acceptance, with ordinary job progress/cancel. Drafts autosave after idle, carry the response `ETag` in `If-Match`, and retain local work on a visible conflict; completion freezes a revision and advances across prefetched queue pages. | `GET /api/datasets/{id}/samples`, `GET /api/datasets/{id}/annotation-labels`, `POST/PUT /api/images/{id}/annotations/draft`, `POST …/complete`, `GET /api/segment-assist`, `POST /api/images/{id}/segment-assist`, `GET /api/model-assets`, `GET /api/images/{id}/full`, `…/mask` |
 | **Region preparation** | A dataset-local one-scroller workspace keeps immutable profile configuration in a sticky supporting rail and the visual crop audit central. Extractor schemas drive their options. Preview samples 24 images across the dataset without writing; Build materialises every successful prepared PNG atomically. Source/crop and prepared views expose failures, coverage and storage rather than hiding them behind the experiment form. | `GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`, `POST /api/region-profiles/{id}/preview`, `POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}` |

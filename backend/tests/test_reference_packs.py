@@ -11,6 +11,8 @@ from PIL import Image
 
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings
+from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import datasets as datasets_repo
 
 
 def _write_image(path: Path) -> None:
@@ -69,6 +71,54 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
             client.post("/api/reference-packs/register", json={"pack_keys": ["gkn"]}).status_code
             == 409
         )
+
+
+def test_a_registered_dataset_inherits_its_pack_collection_and_blurb(tmp_path: Path) -> None:
+    """Membership is derived, so it holds for datasets registered before the column existed."""
+    references = tmp_path / "references"
+    gkn = references / "GKN Blade Surface Defect Dataset" / "Data_GKN"
+    _write_image(gkn / "Good" / "good.png")
+    _write_image(gkn / "Nick" / "nick.png")
+    _write_image(gkn / "Scratch" / "scratch.png")
+    settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=references)
+
+    with TestClient(create_app(settings)) as client:
+        started = client.post("/api/reference-packs/register", json={"pack_keys": ["gkn"]})
+        _wait(client, started.json()["id"])
+
+        registered = client.get("/api/datasets").json()[0]
+        # Nothing was written at registration; both values come from the pack spec.
+        assert registered["notes"] is None
+        assert registered["collection"] == "GKN"
+        assert "turbine blades" in registered["description"]
+
+        dataset_id = registered["id"]
+        moved = client.patch(
+            f"/api/datasets/{dataset_id}",
+            json={"collection": "Blades", "notes": "My working copy."},
+        ).json()
+        assert (moved["collection"], moved["description"]) == ("Blades", "My working copy.")
+
+        # Clearing the override falls back to the pack rather than to nothing.
+        restored = client.patch(
+            f"/api/datasets/{dataset_id}", json={"collection": None, "notes": None}
+        ).json()
+        assert restored["collection"] == "GKN"
+        assert "turbine blades" in restored["description"]
+
+
+def test_a_dataset_that_merely_shares_a_name_inherits_nothing(tmp_path: Path) -> None:
+    """The matcher guards this; a user's own `candle` must not be filed under VisA."""
+    settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=tmp_path / "references")
+    with TestClient(create_app(settings)) as client:
+        with connection(settings.db_path) as conn:
+            datasets_repo.create_dataset(
+                conn, name="candle", root_path=str(tmp_path / "mine"), adapter="csv_table"
+            )
+
+        mine = client.get("/api/datasets").json()[0]
+        assert mine["collection"] is None
+        assert mine["description"] is None
 
 
 def test_an_incomplete_pack_is_not_offered_for_registration(tmp_path: Path) -> None:

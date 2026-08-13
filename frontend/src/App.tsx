@@ -25,20 +25,31 @@ const NAV = [
 /**
  * The shell, with a height chain rather than a document that grows.
  *
- * `h-screen` + `min-h-0` down to `main` is what lets a route say "the canvas takes what is
+ * `h-full` + `min-h-0` down to `main` is what lets a route say "the canvas takes what is
  * left" and have that mean something. Without it `flex-1` is measured against content
  * height, the image sizes itself, and a screen whose whole job is looking at a picture
  * spends its first third on chrome.
  *
- * The scroll container moves from the document to `main`. The header is outside it and
- * already `sticky`, so it behaves identically; inner scrollers are unaffected.
+ * `h-full` rather than `h-screen`: the frame resolves against `#root`, which `styles.css`
+ * pins to the visible area, instead of against `100vh`, which can exceed it and leak a
+ * second scrollbar onto the document. The header needs no `sticky` now that nothing above
+ * `main` can scroll -- it is simply the first flex row, and `z-40` still orders it above
+ * the content it overlaps when a popup opens.
+ *
+ * The header is full-bleed at the same gutter the dataset band uses, so the wordmark, a
+ * page title and a section strip share one left edge. A centred cap here would have to
+ * agree with two different measures below -- 72rem for reading, 100rem for workspaces --
+ * and can only ever match one.
  */
 export function App() {
   return (
     <TooltipProvider>
-      <div className="flex h-screen flex-col bg-ground text-fg">
-        <header className="sticky top-0 z-40 border-b border-line bg-ground/85 backdrop-blur-sm">
-          <div className="mx-auto flex max-w-6xl items-center gap-6 px-6 py-3">
+      <div
+        data-layout="shell"
+        className="flex h-full flex-col overflow-hidden bg-ground text-fg"
+      >
+        <header className="relative z-40 border-b border-line bg-ground/85 backdrop-blur-sm">
+          <div className="flex items-center gap-6 px-5 py-3 lg:px-6">
             <Wordmark />
 
             <nav className="flex items-center gap-1" aria-label="Main">
@@ -87,7 +98,9 @@ export function ReadingLayout() {
   return (
     <div
       data-layout="reading"
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      /* The gutter is reserved whether or not the content overflows, so moving between a
+         short screen and a tall one cannot shift the centred column sideways. */
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
     >
       <div className="mx-auto w-full max-w-6xl px-6 py-8">
         <Outlet />
@@ -97,22 +110,11 @@ export function ReadingLayout() {
 }
 
 /**
- * The layout for dataset work: controls support the content instead of pushing it down.
- *
- * A workspace owns the remaining viewport and lets the route name its one scroll region.
- * Keeping this contract separate from `ReadingLayout` is what prevents the dataset grid
- * from growing an inner scrollbar inside a page that already scrolls.
+ * The layout for dataset work is `routes/dataset/DatasetLayout`, which lives beside the
+ * tabs it serves because it carries their shared band as well as their scroll contract.
+ * It has the same shape as this file's other two: it does not scroll, and the route below
+ * it names its one scroll region.
  */
-export function WorkspaceLayout() {
-  return (
-    <div
-      data-layout="workspace"
-      className="flex min-h-0 flex-1 flex-col overflow-hidden"
-    >
-      <Outlet />
-    </div>
-  );
-}
 
 /**
  * The layout for screens whose content is an image.

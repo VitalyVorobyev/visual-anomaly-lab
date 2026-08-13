@@ -269,7 +269,16 @@ export interface paths {
         delete: operations["delete_dataset_api_datasets__dataset_id__delete"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Edit a dataset's description and collection
+         * @description Write the fields the request actually named.
+         *
+         *     A field left out of the body is untouched; a field sent as `null` or blank clears the
+         *     override, which is how a dataset returns to the description and collection its
+         *     reference pack supplies. `exclude_unset` is what keeps those two cases apart -- with a
+         *     plain `is None` test, "do not change this" and "clear this" would arrive identically.
+         */
+        patch: operations["update_dataset_api_datasets__dataset_id__patch"];
         trace?: never;
     };
     "/api/datasets/{dataset_id}/deletion-preview": {
@@ -2290,6 +2299,12 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /** Collection */
+            collection: string | null;
+            /** Description */
+            description: string | null;
+            /** Cover Image Id */
+            cover_image_id: number | null;
             /** Manifest Path */
             manifest_path: string | null;
             /** Channels */
@@ -2324,6 +2339,33 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /** Collection */
+            collection: string | null;
+            /** Description */
+            description: string | null;
+            /** Cover Image Id */
+            cover_image_id: number | null;
+        };
+        /**
+         * DatasetUpdate
+         * @description The editable part of a dataset: what it is, and what it belongs with.
+         *
+         *     Both fields are optional in the strong sense -- omitting one leaves the stored value
+         *     alone, and sending `null` clears it. Name and root path are deliberately absent: they
+         *     are the dataset's identity, unique in the schema, and the key a re-import resolves
+         *     against (ADR-0013).
+         */
+        DatasetUpdate: {
+            /**
+             * Notes
+             * @description A sentence or two describing the dataset. Blank restores the default.
+             */
+            notes?: string | null;
+            /**
+             * Collection
+             * @description The group this dataset is filed under. Blank restores the default.
+             */
+            collection?: string | null;
         };
         /**
          * Device
@@ -4697,6 +4739,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DatasetDeletionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_dataset_api_datasets__dataset_id__patch: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetDetail"];
                 };
             };
             /** @description Validation Error */

@@ -117,6 +117,14 @@ pack. VisA becomes twelve ordinary `csv_table` datasets, one per object class; G
 one transaction. A failed class therefore cannot leave half a benchmark registered. Repeating the action
 skips datasets already present. Source images and masks are referenced in place and remain read-only.
 
+A pack also supplies the two things the catalogue needs to present its datasets: a **collection name**
+(`PackSpec.collection`, falling back to its title — GKN sets a short one so a pack of one dataset does
+not head a group with the same words as the single card inside it) and a **one-line description** per
+dataset (`DatasetSpec.description`). Neither is written at registration. Both are resolved on read by
+`pack_membership`, which inverts the same `registered_dataset_id` matcher the discovery pass uses, so
+the twelve VisA classes group under `VisA` whether they were registered today or before the column
+existed. A user's own `collection` or `notes` overrides them; clearing it restores them.
+
 ## The options form
 
 An adapter's options model is a pydantic model, and its **JSON Schema drives the import form**: control type

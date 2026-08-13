@@ -11,7 +11,7 @@
 import * as RadixCheckbox from "@radix-ui/react-checkbox";
 import * as RadixSwitch from "@radix-ui/react-switch";
 import { Check, Minus } from "lucide-react";
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 import { cn, focusRing } from "./cn";
 
@@ -61,6 +61,7 @@ export function Switch({
 export function Checkbox({
   checked,
   onCheckedChange,
+  onClick,
   label,
   description,
   disabled = false,
@@ -69,6 +70,13 @@ export function Checkbox({
   /** `"indeterminate"` for a partial selection over a set. */
   checked: boolean | "indeterminate";
   onCheckedChange: (checked: boolean) => void;
+  /**
+   * For a checkbox whose meaning depends on the modifier keys — extending a range with
+   * shift, toggling one out of a selection with the platform key. `onCheckedChange` gets a
+   * boolean and cannot carry them. Keyboard activation synthesises a click with its
+   * modifiers intact, so this sees both input paths.
+   */
+  onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   label?: ReactNode;
   description?: ReactNode;
   disabled?: boolean;
@@ -79,6 +87,7 @@ export function Checkbox({
     <RadixCheckbox.Root
       checked={checked}
       onCheckedChange={(next) => onCheckedChange(next === true)}
+      onClick={onClick}
       disabled={disabled}
       aria-label={ariaLabel}
       className={cn(

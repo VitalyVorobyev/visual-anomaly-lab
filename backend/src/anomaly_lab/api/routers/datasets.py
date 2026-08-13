@@ -22,6 +22,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
+from anomaly_lab.datasets.reference_packs import PackMembership, pack_membership
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
@@ -97,6 +98,13 @@ class DatasetSummary(BaseModel):
     samples: int
     images: int
     label_counts: dict[Label, int] = Field(default_factory=dict)
+    # The three fields the catalogue reads. `collection` and `description` are *effective*
+    # values -- the stored override if there is one, otherwise what the dataset's reference
+    # pack supplies -- while `notes` above stays the raw override, because an editor has to
+    # be able to tell "nothing written here" from "written, and identical to the default".
+    collection: str | None = None
+    description: str | None = None
+    cover_image_id: int | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -104,6 +112,27 @@ class DatasetDetail(DatasetSummary):
     channels: list[Channel] = Field(default_factory=list)
     group_keys: list[str] = Field(default_factory=list)
     splits: int = 0
+
+
+class DatasetUpdate(BaseModel):
+    """The editable part of a dataset: what it is, and what it belongs with.
+
+    Both fields are optional in the strong sense -- omitting one leaves the stored value
+    alone, and sending `null` clears it. Name and root path are deliberately absent: they
+    are the dataset's identity, unique in the schema, and the key a re-import resolves
+    against (ADR-0013).
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    notes: str | None = Field(
+        default=None,
+        description="A sentence or two describing the dataset. Blank restores the default.",
+    )
+    collection: str | None = Field(
+        default=None,
+        description="The group this dataset is filed under. Blank restores the default.",
+    )
 
 
 class LabelUpdate(BaseModel):
@@ -216,7 +245,11 @@ class _DeletionInventory:
     manual_labels: int
 
 
-def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSummary:
+def _dataset_summary(
+    conn: sqlite3.Connection,
+    dataset: Dataset,
+    membership: PackMembership | None = None,
+) -> DatasetSummary:
     return DatasetSummary(
         id=dataset.id,
         name=dataset.name,
@@ -227,7 +260,21 @@ def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSumma
         samples=samples_repo.count_samples(conn, dataset.id),
         images=datasets_repo.count_images(conn, dataset.id),
         label_counts=datasets_repo.label_counts(conn, dataset.id),
+        collection=_effective(dataset.collection, membership.collection if membership else None),
+        description=_effective(dataset.notes, membership.description if membership else None),
+        cover_image_id=datasets_repo.cover_image_id(conn, dataset.id),
     )
+
+
+def _effective(override: str | None, derived: str | None) -> str | None:
+    """The override if it says anything, else the derived value, else nothing.
+
+    Blank is treated as absent so that clearing a field in the editor returns the derived
+    value rather than leaving a dataset with an empty description where a real one exists.
+    """
+    if override is not None and override.strip():
+        return override
+    return derived or None
 
 
 def _image_summary(image: Image, channel_names: dict[int, str]) -> ImageSummary:
@@ -365,7 +412,12 @@ def list_datasets(request: Request) -> list[DatasetSummary]:
     """List the catalog."""
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        return [_dataset_summary(conn, dataset) for dataset in datasets_repo.list_datasets(conn)]
+        datasets = datasets_repo.list_datasets(conn)
+        # Resolved once for the whole list rather than once per dataset: the matcher walks
+        # every pack spec and resolves its roots on disk, which is cheap once and silly
+        # thirteen times.
+        membership = pack_membership(settings, datasets)
+        return [_dataset_summary(conn, dataset, membership.get(dataset.id)) for dataset in datasets]
 
 
 @router.get("/{dataset_id}", summary="One dataset, with its channels and capture groups")
@@ -373,14 +425,42 @@ def get_dataset(request: Request, dataset_id: int) -> DatasetDetail:
     """Everything the browser needs to build its filters."""
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        dataset = _require_dataset(conn, dataset_id)
-        return DatasetDetail(
-            **_dataset_summary(conn, dataset).model_dump(),
-            manifest_path=dataset.manifest_path,
-            channels=datasets_repo.list_channels(conn, dataset_id),
-            group_keys=samples_repo.list_group_keys(conn, dataset_id),
-            splits=len(splits_repo.list_splits(conn, dataset_id)),
-        )
+        return _dataset_detail(conn, settings, _require_dataset(conn, dataset_id))
+
+
+@router.patch("/{dataset_id}", summary="Edit a dataset's description and collection")
+def update_dataset(request: Request, dataset_id: int, body: DatasetUpdate) -> DatasetDetail:
+    """Write the fields the request actually named.
+
+    A field left out of the body is untouched; a field sent as `null` or blank clears the
+    override, which is how a dataset returns to the description and collection its
+    reference pack supplies. `exclude_unset` is what keeps those two cases apart -- with a
+    plain `is None` test, "do not change this" and "clear this" would arrive identically.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        _require_dataset(conn, dataset_id)
+        fields: dict[str, str | None] = {
+            name: (value.strip() or None) if isinstance(value, str) else None
+            for name, value in body.model_dump(exclude_unset=True).items()
+        }
+        updated = datasets_repo.update_dataset(conn, dataset_id, fields=fields)
+        if updated is None:  # pragma: no cover - existence was checked above
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found")
+        return _dataset_detail(conn, settings, updated)
+
+
+def _dataset_detail(
+    conn: sqlite3.Connection, settings: Settings, dataset: Dataset
+) -> DatasetDetail:
+    membership = pack_membership(settings, [dataset]).get(dataset.id)
+    return DatasetDetail(
+        **_dataset_summary(conn, dataset, membership).model_dump(),
+        manifest_path=dataset.manifest_path,
+        channels=datasets_repo.list_channels(conn, dataset.id),
+        group_keys=samples_repo.list_group_keys(conn, dataset.id),
+        splits=len(splits_repo.list_splits(conn, dataset.id)),
+    )
 
 
 @router.get(

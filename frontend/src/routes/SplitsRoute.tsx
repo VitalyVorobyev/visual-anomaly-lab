@@ -14,7 +14,6 @@ import { Link, useParams } from "react-router";
 import { api, unwrap } from "../api/client";
 import type { SplitDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
-import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import {
   Badge,
   Button,
@@ -23,15 +22,14 @@ import {
   Field,
   Input,
   NumberInput,
-  PageHeader,
   Panel,
-  ReadoutStrip,
   Select,
   Slider,
   Table,
   type Column,
 } from "../components/ui";
-import { useDataset, useSplits } from "../hooks/useCatalog";
+import { useSplits } from "../hooks/useCatalog";
+import { TabScroll } from "./dataset/TabScroll";
 
 type Strategy = "normal_only_train" | "imported";
 
@@ -40,7 +38,6 @@ export function SplitsRoute() {
   const datasetId = Number(params["datasetId"]);
   const queryClient = useQueryClient();
 
-  const dataset = useDataset(datasetId);
   const splits = useSplits(datasetId);
 
   const [name, setName] = useState("default");
@@ -84,23 +81,7 @@ export function SplitsRoute() {
   });
 
   return (
-    <div className="flex flex-col gap-4">
-      <PageHeader
-        back={{ to: `/datasets/${datasetId}`, label: "Back to the browser" }}
-        title="Splits"
-        meta={
-          dataset.data && (
-            <ReadoutStrip
-              items={[
-                { label: "dataset", value: dataset.data.name, to: `/datasets/${datasetId}` },
-                { label: "splits", value: splits.data?.length ?? 0 },
-              ]}
-            />
-          )
-        }
-      />
-      <DatasetSectionNav datasetId={datasetId} />
-
+    <TabScroll className="flex flex-col gap-4">
       <Panel title="Create a split">
         <form
           className="flex flex-col gap-4"
@@ -214,7 +195,7 @@ export function SplitsRoute() {
       {(splits.data ?? []).map((split) => (
         <SplitCard key={split.id} split={split} datasetId={datasetId} />
       ))}
-    </div>
+    </TabScroll>
   );
 }
 

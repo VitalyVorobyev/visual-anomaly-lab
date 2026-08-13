@@ -122,12 +122,23 @@ export type ReadoutItem = {
  * mono, the way a piece of measuring equipment has one readout rather than a label per
  * panel. Rendered as a list because it is one.
  */
-export function ReadoutStrip({ items }: { items: ReadoutItem[] }) {
+export function ReadoutStrip({
+  items,
+  className,
+}: {
+  items: ReadoutItem[];
+  className?: string;
+}) {
   const shown = items.filter((item) => item.value !== null && item.value !== undefined);
   if (shown.length === 0) return null;
 
   return (
-    <ol className="flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-fg-muted">
+    <ol
+      className={cn(
+        "flex flex-wrap items-center gap-x-2 gap-y-1 font-mono text-xs text-fg-muted",
+        className,
+      )}
+    >
       {shown.map((item, index) => (
         <li key={index} className="flex items-center gap-2">
           {index > 0 && (

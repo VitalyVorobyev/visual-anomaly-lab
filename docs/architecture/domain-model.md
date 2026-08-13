@@ -43,11 +43,23 @@ erDiagram
 
 ## Entities
 
-**`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`.
+**`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`, `collection`.
 A named collection of samples rooted at an absolute path on disk, outside this repository.
 `root_path` is a reference, never a copy destination, and it is **unique**: re-importing a directory
 updates the dataset it already produced rather than creating a second one beside it (ADR-0013).
 `adapter` and `manifest_path` record how the dataset came to look the way it does.
+
+`notes` and `collection` are the two editable columns, written only by `PATCH /api/datasets/{id}` and
+read only by the catalogue. Both are **overrides, not records**: the API returns an *effective*
+`description` and `collection` that fall back to the reference pack a dataset was registered from when
+the column is null or blank. Membership in a pack stays derived — `registered_dataset_id` recomputes it
+from `(name, adapter, resolved root_path)` on every read — so a dataset registered long before either
+column existed still groups and describes itself, and nothing needed a backfill. Grouping is **one
+level deep and free text**: a collection has no attributes of its own, so it is a string on the dataset
+rather than a table, and there is no nesting below it. It follows that **a collection exists for
+exactly as long as some dataset names it** — there is no empty collection to create and none to
+delete, so the UI names one and fills it in a single step, and clearing the last member is what
+dissolves it. `name` and `root_path` are deliberately not editable; they are identity.
 
 **`Channel`** — `id`, `dataset_id`, `name`, `position`.
 The per-dataset acquisition-channel dictionary, created **at import time** from canonicalized source folder

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-Guidance for Claude Code working in this repository.
+Guidance for Codex working in this repository.
 
 `visual-anomaly-lab` is a local desktop workbench (React + TypeScript + Tauri UI, Python FastAPI sidecar,
 SQLite + filesystem artifacts) for importing image datasets, training anomaly-detection methods, and

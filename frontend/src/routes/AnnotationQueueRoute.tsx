@@ -9,17 +9,9 @@ import { ArrowRight, PenTool } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { imageUrl } from "../api/imageUrl";
-import { DatasetSectionNav } from "../components/DatasetSectionNav";
-import {
-  Badge,
-  Button,
-  Empty,
-  ErrorBox,
-  PageHeader,
-  ReadoutStrip,
-  SkeletonRows,
-} from "../components/ui";
+import { Badge, Button, Empty, ErrorBox, SkeletonRows } from "../components/ui";
 import { useDataset, useSamples } from "../hooks/useCatalog";
+import { TabScroll } from "./dataset/TabScroll";
 
 const QUEUE_PAGE = 120;
 
@@ -30,9 +22,6 @@ export function AnnotationQueueRoute() {
   const dataset = useDataset(datasetId);
   const samples = useSamples(datasetId, { limit: QUEUE_PAGE, offset });
 
-  if (dataset.error) return <ErrorBox>{dataset.error.message}</ErrorBox>;
-  if (dataset.isPending || !dataset.data) return <SkeletonRows rows={6} />;
-
   const images = (samples.data?.items ?? []).flatMap((sample) =>
     sample.images.map((image) => ({ sample, image })),
   );
@@ -40,38 +29,23 @@ export function AnnotationQueueRoute() {
   const query = new URLSearchParams({ offset: String(offset) }).toString();
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col bg-ground">
-      <header className="border-b border-line bg-ground px-6 py-4">
-        <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-3">
-          <PageHeader
-            title="Annotation queue"
-            back={{ to: `/datasets/${datasetId}`, label: dataset.data.name }}
-            actions={
-              first ? (
-                <Link
-                  to={`/datasets/${datasetId}/annotate/${first.sample.id}/${first.image.id}?${query}`}
-                >
-                  <Button variant="primary" icon={<PenTool />}>
-                    Start queue
-                  </Button>
-                </Link>
-              ) : undefined
-            }
-            meta={
-              <ReadoutStrip
-                items={[
-                  { label: "samples", value: samples.data?.total ?? dataset.data.samples },
-                  { label: "images on page", value: images.length },
-                  { value: "source-coordinate, versioned truth" },
-                ]}
-              />
-            }
-          />
-          <DatasetSectionNav datasetId={datasetId} />
+    <div className="flex min-h-0 flex-1 flex-col">
+      <TabScroll measure="wide" className="flex flex-col gap-4">
+        {/* The queue's own action, beside the queue rather than in the band above: the band
+            carries what is true of the dataset, this is true of what is on this page. */}
+        <div className="flex min-h-8 flex-wrap items-center justify-end gap-3">
+          {first && (
+            <Link
+              to={`/datasets/${datasetId}/annotate/${first.sample.id}/${first.image.id}?${query}`}
+            >
+              <Button variant="primary" icon={<PenTool />}>
+                Start queue
+              </Button>
+            </Link>
+          )}
         </div>
-      </header>
 
-      <section className="mx-auto min-h-0 w-full max-w-[100rem] flex-1 overflow-y-auto overscroll-contain p-5">
+        {dataset.error && <ErrorBox>{dataset.error.message}</ErrorBox>}
         {samples.error && <ErrorBox>{samples.error.message}</ErrorBox>}
         {samples.isPending && !samples.data && <SkeletonRows rows={8} />}
         {samples.data && images.length === 0 && (
@@ -112,13 +86,14 @@ export function AnnotationQueueRoute() {
             ))}
           </div>
         )}
-      </section>
+      </TabScroll>
 
       {samples.data && samples.data.total > QUEUE_PAGE && (
-        <footer className="border-t border-line bg-surface px-6 py-2.5">
+        <footer className="shrink-0 border-t border-line bg-surface px-5 py-2.5 lg:px-6">
           <div className="mx-auto flex max-w-[100rem] items-center justify-between">
             <span className="text-xs text-fg-muted">
               {offset + 1}–{Math.min(offset + QUEUE_PAGE, samples.data.total)} of {samples.data.total}
+              {images.length > 0 && ` · ${images.length} images on page`}
             </span>
             <span className="flex gap-2">
               <Button

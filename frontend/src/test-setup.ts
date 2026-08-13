@@ -12,3 +12,12 @@ import { cleanup } from "@testing-library/react";
 import { afterEach } from "vitest";
 
 afterEach(cleanup);
+
+/**
+ * No test talks to a backend, and one that tries should hang rather than reach the network.
+ *
+ * A never-settling fetch also *is* the state several layout tests are about: a screen whose
+ * queries have not answered yet. The band and its tab strip have to be on screen in that
+ * state, because arriving late is how they used to push the rest of the page down.
+ */
+globalThis.fetch = (() => new Promise(() => {})) as typeof fetch;

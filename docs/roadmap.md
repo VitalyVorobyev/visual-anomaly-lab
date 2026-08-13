@@ -460,8 +460,9 @@ experiment and read its history without crossing between unrelated top-level scr
 
 **Scope**
 
-- Three explicit route layouts (`ReadingLayout`, `WorkspaceLayout`, `CanvasLayout`) with one owner
-  for vertical scrolling; images, maps, charts and tables remain the largest region.
+- Three explicit route layouts (`ReadingLayout`, `DatasetLayout`, `CanvasLayout`) with one owner
+  for vertical scrolling; images, maps, charts and tables remain the largest region. (The dataset
+  workspace layout was `WorkspaceLayout` until it absorbed the shared dataset band.)
 - Dataset-local navigation for browse, annotate, splits and experiments. Experiment creation moves
   to a dedicated dataset route; the global experiment catalogue remains a secondary searchable view.
 - Server-side experiment search, method/dataset/status/date filters, sortable columns and URL-backed
@@ -469,6 +470,9 @@ experiment and read its history without crossing between unrelated top-level scr
 - Previewed deletion of experiments and datasets, covering only application-owned records,
   annotations, caches and artifacts. Referenced source images and source masks are immutable.
 - Local reference-pack discovery for VisA and GKN, with one atomic, idempotent `Register all` action.
+- A catalogue that groups: `dataset.collection` (migration 012) as a user override over the reference
+  pack a dataset was registered from, one level deep, with a cover thumbnail and an editable
+  one-line description in place of the counts, adapter and absolute path each card used to carry.
 
 **Exit criteria**
 
@@ -477,6 +481,8 @@ experiment and read its history without crossing between unrelated top-level scr
 - [x] `method=…` returns every matching experiment from SQLite and survives reload/back/forward.
 - [x] Destructive previews name every application-owned consequence, and source trees survive tests.
 - [x] A present VisA/GKN pack registers in one action; a missing pack is an instructional state.
+- [x] VisA's twelve classes appear under one heading with no backfill and no manual filing, and a
+      user's own datasets can be grouped by typing a collection name.
 
 ---
 
