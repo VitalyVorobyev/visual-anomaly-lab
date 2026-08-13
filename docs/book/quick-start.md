@@ -71,8 +71,8 @@ named rule per run.
 
 ## Verify an export
 
-`pixel_reference`, `efficientad_custom`, and `patchcore_anomalib` currently declare ONNX export. From a
-trained experiment choose **Export ONNX**, then build and run the reference consumer:
+Every currently registered method declares a parity-tested ONNX export. From a trained experiment choose
+**Export ONNX**, then build and run the reference consumer:
 
 ```bash
 cargo build --release --manifest-path deployment/runner/Cargo.toml

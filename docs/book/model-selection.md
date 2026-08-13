@@ -24,20 +24,23 @@ smaller at inference than transformer references and supports exact continuation
 calibration materially affect ranking. Use several seeds before claiming a small accuracy delta; the checked
 evidence currently supports a speed advantage over the wrapper, not a general accuracy win.
 
-`efficientad_anomalib` remains a useful independent baseline but does not yet declare portable export.
+`efficientad_anomalib` remains a useful independent baseline. Both EfficientAD variants have verified ONNX
+exports, so deployment constraints do not decide between them prematurely.
 
 ## Transformer reconstruction
 
 `dinomaly_anomalib` reconstructs frozen DINOv2 features with a trainable decoder. On the checked two-class
 VisA gate it achieved the strongest mean quality among the measured candidates, at roughly ten minutes of
 training per class. Choose it when a high-quality semantic reference is worth the fitting and checkpoint
-cost. It remains non-exportable until its graph and asset boundary pass parity.
+cost. Its verified graph embeds normalization and emits the method's smoothed top-one-percent score.
 
 ## Learned synthesis
 
 `glass_anomalib` learns a discriminator from synthetic feature anomalies. It is experimental: the bounded
 public gate passed pixel floors but missed the predeclared image ROC-AUC promotion floor and took about
 twenty minutes per class. Keep it for research on synthesis-based failure modes, not as the default.
+Its experimental quality status is independent of portability: the fitted projection, discriminator, map,
+and method score have a verified ONNX export.
 
 ## Resource-gated candidates
 
