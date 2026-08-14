@@ -363,6 +363,12 @@ function EditorReady({
     workspace.referenceIndex,
   );
   const reference = referenceIndex === null ? null : (sample.images[referenceIndex] ?? null);
+  // A copy keeps its source-pixel coordinates, so a channel of another size cannot take one.
+  const copyable = otherImages.filter(
+    (image) =>
+      currentImage === undefined ||
+      (image.width === currentImage.width && image.height === currentImage.height),
+  );
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
   const candidates = assist.data?.candidates ?? [];
   const candidate = candidates[candidateIndex] ?? null;
@@ -927,14 +933,19 @@ function EditorReady({
                 {!perSample && (
                   <Button
                     icon={<Copy />}
-                    disabled={history.present.shapes.length === 0}
+                    disabled={history.present.shapes.length === 0 || copyable.length === 0}
                     title={
                       history.present.shapes.length === 0
                         ? "Draw a region first"
-                        : "Put these regions on the other channels of this part"
+                        : copyable.length === 0
+                          ? "No other channel of this part shares this source frame"
+                          : "Put these regions on the other channels of this part"
                     }
                     onClick={() => {
-                      setCopyTargets(otherImages.map((image) => image.id));
+                      // Only the channels that can actually receive it. A sibling of another
+                      // size is shown, disabled, with its dimensions — pre-ticking it would
+                      // arm a button whose only outcome is a 409.
+                      setCopyTargets(copyable.map((image) => image.id));
                       setCopyOpen(true);
                     }}
                   >
