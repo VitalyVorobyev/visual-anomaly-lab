@@ -1032,6 +1032,7 @@ function EditorReady({
                 <AnnotationCanvas
                   imageId={reference.id}
                   maskOpacity={maskOpacity}
+                  editable={false}
                   label={`Reference channel — ${reference.channel ?? "unassigned"}`}
                   document={referenceDocument}
                   labels={labels}

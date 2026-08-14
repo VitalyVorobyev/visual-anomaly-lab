@@ -181,8 +181,9 @@ The dataset-local queue opens a full-height controlled Konva scene for polygon/v
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
 separate pan mode: left-drag moves the scene while Select is active and right-drag moves it from every
 tool. Fit and source-pixel 1:1 are explicit views; a Select-mode double-click toggles Fit and the previous
-view. It can be traced deterministically into simplified, editable outer and hole polygons; this
-raster-to-vector operation does not claim the image-aware boundary refinement reserved for MobileSAM.
+view. A brush gesture is cropped into a bitmap layer in source coordinates, and that layer can be traced
+deterministically into simplified, editable outer and hole polygons; this raster-to-vector operation does
+not claim the image-aware boundary refinement reserved for MobileSAM.
 Dirty drafts autosave after a short idle period; `412` keeps the local edit visible and offers an explicit
 server-draft reload rather than choosing a winner. Keyboard traversal prefetches adjacent queue pages so
 their boundary is not a dead end.

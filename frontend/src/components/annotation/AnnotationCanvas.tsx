@@ -63,6 +63,14 @@ interface Props {
   maskOpacity?: number;
   /** What a screen reader calls this surface. Panes beside the editor are not the editor. */
   label?: string;
+  /**
+   * Whether this pane's shapes answer the pointer at all.
+   *
+   * A reference pane is a photograph with the document drawn over it, not a second editor.
+   * Without this its regions would still take a click and start a drag that snapped back on
+   * release — an affordance that lies.
+   */
+  editable?: boolean;
   document: AnnotationDocument;
   labels: AnnotationLabel[];
   selectedId: string | null;
@@ -92,6 +100,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   overlayOpacity = 0.5,
   maskOpacity = 0.45,
   label = "Annotation canvas",
+  editable = true,
   document,
   labels,
   selectedId,
@@ -114,6 +123,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onAssistBox,
 }, forwardedRef) {
   const palette = useScenePalette();
+  // Selecting, dragging and reshaping are all the same permission.
+  const interactive = editable && tool === "select";
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
@@ -508,7 +519,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     selected={shape.id === selectedId}
                     onSelect={() => onSelect(shape.id)}
                     onMove={(dx, dy) => onMoveShape(shape.id, dx, dy)}
-                    selectable={tool === "select"}
+                    selectable={interactive}
                   />
                 );
               }
@@ -525,7 +536,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
               return (
                 <Group
                   key={shape.id}
-                  draggable={tool === "select"}
+                  draggable={interactive}
                   // A click has to survive a shaking hand, or selecting a region would drag it
                   // a pixel and land in undo history.
                   dragDistance={4}
@@ -567,7 +578,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     stroke={shape.operation === "add" ? color : palette.cut}
                     strokeWidth={(selected ? 2.5 : 1.5) / scale}
                     hitStrokeWidth={10 / scale}
-                    listening={tool === "select"}
+                    listening={interactive}
                   />
                   {selected &&
                     points.map((point, index) => (
@@ -583,8 +594,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                         // Silent under every other tool. A selected polygon stays on screen
                         // while brushing, and a vertex that still took the click swallowed the
                         // start of the stroke.
-                        listening={tool === "select"}
-                        draggable={tool === "select"}
+                        listening={interactive}
+                        draggable={interactive}
                         onDragMove={(event) =>
                           setVertexDrag({
                             shapeId: shape.id,
