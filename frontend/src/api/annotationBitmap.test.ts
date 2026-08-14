@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { maskFromPixels, strokeBounds, traceMask } from "./annotationBitmap";
+import { maskBounds, maskFromPixels, paintRect, strokeBounds, traceMask } from "./annotationBitmap";
 
 describe("brush bitmap bounds", () => {
   it("crops a stroke with its antialias margin and clamps it to the source frame", () => {
@@ -85,5 +85,48 @@ describe("maskFromPixels", () => {
     // A canvas clears to transparent black, but a cleared region of a *tinted* canvas can hold
     // stale colour bytes under a zero alpha. Those are not mask.
     expect([...maskFromPixels(rgba([255, 255, 255, 0]), 1)]).toEqual([0]);
+  });
+});
+
+describe("paintRect", () => {
+  const region = { x: 10, y: 10, width: 20, height: 20 };
+
+  it("grows to cover a stroke that leaves the region", () => {
+    // The whole point of continuing a region: a defect drawn in three touches is one region,
+    // and each touch may reach past what the last one covered.
+    expect(paintRect(region, { minX: 4, minY: 12, maxX: 18, maxY: 40 }, false)).toEqual({
+      minX: 4,
+      minY: 10,
+      width: 26,
+      height: 30,
+    });
+  });
+
+  it("never grows for an eraser, whichever way the stroke ran", () => {
+    // Erasing cannot add a pixel, so a stroke that wanders far outside the region must not
+    // drag its crop along — the crop is what the selection outline and the copy dimension
+    // check both read.
+    expect(paintRect(region, { minX: 0, minY: 0, maxX: 200, maxY: 200 }, true)).toEqual({
+      minX: 10,
+      minY: 10,
+      width: 20,
+      height: 20,
+    });
+  });
+});
+
+describe("maskBounds", () => {
+  it("finds the tight box around what is painted", () => {
+    const mask = new Uint8Array([
+      0, 0, 0, 0,
+      0, 1, 1, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 0,
+    ]);
+    expect(maskBounds(mask, 4, 4)).toEqual({ minX: 1, minY: 1, width: 2, height: 2 });
+  });
+
+  it("reports nothing left, which is how the last of a region is erased", () => {
+    expect(maskBounds(new Uint8Array(16), 4, 4)).toBeNull();
   });
 });

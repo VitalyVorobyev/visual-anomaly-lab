@@ -181,11 +181,39 @@ The dataset-local queue opens a full-height controlled Konva scene for polygon/v
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
 separate pan mode: left-drag moves the scene while Select is active and right-drag moves it from every
 tool. Fit and source-pixel 1:1 are explicit views; a Select-mode double-click toggles Fit and the previous
-view. A finished brush gesture is cropped into a bitmap layer in source coordinates. It can be traced
-deterministically into simplified, editable outer and hole polygons; this raster-to-vector operation does
-not claim the image-aware boundary refinement reserved for MobileSAM. Dirty drafts autosave after a short
-idle period; `412` keeps the local edit visible and offers an explicit server-draft reload rather than
-choosing a winner. Keyboard traversal prefetches adjacent queue pages so their boundary is not a dead end.
+view. It can be traced deterministically into simplified, editable outer and hole polygons; this
+raster-to-vector operation does not claim the image-aware boundary refinement reserved for MobileSAM.
+Dirty drafts autosave after a short idle period; `412` keeps the local edit visible and offers an explicit
+server-draft reload rather than choosing a winner. Keyboard traversal prefetches adjacent queue pages so
+their boundary is not a dead end.
+
+## Direct manipulation
+
+Four rules, and each replaced something that only looked like it worked.
+
+**A stroke extends the selected region.** A brush or eraser gesture composites into the selected bitmap
+region and re-crops it to what is actually painted, so a defect is drawn in as many touches as it takes and
+stays one region. With nothing selected the brush starts a region and selects it; the eraser instead
+appends a `subtract` layer that cuts through everything below, which is the only way to punch a hole in a
+*polygon*. Both PNG shapes the raster contract allows are normalised on the way in by compositing over an
+opaque black ground, so erasing is painting black rather than a compositing mode, and the output is the
+opaque black-and-white the backend itself writes. A region erased to nothing is removed.
+
+**A region moves.** Dragging with Select translates it and an arrow key nudges it — 1 px, or 10 with
+Shift. The offset is clamped once against the shape's own extent, never per coordinate, because clamping
+each vertex on its own deforms a polygon pushed against an edge. This is what a copied region needs: the
+exposures of one part are milliseconds apart on a moving line, so a copy lands close and not right.
+
+**A polygon closes itself.** A click within a screen-sized radius of the first vertex closes the ring; a
+click on the *last* vertex is dropped as a duplicate, which is what lets a double-click anywhere add its
+vertex and then close. The first vertex swells while the pointer is over it. Backspace removes the last
+vertex, Escape discards the ring, and the tool stays active afterwards because most parts carry more than
+one defect. There is no "Close" button.
+
+**A vertex drag is live.** The dragged point is held as transient scene state and applied to the outline
+during the gesture, then committed once on release. The scene still never becomes a second store of
+annotation truth — it is the same kind of state as a brush stroke in progress — but the polygon now follows
+the handle instead of jumping to it when the mouse comes up.
 
 ---
 

@@ -33,11 +33,12 @@ import {
   historyReducer,
   nextShapeId,
   replaceShape,
+  translateShape,
   withPolygonPoint,
   withShape,
   withoutShape,
 } from "../api/annotationState";
-import { bitmapStroke, traceBitmapShape } from "../api/annotationBitmap";
+import { bitmapStroke, paintStroke, traceBitmapShape } from "../api/annotationBitmap";
 import { paneFrame, resolveReference, type PaneMode } from "../api/annotationPanes";
 import { queueUnits } from "../api/annotationQueue";
 import type {
@@ -502,8 +503,67 @@ function EditorReady({
     dispatch({ type: "commit", document: withShape(history.present, polygon) });
     setPendingPoints([]);
     setSelectedId(polygon.id);
-    setTool("select");
+    // The tool stays where it is. Most parts carry more than one defect, and dropping back to
+    // Select after every ring meant pressing P again for each of them.
   }, [history.present, labelKey, operation, pendingPoints]);
+
+  const moveShape = useCallback(
+    (shapeId: string, dx: number, dy: number) => {
+      dispatch({ type: "commit", document: translateShape(history.present, shapeId, dx, dy) });
+    },
+    [history.present],
+  );
+
+  /**
+   * One brush or eraser gesture.
+   *
+   * The rule, stated in the inspector so it is never a guess: **a stroke extends the selected
+   * region**, and with nothing selected the brush starts one while the eraser cuts through
+   * everything below it. Every gesture used to mint a new shape, so a defect painted in three
+   * strokes was three regions and the eraser was a brush that appended a `subtract` layer —
+   * it could not take paint back off the thing under the cursor.
+   *
+   * Cutting through the stack is not a fallback but the only way to punch a hole in a
+   * *polygon*, which erasing pixels cannot do.
+   */
+  const applyStroke = useCallback(
+    async (points: AnnotationPoint[]) => {
+      const erase = tool === "eraser";
+      const target = selected?.kind === "bitmap" ? selected : null;
+      if (target) {
+        const painted = await paintStroke(target, {
+          points,
+          radius: brushRadius,
+          imageWidth: history.present.image_width,
+          imageHeight: history.present.image_height,
+          erase,
+        });
+        if (painted === null) {
+          dispatch({ type: "commit", document: withoutShape(history.present, target.id) });
+          setSelectedId(null);
+          setMessage("Region erased");
+          return;
+        }
+        dispatch({
+          type: "commit",
+          document: replaceShape(history.present, target.id, [painted]),
+        });
+        return;
+      }
+      const shape = bitmapStroke({
+        points,
+        radius: brushRadius,
+        imageWidth: history.present.image_width,
+        imageHeight: history.present.image_height,
+        labelKey,
+        operation: erase ? "subtract" : operation,
+      });
+      if (!shape) return;
+      dispatch({ type: "commit", document: withShape(history.present, shape) });
+      setSelectedId(shape.id);
+    },
+    [brushRadius, history.present, labelKey, operation, selected, tool],
+  );
 
   const completeCurrent = useCallback(async () => {
     try {
@@ -677,10 +737,23 @@ function EditorReady({
         event.preventDefault();
         finishPolygon();
       } else if (event.key === "Escape") {
-        setPendingPoints([]);
-        setSelectedId(null);
-        clearAssist();
-        setTool("select");
+        // Cancel the current thing, and only that. Escape used to also drop back to Select,
+        // which made "escape to start a fresh region" cost a second keystroke to get the
+        // brush back — V is the way to Select, and it always was.
+        if (pendingPoints.length > 0) {
+          setPendingPoints([]);
+        } else {
+          setSelectedId(null);
+          clearAssist();
+        }
+      } else if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        pendingPoints.length > 0
+      ) {
+        // Undo does not reach a ring that has not been committed yet, so the only way back
+        // from a misplaced vertex used to be Escape and starting over.
+        event.preventDefault();
+        setPendingPoints((points) => points.slice(0, -1));
       } else if ((event.key === "Backspace" || event.key === "Delete") && selectedId) {
         event.preventDefault();
         removeSelected();
@@ -937,19 +1010,8 @@ function EditorReady({
               document: withPolygonPoint(history.present, shapeId, pointIndex, point),
             })
           }
-          onBrush={(points) => {
-            const shape = bitmapStroke({
-              points,
-              radius: brushRadius,
-              imageWidth: history.present.image_width,
-              imageHeight: history.present.image_height,
-              labelKey,
-              operation: tool === "eraser" ? "subtract" : operation,
-            });
-            if (!shape) return;
-            dispatch({ type: "commit", document: withShape(history.present, shape) });
-            setSelectedId(shape.id);
-          }}
+          onMoveShape={moveShape}
+          onBrush={(points) => void applyStroke(points)}
           onFinishPolygon={finishPolygon}
           onAssistPoint={(point) => {
             assist.reset();
@@ -986,6 +1048,7 @@ function EditorReady({
                   onSelect={() => undefined}
                   onPoint={() => undefined}
                   onMovePoint={() => undefined}
+                  onMoveShape={() => undefined}
                   onBrush={() => undefined}
                   onFinishPolygon={() => undefined}
                   onAssistPoint={() => undefined}
@@ -1019,27 +1082,46 @@ function EditorReady({
               />
             </div>
             {pendingPoints.length > 0 && (
-              <div className="mt-2 flex items-center justify-between rounded-control bg-raised px-2 py-1.5 text-xs">
-                <span>{pendingPoints.length} vertices · Enter closes</span>
-                <Button size="sm" disabled={pendingPoints.length < 3} onClick={finishPolygon}>
-                  Close
-                </Button>
-              </div>
+              // A readout, not a control. Closing is a click on the first vertex or a
+              // double-click anywhere; a "Close" button in a side panel is neither where the
+              // hand is nor what a polygon tool is expected to need.
+              <p className="mt-2 rounded-control bg-raised px-2 py-1.5 text-xs text-fg-muted">
+                {pendingPoints.length} vertex{pendingPoints.length === 1 ? "" : "es"} ·{" "}
+                {pendingPoints.length < 3
+                  ? "three closes a ring"
+                  : "click the first vertex, double-click, or Enter"}{" "}
+                · Backspace undoes one
+              </p>
             )}
             {(tool === "brush" || tool === "eraser") && (
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
-                  <span>Brush size</span>
-                  <span className="font-mono">{brushRadius}px</span>
+              <div className="mt-3 flex flex-col gap-2">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
+                    <span>Brush size</span>
+                    <span className="font-mono">{brushRadius}px</span>
+                  </div>
+                  <Slider
+                    aria-label="Brush size"
+                    value={brushRadius}
+                    min={2}
+                    max={96}
+                    step={1}
+                    onValueChange={setBrushRadius}
+                  />
                 </div>
-                <Slider
-                  aria-label="Brush size"
-                  value={brushRadius}
-                  min={2}
-                  max={96}
-                  step={1}
-                  onValueChange={setBrushRadius}
-                />
+                {/* The rule, where the hand is, because it is the one thing about this tool
+                    nobody can infer from looking at it. */}
+                <p className="text-[11px] leading-4 text-fg-subtle">
+                  {selected?.kind === "bitmap"
+                    ? tool === "eraser"
+                      ? "Erasing region " +
+                        `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new cut.`
+                      : "Painting into region " +
+                        `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new one.`
+                    : tool === "eraser"
+                      ? "Nothing selected: this cuts through every region below it."
+                      : "Nothing selected: this starts a new region. Strokes after it extend that one."}
+                </p>
               </div>
             )}
           </section>
@@ -1273,7 +1355,10 @@ function EditorReady({
               Selection
             </h2>
             {!selected ? (
-              <p className="text-xs leading-5 text-fg-subtle">Select a region to edit its class or operation.</p>
+              <p className="text-xs leading-5 text-fg-subtle">
+                Select a region to edit its class or operation, drag it with Select, or nudge it
+                with the arrow keys.
+              </p>
             ) : (
               <div className="flex flex-col gap-2">
                 <Select
@@ -1294,6 +1379,10 @@ function EditorReady({
                   />
                   <Button variant="danger" icon={<Trash2 />} onClick={removeSelected} aria-label="Delete selected region" />
                 </div>
+                <p className="text-[11px] leading-4 text-fg-subtle">
+                  Drag to move · arrows nudge 1 px, Shift 10 px
+                  {selected.kind === "polygon" ? " · drag a vertex to reshape" : " · brush extends it"}
+                </p>
                 {selected.kind === "bitmap" && (
                   <Button
                     icon={<WandSparkles />}

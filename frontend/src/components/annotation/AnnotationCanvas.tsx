@@ -28,6 +28,7 @@ import type {
   BitmapShape,
 } from "../../api/client";
 import { tintedMask } from "../../api/annotationBitmap";
+import { polygonClick, snapTolerance } from "../../api/annotationPolygon";
 import { imageUrl, maskUrl } from "../../api/imageUrl";
 import { useScenePalette, withAlpha, type ScenePalette } from "./scenePalette";
 
@@ -77,6 +78,8 @@ interface Props {
   onSelect: (shapeId: string | null) => void;
   onPoint: (point: AnnotationPoint) => void;
   onMovePoint: (shapeId: string, pointIndex: number, point: AnnotationPoint) => void;
+  /** A whole-region offset in source pixels: a drag, or an arrow-key nudge. */
+  onMoveShape: (shapeId: string, dx: number, dy: number) => void;
   onBrush: (points: AnnotationPoint[]) => void;
   onFinishPolygon: () => void;
   onAssistPoint: (point: AssistPoint) => void;
@@ -104,6 +107,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onSelect,
   onPoint,
   onMovePoint,
+  onMoveShape,
   onBrush,
   onFinishPolygon,
   onAssistPoint,
@@ -124,6 +128,21 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   const previousView = useRef<CanvasView | null>(null);
   const [brushPoints, setBrushPoints] = useState<AnnotationPoint[]>([]);
   const [boxStart, setBoxStart] = useState<AnnotationPoint | null>(null);
+  /**
+   * A vertex mid-drag, and whether the pointer is over the ring's first vertex.
+   *
+   * Transient gesture state, exactly like `brushPoints` and `boxStart` above it — the scene
+   * still never becomes a second store of annotation truth. The vertex override is what makes
+   * a drag *look* like a drag: the outline used to be read straight from the committed
+   * document, which only changes on `dragEnd`, so the handle moved and the polygon it belonged
+   * to stayed where it was until the mouse came up.
+   */
+  const [vertexDrag, setVertexDrag] = useState<{
+    shapeId: string;
+    index: number;
+    point: AnnotationPoint;
+  } | null>(null);
+  const [snapReady, setSnapReady] = useState(false);
   const [keyboardFocused, setKeyboardFocused] = useState(false);
   const [keyboardPoint, setKeyboardPoint] = useState<AnnotationPoint>({
     x: document.image_width / 2,
@@ -257,10 +276,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     onSelect(null);
     if (tool === "polygon") {
       const point = sourcePoint();
-      if (point) {
-        setKeyboardPoint(point);
-        onPoint(point);
-      }
+      if (!point) return;
+      setKeyboardPoint(point);
+      const decision = polygonClick(pendingPoints, point, snapTolerance(scale));
+      // `ignore` is not a no-op worth skipping: it is what lets a double-click close a ring
+      // without leaving the duplicate vertex its second click would otherwise add.
+      if (decision === "close") onFinishPolygon();
+      else if (decision === "add") onPoint(point);
     }
   };
 
@@ -276,6 +298,12 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       event.preventDefault();
       event.stopPropagation();
       const step = event.shiftKey ? 10 : 1;
+      // With a region selected the arrows are the precise tool, not the cursor: a copy taken
+      // from another channel lands a handful of pixels out, and that is a nudge, not a drag.
+      if (tool === "select" && selectedId) {
+        onMoveShape(selectedId, direction[0] * step, direction[1] * step);
+        return;
+      }
       setKeyboardPoint((point) => ({
         x: clamp(point.x + direction[0] * step, 0, document.image_width),
         y: clamp(point.y + direction[1] * step, 0, document.image_height),
@@ -319,6 +347,21 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     const point = sourcePoint();
     if (!point) return;
     setBrushPoints((points) => [...points, point]);
+  };
+
+  /** Light up the first vertex while the pointer is over it, so "click here to close" is visible. */
+  const trackPolygonSnap = () => {
+    if (tool !== "polygon" || pendingPoints.length < 3) {
+      if (snapReady) setSnapReady(false);
+      return;
+    }
+    const point = sourcePoint();
+    const first = pendingPoints[0];
+    const ready =
+      point !== null &&
+      first !== undefined &&
+      polygonClick(pendingPoints, point, snapTolerance(scale)) === "close";
+    if (ready !== snapReady) setSnapReady(ready);
   };
 
   const trackAssistBox = () => {
@@ -384,11 +427,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         onMouseMove={() => {
           onStageMove();
           trackBrush();
+          trackPolygonSnap();
           trackAssistBox();
         }}
         onTouchMove={() => {
           onStageMove();
           trackBrush();
+          trackPolygonSnap();
           trackAssistBox();
         }}
         onMouseUp={finishGesture}
@@ -398,6 +443,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         onContextMenu={(event) => event.evt.preventDefault()}
         onDblClick={() => {
           if (tool === "select") toggleFit();
+          // The second click of the pair was dropped as a duplicate, so this closes the ring
+          // the first click completed — a polygon tool's ordinary gesture, and the reason the
+          // "Close" button in the inspector is gone.
+          else if (tool === "polygon" && pendingPoints.length >= 3) onFinishPolygon();
         }}
         className={
           panning
@@ -458,34 +507,70 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     scale={scale}
                     selected={shape.id === selectedId}
                     onSelect={() => onSelect(shape.id)}
+                    onMove={(dx, dy) => onMoveShape(shape.id, dx, dy)}
                     selectable={tool === "select"}
                   />
                 );
               }
               const color = colors.get(shape.label_key) ?? palette.unknownLabel;
               const selected = shape.id === selectedId;
+              // The dragged vertex is applied here rather than committed on every mouse move:
+              // the outline follows the handle, and undo still steps one drag at a time.
+              const points =
+                vertexDrag?.shapeId === shape.id
+                  ? shape.points.map((point, index) =>
+                      index === vertexDrag.index ? vertexDrag.point : point,
+                    )
+                  : shape.points;
               return (
-                <Group key={shape.id}>
+                <Group
+                  key={shape.id}
+                  draggable={tool === "select"}
+                  // A click has to survive a shaking hand, or selecting a region would drag it
+                  // a pixel and land in undo history.
+                  dragDistance={4}
+                  // Selection is claimed *here*, on the draggable node, and not on the line
+                  // inside it. Konva starts a drag from a `mousedown` listener on the
+                  // draggable node itself, reached by bubbling — so cancelling the bubble on
+                  // the line would have selected the region and then silently refused to move
+                  // it. Cancelling here still stops the stage's pan gesture, which is the only
+                  // thing that had to stop.
+                  onMouseDown={(event) => {
+                    if (event.evt.button === 2) return;
+                    event.cancelBubble = true;
+                    onSelect(shape.id);
+                  }}
+                  onTap={(event) => {
+                    event.cancelBubble = true;
+                    onSelect(shape.id);
+                  }}
+                  onDragEnd={(event) => {
+                    // `dragend` bubbles, and a selected polygon's vertices are draggable
+                    // children — without this, dragging a vertex would also read the
+                    // *vertex's* position as a whole-region offset and fling the shape across
+                    // the frame.
+                    if (event.target !== event.currentTarget) return;
+                    const node = event.target;
+                    const dx = node.x();
+                    const dy = node.y();
+                    // Konva moving the group *is* the live feedback; the committed document
+                    // then carries the offset, so the node has to go back to the origin or it
+                    // would be applied twice.
+                    node.position({ x: 0, y: 0 });
+                    onMoveShape(shape.id, dx, dy);
+                  }}
+                >
                   <Line
-                    points={shape.points.flatMap((point) => [point.x, point.y])}
+                    points={points.flatMap((point) => [point.x, point.y])}
                     closed
                     fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
                     stroke={shape.operation === "add" ? color : palette.cut}
                     strokeWidth={(selected ? 2.5 : 1.5) / scale}
                     hitStrokeWidth={10 / scale}
                     listening={tool === "select"}
-                    onMouseDown={(event) => {
-                      if (event.evt.button === 2) return;
-                      event.cancelBubble = true;
-                      onSelect(shape.id);
-                    }}
-                    onTap={(event) => {
-                      event.cancelBubble = true;
-                      onSelect(shape.id);
-                    }}
                   />
                   {selected &&
-                    shape.points.map((point, index) => (
+                    points.map((point, index) => (
                       <Circle
                         key={`${shape.id}-${index}`}
                         x={point.x}
@@ -494,14 +579,33 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                         fill={palette.frame}
                         stroke={color}
                         strokeWidth={1.5 / scale}
+                        hitStrokeWidth={12 / scale}
+                        // Silent under every other tool. A selected polygon stays on screen
+                        // while brushing, and a vertex that still took the click swallowed the
+                        // start of the stroke.
+                        listening={tool === "select"}
                         draggable={tool === "select"}
-                        onDragEnd={(event) =>
+                        onDragMove={(event) =>
+                          setVertexDrag({
+                            shapeId: shape.id,
+                            index,
+                            point: {
+                              x: clamp(event.target.x(), 0, document.image_width),
+                              y: clamp(event.target.y(), 0, document.image_height),
+                            },
+                          })
+                        }
+                        onDragEnd={(event) => {
+                          event.cancelBubble = true;
+                          setVertexDrag(null);
                           onMovePoint(shape.id, index, {
                             x: clamp(event.target.x(), 0, document.image_width),
                             y: clamp(event.target.y(), 0, document.image_height),
-                          })
-                        }
+                          });
+                        }}
                         onMouseDown={(event) => {
+                          // The vertex owns this gesture: without cancelling, the group under
+                          // it would drag the whole region at the same time.
                           event.cancelBubble = true;
                         }}
                       />
@@ -523,8 +627,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     key={`${point.x}-${point.y}-${index}`}
                     x={point.x}
                     y={point.y}
-                    radius={index === 0 ? 5 / scale : 3.5 / scale}
-                    fill={palette.frame}
+                    // The first vertex swells and fills while the pointer is over it, so
+                    // "click here to close" is something the ring says rather than something
+                    // a button elsewhere claims.
+                    radius={(index === 0 ? (snapReady ? 8 : 5) : 3.5) / scale}
+                    fill={index === 0 && snapReady ? palette.signal : palette.frame}
                     stroke={palette.signal}
                     strokeWidth={1.5 / scale}
                   />
@@ -655,6 +762,7 @@ function BitmapLayer({
   selectable,
   suggestion = false,
   onSelect,
+  onMove,
 }: {
   shape: BitmapShape;
   color: string;
@@ -665,6 +773,7 @@ function BitmapLayer({
   selectable: boolean;
   suggestion?: boolean;
   onSelect: () => void;
+  onMove?: (dx: number, dy: number) => void;
 }) {
   const cut = shape.operation === "subtract";
   const tint = suggestion ? palette.suggestion : cut ? palette.cut : color;
@@ -676,6 +785,15 @@ function BitmapLayer({
       clipY={shape.y}
       clipWidth={shape.width}
       clipHeight={shape.height}
+      draggable={selectable && onMove !== undefined}
+      dragDistance={4}
+      onDragEnd={(event) => {
+        const node = event.target;
+        const dx = node.x();
+        const dy = node.y();
+        node.position({ x: 0, y: 0 });
+        onMove?.(dx, dy);
+      }}
       onMouseDown={(event) => {
         if (!selectable || event.evt.button === 2) return;
         event.cancelBubble = true;

@@ -134,6 +134,128 @@ export function bitmapStroke({
   };
 }
 
+/**
+ * Extend or erase an existing region with one more stroke.
+ *
+ * This is what makes a defect drawable in as many touches as it takes, and what makes the
+ * eraser an eraser: until now every gesture minted a new shape, so a region painted in three
+ * strokes was three regions, and the "eraser" was a brush that happened to append a
+ * `subtract` layer — it could not take paint back off the thing under the cursor.
+ *
+ * Both PNG shapes the contract allows are normalised on the way in by compositing over an
+ * opaque black ground: a white-on-transparent brush layer and an opaque backend mask land on
+ * the same luminance. Erasing is then painting *black*, not a compositing mode, and the output
+ * is opaque black-and-white — the format the backend itself writes.
+ *
+ * Returns `null` when the last of the region has been erased; the caller removes the shape.
+ */
+export async function paintStroke(
+  target: BitmapShape,
+  {
+    points,
+    radius,
+    imageWidth,
+    imageHeight,
+    erase,
+  }: {
+    points: AnnotationPoint[];
+    radius: number;
+    imageWidth: number;
+    imageHeight: number;
+    erase: boolean;
+  },
+): Promise<BitmapShape | null> {
+  if (points.length === 0) return target;
+  const { minX, minY, width, height } = paintRect(
+    target,
+    strokeBounds(points, radius, imageWidth, imageHeight),
+    erase,
+  );
+  if (width <= 0 || height <= 0) return target;
+
+  const existing = await loadBitmap(target.png_base64);
+  const context = context2d(width, height);
+  context.fillStyle = "#000000";
+  context.fillRect(0, 0, width, height);
+  context.drawImage(existing, target.x - minX, target.y - minY, target.width, target.height);
+
+  const paint = erase ? "#000000" : "#ffffff";
+  context.strokeStyle = paint;
+  context.fillStyle = paint;
+  context.lineWidth = radius * 2;
+  context.lineCap = "round";
+  context.lineJoin = "round";
+  context.beginPath();
+  context.moveTo(points[0]!.x - minX, points[0]!.y - minY);
+  for (const point of points.slice(1)) context.lineTo(point.x - minX, point.y - minY);
+  context.stroke();
+  if (points.length === 1) {
+    context.beginPath();
+    context.arc(points[0]!.x - minX, points[0]!.y - minY, radius, 0, Math.PI * 2);
+    context.fill();
+  }
+
+  const mask = maskFromPixels(context.getImageData(0, 0, width, height).data, width * height);
+  const bounds = maskBounds(mask, width, height);
+  if (!bounds) return null;
+
+  // Re-cropped to what is actually painted. Without this an erased region keeps the rectangle
+  // it was largest at, and the crop is what the selection outline and the copy dimension check
+  // both read.
+  const cropped = context2d(bounds.width, bounds.height);
+  cropped.drawImage(context.canvas, -bounds.minX, -bounds.minY);
+  return {
+    ...target,
+    x: minX + bounds.minX,
+    y: minY + bounds.minY,
+    width: bounds.width,
+    height: bounds.height,
+    png_base64: cropped.canvas.toDataURL("image/png").split(",", 2)[1] ?? "",
+  };
+}
+
+/**
+ * The rectangle a stroke is rasterised into.
+ *
+ * Adding grows the region to cover the stroke; erasing cannot add a pixel, so its canvas never
+ * has to grow past the region it is taking paint off. Getting that wrong is not cosmetic — the
+ * crop is what the selection outline draws and what the copy-to-channel dimension check reads.
+ */
+export function paintRect(
+  target: Pick<BitmapShape, "x" | "y" | "width" | "height">,
+  stroke: { minX: number; minY: number; maxX: number; maxY: number },
+  erase: boolean,
+): { minX: number; minY: number; width: number; height: number } {
+  const minX = erase ? target.x : Math.min(target.x, stroke.minX);
+  const minY = erase ? target.y : Math.min(target.y, stroke.minY);
+  const maxX = erase ? target.x + target.width : Math.max(target.x + target.width, stroke.maxX);
+  const maxY = erase ? target.y + target.height : Math.max(target.y + target.height, stroke.maxY);
+  return { minX, minY, width: maxX - minX, height: maxY - minY };
+}
+
+/** The tight box around everything filled, or `null` when nothing is. */
+export function maskBounds(
+  mask: Uint8Array,
+  width: number,
+  height: number,
+): { minX: number; minY: number; width: number; height: number } | null {
+  let minX = width;
+  let minY = height;
+  let maxX = -1;
+  let maxY = -1;
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      if (!mask[y * width + x]) continue;
+      if (x < minX) minX = x;
+      if (x > maxX) maxX = x;
+      if (y < minY) minY = y;
+      if (y > maxY) maxY = y;
+    }
+  }
+  if (maxX < 0) return null;
+  return { minX, minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
 export function strokeBounds(
   points: AnnotationPoint[],
   radius: number,

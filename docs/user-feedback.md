@@ -102,6 +102,45 @@ otherwise spread a stale document across every channel at once. The dialog says 
 channel already holds, which the editor knows because it now reads every channel's draft ahead of time —
 affordable only because entry 017 made reading a draft a read.
 
+### 020
+
+"For the selected defect I want to move it with the mouse. There is no way to continue editing the
+current defect with the brush — I would expect to draw a defect in several touches. I also want to use
+the eraser on the current draft; if I understand correctly the eraser is not implemented at all, it looks
+exactly as a clone of the brush. When I move a polygon vertex the polygon itself remains the same. When
+the polygon tool comes back to the starting vertex it should close automatically; a double click should
+add a vertex and close; clicking the same place twice must not add a vertex."
+
+**Cause: every gesture minted a new shape, and the scene rendered only what had already been
+committed.** `bitmapStroke` always called `nextShapeId()`, so a defect painted in three touches was three
+regions, and the "eraser" differed from the brush by a preview colour and an `operation` flag — it
+appended a `subtract` layer and could not take paint off the thing under the cursor. The vertex handle was
+draggable but the outline read `shape.points` straight from the committed document, which only changes on
+`dragEnd`, so the handle moved and the polygon stayed put. `draggable` appeared exactly once in the whole
+scene, on that handle: a region could not be moved at all. And the pending-polygon group was
+`listening={false}`, so its first vertex could not be clicked and closing needed a button in a side panel.
+
+The reading of every observation was right, and each fix is in the handbook's *Direct manipulation*
+section. Three of them are worth naming here.
+
+A stroke now composites into the selected region and re-crops it, so the brush continues and the eraser
+erases; with nothing selected the eraser still cuts through the stack, because that is the only way to
+punch a hole in a *polygon*, which erasing pixels cannot do. A dragged vertex is held as transient scene
+state — the same kind of state a brush stroke in progress already was — so the outline follows the handle
+while undo still steps one drag at a time. And the click that closes a ring is decided by one pure
+function with three answers: close on the first vertex, **ignore** on the last, add otherwise. The ignore
+rule is what makes a double-click work at all — its second click is a duplicate and is dropped before
+`dblclick` closes the ring — and it is also the fix for "clicking the same place twice must not add a
+vertex", which is invisible on screen and awkward in every algorithm that reads the polygon afterwards.
+
+The offset a moved region takes is clamped once, against the shape's own extent, rather than per
+coordinate: clamping each vertex on its own would flatten a polygon against the edge it was pushed at, so
+a document that had merely been dragged too far would come back a different shape.
+
+Two smaller things went with it. Escape now cancels the current thing and only that, instead of also
+dropping back to Select, which made "escape and start a fresh region" cost a keystroke to get the brush
+back. And the polygon tool stays active after a ring closes, because most parts carry more than one defect.
+
 ### 013
 
 Let the annotation editor show every channel of a sample at once, and optionally share one
