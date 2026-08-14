@@ -71,6 +71,37 @@ dataset taxonomy and now has a swatch, wired to a route that had existed without
 The wrap was `SegmentedControl` missing `whitespace-nowrap`, so a label's minimum width was its
 longest *word*, inside a fixed-height strip that then clipped the overflow.
 
+### 019
+
+"When I change the left channel I jump back to single-channel view." And: "when I label one channel
+there is no way to apply the same labelling to the others — this should be optional, but available."
+
+**Cause: the editor was keyed by the thing it was editing, and everything lived inside the key.**
+`EditorReady` is remounted on every `:imageId` so that the document, its history and its ETag cannot
+survive into another image's truth — which is right. But the pane mode, the second channel, the active
+tool, the brush size and the zoom were `useState` *inside* it, so choosing a different second channel
+navigated, remounted, and reset the workspace along with the document. Under sample scope the key is the
+sample, which is why it looked like a bug that only image-scoped datasets had.
+
+Presentation state now lives above the key, where it belongs: it describes how the reader is looking,
+not what they are looking at. The second pane is stored as a channel *position* so it follows onto the
+next part, and asking for the channel that is already active wraps to the next one rather than showing
+one photograph twice. Pan and zoom carry a frame stamp — they follow the reader across the channels of
+one part, and reset on a part that has nothing to do with them.
+
+The channel tab's disabled-while-dirty state went with it. It read as a broken control: the work was one
+keystroke away from being safe and the editor knew it, so switching channel saves and then navigates, and
+only a genuine conflict stops the move.
+
+Copying is a new route, `POST /api/images/{id}/annotations/copy-regions`. It **appends** with fresh ids,
+so a channel's own work survives and each copy stays independently editable — necessary rather than
+tidy, because the scan probe measures `dark` sitting about 9 px below `bright`, so a copy is a starting
+point that needs a nudge. Targets that are not siblings, or that do not share the source frame, are
+refused rather than rescaled; the source carries the precondition, because one stale click would
+otherwise spread a stale document across every channel at once. The dialog says how many regions each
+channel already holds, which the editor knows because it now reads every channel's draft ahead of time —
+affordable only because entry 017 made reading a draft a read.
+
 ### 013
 
 Let the annotation editor show every channel of a sample at once, and optionally share one

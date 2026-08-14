@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import shutil
 import sqlite3
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Annotated
+from uuid import uuid4
 
 import numpy as np
 from fastapi import APIRouter, Body, Header, HTTPException, Request, Response
@@ -574,6 +575,158 @@ def save_annotation_draft(
             raise
     _set_draft_etag(response, saved)
     return saved
+
+
+class CopyRegionsRequest(BaseModel):
+    """Which sibling channels receive a copy of this image's regions."""
+
+    model_config = API_MODEL_CONFIG
+
+    target_image_ids: list[int] = Field(min_length=1)
+
+
+class CopiedChannel(BaseModel):
+    """What one target holds afterwards, so the caller can say it rather than guess it."""
+
+    model_config = API_MODEL_CONFIG
+
+    image_id: int
+    version: int
+    shape_count: int
+
+
+class CopyRegionsResult(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    copied: int
+    targets: list[CopiedChannel]
+
+
+def _with_fresh_ids(shapes: Sequence[AnnotationShape]) -> list[AnnotationShape]:
+    """The same geometry under new ids.
+
+    A shape id is unique within *one* document, and each target already has its own. Copying
+    ids verbatim would collide the second time a channel receives a copy -- and the document
+    validator rejects duplicates, so the failure would be a 422 in the middle of a fan-out
+    rather than anything a person could act on.
+    """
+    return [shape.model_copy(update={"id": uuid4().hex}) for shape in shapes]
+
+
+@router.post(
+    "/api/images/{image_id}/annotations/copy-regions",
+    summary="Append this image's regions to other channels of the same sample",
+)
+def copy_annotation_regions(
+    request: Request,
+    image_id: int,
+    body: CopyRegionsRequest,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> CopyRegionsResult:
+    """Copy, never move and never replace.
+
+    Appending is what lets the targets go unguarded: an operation that only adds cannot lose
+    what is already there, so a target draft saved in another window survives intact. The
+    *source* still carries a precondition, because copying a stale document into three channels
+    is exactly the mistake an editor that has fallen behind would make.
+
+    Equal dimensions are a refusal rather than a rescale. An annotation is in source-image
+    pixels and never leaves that frame (ADR-0032); scaling one into a differently sized channel
+    would silently invent geometry nobody drew.
+    """
+    expected = _require_if_match(if_match)
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
+            source = annotations_repo.get_draft(conn, image_id)
+            if source is None:
+                raise HTTPException(
+                    status_code=404, detail=f"image {image_id} has no annotation draft"
+                )
+            if expected != _etag(source):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            if not source.document.shapes:
+                raise HTTPException(status_code=422, detail="this draft has no regions to copy")
+
+            image = images_repo.get_image(conn, image_id)
+            if image is None:  # pragma: no cover - the ownership join already found it
+                raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+            siblings = {
+                sibling.id: sibling
+                for sibling in images_repo.list_images_for_sample(conn, image.sample_id)
+            }
+
+            # De-duplicated up front: asking for the same channel twice is a client slip, and
+            # honouring it literally would append the regions twice.
+            wanted = list(dict.fromkeys(body.target_image_ids))
+            copied: list[CopiedChannel] = []
+            for target_id in wanted:
+                if target_id == image_id:
+                    raise HTTPException(
+                        status_code=422, detail="a channel cannot be copied onto itself"
+                    )
+                sibling = siblings.get(target_id)
+                if sibling is None:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=f"image {target_id} is not another channel of this sample",
+                    )
+                if (sibling.width, sibling.height) != (image.width, image.height):
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"image {target_id} is {sibling.width}x{sibling.height} and this one "
+                            f"is {image.width}x{image.height}; an annotation never leaves its "
+                            "source frame"
+                        ),
+                    )
+
+                current = annotations_repo.get_draft(conn, target_id)
+                if current is None:
+                    seed = _seed_state(conn, target_id)
+                    current = annotations_repo.create_draft(
+                        conn,
+                        target_id,
+                        seed.document,
+                        base_revision_id=seed.base_revision_id,
+                        source_mask_id=seed.source_mask_id,
+                        source_mask_path=seed.source_mask_path,
+                        source_mask_sha256=_pin_source_mask(conn, seed),
+                    )
+                document = current.document.model_copy(
+                    update={
+                        "shapes": [
+                            *current.document.shapes,
+                            *_with_fresh_ids(source.document.shapes),
+                        ]
+                    }
+                )
+                _validate_document(
+                    conn, target_id, dataset_id, document, expected_base=current.document.base
+                )
+                saved = annotations_repo.update_draft(conn, target_id, current.version, document)
+                if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+                    raise HTTPException(
+                        status_code=412, detail="the annotation draft changed elsewhere"
+                    )
+                copied.append(
+                    CopiedChannel(
+                        image_id=target_id,
+                        version=saved.version,
+                        shape_count=len(saved.document.shapes),
+                    )
+                )
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    return CopyRegionsResult(copied=len(source.document.shapes), targets=copied)
 
 
 @router.post(

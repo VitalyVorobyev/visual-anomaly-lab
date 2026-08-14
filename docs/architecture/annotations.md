@@ -90,6 +90,30 @@ Migration 016 deleted the drafts the previous design left behind, when opening t
 completing one recreated it. Its `version = 1` predicate meant "never saved" only under *that* write path
 and is never valid again — which is why `count_open_image_drafts` counts rows with no predicate at all.
 
+There is deliberately no bulk discard on the queue screen. Now that a draft means work, "discard the
+eleven drafts blocking this scope change" would destroy eleven pieces of real annotation work behind one
+click, with nothing on screen saying what was in them. Discarding stays per draft, in the editor, beside
+the document it throws away.
+
+## Copying regions between channels
+
+`POST /api/images/{image_id}/annotations/copy-regions` takes `{target_image_ids}` and **appends** the
+source draft's shapes to each target, with fresh ids. Image scope only: under sample scope one document
+already covers every channel, so the route answers `409` pointing at the sample routes.
+
+Appending is what lets the targets go unguarded — an operation that only adds cannot lose a target draft
+another window saved. The *source* carries `If-Match`, because a copy is one action that writes to several
+channels and an editor that has fallen behind must not spread a stale document across all of them. Targets
+that are not images of the same sample, or that do not share its dimensions, are refused (`409`) rather
+than rescaled: an annotation is in source-image pixels and never leaves that frame, so a rescale would
+invent geometry nobody drew. One bad target fails the whole request, so a person is never left working out
+which channels received the copy.
+
+Ids are minted rather than carried. They are unique within one document, and each target already has its
+own; copying them verbatim would turn the second copy into a duplicate-id `422` half way through a
+fan-out. Each copy is then an ordinary, independently editable region — which is the point, because the
+exposures are milliseconds apart and a copy usually needs a nudge.
+
 ## Completion and storage
 
 `POST .../complete` also requires `If-Match`. It renders the base and ordered polygon/bitmap operations to a binary
@@ -140,11 +164,18 @@ scope a part is one card and one job however many times it was photographed.
 The editor's canvas column carries a channel strip whenever a sample has more than one image. Under
 sample scope switching channel is a pure display change — the document belongs to the part, so the
 shapes stay on screen and visibly land on the new illumination; under image scope each channel owns its
-own truth, so it is real navigation and takes the dirty guard. Three view modes: one channel, two side
-by side sharing a single controlled view, or a blend that composites a second channel at adjustable
-alpha. The blend is the registration check — a few pixels of drift are invisible side by side. Shapes
-are drawn on a pane only when the document is truth for that pane's image, so an image-scoped reference
-pane shows the bare photograph.
+own truth, so it is real navigation, and it saves first rather than refusing. Three view modes: one
+channel, two side by side sharing a single controlled view, or a blend that composites a second channel
+at adjustable alpha. The blend is the registration check — a few pixels of drift are invisible side by
+side. Shapes are drawn on a pane only when the document is truth for that pane's image, so an
+image-scoped reference pane shows the bare photograph.
+
+The second pane is chosen by channel *position*, not by image id: the preference has to outlive the
+image it was expressed on, so that a reader who put `dark` beside `bright` still has a second pane on the
+next part. Choosing the channel that is already active wraps to the next one, which is what stops a
+two-channel sample from showing the same photograph twice. Under image scope the editor also reads every
+channel's draft ahead of being asked, so switching channel resolves from the cache and the copy dialog can
+say what each channel already holds — affordable only because reading a draft no longer writes one.
 
 The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex and brush/eraser
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no

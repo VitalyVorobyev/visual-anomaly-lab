@@ -57,6 +57,7 @@ export type AnnotationPoint = Schemas["AnnotationPoint"];
 export type PolygonShape = Schemas["PolygonShape-Output"];
 export type BitmapShape = Schemas["BitmapShape-Output"];
 export type AnnotationShape = PolygonShape | BitmapShape;
+export type CopyRegionsResult = Schemas["CopyRegionsResult"];
 export type AssistPoint = Schemas["AssistPoint"];
 export type AssistBox = Schemas["AssistBox"];
 export type SegmentAssistRequest = Schemas["SegmentAssistRequest"];

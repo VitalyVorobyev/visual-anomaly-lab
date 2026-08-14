@@ -11,6 +11,7 @@ import {
   Brush,
   Check,
   CircleDot,
+  Copy,
   Eraser,
   Maximize2,
   MousePointer2,
@@ -37,6 +38,7 @@ import {
   withoutShape,
 } from "../api/annotationState";
 import { bitmapStroke, traceBitmapShape } from "../api/annotationBitmap";
+import { paneFrame, resolveReference, type PaneMode } from "../api/annotationPanes";
 import { queueUnits } from "../api/annotationQueue";
 import type {
   AnnotationLabel,
@@ -59,7 +61,9 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
   ConfirmDialog,
+  Dialog,
   Empty,
   ErrorBox,
   ProgressBar,
@@ -76,9 +80,11 @@ import {
   type DraftTarget,
   useAnnotationLabels,
   useCompleteDraft,
+  useCopyRegions,
   useDiscardDraft,
   useEditorDraft,
   useSaveDraft,
+  useSiblingDrafts,
   useUpdateAnnotationLabel,
   useSegmentAssist,
   useSegmentAssistCapability,
@@ -91,8 +97,78 @@ import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 
 const QUEUE_PAGE = 120;
 
-/** How the whole channel column is shown at once. */
-type PaneMode = "single" | "compare" | "overlay";
+/**
+ * Presentation state: how the reader is looking, as opposed to what they are looking at.
+ *
+ * It lives above the keyed editor because it belongs to the person, not to the document.
+ * Everything used to sit inside `EditorReady`, which is keyed by the draft's target, so
+ * changing the second channel of a side-by-side comparison remounted the editor and reset
+ * the pane mode, the zoom and the active tool along with it — the reported "changing the
+ * left channel jumps back to a single channel". Per-target state (history, selection, the
+ * pending polygon) keeps the key and keeps resetting, which is the point of the key.
+ */
+interface Workspace {
+  paneMode: PaneMode;
+  setPaneMode: (mode: PaneMode) => void;
+  /** A channel position, not an image id — see `resolveReference`. */
+  referenceIndex: number | null;
+  setReferenceIndex: (index: number | null) => void;
+  overlayOpacity: number;
+  setOverlayOpacity: (value: number) => void;
+  maskOpacity: number;
+  setMaskOpacity: (value: number) => void;
+  tool: EditorTool;
+  setTool: (tool: EditorTool) => void;
+  brushRadius: number;
+  setBrushRadius: (radius: number) => void;
+  view: CanvasView;
+  setView: (view: CanvasView) => void;
+}
+
+function useWorkspace(frame: string): Workspace {
+  const [paneMode, setPaneMode] = useState<PaneMode>("single");
+  const [referenceIndex, setReferenceIndex] = useState<number | null>(null);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
+  const [maskOpacity, setMaskOpacity] = useMaskOpacity();
+  const [tool, setTool] = useState<EditorTool>("select");
+  const [brushRadius, setBrushRadius] = useState(18);
+  // The view is stamped with the frame it was expressed on and derived back out, so moving
+  // to another part resets it during render rather than in an effect that would first paint
+  // the previous part's zoom over the new photograph.
+  const [viewMemo, setViewMemo] = useState({ frame, view: INITIAL_CANVAS_VIEW });
+  const view = viewMemo.frame === frame ? viewMemo.view : INITIAL_CANVAS_VIEW;
+  const setView = useCallback((next: CanvasView) => setViewMemo({ frame, view: next }), [frame]);
+
+  return useMemo(
+    () => ({
+      paneMode,
+      setPaneMode,
+      referenceIndex,
+      setReferenceIndex,
+      overlayOpacity,
+      setOverlayOpacity,
+      maskOpacity,
+      setMaskOpacity,
+      tool,
+      setTool,
+      brushRadius,
+      setBrushRadius,
+      view,
+      setView,
+    }),
+    [
+      brushRadius,
+      maskOpacity,
+      overlayOpacity,
+      paneMode,
+      referenceIndex,
+      setMaskOpacity,
+      setView,
+      tool,
+      view,
+    ],
+  );
+}
 
 export function AnnotationEditorRoute() {
   const params = useParams();
@@ -120,6 +196,17 @@ export function AnnotationEditorRoute() {
       : { scope: "image", imageId }
     : undefined;
   const draft = useEditorDraft(target);
+
+  const images = useMemo(() => sample.data?.images ?? [], [sample.data]);
+  const activeImage = images.find((image) => image.id === imageId);
+  const workspace = useWorkspace(
+    paneFrame(sampleId, activeImage?.width ?? 0, activeImage?.height ?? 0),
+  );
+  const siblingShapeCounts = useSiblingDrafts(
+    useMemo(() => images.map((image) => image.id), [images]),
+    // Sample scope has one document for the whole part, so there are no siblings to read.
+    !perSample && dataset.data !== undefined,
+  );
 
   const error = dataset.error ?? sample.error ?? queue.error ?? labels.error ?? draft.error;
   if (error) return <ErrorBox>{error.message}</ErrorBox>;
@@ -157,6 +244,8 @@ export function AnnotationEditorRoute() {
       queueOffset={offset}
       labels={labels.data}
       initial={draft.data}
+      workspace={workspace}
+      siblingShapeCounts={siblingShapeCounts}
       onReload={async () => {
         await draft.refetch();
         setReloadGeneration((generation) => generation + 1);
@@ -178,6 +267,8 @@ function EditorReady({
   queueOffset,
   labels,
   initial,
+  workspace,
+  siblingShapeCounts,
   onReload,
 }: {
   datasetId: number;
@@ -192,24 +283,35 @@ function EditorReady({
   queueOffset: number;
   labels: AnnotationLabel[];
   initial: DraftEnvelope;
+  workspace: Workspace;
+  /** How many regions each channel already holds, so a copy is a decision, not a guess. */
+  siblingShapeCounts: Map<number, number>;
   onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const perSample = target.scope === "sample";
+  const {
+    paneMode,
+    setPaneMode,
+    overlayOpacity,
+    setOverlayOpacity,
+    maskOpacity,
+    setMaskOpacity,
+    tool,
+    setTool,
+    brushRadius,
+    setBrushRadius,
+    view,
+    setView,
+  } = workspace;
   const [history, dispatch] = useReducer(historyReducer, initial.document, createHistory);
   const [etag, setEtag] = useState(initial.etag);
   const [draftVersion, setDraftVersion] = useState(initial.version);
   const [savedDocument, setSavedDocument] = useState(initial.document);
-  const [paneMode, setPaneMode] = useState<PaneMode>("single");
-  const [referenceId, setReferenceId] = useState<number | null>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const [tool, setTool] = useState<EditorTool>("select");
   const [operation, setOperation] = useState<"add" | "subtract">("add");
   const [labelKey, setLabelKey] = useState(labels[0]?.key ?? "defect");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingPoints, setPendingPoints] = useState<AnnotationPoint[]>([]);
-  const [view, setView] = useState<CanvasView>(INITIAL_CANVAS_VIEW);
-  const [brushRadius, setBrushRadius] = useState(18);
   const [message, setMessage] = useState<string | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [tracing, setTracing] = useState(false);
@@ -219,13 +321,15 @@ function EditorReady({
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [assetJobId, setAssetJobId] = useState<number>();
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyTargets, setCopyTargets] = useState<number[]>([]);
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
-  const [maskOpacity, setMaskOpacity] = useMaskOpacity();
   const recolour = useUpdateAnnotationLabel(datasetId);
   const save = useSaveDraft(target);
   const discard = useDiscardDraft(target);
+  const copyRegions = useCopyRegions(imageId);
   const complete = useCompleteDraft(
     target,
     useMemo(() => sample.images.map((image) => image.id), [sample.images]),
@@ -252,8 +356,12 @@ function EditorReady({
   const currentImage = sample.images.find((image) => image.id === imageId);
   const activeIndex = sample.images.findIndex((image) => image.id === imageId);
   const otherImages = sample.images.filter((image) => image.id !== imageId);
-  const reference =
-    otherImages.find((image) => image.id === referenceId) ?? otherImages[0] ?? null;
+  const referenceIndex = resolveReference(
+    sample.images.length,
+    activeIndex,
+    workspace.referenceIndex,
+  );
+  const reference = referenceIndex === null ? null : (sample.images[referenceIndex] ?? null);
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
   const candidates = assist.data?.candidates ?? [];
   const candidate = candidates[candidateIndex] ?? null;
@@ -292,27 +400,6 @@ function EditorReady({
   );
 
   /**
-   * Show a different channel of the same part.
-   *
-   * Under sample scope this is a pure display change: the document is the part's, so the
-   * shapes stay on screen and visibly land — or fail to land — on the new illumination.
-   * Under image scope each channel owns its own truth, so this is real navigation and
-   * takes the same dirty guard as moving through the queue.
-   */
-  const openChannel = useCallback(
-    (index: number) => {
-      const image = sample.images[index];
-      if (!image || image.id === imageId) return;
-      if (!perSample && dirty) return;
-      navigate(
-        `/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`,
-        { replace: true },
-      );
-    },
-    [datasetId, dirty, imageId, navigate, perSample, queueOffset, sample.id, sample.images],
-  );
-
-  /**
    * Ensure a persisted draft exists and return the token that owns it.
    *
    * Two things it must get right. A clean document still has to be materialised when nothing
@@ -340,6 +427,68 @@ function EditorReady({
     inFlight.current = flight;
     return flight;
   }, [dirty, etag, history.present, save]);
+
+  /**
+   * Show a different channel of the same part.
+   *
+   * Under sample scope this is a pure display change: the document is the part's, so the
+   * shapes stay on screen and visibly land — or fail to land — on the new illumination.
+   * Under image scope each channel owns its own truth, so this is real navigation, and it
+   * *saves first* rather than refusing. Disabling the tab while the draft was dirty was a
+   * dead end that read as a broken control: the work was a keystroke away from being safe,
+   * and the editor knew it. A 412 aborts the move and leaves the reload-or-keep choice on
+   * screen, which is the one case where losing the edit is still possible.
+   */
+  const openChannel = useCallback(
+    async (index: number) => {
+      const image = sample.images[index];
+      if (!image || image.id === imageId) return;
+      if (!perSample && dirty) {
+        try {
+          await persist();
+        } catch {
+          return;
+        }
+      }
+      navigate(`/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`, {
+        replace: true,
+      });
+    },
+    [
+      datasetId,
+      dirty,
+      imageId,
+      navigate,
+      perSample,
+      persist,
+      queueOffset,
+      sample.id,
+      sample.images,
+    ],
+  );
+
+  const copyToChannels = useCallback(async () => {
+    if (copyTargets.length === 0) return;
+    try {
+      const currentEtag = await persist();
+      const result = await copyRegions.mutateAsync({
+        etag: currentEtag,
+        targetImageIds: copyTargets,
+      });
+      const names = result.targets
+        .map((item) => sample.images.find((image) => image.id === item.image_id)?.channel)
+        .filter((channel): channel is string => Boolean(channel));
+      setCopyOpen(false);
+      setCopyTargets([]);
+      setMessage(
+        `${result.copied} region${result.copied === 1 ? "" : "s"} copied to ${
+          names.length > 0 ? names.join(", ") : `${result.targets.length} channels`
+        }`,
+      );
+    } catch {
+      // The dialog stays open with the mutation's error under the list.
+    }
+  }, [copyRegions, copyTargets, persist, sample.images]);
 
   const finishPolygon = useCallback(() => {
     if (pendingPoints.length < 3) return;
@@ -544,9 +693,9 @@ function EditorReady({
       } else if (key === "k" && !dirty) {
         openQueueItem(queueIndex - 1);
       } else if (event.key === "[") {
-        openChannel(activeIndex - 1);
+        void openChannel(activeIndex - 1);
       } else if (event.key === "]") {
-        openChannel(activeIndex + 1);
+        void openChannel(activeIndex + 1);
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
       } else if (key === "0") {
@@ -699,10 +848,26 @@ function EditorReady({
               <ChannelTabs
                 images={sample.images}
                 active={activeIndex}
-                onSelect={openChannel}
-                disabled={!perSample && dirty}
+                onSelect={(index) => void openChannel(index)}
               />
               <div className="ml-auto flex shrink-0 items-center gap-2">
+                {!perSample && (
+                  <Button
+                    icon={<Copy />}
+                    disabled={history.present.shapes.length === 0}
+                    title={
+                      history.present.shapes.length === 0
+                        ? "Draw a region first"
+                        : "Put these regions on the other channels of this part"
+                    }
+                    onClick={() => {
+                      setCopyTargets(otherImages.map((image) => image.id));
+                      setCopyOpen(true);
+                    }}
+                  >
+                    Copy to…
+                  </Button>
+                )}
                 {paneMode === "overlay" && (
                   <div className="flex w-40 items-center gap-2">
                     <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
@@ -718,15 +883,16 @@ function EditorReady({
                     />
                   </div>
                 )}
-                {paneMode !== "single" && reference && (
+                {paneMode !== "single" && referenceIndex !== null && (
                   <Select
                     aria-label="Second channel"
-                    value={String(reference.id)}
-                    options={otherImages.map((image) => ({
-                      value: String(image.id),
-                      label: image.channel ?? "unassigned",
-                    }))}
-                    onValueChange={(value) => setReferenceId(Number(value))}
+                    value={String(referenceIndex)}
+                    options={sample.images.flatMap((image, index) =>
+                      index === activeIndex
+                        ? []
+                        : [{ value: String(index), label: image.channel ?? "unassigned" }],
+                    )}
+                    onValueChange={(value) => workspace.setReferenceIndex(Number(value))}
                   />
                 )}
                 <SegmentedControl
@@ -1165,6 +1331,70 @@ function EditorReady({
           </footer>
         </aside>
       </div>
+
+      <Dialog
+        open={copyOpen}
+        onOpenChange={(open) => {
+          setCopyOpen(open);
+          if (!open) copyRegions.reset();
+        }}
+        title="Copy regions to other channels"
+        description={
+          <>
+            The {history.present.shapes.length} region
+            {history.present.shapes.length === 1 ? "" : "s"} on{" "}
+            {currentImage?.channel ?? "this channel"} are <em>added</em> to each channel you
+            pick. Nothing already there is replaced, and each copy is editable on its own —
+            the exposures are milliseconds apart, so a copy usually needs a nudge.
+          </>
+        }
+        footer={
+          <>
+            <Button onClick={() => setCopyOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              icon={<Copy />}
+              loading={copyRegions.isPending || save.isPending}
+              disabled={copyTargets.length === 0}
+              onClick={() => void copyToChannels()}
+            >
+              Copy to {copyTargets.length} channel{copyTargets.length === 1 ? "" : "s"}
+            </Button>
+          </>
+        }
+      >
+        <div className="mt-3 flex flex-col gap-2">
+          {otherImages.map((image) => {
+            const held = siblingShapeCounts.get(image.id);
+            const sized =
+              currentImage !== undefined &&
+              (image.width !== currentImage.width || image.height !== currentImage.height);
+            return (
+              <Checkbox
+                key={image.id}
+                checked={copyTargets.includes(image.id)}
+                disabled={sized}
+                label={image.channel ?? "unassigned"}
+                description={
+                  sized
+                    ? `${image.width} × ${image.height} — an annotation never leaves its source frame`
+                    : held === undefined
+                      ? "…"
+                      : `${held} region${held === 1 ? "" : "s"} here already`
+                }
+                onCheckedChange={(checked) =>
+                  setCopyTargets((targets) =>
+                    checked
+                      ? [...targets, image.id]
+                      : targets.filter((target) => target !== image.id),
+                  )
+                }
+              />
+            );
+          })}
+          {copyRegions.error && <ErrorBox>{copyRegions.error.message}</ErrorBox>}
+        </div>
+      </Dialog>
 
       <ConfirmDialog
         open={confirmDiscard}

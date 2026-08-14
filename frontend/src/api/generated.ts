@@ -66,6 +66,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}/annotations/copy-regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append this image's regions to other channels of the same sample
+         * @description Copy, never move and never replace.
+         *
+         *     Appending is what lets the targets go unguarded: an operation that only adds cannot lose
+         *     what is already there, so a target draft saved in another window survives intact. The
+         *     *source* still carries a precondition, because copying a stale document into three channels
+         *     is exactly the mistake an editor that has fallen behind would make.
+         *
+         *     Equal dimensions are a refusal rather than a rescale. An annotation is in source-image
+         *     pixels and never leaves that frame (ADR-0032); scaling one into a differently sized channel
+         *     would silently invent geometry nobody drew.
+         */
+        post: operations["copy_annotation_regions_api_images__image_id__annotations_copy_regions_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/images/{image_id}/annotations/complete": {
         parameters: {
             query?: never;
@@ -2316,6 +2345,33 @@ export interface components {
              * @default 0
              */
             false_negative: number;
+        };
+        /**
+         * CopiedChannel
+         * @description What one target holds afterwards, so the caller can say it rather than guess it.
+         */
+        CopiedChannel: {
+            /** Image Id */
+            image_id: number;
+            /** Version */
+            version: number;
+            /** Shape Count */
+            shape_count: number;
+        };
+        /**
+         * CopyRegionsRequest
+         * @description Which sibling channels receive a copy of this image's regions.
+         */
+        CopyRegionsRequest: {
+            /** Target Image Ids */
+            target_image_ids: number[];
+        };
+        /** CopyRegionsResult */
+        CopyRegionsResult: {
+            /** Copied */
+            copied: number;
+            /** Targets */
+            targets: components["schemas"]["CopiedChannel"][];
         };
         /** CreateExperimentRequest */
         CreateExperimentRequest: {
@@ -4581,6 +4637,43 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_annotation_regions_api_images__image_id__annotations_copy_regions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyRegionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CopyRegionsResult"];
+                };
             };
             /** @description Validation Error */
             422: {
