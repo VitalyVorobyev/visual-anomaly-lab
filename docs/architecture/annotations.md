@@ -5,6 +5,25 @@ the source dataset and is never rewritten. An `AnnotationDraft` and its complete
 under application ownership. This is what lets a benchmark remain reproducible while a person improves its
 truth.
 
+## The raster contract
+
+**A bitmap shape's mask channel is luminance.** The backend defines it — `decode_png` is
+`convert("L") > 0`, `encode_png` writes mode `L` on an opaque black ground — and every producer
+follows: a brush stroke, an accepted MobileSAM candidate, an imported PNG / LabelMe / COCO mask.
+
+The frontend converts luminance to *alpha* only when painting, which is what lets one contract
+serve both an editor overlay and an opaque stored mask. It did not always: rendering relied on
+transparency and tracing read the alpha byte, which agreed with the backend only because a brush
+stroke happens to be white on transparent black. Anything the backend produced arrived fully
+opaque, so it drew as a grey rectangle over its whole crop and traced as its bounding box.
+
+Regions are painted in their label's colour, cuts (`operation: "subtract"`) in one fixed colour
+with a dashed outline so an eraser layer never looks like a brush layer, and the whole scene
+resolves its colours from the design tokens at runtime — Konva cannot take a class name, so
+`scenePalette.ts` reads `styles.css` and repaints on a theme change rather than hardcoding one
+palette (ADR-0021). Mask weight is a persisted per-reader preference; the label colour is dataset
+taxonomy and is edited through the existing `PUT .../annotation-labels/{key}`.
+
 ## Coordinate and document contract
 
 An annotation document is JSON schema version 1 in **source-image pixel coordinates**. It pins

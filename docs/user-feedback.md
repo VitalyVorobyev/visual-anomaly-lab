@@ -48,6 +48,29 @@ cannot — and `DELETE` gives the blocker's own advice somewhere to land, with `
 explicit force after a conflict. Migration 016 cleared the eleven. The count keeps no predicate,
 because counting rows is now exactly counting work.
 
+### 018
+
+"Defect is not shown — grey on grey. Would be nice to be able to change the colour of the defect
+mask." Also: "Side by side" wrapped onto three lines and was clipped by the strip.
+
+**Cause: the mask was drawn untinted, and the raster contract disagreed end to end.** A brush
+region is a white PNG, and `BitmapLayer` drew it at `opacity 0.34` with no colour applied at all
+— white on grey. Worse for anything the *backend* produced: `encode_png` writes an opaque mode-`L`
+PNG, so a MobileSAM candidate or an imported mask covered its entire crop rectangle in flat grey,
+and `traceBitmapShape` — which read the alpha byte rather than luminance — traced that rectangle
+instead of the region. The two sides agreed only because a brush stroke happens to be white on
+transparent *black*.
+
+Luminance is now the contract on both sides, alpha is derived at paint time, and regions are
+tinted with their label's colour. Cuts render in one fixed colour with a dashed outline, so an
+eraser layer no longer looks identical to a brush layer. The scene reads its colours from the
+design tokens instead of fifteen literals copied out of the dark palette, so the editor follows
+the light theme for the first time. Mask weight is a persisted slider; the label's colour is
+dataset taxonomy and now has a swatch, wired to a route that had existed without a caller.
+
+The wrap was `SegmentedControl` missing `whitespace-nowrap`, so a label's minimum width was its
+longest *word*, inside a fixed-height strip that then clipped the overflow.
+
 ### 013
 
 Let the annotation editor show every channel of a sample at once, and optionally share one

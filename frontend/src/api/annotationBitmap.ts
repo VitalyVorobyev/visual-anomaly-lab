@@ -1,7 +1,78 @@
-/** Turn one source-coordinate brush stroke into the annotation model's bitmap primitive. */
+/** Turn one source-coordinate brush stroke into the annotation model's bitmap primitive.
+ *
+ * **A bitmap mask's channel is luminance, everywhere.** The backend defines it that way —
+ * `annotation_bitmap.decode_png` is `convert("L") > 0` and `encode_png` writes mode `L` on an
+ * opaque black ground — so this side has to agree, and for a while it did not: rendering relied
+ * on transparency and tracing read the alpha byte. Those agreed with the backend only by luck,
+ * because a brush stroke happens to be white on transparent *black*. Anything the backend
+ * produced — a MobileSAM candidate, an imported PNG/LabelMe/COCO mask — arrives fully opaque, so
+ * it drew as a grey rectangle over its whole crop and traced as its bounding box.
+ *
+ * Everything here therefore reads luminance and converts to alpha only at the moment of
+ * painting, which works for both shapes of PNG.
+ */
 
 import type { AnnotationPoint, BitmapShape, PolygonShape } from "./client";
 import { nextShapeId } from "./annotationState";
+
+/** Above this luminance a pixel is part of the mask. The backend's rule is `> 0`; this keeps a
+ * little headroom for a resampled or antialiased edge without changing what "filled" means. */
+export const MASK_LUMINANCE_THRESHOLD = 64;
+
+function context2d(width: number, height: number): CanvasRenderingContext2D {
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  if (!context) throw new Error("This browser cannot process an annotation mask.");
+  return context;
+}
+
+/** A decoded mask as one byte per pixel, read from luminance rather than alpha. */
+export function maskFromPixels(pixels: Uint8ClampedArray, length: number): Uint8Array {
+  const mask = new Uint8Array(length);
+  for (let index = 0; index < length; index += 1) {
+    const offset = index * 4;
+    // Fully transparent is not part of the mask whatever its colour channels say: a canvas
+    // clears to transparent *black*, and an unpainted pixel must not read as filled.
+    if ((pixels[offset + 3] ?? 0) === 0) continue;
+    const luminance = Math.max(
+      pixels[offset] ?? 0,
+      pixels[offset + 1] ?? 0,
+      pixels[offset + 2] ?? 0,
+    );
+    mask[index] = luminance >= MASK_LUMINANCE_THRESHOLD ? 1 : 0;
+  }
+  return mask;
+}
+
+/**
+ * The mask painted in one colour, ready for a Konva `Image`.
+ *
+ * Alpha comes from the mask, never from the source PNG, which is what lets an opaque
+ * backend-produced mask render as an overlay instead of a filled rectangle.
+ */
+export function tintedMask(
+  image: CanvasImageSource,
+  width: number,
+  height: number,
+  color: string,
+): HTMLCanvasElement {
+  const context = context2d(width, height);
+  context.drawImage(image, 0, 0, width, height);
+  const data = context.getImageData(0, 0, width, height);
+  const mask = maskFromPixels(data.data, width * height);
+
+  context.clearRect(0, 0, width, height);
+  context.fillStyle = color;
+  context.fillRect(0, 0, width, height);
+  const tint = context.getImageData(0, 0, width, height);
+  for (let index = 0; index < mask.length; index += 1) {
+    tint.data[index * 4 + 3] = mask[index] ? 255 : 0;
+  }
+  context.putImageData(tint, 0, 0);
+  return context.canvas;
+}
 
 export function bitmapStroke({
   points,
@@ -92,17 +163,13 @@ export function strokeBounds(
  */
 export async function traceBitmapShape(shape: BitmapShape): Promise<PolygonShape[]> {
   const image = await loadBitmap(shape.png_base64);
-  const canvas = document.createElement("canvas");
-  canvas.width = shape.width;
-  canvas.height = shape.height;
-  const context = canvas.getContext("2d", { willReadFrequently: true });
-  if (!context) throw new Error("This browser cannot trace a bitmap region.");
+  const context = context2d(shape.width, shape.height);
   context.drawImage(image, 0, 0, shape.width, shape.height);
   const pixels = context.getImageData(0, 0, shape.width, shape.height).data;
-  const mask = new Uint8Array(shape.width * shape.height);
-  for (let index = 0; index < mask.length; index += 1) {
-    mask[index] = (pixels[index * 4 + 3] ?? 0) >= 64 ? 1 : 0;
-  }
+  // Luminance, not alpha. Reading alpha traced an opaque backend-produced mask — an accepted
+  // MobileSAM candidate, an imported PNG — as its own bounding box, because every one of its
+  // pixels is opaque.
+  const mask = maskFromPixels(pixels, shape.width * shape.height);
   return traceMask(mask, shape.width, shape.height, shape);
 }
 

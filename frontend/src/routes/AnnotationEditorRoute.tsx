@@ -79,10 +79,12 @@ import {
   useDiscardDraft,
   useEditorDraft,
   useSaveDraft,
+  useUpdateAnnotationLabel,
   useSegmentAssist,
   useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
+import { useMaskOpacity } from "../hooks/useMaskOpacity";
 import { useCancelJob } from "../hooks/useExperiments";
 import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
@@ -220,6 +222,8 @@ function EditorReady({
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
+  const [maskOpacity, setMaskOpacity] = useMaskOpacity();
+  const recolour = useUpdateAnnotationLabel(datasetId);
   const save = useSaveDraft(target);
   const discard = useDiscardDraft(target);
   const complete = useCompleteDraft(
@@ -745,6 +749,7 @@ function EditorReady({
           imageId={imageId}
           overlayImageId={paneMode === "overlay" ? reference?.id : undefined}
           overlayOpacity={overlayOpacity}
+          maskOpacity={maskOpacity}
           label={`Annotation canvas — ${currentImage?.channel ?? "the sample"}`}
           document={history.present}
           labels={labels}
@@ -798,6 +803,7 @@ function EditorReady({
               <div className="flex min-h-0 min-w-0 flex-1 border-l border-line">
                 <AnnotationCanvas
                   imageId={reference.id}
+                  maskOpacity={maskOpacity}
                   label={`Reference channel — ${reference.channel ?? "unassigned"}`}
                   document={referenceDocument}
                   labels={labels}
@@ -1019,6 +1025,54 @@ function EditorReady({
                 Regions
               </h2>
               <Badge tone="neutral">{history.present.shapes.length}</Badge>
+            </div>
+
+            {/* Appearance, beside the regions it governs. The right weight depends on the
+                imagery: heavy enough to see over a bright specular surface is heavy enough to
+                hide the texture of a dark field. */}
+            <div className="mb-3 flex flex-col gap-2 rounded-control bg-raised/60 p-2">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-[11px] text-fg-muted">Mask</span>
+                <Slider
+                  aria-label="Mask opacity"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={maskOpacity}
+                  onValueChange={setMaskOpacity}
+                  readout={`${Math.round(maskOpacity * 100)}%`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {labels.map((label) => (
+                  <Tooltip key={label.key} content={`Colour of ${label.name}`}>
+                    <label
+                      className={cn(
+                        "flex cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-1 text-[11px] text-fg-muted hover:bg-raised",
+                        focusRing,
+                      )}
+                    >
+                      <span
+                        className="size-3 shrink-0 rounded-full border border-line-strong"
+                        style={{ backgroundColor: label.color }}
+                      />
+                      <span className="max-w-24 truncate">{label.name}</span>
+                      <input
+                        type="color"
+                        value={label.color}
+                        aria-label={`Colour of ${label.name}`}
+                        disabled={recolour.isPending}
+                        // Committed on `change`, not on `input`: a colour picker streams every
+                        // value the pointer passes over, and each one would be a PUT.
+                        onChange={(event) =>
+                          recolour.mutate({ ...label, color: event.target.value })
+                        }
+                        className="size-0 opacity-0"
+                      />
+                    </label>
+                  </Tooltip>
+                ))}
+              </div>
             </div>
             {history.present.shapes.length === 0 ? (
               <Empty>No editable regions. Choose Polygon or press P.</Empty>

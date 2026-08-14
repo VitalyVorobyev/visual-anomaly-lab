@@ -27,7 +27,9 @@ import type {
   AssistPoint,
   BitmapShape,
 } from "../../api/client";
+import { tintedMask } from "../../api/annotationBitmap";
 import { imageUrl, maskUrl } from "../../api/imageUrl";
+import { useScenePalette, withAlpha, type ScenePalette } from "./scenePalette";
 
 export type EditorTool = "select" | "polygon" | "brush" | "eraser" | "assist";
 
@@ -56,6 +58,8 @@ interface Props {
    */
   overlayImageId?: number | undefined;
   overlayOpacity?: number;
+  /** How strongly annotated regions are painted over the photograph. */
+  maskOpacity?: number;
   /** What a screen reader calls this surface. Panes beside the editor are not the editor. */
   label?: string;
   document: AnnotationDocument;
@@ -83,6 +87,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   imageId,
   overlayImageId,
   overlayOpacity = 0.5,
+  maskOpacity = 0.45,
   label = "Annotation canvas",
   document,
   labels,
@@ -104,6 +109,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onAssistPoint,
   onAssistBox,
 }, forwardedRef) {
+  const palette = useScenePalette();
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
@@ -406,7 +412,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
             <Rect
               width={document.image_width}
               height={document.image_height}
-              fill="#08090a"
+              fill={palette.canvas}
               shadowColor="#000000"
               shadowBlur={16 / scale}
               shadowOpacity={0.4}
@@ -429,11 +435,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
               />
             )}
             {baseMask && (
+              // The imported base, at half the weight of the editable regions above it: it is
+              // context for what is being edited, not one of the things being edited.
               <KonvaImage
                 image={baseMask}
                 width={document.image_width}
                 height={document.image_height}
-                opacity={0.22}
+                opacity={maskOpacity * 0.5}
                 listening={false}
               />
             )}
@@ -444,21 +452,25 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                   <BitmapLayer
                     key={shape.id}
                     shape={shape}
+                    color={colors.get(shape.label_key) ?? palette.unknownLabel}
+                    palette={palette}
+                    opacity={maskOpacity}
+                    scale={scale}
                     selected={shape.id === selectedId}
                     onSelect={() => onSelect(shape.id)}
                     selectable={tool === "select"}
                   />
                 );
               }
-              const color = colors.get(shape.label_key) ?? "#0e8fa3";
+              const color = colors.get(shape.label_key) ?? palette.unknownLabel;
               const selected = shape.id === selectedId;
               return (
                 <Group key={shape.id}>
                   <Line
                     points={shape.points.flatMap((point) => [point.x, point.y])}
                     closed
-                    fill={shape.operation === "add" ? `${color}44` : "#00000088"}
-                    stroke={shape.operation === "add" ? color : "#f87171"}
+                    fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
+                    stroke={shape.operation === "add" ? color : palette.cut}
                     strokeWidth={(selected ? 2.5 : 1.5) / scale}
                     hitStrokeWidth={10 / scale}
                     listening={tool === "select"}
@@ -479,7 +491,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                         x={point.x}
                         y={point.y}
                         radius={4.5 / scale}
-                        fill="#ffffff"
+                        fill={palette.frame}
                         stroke={color}
                         strokeWidth={1.5 / scale}
                         draggable={tool === "select"}
@@ -502,7 +514,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
               <Group listening={false}>
                 <Line
                   points={pendingPoints.flatMap((point) => [point.x, point.y])}
-                  stroke="#3bc9db"
+                  stroke={palette.signal}
                   strokeWidth={2 / scale}
                   dash={[6 / scale, 4 / scale]}
                 />
@@ -512,8 +524,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     x={point.x}
                     y={point.y}
                     radius={index === 0 ? 5 / scale : 3.5 / scale}
-                    fill="#ffffff"
-                    stroke="#3bc9db"
+                    fill={palette.frame}
+                    stroke={palette.signal}
                     strokeWidth={1.5 / scale}
                   />
                 ))}
@@ -522,7 +534,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
             {brushPoints.length > 0 && (
               <Line
                 points={brushPoints.flatMap((point) => [point.x, point.y])}
-                stroke={tool === "eraser" ? "#f87171" : "#3bc9db"}
+                stroke={tool === "eraser" ? palette.cut : palette.signal}
                 strokeWidth={brushRadius * 2}
                 lineCap="round"
                 lineJoin="round"
@@ -533,6 +545,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
             {assistShape && (
               <BitmapLayer
                 shape={assistShape}
+                color={palette.suggestion}
+                palette={palette}
+                opacity={maskOpacity}
+                scale={scale}
                 selected
                 selectable={false}
                 suggestion
@@ -545,7 +561,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                 y={assistBox.y0}
                 width={assistBox.x1 - assistBox.x0}
                 height={assistBox.y1 - assistBox.y0}
-                stroke="#3bc9db"
+                stroke={palette.signal}
                 strokeWidth={2 / scale}
                 dash={[7 / scale, 4 / scale]}
                 listening={false}
@@ -557,15 +573,15 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                   x={point.x}
                   y={point.y}
                   radius={6 / scale}
-                  fill={point.kind === "positive" ? "#22c55e" : "#ef4444"}
-                  stroke="#ffffff"
+                  fill={point.kind === "positive" ? palette.positive : palette.negative}
+                  stroke={palette.frame}
                   strokeWidth={1.5 / scale}
                 />
                 <Line
                   points={[-3 / scale, 0, 3 / scale, 0]}
                   x={point.x}
                   y={point.y}
-                  stroke="#ffffff"
+                  stroke={palette.frame}
                   strokeWidth={1.5 / scale}
                 />
                 {point.kind === "positive" && (
@@ -573,7 +589,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                     points={[0, -3 / scale, 0, 3 / scale]}
                     x={point.x}
                     y={point.y}
-                    stroke="#ffffff"
+                    stroke={palette.frame}
                     strokeWidth={1.5 / scale}
                   />
                 )}
@@ -585,22 +601,22 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                   x={keyboardPoint.x}
                   y={keyboardPoint.y}
                   radius={7 / scale}
-                  fill="#08090aaa"
-                  stroke="#3bc9db"
+                  fill={withAlpha(palette.canvas, 0.67)}
+                  stroke={palette.signal}
                   strokeWidth={2 / scale}
                 />
                 <Line
                   x={keyboardPoint.x}
                   y={keyboardPoint.y}
                   points={[-11 / scale, 0, 11 / scale, 0]}
-                  stroke="#ffffff"
+                  stroke={palette.frame}
                   strokeWidth={1 / scale}
                 />
                 <Line
                   x={keyboardPoint.x}
                   y={keyboardPoint.y}
                   points={[0, -11 / scale, 0, 11 / scale]}
-                  stroke="#ffffff"
+                  stroke={palette.frame}
                   strokeWidth={1 / scale}
                 />
               </Group>
@@ -608,7 +624,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
             <Rect
               width={document.image_width}
               height={document.image_height}
-              stroke="#ffffff55"
+              stroke={withAlpha(palette.frame, 0.55)}
               strokeWidth={1 / scale}
               listening={false}
             />
@@ -631,19 +647,29 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
 
 function BitmapLayer({
   shape,
+  color,
+  palette,
+  opacity,
+  scale,
   selected,
   selectable,
   suggestion = false,
   onSelect,
 }: {
   shape: BitmapShape;
+  color: string;
+  palette: ScenePalette;
+  opacity: number;
+  scale: number;
   selected: boolean;
   selectable: boolean;
   suggestion?: boolean;
   onSelect: () => void;
 }) {
-  const image = useHtmlImage(`data:image/png;base64,${shape.png_base64}`);
-  if (!image) return null;
+  const cut = shape.operation === "subtract";
+  const tint = suggestion ? palette.suggestion : cut ? palette.cut : color;
+  const painted = useTintedMask(shape, tint);
+  if (!painted) return null;
   return (
     <Group
       clipX={shape.x}
@@ -658,25 +684,50 @@ function BitmapLayer({
       listening={selectable}
     >
       <KonvaImage
-        image={image}
+        image={painted}
         x={shape.x}
         y={shape.y}
         width={shape.width}
         height={shape.height}
-        opacity={suggestion ? 0.5 : shape.operation === "add" ? 0.34 : 0.2}
+        opacity={suggestion ? Math.min(1, opacity + 0.2) : opacity}
       />
-      {selected && (
+      {/* A cut is outlined even when it is not selected. Rendered like an added region it was
+          indistinguishable from one, which is what made the eraser look like a second brush. */}
+      {(cut || selected) && (
         <Rect
           x={shape.x}
           y={shape.y}
           width={shape.width}
           height={shape.height}
-          stroke={suggestion ? "#fbbf24" : "#3bc9db"}
-          strokeWidth={1.5}
+          stroke={selected ? (suggestion ? palette.suggestion : palette.signal) : palette.cut}
+          strokeWidth={(selected ? 1.5 : 1) / scale}
+          dash={cut && !selected ? [6 / scale, 4 / scale] : undefined}
         />
       )}
     </Group>
   );
+}
+
+/**
+ * The shape's mask, painted in one colour with alpha taken from its luminance.
+ *
+ * Two bugs in one: the mask used to be drawn untinted, so a brush region was white-on-grey at a
+ * third opacity — invisible — and an opaque backend-produced mask covered its whole crop
+ * rectangle in flat grey. `tintedMask` fixes both by deriving alpha rather than trusting it.
+ */
+function useTintedMask(shape: BitmapShape, color: string): HTMLCanvasElement | null {
+  const source = useHtmlImage(`data:image/png;base64,${shape.png_base64}`);
+  const [painted, setPainted] = useState<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    if (!source) {
+      setPainted(null);
+      return;
+    }
+    setPainted(tintedMask(source, shape.width, shape.height, color));
+  }, [source, shape.width, shape.height, color]);
+
+  return painted;
 }
 
 function useHtmlImage(src: string | undefined): HTMLImageElement | null {

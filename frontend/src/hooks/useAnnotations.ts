@@ -67,6 +67,31 @@ export function useAnnotationLabels(datasetId: number | undefined) {
   });
 }
 
+/**
+ * Recolour a class.
+ *
+ * The colour belongs to the *label*, not to the session: a scratch should look like a scratch on
+ * every screen and for everyone reading the dataset. The route has existed since the taxonomy
+ * did ("Rename or recolour a class without changing its stable key") and simply had no caller —
+ * which is why, until the tint bug was fixed, the palette was both unreachable and unused.
+ */
+export function useUpdateAnnotationLabel(datasetId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<AnnotationLabel, Error, AnnotationLabel>({
+    mutationFn: async (label) =>
+      unwrap(
+        await api.PUT("/api/datasets/{dataset_id}/annotation-labels/{key}", {
+          params: { path: { dataset_id: datasetId, key: label.key } },
+          body: { name: label.name, color: label.color, position: label.position },
+        }),
+        "the annotation label",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annotationLabels(datasetId) });
+    },
+  });
+}
+
 export function useAnnotationScope(datasetId: number | undefined) {
   return useQuery<AnnotationScopeState>({
     queryKey: queryKeys.annotationScope(datasetId ?? -1),
