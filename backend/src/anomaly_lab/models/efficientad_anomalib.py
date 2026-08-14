@@ -67,7 +67,12 @@ from anomaly_lab.models.base import (
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
-from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array, to_chw
+from anomaly_lab.models.preprocessing import (
+    PreprocessingConfig,
+    expand_planes,
+    load_array,
+    to_chw,
+)
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 if TYPE_CHECKING:  # pragma: no cover - import cost is the whole point of deferring it
@@ -175,7 +180,10 @@ class _BatchStream:
         for start in range(0, len(self._records), self._batch_size):
             chunk = self._records[start : start + self._batch_size]
             stacked = np.stack(
-                [to_chw(load_array(record.path, self._preprocessing)) for record in chunk]
+                [
+                    expand_planes(to_chw(load_array(record.path, self._preprocessing)), 3)
+                    for record in chunk
+                ]
             )
             yield _Batch(
                 image=self._torch.from_numpy(stacked),
@@ -518,7 +526,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
 
             record = train[int(generator.integers(len(train)))]
             image = torch.from_numpy(
-                to_chw(load_array(record.path, ctx.preprocessing))[np.newaxis]
+                expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)[np.newaxis]
             ).to(ctx.device.value)
             penalty = _next_penalty_batch(module).to(ctx.device.value)
 
@@ -705,7 +713,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
             return
 
         image = torch_module.from_numpy(
-            to_chw(load_array(train[0].path, ctx.preprocessing))[np.newaxis]
+            expand_planes(to_chw(load_array(train[0].path, ctx.preprocessing)), 3)[np.newaxis]
         ).to(ctx.device.value)
         with torch_module.no_grad():
             features = model.teacher(image)[0].detach().cpu().numpy()
@@ -753,7 +761,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
             started = time.perf_counter()
 
             image = torch.from_numpy(
-                to_chw(load_array(record.path, ctx.preprocessing))[np.newaxis]
+                expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)[np.newaxis]
             ).to(ctx.device.value)
 
             with torch.no_grad():
@@ -817,6 +825,12 @@ class EfficientAdAnomalibModel(AnomalyModel):
                 self.model = model
 
             def forward(self, image: Any) -> Any:
+                # Replication inside the graph, so the bundle's declared input really is
+                # `preprocessing.channels` rather than a shape the host has to fix up
+                # first. The PDN's first convolution takes three planes; that is this
+                # network's property, not the experiment's.
+                if image.shape[1] == 1:
+                    image = image.expand(-1, 3, -1, -1)
                 map_st, map_stae = self.model.get_maps(image, normalize=True)
                 return 0.5 * map_st + 0.5 * map_stae
 

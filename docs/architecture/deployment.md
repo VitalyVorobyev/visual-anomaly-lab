@@ -22,6 +22,15 @@ manifest. `format_version` is the compatibility boundary.
 The first contract is intentionally static-shape, batch-one. An experiment already freezes width, height
 and colour, so dynamic dimensions add runtime ambiguity without enabling a current workflow.
 
+**The declared input is the colour the experiment froze, including under `grayscale`.** A method whose
+backbone needs three planes replicates the single plane as the graph's own first operation, exactly as it
+applies its ImageNet statistics there — so a bundle exported from a one-plane experiment consumes one plane,
+and the host is never handed a shape it has to fix up before calling. `portable_reference` performs the same
+replication, so parity compares like with like. A method whose fitted state cannot be expressed as one graph
+refuses to export and says why: `pixel_reference` under `reference_scope=channel` holds one reference tensor
+per channel and a single static graph carries one. The refusal lives in the plugin, because a route that
+branched on a method's own configuration would be the leak ADR-0007 forbids.
+
 ## Publication
 
 `POST /api/experiments/{id}/export` enqueues the ordinary `export` job. The handler:

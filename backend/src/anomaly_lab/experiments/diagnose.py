@@ -74,7 +74,10 @@ def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) 
     """
     with connection(settings.db_path) as conn:
         selected = images_repo.list_images_for_split(
-            conn, loaded.experiment.split_id, subsets=list(Subset)
+            conn,
+            loaded.experiment.split_id,
+            subsets=list(Subset),
+            channels=loaded.experiment.channels,
         )
 
     found = [image for image in selected if image.image_id == image_id]

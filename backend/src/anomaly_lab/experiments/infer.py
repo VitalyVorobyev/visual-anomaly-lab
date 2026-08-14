@@ -21,8 +21,7 @@ from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import ExperimentStatus, ImageResult, Subset
-from anomaly_lab.eval.aggregate import build_sample_results
-from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
+from anomaly_lab.eval.runner import evaluate_and_store
 from anomaly_lab.experiments.context import (
     ExperimentJobError,
     diagnostics_writer,
@@ -90,7 +89,7 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         loaded = load_experiment(conn, ctx.settings, params.experiment_id)
         experiment = loaded.experiment
         selected = images_repo.list_images_for_split(
-            conn, experiment.split_id, subsets=params.subsets
+            conn, experiment.split_id, subsets=params.subsets, channels=experiment.channels
         )
 
     if experiment.status is not ExperimentStatus.TRAINED:
@@ -181,15 +180,15 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         for prediction in predictions
     ]
 
-    eval_config = EvalConfig.model_validate(experiment.eval_config)
     with connection(ctx.settings.db_path) as conn:
         results_repo.replace_image_results(conn, experiment.id, image_rows)
-        scored = results_repo.list_scored_images(conn, experiment.id)
-        sample_rows = build_sample_results(experiment.id, scored, eval_config.aggregation)
-        results_repo.replace_sample_results(conn, experiment.id, sample_rows)
 
+        # `evaluate_and_store` re-derives the sample scores itself, so this handler stores
+        # what the model produced and nothing else. That split is what makes `reevaluate`
+        # able to apply a changed `eval_config` without re-running inference.
         ctx.progress(0.95, "computing metrics")
         metrics = evaluate_and_store(conn, experiment)
+        sample_count = len(results_repo.list_scored_samples(conn, experiment.id))
         experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINED)
 
     headline = {subset.value: found.get("sample_roc_auc") for subset, found in metrics.items()}
@@ -199,7 +198,7 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
     return {
         "experiment_id": experiment.id,
         "images": len(image_rows),
-        "samples": len(sample_rows),
+        "samples": sample_count,
         "subsets": [subset.value for subset in params.subsets],
         "maps": sum(1 for row in image_rows if row.map_path),
         "inference_seconds": elapsed,

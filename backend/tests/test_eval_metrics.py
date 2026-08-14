@@ -11,8 +11,12 @@ import numpy as np
 import pytest
 
 from anomaly_lab.db.repositories.results import ScoredImage, ScoredSample
-from anomaly_lab.domain.entities import Aggregation, Label, Subset
-from anomaly_lab.eval.aggregate import aggregate_scores
+from anomaly_lab.domain.entities import Aggregation, ChannelNormalization, Label, Subset
+from anomaly_lab.eval.aggregate import (
+    aggregate_scores,
+    build_sample_results,
+    normalize_by_channel,
+)
 from anomaly_lab.eval.metrics import (
     average_precision,
     pr_curve,
@@ -213,3 +217,124 @@ def test_aggregation_groups_by_sample_not_by_image() -> None:
     images = [_image(1, 0.9), _image(2, 0.1), _image(2, 0.2)]
     aggregated = aggregate_scores(images, Aggregation.MAX)
     assert aggregated == {1: pytest.approx(0.9), 2: pytest.approx(0.2)}
+
+
+# ------------------------------------------- per-channel normalization (ADR-0011)
+
+
+def _channelled(image_id: int, sample_id: int, channel: str, score: float) -> ScoredImage:
+    return ScoredImage(
+        image_id=image_id,
+        sample_id=sample_id,
+        channel=channel,
+        path="/x.png",
+        width=8,
+        height=8,
+        score=score,
+        map_path=None,
+        inference_ms=1.0,
+        label=Label.NORMAL,
+        subset=None,
+    )
+
+
+def _two_channel_run() -> list[ScoredImage]:
+    """`dark` scores a hundred times higher than `bright` on every part, and carries no
+    information: its ordering is identical for the defective and the normal sample. `bright`
+    is the channel that actually separates them."""
+    return [
+        _channelled(1, 1, "bright", 0.10),
+        _channelled(2, 1, "dark", 50.0),
+        _channelled(3, 2, "bright", 0.90),
+        _channelled(4, 2, "dark", 50.5),
+    ]
+
+
+def test_without_normalization_the_loudest_channel_wins_every_sample() -> None:
+    """The caveat ADR-0011 recorded, made visible: `max` is reading the scale, not the part."""
+    scores = aggregate_scores(_two_channel_run(), Aggregation.MAX)
+
+    assert scores[1] == pytest.approx(50.0)
+    assert scores[2] == pytest.approx(50.5)
+    # The bright-field evidence — 0.10 against 0.90 — has been erased entirely.
+    assert scores[2] - scores[1] == pytest.approx(0.5)
+
+
+def test_robust_z_lets_the_informative_channel_be_heard() -> None:
+    scores = aggregate_scores(_two_channel_run(), Aggregation.MAX, ChannelNormalization.ROBUST_Z)
+
+    # Both channels are now centred on their own median, so the gap between the two
+    # samples reflects the separation each channel actually provides.
+    assert scores[2] > scores[1]
+    assert scores[2] - scores[1] > 1.0
+
+
+def test_normalization_is_monotone_within_one_channel() -> None:
+    """A single-view dataset must be unaffected: every transform here is monotone over one
+    population, so nothing about a one-channel run may change."""
+    images = [_channelled(i, i, "only", score) for i, score in enumerate([0.3, 0.1, 0.9, 0.5])]
+
+    for method in (ChannelNormalization.ROBUST_Z, ChannelNormalization.RANK):
+        normalized = aggregate_scores(images, Aggregation.MAX, method)
+        raw = aggregate_scores(images, Aggregation.MAX)
+        assert sorted(normalized, key=lambda s: normalized[s]) == sorted(raw, key=lambda s: raw[s])
+
+
+def test_rank_normalization_throws_away_how_far_above_the_rest_a_score_sits() -> None:
+    """The documented cost of `rank`, pinned rather than discovered in a metric.
+
+    Rank keeps only the ordering inside a channel. A part that is dramatically the most
+    anomalous thing bright-field ever saw and a part that is marginally the highest of a
+    flat dark-field distribution both become exactly 1.0, so under `max` they tie — and
+    "how anomalous" was the question. `robust_z` keeps the distance and separates them.
+    """
+    images = [
+        _channelled(1, 1, "bright", 0.10),
+        _channelled(2, 2, "bright", 0.11),
+        _channelled(3, 3, "bright", 5.00),  # a dramatic outlier
+        _channelled(4, 1, "dark", 50.0),  # marginally the highest of a flat channel
+        _channelled(5, 2, "dark", 49.9),
+        _channelled(6, 3, "dark", 49.8),
+    ]
+
+    ranked = aggregate_scores(images, Aggregation.MAX, ChannelNormalization.RANK)
+    assert ranked[1] == pytest.approx(ranked[3])
+
+    robust = aggregate_scores(images, Aggregation.MAX, ChannelNormalization.ROBUST_Z)
+    assert robust[3] > robust[1]
+
+
+def test_unassigned_images_normalize_as_their_own_group() -> None:
+    """An image belonging to no channel is not a member of every channel."""
+    images = [
+        _channelled(1, 1, "bright", 1.0),
+        ScoredImage(
+            image_id=2,
+            sample_id=1,
+            channel=None,
+            path="/x.png",
+            width=8,
+            height=8,
+            score=1000.0,
+            map_path=None,
+            inference_ms=1.0,
+            label=Label.NORMAL,
+            subset=None,
+        ),
+    ]
+
+    normalized = normalize_by_channel(images, ChannelNormalization.ROBUST_Z)
+
+    # Each is alone in its group, so each is exactly at its own median.
+    assert normalized[1] == pytest.approx(0.0)
+    assert normalized[2] == pytest.approx(0.0)
+
+
+def test_the_normalization_is_recorded_on_every_stored_row() -> None:
+    """A stored result stays self-describing after the default changes."""
+    rows = build_sample_results(
+        7, _two_channel_run(), Aggregation.MAX, ChannelNormalization.ROBUST_Z
+    )
+
+    assert {row.normalization for row in rows} == {ChannelNormalization.ROBUST_Z}
+    assert {row.aggregation for row in rows} == {Aggregation.MAX}

@@ -80,7 +80,15 @@ export function SampleRoute() {
   const neighbours = useSamples(datasetId, toSampleQuery(browse));
   const setLabel = useSetLabel(datasetId);
 
-  const [active, setActive] = useState(0);
+  /**
+   * `null` until the reader picks a channel, so the grid's filter can decide the first one.
+   *
+   * Opening a sample from a grid filtered to dark field and landing on bright field reads
+   * as the filter being ignored. Once a tab *is* clicked the choice sticks, including
+   * across paging to the next sample, which is what a labelling pass through one
+   * illumination needs.
+   */
+  const [active, setActive] = useState<number | null>(null);
   const [sideBySide, setSideBySide] = useState(false);
   const [view, setView] = useState<View>(RESET);
   const [autoAdvance, setAutoAdvance] = useState(true);
@@ -149,7 +157,12 @@ export function SampleRoute() {
 
   const current = sample.data;
   const images = current?.images ?? [];
-  const shown = images[Math.min(active, images.length - 1)];
+  const filteredChannel =
+    browse.channelId === null
+      ? -1
+      : images.findIndex((image) => image.channel_id === browse.channelId);
+  const activeIndex = active ?? Math.max(0, filteredChannel);
+  const shown = images[Math.min(activeIndex, images.length - 1)];
 
   /** The next preview, fetched before it is asked for, so paging feels instant. */
   useEffect(() => {
@@ -333,7 +346,7 @@ export function SampleRoute() {
             <RailSection title="View" hint={images.length > 1 ? `${images.length} channels` : ""}>
               {images.length > 1 && (
                 <>
-                  <ChannelTabs images={images} active={active} onSelect={setActive} />
+                  <ChannelTabs images={images} active={activeIndex} onSelect={setActive} />
                   <Button size="sm" onClick={() => setSideBySide((value) => !value)}>
                     {sideBySide ? "One at a time" : "Side by side"}
                   </Button>

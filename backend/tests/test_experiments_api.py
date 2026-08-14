@@ -24,6 +24,7 @@ from PIL import Image
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
@@ -1080,3 +1081,122 @@ def test_clearing_an_experiment_that_recorded_nothing_is_not_an_error(
 
     assert response.status_code == 200
     assert response.json()["removed_entries"] == 0
+
+
+# ------------------------------------------------------ channel selection (ADR-0035)
+
+
+def test_an_experiment_reads_every_channel_by_default(client: TestClient, seeded: Fixture) -> None:
+    """Empty means all, which is what every experiment created before the column meant."""
+    experiment = _create(client, seeded)
+
+    assert experiment["channels"] == []
+
+
+def test_selecting_a_channel_a_dataset_does_not_have_is_refused(
+    client: TestClient, seeded: Fixture, settings: Settings
+) -> None:
+    """A run that quietly read nothing would look exactly like an empty split."""
+    with connection(settings.db_path) as conn:
+        datasets_repo.upsert_channel(conn, seeded.dataset_id, name="bright", position=0)
+
+    response = client.post(
+        "/api/experiments",
+        json={
+            "name": "typo",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "region_profile_id": seeded.region_profile_id,
+            "model_type": "pixel_reference",
+            "channels": ["birght"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "birght" in response.text
+    assert "bright" in response.text  # it names what is actually available
+
+
+def test_selecting_a_channel_on_a_dataset_that_has_none_is_refused(
+    client: TestClient, seeded: Fixture
+) -> None:
+    response = client.post(
+        "/api/experiments",
+        json={
+            "name": "nope",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "region_profile_id": seeded.region_profile_id,
+            "model_type": "pixel_reference",
+            "channels": ["bright"],
+        },
+    )
+
+    assert response.status_code == 422
+    assert "no channels" in response.text
+
+
+def test_a_channel_selection_is_frozen_in_the_datasets_own_order(
+    client: TestClient, seeded: Fixture, settings: Settings
+) -> None:
+    """Two identical requests must produce identical frozen records, so a diff between two
+    experiments never shows a difference that is only a permutation."""
+    with connection(settings.db_path) as conn:
+        for index, name in enumerate(("bright", "dark", "dome")):
+            datasets_repo.upsert_channel(conn, seeded.dataset_id, name=name, position=index)
+
+    experiment = _create(client, seeded, name="picked", channels=["dome", "bright"])
+
+    assert experiment["channels"] == ["bright", "dome"]
+
+
+def test_reevaluate_rebuilds_the_sample_scores_it_reports_on(
+    client: TestClient, settings: Settings, scored: dict[str, Any]
+) -> None:
+    """`reevaluate` promises to apply a changed `eval_config` without re-running the model.
+
+    It used to refresh the metric sets while leaving `sample_result` at whatever the
+    original run reduced, so the promise held only as long as nobody tested it. Editing the
+    stored per-image scores and re-reading is the cheapest way to prove the derivation
+    really runs again.
+    """
+    experiment_id = scored["id"]
+    with connection(settings.db_path) as conn:
+        before = {
+            row["sample_id"]: row["agg_score"]
+            for row in conn.execute(
+                "SELECT sample_id, agg_score FROM sample_result WHERE experiment_id = ?",
+                (experiment_id,),
+            )
+        }
+        conn.execute(
+            "UPDATE image_result SET score = score + 10.0 WHERE experiment_id = ?",
+            (experiment_id,),
+        )
+        conn.commit()
+
+    assert client.post(f"/api/experiments/{experiment_id}/reevaluate").status_code == 200
+
+    with connection(settings.db_path) as conn:
+        after = {
+            row["sample_id"]: row["agg_score"]
+            for row in conn.execute(
+                "SELECT sample_id, agg_score FROM sample_result WHERE experiment_id = ?",
+                (experiment_id,),
+            )
+        }
+
+    assert after and after.keys() == before.keys()
+    assert all(after[sample] == pytest.approx(before[sample] + 10.0) for sample in before)
+
+
+def test_the_metric_set_records_how_the_channels_were_combined(
+    client: TestClient, scored: dict[str, Any]
+) -> None:
+    """A sample-level number is uninterpretable without both halves of the decision."""
+    metrics = client.get(f"/api/experiments/{scored['id']}").json()["metrics"]
+
+    assert metrics
+    for entry in metrics:
+        assert entry["metrics"]["aggregation"] == "max"
+        assert entry["metrics"]["channel_normalization"] == "none"

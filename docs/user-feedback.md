@@ -28,6 +28,95 @@ make GKN datasets imported and available by default
 
 ## Resolved
 
+### 013
+
+Let the annotation editor show every channel of a sample at once, and optionally share one
+annotation across them, so a defect visible only under dark-field can be drawn while looking at it.
+Registration was measured first, because the feature is only correct if the frames line up: the
+three exposures are 1 ms apart on a moving conveyor, yet phase correlation puts the median offset at
+**0 px in every capture group** — the rig triggers on part position. A shared annotation is therefore
+exactly right rather than approximately right, and no geometric correction is needed.
+
+A dataset now says whether truth is edited per image or per sample (ADR-0036), and under `sample`
+scope one document is edited once and materialised as one ordinary revision per image — so
+`resolve_ground_truth_masks`, pixel metrics, the `MetricSet` digest and the three interchange formats
+are untouched and never learn that scope exists. The alternative, a sample-level annotation entity,
+would have saved two PNGs per part and charged for it in every consumer of ground truth. Entering the
+mode is refused, with **every** reason at once, when the dataset has imported source masks, has samples
+whose channels differ in size, or has a draft open.
+
+The editor gained a channel strip with three view modes: one channel, two side by side sharing a single
+controlled view, and a blend that composites a second channel at adjustable alpha. The blend is not
+decoration — it is the only way to *see* the registration the probe measured, since a few pixels of
+drift are invisible side by side. Under sample scope switching channel is a display change and the
+shapes stay on screen; under image scope it is real navigation and takes the dirty guard, and a
+reference pane shows the bare photograph because the document is not truth for it.
+
+### 015
+
+Three follow-ups from opening the merged dataset, each a case of a screen not keeping up with a
+dataset that finally has channels. **The browse grid ignored its own channel filter**: filtering by
+channel selects whole samples that *have* one, and each tile went on previewing image one, so the same
+bright-field thumbnails came back whichever illumination was chosen. Tiles now preview the filtered
+channel and name it in place of the channel count, opening a sample lands on that channel, and a sample
+missing it falls back to its first image rather than going blank. **The annotation queue could not be
+narrowed**: it now filters to one label and to samples still missing ground truth, and each card says
+whether that sample's images all have truth, some do, or none — resolved by the same SQL predicate the
+filter uses, so the queue cannot disagree with what evaluation will read. **`unsorted/` did not belong**:
+those groups are other end types with no normal cases, and a normal-only training population built from
+them is not a baseline of anything.
+
+### 016
+
+`set1` and `set2` turned out to be different end types too, which made them two datasets rather than
+one — but `dataset.root_path` is unique and is what a re-import resolves against (ADR-0013), so two
+scans of one capture tree collided into a single dataset holding both. The scan request gained
+`dataset_root`: the path recorded as the dataset's identity, constrained to the scan root or a directory
+inside it, while the walk still starts wherever it started. Paired with the adapter's `exclude`, one
+channel-first tree becomes one dataset per product variant. This is not a new mechanism — the reference
+packs already give each of VisA's twelve classes the root `visa/<class>` while scanning from `visa/` —
+only a previously private one made public and put on the import form.
+
+### 014
+
+"The dataset is three grayscale images stored as colour — should we preprocess them?" Measured rather
+than assumed, and the obvious test gives the wrong answer: the planes are *not* identical (worst
+per-pixel difference is a full 255) while one plane predicts another with a **median R² of 0.9933**.
+It is a monochrome sensor with a white-balance cast, so `color=grayscale` is near-lossless — it drops
+about 0.6 % of variance, most of it per-plane sensor noise — rather than free or wrong. Nothing was
+preprocessed: source images are referenced in place and never copied (ADR-0001/0022), and "these are
+monochrome" is one frozen experiment option.
+
+The question exposed a real defect. `color=grayscale` **crashed both EfficientADs** —
+`efficientad_nets.py` opens with `nn.Conv2d(3, 32, …)` and neither wrapper expanded a single plane —
+while `dinomaly` and `glass` each carried their own copy of the expansion and PatchCore produced the
+right answer only because `(B, 1, H, W) - (1, 3, 1, 1)` happens to broadcast into it. One shared
+`expand_planes` now sits beside the ImageNet constants, on the method's side of the seam: putting it
+in `load_array` would make `grayscale` and `rgb` produce identical arrays, so the experiment would
+record a colour choice that changed nothing. The scan now reports plane redundancy as a number on
+every import, so the next dataset does not need this investigation.
+
+### 012
+
+Three catalogue entries — one per illumination — were in fact one dataset whose every sample is
+photographed three times. The cause was not a modelling decision: the images had been reorganised
+from `set*/label/Channel/` into channel-first top-level folders so that each illumination could be
+imported separately, and the original `set1/` and `set2/` directories were left behind holding
+nothing but `.DS_Store`. That workaround cost exactly what ADR-0005 exists to prevent — three
+independent splits over the same 189 physical parts, so one part's bright view could train while its
+dark view was tested, and `eval/aggregate.py` had nothing to aggregate. `channel_folders` matches by
+path *component* rather than position, so one scan of the parent directory regrouped all of it with
+no file moved, and brought in 113 unlabeled samples from `unsorted/` that no dataset had covered.
+
+What was missing was not the domain model but the run: an experiment could not say which channels it
+reads, so "bright-field only" had no expression other than a separate dataset. `Experiment.channels`
+(ADR-0035) makes that an experiment variable over one split, one region build and one set of labels.
+`EvalConfig.channel_normalization` closes ADR-0011's own caveat, so `max` across channels stops
+measuring which illumination the method finds noisiest. And `pixel_reference` was quietly wrong on a
+merged dataset — one pooled per-pixel median over three illuminations has a MAD dominated by the gap
+between them, which inflates the scale and flattens real defects — so it now fits one reference per
+channel.
+
 ### 001
 
 Double vertical scroll. There should be only one vertical scroll bar.

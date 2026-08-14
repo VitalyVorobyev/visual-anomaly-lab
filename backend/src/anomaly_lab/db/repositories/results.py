@@ -94,10 +94,20 @@ def replace_sample_results(
         conn.execute("DELETE FROM sample_result WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
             """
-            INSERT INTO sample_result (experiment_id, sample_id, agg_score, aggregation)
-                 VALUES (?, ?, ?, ?)
+            INSERT INTO sample_result
+                   (experiment_id, sample_id, agg_score, aggregation, normalization)
+                 VALUES (?, ?, ?, ?, ?)
             """,
-            [(experiment_id, row.sample_id, row.agg_score, row.aggregation.value) for row in rows],
+            [
+                (
+                    experiment_id,
+                    row.sample_id,
+                    row.agg_score,
+                    row.aggregation.value,
+                    row.normalization.value if row.normalization else None,
+                )
+                for row in rows
+            ],
         )
     except Exception:
         conn.execute("ROLLBACK")

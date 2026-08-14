@@ -60,7 +60,7 @@ comparing them under one evaluation protocol.
 - `docs/user-feedback.md` — **what the user asked for, and what was done about it**, numbered and
   filed under reported / rejected / accepted / resolved. A resolved entry states the cause, not just
   the symptom. Add to it when acting on feedback; it is the record of why a screen looks the way it does.
-- `docs/adr/` — **34 records: 22 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
+- `docs/adr/` — **36 records: 24 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
   reclassified them; `docs/adr/README.md` is the index). A record captures a choice **that had a live
   alternative**; the bar is *would a competent engineer plausibly have chosen otherwise, and would
   changing it now cost more than a refactor?* A contract detail, a helper, or a read path for something
@@ -77,7 +77,7 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M7 and M9–M11 are done; M8 is in flight and M12 has one exit criterion open.** The loop
+- **M0–M7 and M9–M13 are done; M8 and M12 are in flight.** The loop
   closes, its output is reachable, it can be iterated in, and **N methods can be read against each
   other**: import a directory tree or a public benchmark, browse and label it, annotate it at pixel
   level, pin an invertible region profile, split it, train, score, read image- and pixel-level
@@ -87,7 +87,10 @@ comparing them under one evaluation protocol.
   as a verified ONNX bundle. Six methods ship: `pixel_reference` (numpy + Pillow, the floor),
   `efficientad_anomalib` and `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
   bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction) and `glass_anomalib`
-  (learned anomaly synthesis).
+  (learned anomaly synthesis). A grouped multi-view dataset is now *usable* and not merely
+  representable: a run selects its channels by name, scores are normalized per channel before they are
+  aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
+  the registration the scan measured.
 - **Nothing is compared in score units (ADR-0028).** A score has no meaning outside its own run —
   `pixel_reference` operates around 14 and `efficientad_anomalib` around 0.065 on the same data.
   Threshold-independent metrics compare directly; anything threshold-dependent is resolved **per run
@@ -145,8 +148,9 @@ comparing them under one evaluation protocol.
   M4.6 reachability, M4.7 iteration) → M5 comparison UI → M6 custom EfficientAD → M7 PatchCore →
   **M8 dataset-first workbench + lifecycle** → M9 annotation system + editor → M10 spatial input
   pipeline + region profiles → M11 modern reference methods → **M12 portable deployment +
-  reproducible onboarding**. Numbers are chronological, not strictly sequential: M9–M11 were finished
-  while M8 stayed open. Do not build a later milestone's machinery while an earlier one is unfinished.
+  reproducible onboarding** → **M13 multi-channel as a first-class experiment variable**. Numbers are
+  chronological, not strictly sequential: M9–M11 were finished while M8 stayed open. Do not build a later
+  milestone's machinery while an earlier one is unfinished.
 - **A new job kind costs one entry** in `jobs/handlers.py` and one handler function. The queue, the
   JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
   needs a change in any of them, that is a finding about the boundary. `train` and `infer` cost exactly

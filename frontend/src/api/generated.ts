@@ -211,6 +211,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/annotation-scope": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether this dataset annotates images or whole samples */
+        get: operations["read_annotation_scope_api_datasets__dataset_id__annotation_scope_get"];
+        /**
+         * Move a dataset between per-image and per-sample annotation editing
+         * @description Completed revisions are untouched in either direction.
+         *
+         *     They are immutable and image-keyed, so they stay valid truth whichever scope produced
+         *     them. Only the editing surface moves.
+         */
+        put: operations["set_annotation_scope_api_datasets__dataset_id__annotation_scope_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/samples/{sample_id}/annotations/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read the sample's current shared draft */
+        get: operations["get_sample_annotation_draft_api_samples__sample_id__annotations_draft_get"];
+        /** Save the shared draft if the caller still owns the version it read */
+        put: operations["save_sample_annotation_draft_api_samples__sample_id__annotations_draft_put"];
+        /** Open the sample's shared draft, or start one from its latest truth */
+        post: operations["open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/samples/{sample_id}/annotations/complete": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Freeze the shared draft as one revision per image of the sample
+         * @description Render once, then write the same bytes to every image's own revision path.
+         *
+         *     The digest is therefore identical across the fan-out, which is what makes "these
+         *     channels share one truth" checkable after the fact rather than merely intended. Each
+         *     image keeps its own `revision_no`, so one that carries earlier image-scoped history
+         *     continues counting from where it stopped.
+         */
+        post: operations["complete_sample_annotation_draft_api_samples__sample_id__annotations_complete_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/compare": {
         parameters: {
             query?: never;
@@ -1603,6 +1671,74 @@ export interface components {
             /** Completed At */
             completed_at: string;
         };
+        /**
+         * AnnotationSampleDraft
+         * @description One editable document for every image of a sample.
+         *
+         *     Deliberately narrower than `AnnotationDraft`: there is no source-mask provenance,
+         *     because that is pinned per image and a document about to be written onto N images
+         *     cannot carry one image's. A sample-scoped document is therefore always `base="empty"`,
+         *     which the routes enforce rather than assume.
+         */
+        AnnotationSampleDraft: {
+            /** Sample Id */
+            sample_id: number;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
+         * AnnotationScope
+         * @description Whether a dataset's annotation truth is edited per image or per sample.
+         *
+         *     `IMAGE` is the original and the default: every photograph carries its own document.
+         *     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
+         *     part -- one document is edited once and materialised onto every image of the sample.
+         *     Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+         * @enum {string}
+         */
+        AnnotationScope: "image" | "sample";
+        /**
+         * AnnotationScopeState
+         * @description A dataset's annotation scope, and everything that would stop it changing.
+         */
+        AnnotationScopeState: {
+            /** Dataset Id */
+            dataset_id: number;
+            scope: components["schemas"]["AnnotationScope"];
+            /** Samples */
+            samples: number;
+            /** Multi Image Samples */
+            multi_image_samples: number;
+            /**
+             * Open Drafts
+             * @description Drafts open in the current scope. Any scope change requires zero.
+             */
+            open_drafts: number;
+            /** Can Use Sample Scope */
+            can_use_sample_scope: boolean;
+            /**
+             * Blockers
+             * @description Every reason sample scope is unavailable, reported together.
+             */
+            blockers: string[];
+        };
+        /** AnnotationScopeUpdate */
+        AnnotationScopeUpdate: {
+            scope: components["schemas"]["AnnotationScope"];
+        };
+        /**
+         * AnnotationState
+         * @description How much of a sample's ground truth exists, resolved the way evaluation resolves it.
+         *
+         *     `PARTIAL` is not a rounding error: under image scope a multi-channel part can have its
+         *     bright view annotated and its dark view blank, and that is precisely the state a
+         *     labelling queue has to be able to show.
+         * @enum {string}
+         */
+        AnnotationState: "none" | "partial" | "complete";
         /** ArtifactFile */
         ArtifactFile: {
             /** Name */
@@ -2153,6 +2289,11 @@ export interface components {
             evaluation?: {
                 [key: string]: unknown;
             };
+            /**
+             * Channels
+             * @description Acquisition channels this run should read, by name. Empty means every channel the dataset has, which is the only meaningful answer for a single-view dataset.
+             */
+            channels?: string[];
             /** Notes */
             notes?: string | null;
         };
@@ -2316,6 +2457,8 @@ export interface components {
              * @default 0
              */
             splits: number;
+            /** @default image */
+            annotation_scope: components["schemas"]["AnnotationScope"];
         };
         /** DatasetSummary */
         DatasetSummary: {
@@ -2556,6 +2699,11 @@ export interface components {
             region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
+            /**
+             * Channels
+             * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
+             */
+            channels: string[];
             status: components["schemas"]["ExperimentStatus"];
             /** Created At */
             created_at: string;
@@ -2639,6 +2787,11 @@ export interface components {
             region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
+            /**
+             * Channels
+             * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
+             */
+            channels: string[];
             status: components["schemas"]["ExperimentStatus"];
             /** Created At */
             created_at: string;
@@ -2948,6 +3101,13 @@ export interface components {
             /** Warnings */
             warnings?: components["schemas"]["ManifestWarning-Input"][];
             stats?: components["schemas"]["ManifestStats-Input"];
+            /**
+             * Probe
+             * @description What the scan measured about the pixels, as opposed to what the adapter read from the paths: colour-plane redundancy and channel registration. A plain mapping here rather than the typed model, because `probe` imports this module and a manifest must stay readable without it.
+             */
+            probe?: {
+                [key: string]: unknown;
+            } | null;
             /** Scanned At */
             scanned_at?: string;
         };
@@ -2980,6 +3140,13 @@ export interface components {
             /** Warnings */
             warnings: components["schemas"]["ManifestWarning-Output"][];
             stats: components["schemas"]["ManifestStats-Output"];
+            /**
+             * Probe
+             * @description What the scan measured about the pixels, as opposed to what the adapter read from the paths: colour-plane redundancy and channel registration. A plain mapping here rather than the typed model, because `probe` imports this module and a manifest must stay readable without it.
+             */
+            probe: {
+                [key: string]: unknown;
+            } | null;
             /** Scanned At */
             scanned_at: string;
         };
@@ -3715,6 +3882,8 @@ export interface components {
             notes: string | null;
             /** Images */
             images: components["schemas"]["ImageSummary"][];
+            /** @default none */
+            annotation: components["schemas"]["AnnotationState"];
         };
         /**
          * SampleVerdict
@@ -3755,6 +3924,11 @@ export interface components {
             options?: {
                 [key: string]: unknown;
             };
+            /**
+             * Dataset Root
+             * @description Record this path as the dataset's identity instead of the scan root. Must be the scan root or a directory inside it. Use it with the adapter's `exclude` to split one capture tree into several datasets — one per product variant — which a shared root would collide into one.
+             */
+            dataset_root?: string | null;
         };
         /** SegmentAssistCapability */
         SegmentAssistCapability: {
@@ -4119,7 +4293,7 @@ export interface components {
          * @description Why the operator is being asked to look at something.
          * @enum {string}
          */
-        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file" | "ambiguous_sample_id" | "unmatched_path" | "conflicting_directories" | "missing_mask";
+        WarningCode: "variable_channel_count" | "unassigned_channel" | "unknown_channel_name" | "duplicate_hash" | "unreadable_file" | "empty_file" | "ambiguous_sample_id" | "unmatched_path" | "conflicting_directories" | "missing_mask" | "redundant_colour_planes" | "mixed_image_modes" | "channel_offset" | "channel_dimensions_differ";
     };
     responses: never;
     parameters: never;
@@ -4632,6 +4806,204 @@ export interface operations {
             };
         };
     };
+    read_annotation_scope_api_datasets__dataset_id__annotation_scope_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationScopeState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_annotation_scope_api_datasets__dataset_id__annotation_scope_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationScopeUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationScopeState"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_sample_annotation_draft_api_samples__sample_id__annotations_draft_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    save_sample_annotation_draft_api_samples__sample_id__annotations_draft_put: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    complete_sample_annotation_draft_api_samples__sample_id__annotations_complete_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationRevision"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     compare_experiments_api_compare_get: {
         parameters: {
             query: {
@@ -4827,6 +5199,8 @@ export interface operations {
                 split_id?: number | null;
                 /** @description Only meaningful together with `split_id`. */
                 subset?: components["schemas"]["Subset"] | null;
+                /** @description `false` lists samples with at least one image still lacking ground truth — what an annotation queue asks for. Omit for both. */
+                annotated?: boolean | null;
                 limit?: number;
                 offset?: number;
             };

@@ -74,4 +74,23 @@ describe("ChannelTabs", () => {
 
     expect(onSelect).toHaveBeenCalledWith(1);
   });
+
+  it("locks the other channels while an image-scoped edit is unsaved, and says why", () => {
+    // In the annotation editor under image scope each channel owns its own truth, so
+    // switching is real navigation and would drop the edit. The *current* tab stays
+    // enabled: disabling it would leave the strip with nothing selected to look at.
+    render(
+      <ChannelTabs
+        images={[image(1, "bright"), image(2, "dark")]}
+        active={0}
+        onSelect={vi.fn()}
+        disabled
+      />,
+    );
+
+    const dark = screen.getByRole("tab", { name: "dark" }) as HTMLButtonElement;
+    expect(dark.disabled).toBe(true);
+    expect(dark.title).toContain("Save");
+    expect((screen.getByRole("tab", { name: "bright" }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });

@@ -104,6 +104,7 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
             experiment.split_id,
             subsets=[Subset.TRAIN],
             labels=[Label.NORMAL],
+            channels=experiment.channels,
         )
         # Held-out normals, where the split has any. EfficientAD fits its score
         # normalization on these; VisA's official one-class protocol has no `val` subset
@@ -113,9 +114,10 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
             experiment.split_id,
             subsets=[Subset.VAL],
             labels=[Label.NORMAL],
+            channels=experiment.channels,
         )
         all_train = images_repo.list_images_for_split(
-            conn, experiment.split_id, subsets=[Subset.TRAIN]
+            conn, experiment.split_id, subsets=[Subset.TRAIN], channels=experiment.channels
         )
         experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINING)
 

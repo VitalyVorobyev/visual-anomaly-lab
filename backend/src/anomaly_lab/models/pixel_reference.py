@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import time
 from collections.abc import Sequence
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
@@ -51,11 +53,36 @@ MAD_TO_SIGMA = 1.4826
 REFERENCE_FILENAME = "reference.npz"
 
 
+UNASSIGNED = ""
+"""Reference key for images belonging to no channel — the same spelling the import commit
+already uses for "no channel" (`datasets/commit.py`). A channel name is never empty."""
+
+
+class ReferenceScope(StrEnum):
+    """What one reference is built over."""
+
+    DATASET = "dataset"
+    """One reference for the whole training set."""
+
+    CHANNEL = "channel"
+    """One reference per acquisition channel."""
+
+
 class PixelReferenceConfig(BaseModel):
     """Hyperparameters. Every field here becomes a control on the experiment form."""
 
     model_config = API_MODEL_CONFIG
 
+    reference_scope: ReferenceScope = Field(
+        default=ReferenceScope.CHANNEL,
+        description=(
+            "What each per-pixel reference is built over. On a dataset whose samples are "
+            "photographed under several illuminations, one pooled reference is the median "
+            "of images that look nothing like each other, and the deviation it measures is "
+            "mostly the difference between channels. 'dataset' is the old behaviour and is "
+            "correct for single-view data, where the two are identical anyway."
+        ),
+    )
     max_reference_images: int = Field(
         default=128,
         ge=4,
@@ -114,6 +141,14 @@ def gaussian_blur(image: np.ndarray, sigma: float) -> np.ndarray:
     return np.apply_along_axis(lambda row: np.convolve(row, kernel, mode="valid"), 1, padded)
 
 
+@dataclass(frozen=True)
+class _Reference:
+    """One fitted per-pixel reference: what normal looks like, and how much it varies."""
+
+    median: np.ndarray
+    scale: np.ndarray
+
+
 class PixelReferenceModel(AnomalyModel):
     """Per-pixel robust reference statistics, compared pixelwise."""
 
@@ -126,8 +161,7 @@ class PixelReferenceModel(AnomalyModel):
     def __init__(self, config: PixelReferenceConfig) -> None:
         super().__init__(config)
         self.config = config
-        self._median: np.ndarray | None = None
-        self._scale: np.ndarray | None = None
+        self._references: dict[str, _Reference] = {}
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
@@ -139,21 +173,70 @@ class PixelReferenceModel(AnomalyModel):
             requires_training=True,
             produces_anomaly_map=True,
             produces_diagnostics=True,
-            channel_aware=False,
+            # Reads `ImageRecord.channel` to partition its own reference, and still returns
+            # one `Prediction` per input image. Nothing outside this module changes.
+            channel_aware=True,
             dataset_specific=False,
             portable_formats=[PortableFormat.ONNX],
             preferred_device=Device.CPU,
         )
 
+    def _key(self, record: ImageRecord) -> str:
+        """Which reference this image is measured against."""
+        if self.config.reference_scope is ReferenceScope.DATASET:
+            return UNASSIGNED
+        return record.channel or UNASSIGNED
+
+    @property
+    def _single(self) -> _Reference:
+        """The one reference, for callers that can only hold one (the ONNX graph)."""
+        if len(self._references) != 1:
+            msg = (
+                f"pixel_reference holds {len(self._references)} references; this operation "
+                "needs exactly one"
+            )
+            raise RuntimeError(msg)
+        return next(iter(self._references.values()))
+
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None:
-        chosen = evenly_spaced(len(train), self.config.max_reference_images)
-        if len(chosen) < len(train):
+        groups: dict[str, list[ImageRecord]] = {}
+        for record in train:
+            groups.setdefault(self._key(record), []).append(record)
+
+        if self.config.reference_scope is ReferenceScope.CHANNEL and len(groups) > 1:
+            listed = ", ".join(
+                f"{name or 'unassigned'} ({len(records)})"
+                for name, records in sorted(groups.items())
+            )
+            ctx.log(f"fitting one reference per channel: {listed}")
+
+        # The cap applies per group, because each reference is a separate estimator and
+        # splitting one budget across three illuminations would make each of them worse
+        # for no reason.
+        self._references = {}
+        for index, (name, records) in enumerate(sorted(groups.items())):
+            self._references[name] = self._fit_one(
+                name, records, ctx, group_index=index, groups=len(groups)
+            )
+
+    def _fit_one(
+        self,
+        name: str,
+        records: Sequence[ImageRecord],
+        ctx: TrainContext,
+        *,
+        group_index: int,
+        groups: int,
+    ) -> _Reference:
+        label = f" for channel {name}" if name and groups > 1 else ""
+        chosen = evenly_spaced(len(records), self.config.max_reference_images)
+        if len(chosen) < len(records):
             ctx.log(
-                f"building the reference from {len(chosen)} of {len(train)} training "
+                f"building the reference{label} from {len(chosen)} of {len(records)} training "
                 f"images, sampled evenly (max_reference_images={self.config.max_reference_images})"
             )
         else:
-            ctx.log(f"building the reference from all {len(chosen)} training images")
+            ctx.log(f"building the reference{label} from all {len(chosen)} training images")
 
         stack = np.empty(
             (
@@ -164,38 +247,44 @@ class PixelReferenceModel(AnomalyModel):
             ),
             dtype=np.float32,
         )
+        span = 1.0 / groups
+        base = group_index * span
         for position, index in enumerate(chosen):
             ctx.raise_if_cancelled()
-            stack[position] = load_array(train[index].path, ctx.preprocessing)
-            ctx.progress(0.8 * (position + 1) / len(chosen), f"read {position + 1}/{len(chosen)}")
+            stack[position] = load_array(records[index].path, ctx.preprocessing)
+            ctx.progress(
+                base + span * 0.8 * (position + 1) / len(chosen),
+                f"read {position + 1}/{len(chosen)}{label}",
+            )
 
-        ctx.progress(0.85, "computing the per-pixel median")
+        ctx.progress(base + span * 0.85, f"computing the per-pixel median{label}")
         median = np.median(stack, axis=0).astype(np.float32)
 
-        ctx.progress(0.95, "computing the per-pixel deviation")
+        ctx.progress(base + span * 0.95, f"computing the per-pixel deviation{label}")
         deviation = np.median(np.abs(stack - median), axis=0).astype(np.float32)
         scale = np.maximum(deviation * MAD_TO_SIGMA, self.config.mad_floor).astype(np.float32)
 
-        self._median = median
-        self._scale = scale
-
-        ctx.metric("reference_images", float(len(chosen)))
-        ctx.metric("median_scale", float(np.median(scale)))
+        suffix = f"_{name}" if name and groups > 1 else ""
+        ctx.metric(f"reference_images{suffix}", float(len(chosen)))
+        ctx.metric(f"median_scale{suffix}", float(np.median(scale)))
         ctx.log(
-            f"per-pixel scale: median {np.median(scale):.4f}, "
+            f"per-pixel scale{label}: median {np.median(scale):.4f}, "
             f"{float((scale <= self.config.mad_floor).mean()) * 100:.1f}% of pixels at the floor"
         )
 
+        # Keyed per channel, so N references produce N entries. The diagnostics index
+        # renders by `kind` and never by method name, so this needs no UI change at all —
+        # which is the check that the plugin boundary held.
         ctx.emit_diagnostic(
-            "reference_median",
-            "Reference median",
+            f"reference_median{suffix}",
+            f"Reference median{label}",
             DiagnosticKind.IMAGE if median.shape[-1] == 3 else DiagnosticKind.MAP,
             median if median.shape[-1] == 3 else median[:, :, 0],
             description="What this model considers a normal part to look like.",
         )
         ctx.emit_diagnostic(
-            "reference_scale",
-            "Per-pixel deviation",
+            f"reference_scale{suffix}",
+            f"Per-pixel deviation{label}",
             DiagnosticKind.MAP,
             scale.max(axis=2),
             description=(
@@ -203,9 +292,10 @@ class PixelReferenceModel(AnomalyModel):
                 "tolerate more variation before being called anomalous."
             ),
         )
+        return _Reference(median=median, scale=scale)
 
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
-        if self._median is None or self._scale is None:
+        if not self._references:
             msg = "pixel_reference was asked to predict before it was fitted or loaded"
             raise RuntimeError(msg)
 
@@ -214,8 +304,22 @@ class PixelReferenceModel(AnomalyModel):
             ctx.raise_if_cancelled()
             started = time.perf_counter()
 
+            key = self._key(record)
+            reference = self._references.get(key)
+            if reference is None:
+                # No silent fall back to another channel's reference: scoring a dark-field
+                # image against the bright-field normal would produce a plausible-looking
+                # map of nothing but the difference between two illuminations.
+                available = ", ".join(sorted(name or "unassigned" for name in self._references))
+                msg = (
+                    f"pixel_reference has no reference for channel "
+                    f"{record.channel or 'unassigned'}; it was fitted on {available}. "
+                    "Train on the channels this run scores, or select them on the experiment."
+                )
+                raise RuntimeError(msg)
+
             array = load_array(record.path, ctx.preprocessing)
-            deviation = np.abs(array - self._median) / self._scale
+            deviation = np.abs(array - reference.median) / reference.scale
             # Across channels, not averaged: a defect that shows under one illumination
             # is a defect, which is the same reasoning the evaluation layer applies one
             # level up when it aggregates a sample's images (ADR-0011).
@@ -248,19 +352,36 @@ class PixelReferenceModel(AnomalyModel):
         return predictions
 
     def save(self, artifact_dir: Path) -> None:
-        if self._median is None or self._scale is None:
+        if not self._references:
             msg = "pixel_reference has nothing to save; it was never fitted"
             raise RuntimeError(msg)
-        np.savez_compressed(
-            artifact_dir / REFERENCE_FILENAME,
-            median=self._median,
-            scale=self._scale,
-        )
+        names = sorted(self._references)
+        # A plain unicode array for the names, so the whole file still loads with
+        # `allow_pickle=False`. Arrays are keyed by index rather than by channel name,
+        # because a channel name is free text and `npz` keys are filenames inside a zip.
+        payload: dict[str, np.ndarray] = {"names": np.array(names, dtype=np.str_)}
+        for index, name in enumerate(names):
+            payload[f"median_{index}"] = self._references[name].median
+            payload[f"scale_{index}"] = self._references[name].scale
+        # numpy's stub types the second positional as `allow_pickle`; the call is the
+        # documented keyword-arrays form.
+        np.savez_compressed(artifact_dir / REFERENCE_FILENAME, **payload)  # type: ignore[arg-type]
 
     def load(self, artifact_dir: Path) -> None:
-        with np.load(artifact_dir / REFERENCE_FILENAME) as stored:
-            self._median = stored["median"]
-            self._scale = stored["scale"]
+        with np.load(artifact_dir / REFERENCE_FILENAME, allow_pickle=False) as stored:
+            if "names" not in stored:
+                # A checkpoint written before references were keyed. One reference, and it
+                # applied to everything — which is exactly `dataset` scope.
+                self._references = {
+                    UNASSIGNED: _Reference(median=stored["median"], scale=stored["scale"])
+                }
+                return
+            self._references = {
+                str(name): _Reference(
+                    median=stored[f"median_{index}"], scale=stored[f"scale_{index}"]
+                )
+                for index, name in enumerate(stored["names"])
+            }
 
     def export_onnx(
         self,
@@ -273,9 +394,22 @@ class PixelReferenceModel(AnomalyModel):
         Decode/colour conversion and the percentile score remain explicit bundle
         contracts, so the Rust consumer performs exactly the same host operations.
         """
-        if self._median is None or self._scale is None:
+        if not self._references:
             raise RuntimeError("pixel_reference has no fitted reference to export")
-        if self._median.shape != (
+        if len(self._references) > 1:
+            # A static single-input graph holds one reference tensor. Refused inside the
+            # plugin rather than pre-checked in a route, because a route that branched on
+            # a method's own config would be exactly the leak ADR-0007 forbids.
+            named = ", ".join(sorted(name or "unassigned" for name in self._references))
+            msg = (
+                f"pixel_reference fitted {len(self._references)} references ({named}) under "
+                "reference_scope=channel, and one ONNX graph cannot carry more than one. "
+                "Export a run whose channel selection leaves a single channel, or refit "
+                "with reference_scope=dataset."
+            )
+            raise ValueError(msg)
+        reference = self._single
+        if reference.median.shape != (
             preprocessing.height,
             preprocessing.width,
             preprocessing.channels,
@@ -294,11 +428,11 @@ class PixelReferenceModel(AnomalyModel):
         output_name = "anomaly_map"
         initializers = [
             numpy_helper.from_array(
-                np.ascontiguousarray(self._median.transpose(2, 0, 1)[np.newaxis]),
+                np.ascontiguousarray(reference.median.transpose(2, 0, 1)[np.newaxis]),
                 name="reference_median",
             ),
             numpy_helper.from_array(
-                np.ascontiguousarray(self._scale.transpose(2, 0, 1)[np.newaxis]),
+                np.ascontiguousarray(reference.scale.transpose(2, 0, 1)[np.newaxis]),
                 name="reference_scale",
             ),
             numpy_helper.from_array(np.asarray([1], dtype=np.int64), name="channel_axis"),
@@ -398,12 +532,13 @@ class PixelReferenceModel(AnomalyModel):
 
     def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
         """The fitted Python path over the tensor used by deployment parity."""
-        if self._median is None or self._scale is None:
+        if not self._references:
             raise RuntimeError("pixel_reference has no fitted reference for parity")
-        if input_nchw.shape != (1, self._median.shape[2], *self._median.shape[:2]):
+        reference = self._single
+        if input_nchw.shape != (1, reference.median.shape[2], *reference.median.shape[:2]):
             raise ValueError("portable parity input shape does not match the stored reference")
         array = np.ascontiguousarray(input_nchw[0].transpose(1, 2, 0), dtype=np.float32)
-        deviation = np.abs(array - self._median) / self._scale
+        deviation = np.abs(array - reference.median) / reference.scale
         raw = deviation.max(axis=2)
         anomaly_map = gaussian_blur(raw.astype(np.float64), self.config.smoothing_sigma).astype(
             np.float32

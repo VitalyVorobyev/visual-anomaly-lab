@@ -24,6 +24,7 @@ from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.reference_packs import PackMembership, pack_membership
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -32,7 +33,17 @@ from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.samples import SampleFilter
-from anomaly_lab.domain.entities import Channel, Dataset, Image, Label, LabelSource, Sample, Subset
+from anomaly_lab.domain.entities import (
+    AnnotationScope,
+    AnnotationState,
+    Channel,
+    Dataset,
+    Image,
+    Label,
+    LabelSource,
+    Sample,
+    Subset,
+)
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentWorker
 from anomaly_lab.media.cache import TIERS, cache_path
@@ -75,6 +86,7 @@ class SampleSummary(BaseModel):
     label_source: LabelSource
     notes: str | None = None
     images: list[ImageSummary] = Field(default_factory=list)
+    annotation: AnnotationState = AnnotationState.NONE
 
 
 class SamplePage(BaseModel):
@@ -112,6 +124,9 @@ class DatasetDetail(DatasetSummary):
     channels: list[Channel] = Field(default_factory=list)
     group_keys: list[str] = Field(default_factory=list)
     splits: int = 0
+    # Carried on the detail rather than the summary: the annotation editor already reads
+    # the detail, and the catalogue grid has no use for it.
+    annotation_scope: AnnotationScope = AnnotationScope.IMAGE
 
 
 class DatasetUpdate(BaseModel):
@@ -291,7 +306,10 @@ def _image_summary(image: Image, channel_names: dict[int, str]) -> ImageSummary:
 
 
 def _sample_summary(
-    sample: Sample, images: list[Image], channel_names: dict[int, str]
+    sample: Sample,
+    images: list[Image],
+    channel_names: dict[int, str],
+    annotation: AnnotationState = AnnotationState.NONE,
 ) -> SampleSummary:
     return SampleSummary(
         id=sample.id,
@@ -302,6 +320,7 @@ def _sample_summary(
         label_source=sample.label_source,
         notes=sample.notes,
         images=[_image_summary(image, channel_names) for image in images],
+        annotation=annotation,
     )
 
 
@@ -460,6 +479,7 @@ def _dataset_detail(
         channels=datasets_repo.list_channels(conn, dataset.id),
         group_keys=samples_repo.list_group_keys(conn, dataset.id),
         splits=len(splits_repo.list_splits(conn, dataset.id)),
+        annotation_scope=dataset.annotation_scope,
     )
 
 
@@ -568,6 +588,13 @@ def list_samples(
     subset: Subset | None = Query(
         default=None, description="Only meaningful together with `split_id`."
     ),
+    annotated: bool | None = Query(
+        default=None,
+        description=(
+            "`false` lists samples with at least one image still lacking ground truth — "
+            "what an annotation queue asks for. Omit for both."
+        ),
+    ),
     limit: int = Query(default=100, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> SamplePage:
@@ -578,21 +605,34 @@ def list_samples(
     inserted rows in the middle.
     """
     settings: Settings = request.app.state.settings
-    filters = SampleFilter(label=label, channel_id=channel_id, split_id=split_id, subset=subset)
+    filters = SampleFilter(
+        label=label,
+        channel_id=channel_id,
+        split_id=split_id,
+        subset=subset,
+        annotated=annotated,
+    )
 
     with connection(settings.db_path) as conn:
         _require_dataset(conn, dataset_id)
         total = samples_repo.count_samples(conn, dataset_id, filters)
         page = samples_repo.list_samples(conn, dataset_id, filters, limit=limit, offset=offset)
         names = _channel_names(conn, dataset_id)
-        # One query for the whole page rather than one per sample.
-        grouped = images_repo.list_images_for_samples(conn, [s.id for s in page])
+        # One query for the whole page rather than one per sample, for both reads.
+        sample_ids = [s.id for s in page]
+        grouped = images_repo.list_images_for_samples(conn, sample_ids)
+        annotation = annotations_repo.annotation_state_for_samples(conn, sample_ids)
 
     return SamplePage(
         total=total,
         limit=limit,
         offset=offset,
-        items=[_sample_summary(s, grouped.get(s.id, []), names) for s in page],
+        items=[
+            _sample_summary(
+                s, grouped.get(s.id, []), names, annotation.get(s.id, AnnotationState.NONE)
+            )
+            for s in page
+        ],
     )
 
 
@@ -609,8 +649,9 @@ def get_sample(request: Request, dataset_id: int, sample_id: int) -> SampleSumma
             )
         names = _channel_names(conn, dataset_id)
         images = images_repo.list_images_for_sample(conn, sample.id)
+        annotation = annotations_repo.annotation_state_for_samples(conn, [sample.id])
 
-    return _sample_summary(sample, images, names)
+    return _sample_summary(sample, images, names, annotation.get(sample.id, AnnotationState.NONE))
 
 
 @router.patch("/{dataset_id}/samples/{sample_id}", summary="Set a sample's label")
@@ -635,8 +676,9 @@ def update_label(
             raise HTTPException(status_code=404, detail=f"no sample {sample_id}")
         names = _channel_names(conn, dataset_id)
         images = images_repo.list_images_for_sample(conn, sample_id)
+        annotation = annotations_repo.annotation_state_for_samples(conn, [sample_id])
 
-    return _sample_summary(updated, images, names)
+    return _sample_summary(updated, images, names, annotation.get(sample_id, AnnotationState.NONE))
 
 
 @router.patch("/{dataset_id}/samples", summary="Label many samples at once")

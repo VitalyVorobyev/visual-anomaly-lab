@@ -61,11 +61,12 @@ import {
   Select,
   SkeletonRows,
   Table,
+  ToggleChip,
   cn,
   type Column,
   type Tone,
 } from "../components/ui";
-import { useDatasets, useSplits } from "../hooks/useCatalog";
+import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import {
   useCreateExperiment,
@@ -455,9 +456,12 @@ function CreateExperiment({
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
+  const [channels, setChannels] = useState<string[]>([]);
   const [tab, setTab] = useState<ConfigTab>("method");
 
   const splits = useSplits(datasetId);
+  const dataset = useDataset(datasetId);
+  const datasetChannels = dataset.data?.channels ?? [];
   const regionProfiles = useRegionProfiles(datasetId);
   const regionBuild = useRegionBuild(regionProfileId);
   const method: ModelDescription | undefined = catalog.data?.methods.find(
@@ -532,6 +536,7 @@ function CreateExperiment({
         config: toOptions(configFields, configValues),
         preprocessing: toOptions(preprocessingFields, preprocessingValues),
         evaluation: toOptions(evaluationFields, evaluationValues),
+        channels,
       },
       { onSuccess: (created) => void navigate(`/experiments/${created.id}`) },
     );
@@ -653,6 +658,39 @@ function CreateExperiment({
                 onValueChange={(value) => setSplitId(value === "" ? undefined : Number(value))}
               />
             </Field>
+
+            {/* Absent entirely for a single-view dataset: there is nothing to select, and
+                a control offering one option is a question with no answer. Two channels
+                render two chips — nothing here knows how many there should be. */}
+            {datasetChannels.length > 0 && (
+              <Field
+                as="group"
+                label="Channels"
+                description={
+                  channels.length === 0
+                    ? "All channels. Pick some to train and score on a subset."
+                    : `${channels.length} of ${datasetChannels.length} channels.`
+                }
+              >
+                <div className="flex flex-wrap gap-2">
+                  {datasetChannels.map((channel) => (
+                    <ToggleChip
+                      key={channel.id}
+                      checked={channels.includes(channel.name)}
+                      onCheckedChange={(checked) =>
+                        setChannels((current) =>
+                          checked
+                            ? [...current, channel.name]
+                            : current.filter((name) => name !== channel.name),
+                        )
+                      }
+                    >
+                      {channel.name}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+            )}
           </div>
         </Section>
 

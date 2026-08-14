@@ -100,6 +100,32 @@ class Job(BaseModel):
         return _decode_json_object(value)
 
 
+class AnnotationState(StrEnum):
+    """How much of a sample's ground truth exists, resolved the way evaluation resolves it.
+
+    `PARTIAL` is not a rounding error: under image scope a multi-channel part can have its
+    bright view annotated and its dark view blank, and that is precisely the state a
+    labelling queue has to be able to show.
+    """
+
+    NONE = "none"
+    PARTIAL = "partial"
+    COMPLETE = "complete"
+
+
+class AnnotationScope(StrEnum):
+    """Whether a dataset's annotation truth is edited per image or per sample.
+
+    `IMAGE` is the original and the default: every photograph carries its own document.
+    `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
+    part -- one document is edited once and materialised onto every image of the sample.
+    Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+    """
+
+    IMAGE = "image"
+    SAMPLE = "sample"
+
+
 class Dataset(BaseModel):
     """A named collection of samples rooted at a path on disk."""
 
@@ -117,6 +143,7 @@ class Dataset(BaseModel):
     # itself. See `datasets.reference_packs.collection_for`.
     notes: str | None = None
     collection: str | None = None
+    annotation_scope: AnnotationScope = AnnotationScope.IMAGE
 
 
 class Channel(BaseModel):
@@ -269,6 +296,30 @@ class Aggregation(StrEnum):
     MEAN = "mean"
 
 
+class ChannelNormalization(StrEnum):
+    """How per-channel scores are put on one scale before they are reduced (ADR-0011).
+
+    ADR-0011 chose `max` and recorded the caveat in the same breath: `max` assumes a
+    part's per-channel scores are comparable, and for a deep method they are not — one
+    illumination's distribution simply sits higher and wins every maximum, so the sample
+    score measures which channel the model finds noisiest rather than which part is
+    defective.
+    """
+
+    NONE = "none"
+    """Compare raw scores. Correct when a method normalizes per channel by construction."""
+
+    ROBUST_Z = "robust_z"
+    """Median and scaled MAD per channel. Robust to the outliers that are the signal."""
+
+    RANK = "rank"
+    """Rank fraction within the channel. Scale-free, and blunter than it looks: it keeps
+    only the ordering, so a part that is dramatically the most anomalous thing one channel
+    ever saw and a part that merely tops a flat channel both become 1.0. Under `max` they
+    then tie, and "how anomalous" was the question. Offered because it is the obvious thing
+    to reach for, and documented so the cost is not discovered in a metric."""
+
+
 class Experiment(BaseModel):
     """One method, on one split, with the configuration frozen at creation.
 
@@ -292,6 +343,14 @@ class Experiment(BaseModel):
     model_config_: dict[str, Any] = Field(default_factory=dict, alias="model_config")
     preprocessing_config: dict[str, Any] = Field(default_factory=dict)
     eval_config: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Acquisition channels this run reads, by name. Empty means every channel, "
+            "which is what an experiment created before the column existed meant. Stored "
+            "as names rather than ids so the frozen record stays legible in a job log."
+        ),
+    )
     status: ExperimentStatus = ExperimentStatus.DRAFT
     artifact_dir: str
     created_at: str
@@ -300,6 +359,11 @@ class Experiment(BaseModel):
     @field_validator("model_config_", "preprocessing_config", "eval_config", mode="before")
     @classmethod
     def _decode_config_columns(cls, value: object) -> object:
+        return _decode_json_object(value)
+
+    @field_validator("channels", mode="before")
+    @classmethod
+    def _decode_channels(cls, value: object) -> object:
         return _decode_json_object(value)
 
 
@@ -324,6 +388,15 @@ class SampleResult(BaseModel):
     sample_id: int
     agg_score: float
     aggregation: Aggregation
+    normalization: ChannelNormalization | None = Field(
+        default=None,
+        description=(
+            "How per-channel scores were put on one scale before the reduce. Recorded per "
+            "row beside the aggregation, for the same reason: a stored result must stay "
+            "self-describing after the default changes. `null` on rows written before the "
+            "step existed, which meant `none`."
+        ),
+    )
 
 
 class MetricSet(BaseModel):

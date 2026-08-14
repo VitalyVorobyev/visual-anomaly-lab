@@ -19,6 +19,8 @@ export interface SampleQuery {
   channelId?: number | undefined;
   splitId?: number | undefined;
   subset?: Subset | undefined;
+  /** `false` is "still has an image without ground truth" — the annotation queue's filter. */
+  annotated?: boolean | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }
@@ -42,7 +44,18 @@ export const queryKeys = {
     ["datasets", datasetId, "sample", sampleId] as const,
   annotationLabels: (datasetId: number) =>
     ["datasets", datasetId, "annotation-labels"] as const,
+  annotationScope: (datasetId: number) =>
+    ["datasets", datasetId, "annotation-scope"] as const,
   annotationDraft: (imageId: number) => ["annotations", imageId, "draft"] as const,
+  /**
+   * A sample's shared draft.
+   *
+   * Deliberately a sibling of `annotationDraft` rather than a nesting of it: an image id
+   * and a sample id are both small integers, so a shared `["annotations", id, "draft"]`
+   * key would let one dataset's cache answer for the other.
+   */
+  annotationSampleDraft: (sampleId: number) =>
+    ["annotations", "sample", sampleId, "draft"] as const,
   annotationRevisions: (imageId: number) => ["annotations", imageId, "revisions"] as const,
 
   regionExtractors: () => ["region-extractors"] as const,

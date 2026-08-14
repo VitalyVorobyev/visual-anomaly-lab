@@ -619,3 +619,52 @@ reference-data credits.
       workflow, supported methods and generated public benchmark evidence.
 - [ ] Key screens pass visual review at both target sizes and in both themes.
 - [x] The method-extension guide has been followed end to end, and the handbook matches the code.
+
+---
+
+### M13 — Multi-channel as a first-class experiment variable
+
+**Goal.** Make a grouped multi-view dataset something the workbench can *use*, not merely represent.
+ADR-0005 modelled a part photographed under several illuminations from the start, and everything below the
+run understood it — splits are sample-level, `eval/aggregate.py` reduces a sample's per-channel scores. The
+run itself did not: an experiment could not say which channels it reads, so the only way to ask "how well
+does bright-field alone do?" was to import bright-field as its own dataset, which reintroduces cross-view
+leakage and leaves nothing to aggregate.
+
+**Scope**
+
+- `Experiment.channels`, frozen by name, applied in the single query that answers "which images"
+  (ADR-0035). The on-demand diagnostic path narrows with it, so a bright-only run refuses a dark image
+  by name rather than answering a question it cannot have.
+- `EvalConfig.channel_normalization` (`none` / `robust_z` / `rank`), closing the caveat ADR-0011 recorded
+  against `max` and recorded per row on `SampleResult`.
+- A first genuinely `channel_aware` method: `pixel_reference` fits one per-pixel reference per channel.
+- A bounded scan probe reporting colour-plane redundancy, channel registration and mode consistency, so
+  "are these really colour" and "are the channels aligned" are answered by measurement at import.
+- Sample-scoped annotation drafts fanned out to per-image revisions (ADR-0036), and an editor that shows a
+  sample's channels — switchable, side by side, or blended at adjustable alpha to check registration —
+  while one document is edited.
+- The corollaries a real multi-channel dataset exposed: a channel-filtered browse grid that previews the
+  channel it is filtered to, an annotation queue that filters by label and by remaining work and marks
+  what is done, and a scan `dataset_root` so one capture tree holding several products becomes several
+  datasets instead of colliding into one.
+
+**Measured on adoption.** Regrouping the reference corpus produced 302 samples / 893 images over three
+channels with no file moved, matching ADR-0011's recorded 98 normal + 91 defect + 113 unlabeled exactly, and
+brought in the 113 `unsorted/` samples no dataset had covered. The channels measure as registered to **0 px**
+median offset despite a 1 ms strobe interval on a moving line, and the colour planes as **99.3 % redundant** —
+a monochrome sensor with a white-balance cast, not a colour dataset.
+
+**Exit criteria**
+
+- [x] Two runs on one split differing only in channel selection are creatable, and an unknown channel name
+      is refused at creation rather than producing a run that read nothing.
+- [x] `max` across channels stops depending on raw score scale, and `reevaluate` genuinely applies a
+      changed `eval_config` to stored sample scores.
+- [x] A method partitions by channel internally and still returns one prediction per image, with no change
+      outside its own module.
+- [x] `color=grayscale` runs on every registered method, and the exported graph declares the input it
+      actually consumes.
+- [x] One annotation can be edited once and resolve as ground truth for every channel of its sample, with
+      imported source masks structurally excluded from that mode.
+- [x] The editor can show a sample's channels together, and its queue presents one part as one job.

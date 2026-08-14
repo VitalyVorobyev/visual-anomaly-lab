@@ -73,3 +73,19 @@ Negative consequences, accepted honestly:
   alone.
 - **On-demand computation repeats work.** Every threshold change re-scans results; acceptable at
   this scale, but it grows linearly with dataset size.
+
+## Changelog
+
+- **2026-08-14:** Shipped this record's own named backlog item. Per-channel normalization
+  (`EvalConfig.channel_normalization`, default `none`) now runs before the `max`/`mean` reduce and is
+  recorded per row on `SampleResult.normalization`, so "the comparability assumption is currently
+  unenforced" is no longer true by default and never true silently. Two transforms are offered: `robust_z`,
+  and `rank` — which is scale-free but keeps only the ordering, so a dramatic outlier and a marginal one
+  score identically. The transform is fitted **once over every image the experiment has scored, labels
+  ignored**: `sample_result` has no subset column, so a per-subset fit is not representable, and fitting on
+  labels would make the metric partly a function of the answer. Image-level ROC-AUC deliberately stays on raw
+  scores, keeping its stated role of isolating model quality from the aggregation choice.
+- **2026-08-14:** Fixed a gap this record's "re-thresholding never requires re-inference" claim depended on.
+  `reevaluate` recomputed `MetricSet` rows without rebuilding `SampleResult`, so a changed aggregation mode
+  appeared to apply and did not. Deriving sample scores moved out of the `infer` handler and into
+  `evaluate_and_store`, which now owns the whole from-stored-scores path.

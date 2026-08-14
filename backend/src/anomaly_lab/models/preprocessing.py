@@ -41,6 +41,9 @@ particular pretrained network is a property of *that network*, not of the experi
 method whose backbone wants ImageNet statistics is not seeing different pixels from one
 that does not, it is applying its own first layer to the same ones.
 
+`expand_planes` sits on the same side of the seam for the same reason: how many planes a
+backbone's first convolution wants is a property of that backbone, not of the experiment.
+
 The constants live here anyway because this is the module about what a method is fed, and
 because three plugins now need them. Getting the seam wrong is silent in a specific way:
 an unnormalized ImageNet backbone runs, produces maps, and quietly scores features from
@@ -91,6 +94,36 @@ class PreprocessingConfig(PreprocessingOptions):
     @property
     def channels(self) -> int:
         return 3 if self.color is ColorMode.RGB else 1
+
+
+def expand_planes(chw: np.ndarray, planes: int) -> np.ndarray:
+    """Repeat a single plane up to `planes`, for a backbone that demands that many.
+
+    Here for exactly the reason `IMAGENET_MEAN` is here, and **not** in `load_array`: a
+    network whose first convolution has three input channels is not being shown different
+    pixels from one that accepts a single plane, it is applying its own first layer to the
+    same ones. Four plugins had grown their own copy of this and a fifth was getting the
+    right answer only because `(B, 1, H, W) - (1, 3, 1, 1)` happens to broadcast into it.
+
+    Putting it in `load_array` instead would be worse than duplication. `grayscale` and
+    `rgb` would then produce identical arrays for a grayscale-stored file, so the
+    experiment's colour option would silently become a no-op while still being recorded in
+    the frozen config — and `pixel_reference`, which genuinely consumes whatever it is
+    given, would build its reference stack over three identical copies of every image.
+
+    Already-wide input passes through, so a caller may apply this unconditionally. Anything
+    that is neither 1 nor `planes` is a bug in whatever produced it and is reported here,
+    where the plugin is still named, rather than inside a framework's convolution.
+    """
+    if chw.ndim != 3:
+        msg = f"expected a (C, H, W) array; got shape {chw.shape}"
+        raise ValueError(msg)
+    if chw.shape[0] == planes:
+        return chw
+    if chw.shape[0] != 1:
+        msg = f"cannot expand {chw.shape[0]} planes to {planes}; expected 1 or {planes}"
+        raise ValueError(msg)
+    return np.ascontiguousarray(np.repeat(chw, planes, axis=0))
 
 
 def load_array(path: Path, config: PreprocessingConfig) -> np.ndarray:

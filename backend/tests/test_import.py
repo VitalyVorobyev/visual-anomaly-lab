@@ -150,7 +150,70 @@ def test_exclude_narrows_the_scan(client: TestClient, tree: Path) -> None:
 
     assert job["result"]["samples"] == 8
     assert job["result"]["files_excluded"] == 4
-    assert not manifest["warnings"]
+    # Nothing *structural* is left to report: excluding `unsorted/` takes the two-channel
+    # group with it. Asserted by code rather than as "no warnings at all", because the scan
+    # also measures the pixels, and what those measurements say about the fixture images is
+    # true whichever subtree was walked.
+    codes = {warning["code"] for warning in manifest["warnings"]}
+    assert "variable_channel_count" not in codes
+    assert "unassigned_channel" not in codes
+    assert "unknown_channel_name" not in codes
+
+
+def test_one_tree_becomes_two_datasets_when_each_records_its_own_root(
+    client: TestClient, tree: Path
+) -> None:
+    """A capture tree can hold several products, and each is its own dataset.
+
+    `root_path` is `UNIQUE` and is what a re-import resolves against (ADR-0013), so two
+    scans of one tree would otherwise collide into a single dataset holding both — which
+    trains a normal-only method on two different parts and calls the mixture a baseline.
+    """
+    for name, keep, drop in (("set-one", "set1", "set2"), ("set-two", "set2", "set1")):
+        job = _scan(
+            client,
+            tree,
+            dataset_name=name,
+            dataset_root=str(tree / keep),
+            options={"exclude": [f"{drop}/*", "unsorted/*"]},
+        )
+        manifest = _manifest(client, job["result"]["manifest_id"])
+        assert manifest["root_path"] == str(tree / keep)
+        assert {sample["group_key"] for sample in manifest["samples"]} == {
+            f"{keep}/defect",
+            f"{keep}/no-defect",
+        }
+        committed = _commit(client, manifest)
+        assert committed["dataset_created"] is True
+        # Re-committing resolves by that recorded root, so a re-import still updates the
+        # dataset it produced rather than making a third one.
+        assert _commit(client, manifest)["dataset_id"] == committed["dataset_id"]
+
+    with connection(client.app.state.settings.db_path) as conn:  # type: ignore[attr-defined]
+        datasets = datasets_repo.list_datasets(conn)
+
+    assert [dataset.name for dataset in datasets] == ["set-one", "set-two"]
+    assert [Path(dataset.root_path).name for dataset in datasets] == ["set1", "set2"]
+
+
+def test_a_dataset_root_outside_the_scan_root_is_refused(
+    client: TestClient, tree: Path, tmp_path: Path
+) -> None:
+    """An identity has to name somewhere the images actually came from."""
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+
+    response = client.post(
+        "/api/import/scan",
+        json={
+            "root_path": str(tree),
+            "dataset_name": "borrowed",
+            "dataset_root": str(elsewhere),
+        },
+    )
+
+    assert response.status_code == 422
+    assert "not inside the scan root" in response.json()["detail"]
 
 
 def test_scanning_a_directory_that_is_not_there_fails_before_a_job_is_made(

@@ -43,11 +43,20 @@ erDiagram
 
 ## Entities
 
-**`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`, `collection`.
+**`Dataset`** — `id`, `name`, `root_path`, `adapter`, `manifest_path`, `created_at`, `notes`,
+`collection`, `annotation_scope`.
 A named collection of samples rooted at an absolute path on disk, outside this repository.
 `root_path` is a reference, never a copy destination, and it is **unique**: re-importing a directory
 updates the dataset it already produced rather than creating a second one beside it (ADR-0013).
-`adapter` and `manifest_path` record how the dataset came to look the way it does.
+Because it is unique, one capture tree holding several products is several datasets, and the scan's
+`dataset_root` is how each records an identity distinct from the directory that was walked — see
+[import](import.md). `adapter` and `manifest_path` record how the dataset came to look the way it does.
+
+`annotation_scope ∈ {image, sample}` decides whether annotation truth is *edited* per photograph or per
+part; it is stored per image either way (ADR-0036). It is written only by
+`PUT /api/datasets/{id}/annotation-scope`, which refuses the move while the dataset has imported source
+masks, has samples whose images differ in size, or has any draft open — see
+[annotations](annotations.md).
 
 `notes` and `collection` are the two editable columns, written only by `PATCH /api/datasets/{id}` and
 read only by the catalogue. Both are **overrides, not records**: the API returns an *effective*
@@ -141,7 +150,17 @@ digests make both configuration and materialisation auditable.
 
 **`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `region_profile_id`,
 `region_manifest_sha256`, `model_type`, `model_config` (JSON),
-`preprocessing_config` (JSON), `eval_config` (JSON), `status`, `artifact_dir`, `created_at`, `notes`.
+`preprocessing_config` (JSON), `eval_config` (JSON), `channels` (JSON), `status`, `artifact_dir`,
+`created_at`, `notes`.
+
+`channels` is a JSON array of channel **names** naming the acquisition channels this run reads; `[]` means
+every channel, which is what every experiment created before migration 013 meant, so the column needed no
+backfill. Names rather than ids: `upsert_channel` matches on `(dataset_id, name)` so ids do survive a
+re-import, and the argument is legibility instead — a frozen scientific record has to stay readable in a job
+log and an audit script, where `["bright"]` says what `[17]` does not. Every other frozen column already
+stores meaning the same way (`model_type` is a registry key), and `ImageRecord.channel` — the plugin boundary
+itself — is already a name. An unknown name is refused at creation rather than producing a run that silently
+read nothing.
 `status ∈ {draft, training, trained, failed}`. **Configuration is frozen at creation.** There is no separate
 `Run` entity: re-running with different settings creates a *new* experiment. This makes every result row
 unambiguously attributable to one immutable configuration, which is the whole point of a comparison workbench.
@@ -168,9 +187,17 @@ finished job never has to guess which is which.
 Per-image model output. `map_path` references a float32 `.npy` under the experiment's `maps/` directory;
 `NULL` when the model does not produce anomaly maps. `inference_ms` feeds per-sample timing statistics.
 
-**`SampleResult`** — `(experiment_id, sample_id)`, `agg_score`, `aggregation`.
+**`SampleResult`** — `(experiment_id, sample_id)`, `agg_score`, `aggregation`, `normalization` (nullable).
 The sample-level score derived by the evaluation layer from that sample's `ImageResult` rows. `aggregation`
-records the method used (`max` / `mean`) so a stored result is self-describing.
+records the reduce used (`max` / `mean`) and `normalization` records how the per-channel scores were put on
+one scale before it (`none` / `robust_z` / `rank`), so a stored result stays self-describing after either
+default changes. `normalization` is `NULL` on rows written before migration 014, which meant `none`.
+
+These rows are **derived, not recorded**: `evaluate_and_store` rebuilds them from the stored `ImageResult`
+scores before computing metrics, which is what makes `POST /api/experiments/{id}/reevaluate` genuinely able to
+apply a changed `eval_config` without re-running the model. It previously refreshed the metric sets while
+leaving these rows at whatever the original run reduced, so the promise in its own docstring held only as long
+as nobody tested it.
 
 **`MetricSet`** — `(experiment_id, subset)`, `metrics` (JSON), `ground_truth_digest` (nullable for legacy
 rows), `computed_at`.

@@ -36,6 +36,17 @@ const SAMPLE = {
       path: "/roots/fixture/set1/bright/12.png",
     },
   ],
+  annotation: "none" as const,
+};
+
+/** The same part under three illuminations, as the merged reference dataset holds it. */
+const MULTI_CHANNEL = {
+  ...SAMPLE,
+  images: [
+    { ...SAMPLE.images[0]!, id: 501, channel: "bright", channel_id: 1 },
+    { ...SAMPLE.images[0]!, id: 502, channel: "dark", channel_id: 2 },
+    { ...SAMPLE.images[0]!, id: 503, channel: "dome", channel_id: 3 },
+  ],
 };
 
 /** Renders the tile with selection wired to real state, as the grid wires it. */
@@ -103,5 +114,62 @@ describe("a sample tile", () => {
     const { onSelect } = renderTile();
     fireEvent.click(screen.getByRole("link"));
     expect(onSelect).not.toHaveBeenCalled();
+  });
+
+  it("previews the channel the grid is filtered to, not always the first", () => {
+    // Filtering by channel selects *samples* that have one, so the grid keeps showing whole
+    // samples. Previewing image one regardless made the rail look inert: the same
+    // bright-field thumbnails came back whichever illumination was chosen.
+    const { container } = render(
+      <MemoryRouter initialEntries={["/datasets/7"]}>
+        <SampleTile
+          datasetId={7}
+          sample={MULTI_CHANNEL}
+          search="channel=2"
+          channelId={2}
+          selected={false}
+          onSelect={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("/api/images/502/");
+    // And it says which one, in place of the channel count that has no filter to explain.
+    expect(container.textContent).toContain("dark");
+  });
+
+  it("falls back to the first image when the filtered channel is missing", () => {
+    // A channel can disappear from one sample in a re-import. A blank tile would read as a
+    // broken thumbnail; the sample is still in the result set and still has to be openable.
+    const { container } = render(
+      <MemoryRouter initialEntries={["/datasets/7"]}>
+        <SampleTile
+          datasetId={7}
+          sample={SAMPLE}
+          search="channel=2"
+          channelId={2}
+          selected={false}
+          onSelect={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.querySelector("img")?.getAttribute("src")).toContain("/api/images/501/");
+  });
+
+  it("shows the channel count when no channel is filtered", () => {
+    const { container } = render(
+      <MemoryRouter initialEntries={["/datasets/7"]}>
+        <SampleTile
+          datasetId={7}
+          sample={MULTI_CHANNEL}
+          search=""
+          selected={false}
+          onSelect={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(container.textContent).toContain("3ch");
   });
 });

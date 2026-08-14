@@ -35,16 +35,24 @@ export function SampleTile({
   datasetId,
   sample,
   search,
+  channelId,
   selected,
   onSelect,
 }: {
   datasetId: number;
   sample: SampleSummary;
   search: string;
+  /** The channel the grid is filtered to, if any. */
+  channelId?: number | undefined;
   selected: boolean;
   onSelect: (event: SelectModifiers) => void;
 }) {
-  const cover = sample.images[0];
+  // Filtering by channel means "samples having an image in this channel", so the grid keeps
+  // showing whole samples — but it must show *that* channel. Previewing the first image
+  // instead made the filter look inert: the same bright-field thumbnails came back however
+  // the rail was set. Falling back to the first image keeps a sample whose channel dropped
+  // out of a re-import visible rather than blank.
+  const cover = sample.images.find((image) => image.channel_id === channelId) ?? sample.images[0];
 
   return (
     <div className="relative">
@@ -82,8 +90,11 @@ export function SampleTile({
         <div className="flex items-center justify-between gap-1 px-1.5 py-1">
           <span className="truncate font-mono text-xs">{sample.external_id}</span>
           <span className="flex items-center gap-1">
-            {/* The channel count is whatever this sample has. */}
-            <span className="font-mono text-[10px] text-fg-subtle">{sample.images.length}ch</span>
+            {/* Which channel is on screen when the grid is filtered to one; otherwise the
+                channel count, which is whatever this sample has. */}
+            <span className="truncate font-mono text-[10px] text-fg-subtle">
+              {channelId === undefined ? `${sample.images.length}ch` : (cover?.channel ?? "—")}
+            </span>
             <Badge tone={LABEL_TONE[sample.label]}>{sample.label.slice(0, 3)}</Badge>
           </span>
         </div>

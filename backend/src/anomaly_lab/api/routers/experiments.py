@@ -16,6 +16,7 @@ import hashlib
 import shutil
 import sqlite3
 import time
+from collections.abc import Sequence
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -133,6 +134,14 @@ class CreateExperimentRequest(BaseModel):
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
     evaluation: dict[str, Any] = Field(default_factory=dict)
+    channels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Acquisition channels this run should read, by name. Empty means every "
+            "channel the dataset has, which is the only meaningful answer for a "
+            "single-view dataset."
+        ),
+    )
     notes: str | None = None
 
 
@@ -156,6 +165,13 @@ class ExperimentSummary(BaseModel):
     region_profile_id: int
     region_manifest_sha256: str
     model_type: str
+    channels: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Acquisition channels this run read. Empty means every channel, so a catalogue "
+            "row can say 'bright-field only' without a second request."
+        ),
+    )
     status: ExperimentStatus
     created_at: str
     notes: str | None = None
@@ -401,6 +417,7 @@ def _summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumm
         region_profile_id=experiment.region_profile_id,
         region_manifest_sha256=experiment.region_manifest_sha256,
         model_type=experiment.model_type,
+        channels=experiment.channels,
         status=experiment.status,
         created_at=experiment.created_at,
         notes=experiment.notes,
@@ -508,6 +525,43 @@ def list_model_types() -> MethodCatalog:
     )
 
 
+def _resolve_channels(
+    conn: sqlite3.Connection, dataset_id: int, requested: Sequence[str]
+) -> list[str]:
+    """Validate a requested channel selection and freeze it in the dataset's own order.
+
+    Stored in `Channel.position` order rather than the order the client happened to send,
+    so two identical requests produce identical frozen records and a diff between two
+    experiments never shows a difference that is only a permutation.
+
+    An unknown name is a 422 naming what *is* available. Accepting it silently would
+    produce a run that read no images and reported nothing wrong, which looks exactly like
+    a split with no data in it.
+    """
+    if not requested:
+        return []
+    available = [channel.name for channel in datasets_repo.list_channels(conn, dataset_id)]
+    if not available:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"dataset {dataset_id} has no channels, so there is nothing to select; "
+                "leave the selection empty"
+            ),
+        )
+    unknown = sorted(set(requested) - set(available))
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"dataset {dataset_id} has no channel named {', '.join(unknown)}; "
+                f"it has {', '.join(available)}"
+            ),
+        )
+    chosen = set(requested)
+    return [name for name in available if name in chosen]
+
+
 @router.post("", summary="Create an experiment with its configuration frozen")
 def create_experiment(request: Request, body: CreateExperimentRequest) -> ExperimentDetail:
     """Validate a configuration against its method's schema and record it.
@@ -532,6 +586,7 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, body.dataset_id) is None:
             raise HTTPException(status_code=404, detail=f"no dataset with id {body.dataset_id}")
+        channels = _resolve_channels(conn, body.dataset_id, body.channels)
         split = splits_repo.get_split(conn, body.split_id)
         if split is None:
             raise HTTPException(status_code=404, detail=f"no split with id {body.split_id}")
@@ -582,6 +637,7 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
             model_config=config,
             preprocessing_config=preprocessing,
             eval_config=evaluation,
+            channels=channels,
             artifact_dir="",
             notes=body.notes,
         )
@@ -813,14 +869,19 @@ def _refuse_impossible_diagnose(
 
     with connection(settings.db_path) as conn:
         in_split = images_repo.list_images_for_split(
-            conn, experiment.split_id, subsets=list(Subset)
+            conn,
+            experiment.split_id,
+            subsets=list(Subset),
+            channels=experiment.channels,
         )
     if not any(image.image_id == image_id for image in in_split):
         # Not merely "no such image": an image of another dataset exists and is still the
-        # wrong thing to ask this experiment about.
-        raise HTTPException(
-            status_code=404, detail=f"image {image_id} is not in this experiment's split"
-        )
+        # wrong thing to ask this experiment about — and so is a dark-field image of the
+        # right part, when this run only ever read bright-field.
+        detail = f"image {image_id} is not in this experiment's split"
+        if experiment.channels:
+            detail += f" and channel selection ({', '.join(experiment.channels)})"
+        raise HTTPException(status_code=404, detail=detail)
 
 
 @router.post("/{experiment_id}/infer", summary="Queue an inference and evaluation job")

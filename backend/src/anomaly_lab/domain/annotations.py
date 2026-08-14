@@ -120,6 +120,23 @@ class AnnotationDraft(BaseModel):
     updated_at: str
 
 
+class AnnotationSampleDraft(BaseModel):
+    """One editable document for every image of a sample.
+
+    Deliberately narrower than `AnnotationDraft`: there is no source-mask provenance,
+    because that is pinned per image and a document about to be written onto N images
+    cannot carry one image's. A sample-scoped document is therefore always `base="empty"`,
+    which the routes enforce rather than assume.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    document: AnnotationDocument
+    version: int
+    updated_at: str
+
+
 class AnnotationRevision(BaseModel):
     model_config = API_MODEL_CONFIG
 

@@ -78,6 +78,7 @@ export function useSamples(datasetId: number | undefined, query: SampleQuery) {
               channel_id: query.channelId,
               split_id: query.splitId,
               subset: query.subset,
+              annotated: query.annotated,
               limit: query.limit,
               offset: query.offset,
             },

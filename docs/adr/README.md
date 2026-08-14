@@ -18,7 +18,7 @@ frontend and the docs. A number is an address; it is never reused and never with
 
 ## Decisions
 
-The twenty-two that still settle something.
+The twenty-four that still settle something.
 
 | # | Title | Area |
 |---|---|---|
@@ -44,6 +44,8 @@ The twenty-two that still settle something.
 | [0032](0032-annotation-truth-is-versioned-and-source-frame.md) | Annotation truth is versioned and source-frame | Annotation |
 | [0033](0033-region-profiles-pin-an-invertible-source-transform.md) | Region profiles pin an invertible source transform | Spatial input |
 | [0034](0034-portable-models-are-verified-deployment-bundles.md) | Portable models are verified deployment bundles | Deployment |
+| [0035](0035-an-experiment-selects-its-channels-by-name.md) | An experiment selects its channels, by name | Evaluation |
+| [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
 
 ## Folded
 

@@ -18,10 +18,48 @@ signal with two uninformative views — precisely the failure mode this dataset 
 an option, and the method used is recorded in both `SampleResult.aggregation` and `Experiment.eval_config`, so
 a stored result always says how it was produced.
 
-**Caveat:** `max` assumes per-channel scores are comparable in scale. This holds for the classical baseline,
-whose scores are z-score-based per channel by construction (ADR-0010). It is *not* automatic for deep models,
-whose raw score scales can differ between channels. **Per-channel quantile normalization before aggregation**
-is therefore a backlog item, to be evaluated against the `max`/`mean` baselines rather than assumed to help.
+**`max` assumes per-channel scores are comparable in scale, and that is now a configured step rather than a
+footnote.** The assumption holds for a method whose scores are per-channel z-scores by construction (ADR-0010).
+It is not automatic for a deep model: if one illumination's score distribution simply sits higher than
+another's, every maximum comes from that channel and the sample score measures which view the method finds
+noisiest, not which part is defective.
+
+`EvalConfig.channel_normalization` puts them on one scale first. It defaults to `none`, so no stored
+experiment changes meaning, and the choice is recorded on `SampleResult.normalization` beside the aggregation
+— a sample-level number is uninterpretable without both halves.
+
+- **`robust_z`** centres each channel on its own median and divides by its scaled MAD. Robust to the outliers
+  that are the signal.
+- **`rank`** is the rank fraction within the channel. Scale-free, and blunter than it looks: it keeps only the
+  ordering, so a part that is dramatically the most anomalous thing one channel ever saw and a part that
+  merely tops a flat channel both become `1.0`. Under `max` they then tie.
+
+**The transform is fitted over every image the experiment has scored, with labels ignored.** Two facts force
+this rather than making it a preference. `sample_result` is keyed `(experiment_id, sample_id)` with no subset
+column, so a per-subset fit is not representable in the storage shape. And using labels to build the transform
+would make the metric partly a function of the answer. It is transductive — a test image's score depends on
+the other test images — which is the honest cost, and the same one the pixel metrics already accept when they
+adapt their histogram bins to a run's observed range.
+
+**Image-level ROC-AUC stays on raw scores.** ADR-0011 keeps it as the number that isolates model quality from
+how the channels were combined, and normalization is part of combining them.
+
+## Which channels a run reads
+
+`Experiment.channels` is a frozen list of channel **names**; empty means every channel. It is applied in
+`list_images_for_split`, which is the one place the "which images" question is answered, so training,
+inference and the on-demand diagnostic path all narrow identically — asking a bright-field-only run about a
+dark-field image is a 404 that names the channel rather than a scored answer to a question the run cannot
+have.
+
+This is what makes one multi-channel dataset strictly better than one dataset per illumination. The split,
+the labels and the region build are shared underneath every such run, so a difference between "bright only"
+and "all three" is the channel and not two separate imports — and because splits are sample-level, no part's
+views can straddle train and test in either.
+
+An image whose `channel_id` is `NULL` is **excluded by a non-empty selection**: it belongs to no named
+channel, and "unassigned" is not a synonym for "all of them". A single-view dataset has nothing to select and
+is only ever read with no filter.
 
 ## Metrics
 

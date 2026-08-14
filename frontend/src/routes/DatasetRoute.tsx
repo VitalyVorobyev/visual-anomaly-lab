@@ -234,6 +234,7 @@ export function DatasetRoute() {
                   datasetId={datasetId}
                   samples={items}
                   search={search}
+                  channelId={browse.channelId ?? undefined}
                   selected={selected}
                   onSelected={setSelected}
                 />
@@ -353,12 +354,15 @@ function SampleGrid({
   datasetId,
   samples,
   search,
+  channelId,
   selected,
   onSelected,
 }: {
   datasetId: number;
   samples: SampleSummary[];
   search: string;
+  /** The channel the rail is filtered to, so each tile previews that one. */
+  channelId?: number | undefined;
   selected: ReadonlySet<number>;
   onSelected: (selected: ReadonlySet<number>) => void;
 }) {
@@ -440,6 +444,7 @@ function SampleGrid({
                     datasetId={datasetId}
                     sample={sample}
                     search={search}
+                    channelId={channelId}
                     selected={selected.has(sample.id)}
                     onSelect={(event) => select(index, event)}
                   />

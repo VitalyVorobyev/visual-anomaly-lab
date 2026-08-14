@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from anomaly_lab.db.repositories import annotations as annotations_repo
-from anomaly_lab.domain.entities import Channel, Dataset, Label
+from anomaly_lab.domain.entities import AnnotationScope, Channel, Dataset, Label
 
 
 def _to_dataset(row: sqlite3.Row) -> Dataset:
@@ -101,6 +101,20 @@ def update_dataset(
             f"UPDATE dataset SET {assignments} WHERE id = ?",
             (*fields.values(), dataset_id),
         )
+    return get_dataset(conn, dataset_id)
+
+
+def set_annotation_scope(
+    conn: sqlite3.Connection, dataset_id: int, scope: AnnotationScope
+) -> Dataset | None:
+    """Move a dataset between per-image and per-sample annotation editing.
+
+    Kept out of `update_dataset`'s `editable` set on purpose: that function writes
+    free-text overrides that no other row depends on, while this one changes which
+    endpoints a dataset answers and has preconditions the caller must be able to read
+    before trying. Mixing them would give one route two unrelated failure modes.
+    """
+    conn.execute("UPDATE dataset SET annotation_scope = ? WHERE id = ?", (scope.value, dataset_id))
     return get_dataset(conn, dataset_id)
 
 
