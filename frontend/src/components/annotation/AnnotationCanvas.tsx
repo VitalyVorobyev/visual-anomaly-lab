@@ -76,7 +76,7 @@ interface Props {
   selectedId: string | null;
   tool: EditorTool;
   pendingPoints: AnnotationPoint[];
-  brushRadius: number;
+  brushSize: number;
   assistMode: "point" | "box";
   assistPoints: AssistPoint[];
   assistBox: AssistBox | null;
@@ -106,7 +106,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   selectedId,
   tool,
   pendingPoints,
-  brushRadius,
+  brushSize,
   assistMode,
   assistPoints,
   assistBox,
@@ -653,7 +653,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
               <Line
                 points={brushPoints.flatMap((point) => [point.x, point.y])}
                 stroke={tool === "eraser" ? palette.cut : palette.signal}
-                strokeWidth={brushRadius * 2}
+                /* True size in source pixels, floored at one *screen* pixel. A one-pixel
+                   brush at fit zoom is otherwise a fraction of a pixel wide, so the
+                   gesture would leave no visible trail while it was being made. The
+                   `n / scale` idiom is how every outline in this scene is drawn. */
+                strokeWidth={Math.max(brushSize, 1 / scale)}
                 lineCap="round"
                 lineJoin="round"
                 opacity={0.72}

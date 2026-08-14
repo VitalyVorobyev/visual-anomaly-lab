@@ -5,13 +5,99 @@ import {
   maskBounds,
   maskFromPixels,
   paintRect,
+  rasterizeStroke,
   strokeBounds,
   strokeTargets,
   traceMask,
 } from "./annotationBitmap";
 
+describe("rasterizeStroke", () => {
+  /** The filled pixels of a mask, as `x,y` pairs, for asserting a footprint exactly. */
+  const filled = (mask: Uint8Array, width: number) =>
+    [...mask].flatMap((value, index) =>
+      value ? [[index % width, Math.floor(index / width)] as [number, number]] : [],
+    );
+  const box = { minX: 0, minY: 0, width: 9, height: 9 };
+
+  it("marks exactly one pixel at size 1, the one under the pointer", () => {
+    /**
+     * The reported request, and the thing the old rasteriser could not do at any setting.
+     * Strokes were antialiased Canvas2D paths at fractional coordinates and then
+     * thresholded, so the smallest mark was a blob roughly three pixels across — and the
+     * slider would not go below a radius of 2 in any case, which was four pixels wide.
+     */
+    const mask = rasterizeStroke([{ x: 4.7, y: 3.2 }], 1, box);
+
+    expect(filled(mask, box.width)).toEqual([[4, 3]]);
+  });
+
+  it("grows one ring at a time and stays centred", () => {
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 1, box).reduce((a, b) => a + b, 0)).toBe(1);
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 2, box).reduce((a, b) => a + b, 0)).toBe(5);
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 3, box).reduce((a, b) => a + b, 0)).toBe(9);
+  });
+
+  it("draws an unbroken one-pixel line between two pointer samples", () => {
+    /**
+     * `mousemove` fires far apart during a fast drag, and Canvas's `lineTo` used to be what
+     * joined the samples. At one pixel wide the join has to happen in integers or the
+     * stroke comes out as a row of dots with the gaps that lost work in them.
+     */
+    const mask = rasterizeStroke(
+      [
+        { x: 0.5, y: 0.5 },
+        { x: 8.5, y: 4.5 },
+      ],
+      1,
+      box,
+    );
+    const points = filled(mask, box.width);
+
+    expect(points[0]).toEqual([0, 0]);
+    expect(points.at(-1)).toEqual([8, 4]);
+    for (let index = 1; index < points.length; index += 1) {
+      const [x, y] = points[index]!;
+      const [previousX, previousY] = points[index - 1]!;
+      // 8-connected: every step touches the last, so the line has no hole in it.
+      expect(Math.max(Math.abs(x - previousX), Math.abs(y - previousY))).toBe(1);
+    }
+  });
+
+  it("covers the same pixels whichever tool asked for them", () => {
+    /**
+     * Brush and eraser are one rasteriser now, which is what makes retracing a stroke with
+     * the eraser remove it completely. Painting black over white did not: a pixel needed
+     * three quarters of its coverage gone to clear but only a quarter to fill, so the
+     * eraser's footprint was about a pixel smaller than the brush's at the same setting and
+     * every erased stroke left a fringe.
+     */
+    const points = [
+      { x: 2.5, y: 2.5 },
+      { x: 6.5, y: 5.5 },
+    ];
+    expect([...rasterizeStroke(points, 5, box)]).toEqual([...rasterizeStroke(points, 5, box)]);
+  });
+
+  it("writes nothing outside the box it was given", () => {
+    const mask = rasterizeStroke([{ x: 0, y: 0 }], 9, { minX: 0, minY: 0, width: 3, height: 3 });
+
+    expect(mask).toHaveLength(9);
+    expect(filled(mask, 3)).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+});
+
 describe("brush bitmap bounds", () => {
-  it("crops a stroke with its antialias margin and clamps it to the source frame", () => {
+  it("crops a stroke with its brush margin and clamps it to the source frame", () => {
     expect(
       strokeBounds(
         [

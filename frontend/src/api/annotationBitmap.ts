@@ -10,6 +10,11 @@
  *
  * Everything here therefore reads luminance and converts to alpha only at the moment of
  * painting, which works for both shapes of PNG.
+ *
+ * **Strokes are rasterised here, not by Canvas2D.** See `rasterizeStroke`: a brush size is
+ * a diameter in source pixels, `1` marks exactly one pixel, and the brush and the eraser
+ * cover the same footprint at the same setting. Everything this module emits is the opaque
+ * black-and-white the backend itself writes.
  */
 
 import type { AnnotationPoint, AnnotationShape, BitmapShape, PolygonShape } from "./client";
@@ -74,51 +79,143 @@ export function tintedMask(
   return context.canvas;
 }
 
+/**
+ * The pixels one stroke covers, as one byte per pixel over `box`.
+ *
+ * **The brush is exact, and that is the whole point of doing this by hand.** Strokes used
+ * to be Canvas2D paths: fractional coordinates, an antialiased edge, and then a luminance
+ * threshold applied to the result. One radius therefore produced *three* different
+ * footprints — a new region painted white on transparent kept every touched pixel, a
+ * stroke continuing an existing region needed a quarter coverage to count, and the eraser
+ * needed three quarters — so brush and eraser at the same setting did not undo each other,
+ * and no setting marked a single pixel. `size` is now a diameter in source pixels, `1`
+ * means one pixel, and every path here rasterises identically.
+ *
+ * Two halves, each doing one job:
+ *
+ * - **the spine**, the pixels under the pointer, joined by an 8-connected Bresenham walk.
+ *   Canvas's `lineTo` used to close the gaps between `mousemove` samples; at one pixel
+ *   wide that has to be done in integers or a fast drag comes out dotted.
+ * - **the stamp**, a disc of the given diameter placed on every spine pixel, written as
+ *   one row span per offset rather than pixel by pixel. That keeps the cost linear in the
+ *   diameter instead of quadratic, which matters for a 128-wide brush over a long drag.
+ */
+export function rasterizeStroke(
+  points: AnnotationPoint[],
+  size: number,
+  box: { minX: number; minY: number; width: number; height: number },
+): Uint8Array {
+  const mask = new Uint8Array(box.width * box.height);
+  if (points.length === 0 || box.width <= 0 || box.height <= 0) return mask;
+
+  const radius = size / 2;
+  const reach = Math.max(0, Math.ceil(radius - 0.5));
+  // Half-width of the disc on each row, precomputed once for the whole stroke. A pixel is
+  // in when its centre is within `radius` of the spine's centre, which for size 1 admits
+  // the centre pixel alone — 0 <= 0.25 — and nothing at dy = ±1.
+  const halfWidth: number[] = [];
+  for (let dy = -reach; dy <= reach; dy += 1) {
+    const span = radius * radius - dy * dy;
+    halfWidth.push(span < 0 ? -1 : Math.floor(Math.sqrt(span)));
+  }
+
+  const stamp = (x: number, y: number) => {
+    for (let dy = -reach; dy <= reach; dy += 1) {
+      const half = halfWidth[dy + reach]!;
+      if (half < 0) continue;
+      const row = y - box.minY + dy;
+      if (row < 0 || row >= box.height) continue;
+      const from = Math.max(0, x - box.minX - half);
+      const to = Math.min(box.width, x - box.minX + half + 1);
+      if (from < to) mask.fill(1, row * box.width + from, row * box.width + to);
+    }
+  };
+
+  let previous: { x: number; y: number } | null = null;
+  for (const point of points) {
+    const current = { x: Math.floor(point.x), y: Math.floor(point.y) };
+    if (previous === null) {
+      stamp(current.x, current.y);
+    } else {
+      for (const pixel of walk(previous, current)) stamp(pixel.x, pixel.y);
+    }
+    previous = current;
+  }
+  return mask;
+}
+
+/** Every pixel from `from` to `to` inclusive, 8-connected (Bresenham). */
+function* walk(
+  from: { x: number; y: number },
+  to: { x: number; y: number },
+): Generator<{ x: number; y: number }> {
+  const stepX = from.x < to.x ? 1 : -1;
+  const stepY = from.y < to.y ? 1 : -1;
+  const spanX = Math.abs(to.x - from.x);
+  const spanY = -Math.abs(to.y - from.y);
+  let error = spanX + spanY;
+  let { x, y } = from;
+  for (;;) {
+    yield { x, y };
+    if (x === to.x && y === to.y) return;
+    const doubled = 2 * error;
+    if (doubled >= spanY) {
+      error += spanY;
+      x += stepX;
+    }
+    if (doubled <= spanX) {
+      error += spanX;
+      y += stepY;
+    }
+  }
+}
+
+/** A mask as the opaque black-and-white PNG the backend itself writes. */
+function encodeMask(mask: Uint8Array, width: number, height: number): string {
+  const context = context2d(width, height);
+  const image = context.createImageData(width, height);
+  for (let index = 0; index < mask.length; index += 1) {
+    const value = mask[index] ? 255 : 0;
+    image.data[index * 4] = value;
+    image.data[index * 4 + 1] = value;
+    image.data[index * 4 + 2] = value;
+    image.data[index * 4 + 3] = 255;
+  }
+  context.putImageData(image, 0, 0);
+  return context.canvas.toDataURL("image/png").split(",", 2)[1] ?? "";
+}
+
 export function bitmapStroke({
   points,
-  radius,
+  size,
   imageWidth,
   imageHeight,
   labelKey,
   operation,
 }: {
   points: AnnotationPoint[];
-  radius: number;
+  size: number;
   imageWidth: number;
   imageHeight: number;
   labelKey: string;
   operation: "add" | "subtract";
 }): BitmapShape | null {
   if (points.length === 0) return null;
-  const { minX, minY, maxX, maxY } = strokeBounds(
-    points,
-    radius,
-    imageWidth,
-    imageHeight,
-  );
+  const { minX, minY, maxX, maxY } = strokeBounds(points, size, imageWidth, imageHeight);
   const width = maxX - minX;
   const height = maxY - minY;
   if (width <= 0 || height <= 0) return null;
 
-  const canvas = document.createElement("canvas");
-  canvas.width = width;
-  canvas.height = height;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("This browser cannot create a brush layer.");
-  context.strokeStyle = "#ffffff";
-  context.fillStyle = "#ffffff";
-  context.lineWidth = radius * 2;
-  context.lineCap = "round";
-  context.lineJoin = "round";
-  context.beginPath();
-  context.moveTo(points[0]!.x - minX, points[0]!.y - minY);
-  for (const point of points.slice(1)) context.lineTo(point.x - minX, point.y - minY);
-  context.stroke();
-  // A click without movement is a useful one-dot brush stroke.
-  if (points.length === 1) {
-    context.beginPath();
-    context.arc(points[0]!.x - minX, points[0]!.y - minY, radius, 0, Math.PI * 2);
-    context.fill();
+  const mask = rasterizeStroke(points, size, { minX, minY, width, height });
+  // Cropped to what was painted rather than to the padded stroke box: the crop is what the
+  // selection outline draws and what the copy-to-channel dimension check reads.
+  const bounds = maskBounds(mask, width, height);
+  if (!bounds) return null;
+
+  const cropped = new Uint8Array(bounds.width * bounds.height);
+  for (let row = 0; row < bounds.height; row += 1) {
+    const source = (bounds.minY + row) * width + bounds.minX;
+    cropped.set(mask.subarray(source, source + bounds.width), row * bounds.width);
   }
 
   return {
@@ -126,11 +223,11 @@ export function bitmapStroke({
     label_key: labelKey,
     kind: "bitmap",
     operation,
-    x: minX,
-    y: minY,
-    width,
-    height,
-    png_base64: canvas.toDataURL("image/png").split(",", 2)[1] ?? "",
+    x: minX + bounds.minX,
+    y: minY + bounds.minY,
+    width: bounds.width,
+    height: bounds.height,
+    png_base64: encodeMask(cropped, bounds.width, bounds.height),
   };
 }
 
@@ -153,13 +250,13 @@ export async function paintStroke(
   target: BitmapShape,
   {
     points,
-    radius,
+    size,
     imageWidth,
     imageHeight,
     erase,
   }: {
     points: AnnotationPoint[];
-    radius: number;
+    size: number;
     imageWidth: number;
     imageHeight: number;
     erase: boolean;
@@ -168,49 +265,48 @@ export async function paintStroke(
   if (points.length === 0) return target;
   const { minX, minY, width, height } = paintRect(
     target,
-    strokeBounds(points, radius, imageWidth, imageHeight),
+    strokeBounds(points, size, imageWidth, imageHeight),
     erase,
   );
   if (width <= 0 || height <= 0) return target;
 
+  // The region as it stands, read through the one luminance rule both PNG shapes obey:
+  // a white-on-transparent brush layer and an opaque backend mask land the same way.
   const existing = await loadBitmap(target.png_base64);
   const context = context2d(width, height);
   context.fillStyle = "#000000";
   context.fillRect(0, 0, width, height);
   context.drawImage(existing, target.x - minX, target.y - minY, target.width, target.height);
+  const mask = maskFromPixels(context.getImageData(0, 0, width, height).data, width * height);
 
-  const paint = erase ? "#000000" : "#ffffff";
-  context.strokeStyle = paint;
-  context.fillStyle = paint;
-  context.lineWidth = radius * 2;
-  context.lineCap = "round";
-  context.lineJoin = "round";
-  context.beginPath();
-  context.moveTo(points[0]!.x - minX, points[0]!.y - minY);
-  for (const point of points.slice(1)) context.lineTo(point.x - minX, point.y - minY);
-  context.stroke();
-  if (points.length === 1) {
-    context.beginPath();
-    context.arc(points[0]!.x - minX, points[0]!.y - minY, radius, 0, Math.PI * 2);
-    context.fill();
+  // Combined on the mask itself rather than by painting, so the eraser removes exactly the
+  // pixels the brush at the same size would have added. Painting black over white made
+  // that untrue: a pixel had to lose three quarters of its coverage to clear but only gain
+  // a quarter to fill, so retracing a stroke with the eraser left a fringe behind.
+  const stroke = rasterizeStroke(points, size, { minX, minY, width, height });
+  for (let index = 0; index < mask.length; index += 1) {
+    if (!stroke[index]) continue;
+    mask[index] = erase ? 0 : 1;
   }
 
-  const mask = maskFromPixels(context.getImageData(0, 0, width, height).data, width * height);
   const bounds = maskBounds(mask, width, height);
   if (!bounds) return null;
 
   // Re-cropped to what is actually painted. Without this an erased region keeps the rectangle
   // it was largest at, and the crop is what the selection outline and the copy dimension check
   // both read.
-  const cropped = context2d(bounds.width, bounds.height);
-  cropped.drawImage(context.canvas, -bounds.minX, -bounds.minY);
+  const cropped = new Uint8Array(bounds.width * bounds.height);
+  for (let row = 0; row < bounds.height; row += 1) {
+    const source = (bounds.minY + row) * width + bounds.minX;
+    cropped.set(mask.subarray(source, source + bounds.width), row * bounds.width);
+  }
   return {
     ...target,
     x: minX + bounds.minX,
     y: minY + bounds.minY,
     width: bounds.width,
     height: bounds.height,
-    png_base64: cropped.canvas.toDataURL("image/png").split(",", 2)[1] ?? "",
+    png_base64: encodeMask(cropped, bounds.width, bounds.height),
   };
 }
 
@@ -284,24 +380,20 @@ export function strokeTargets(
     .reverse();
 }
 
+/** The rectangle a stroke of this diameter can reach, clamped to the image. */
 export function strokeBounds(
   points: AnnotationPoint[],
-  radius: number,
+  size: number,
   imageWidth: number,
   imageHeight: number,
 ) {
   if (points.length === 0) return { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  const reach = Math.ceil(size / 2) + 1;
   return {
-    minX: Math.max(0, Math.floor(Math.min(...points.map((point) => point.x)) - radius - 1)),
-    minY: Math.max(0, Math.floor(Math.min(...points.map((point) => point.y)) - radius - 1)),
-    maxX: Math.min(
-      imageWidth,
-      Math.ceil(Math.max(...points.map((point) => point.x)) + radius + 1),
-    ),
-    maxY: Math.min(
-      imageHeight,
-      Math.ceil(Math.max(...points.map((point) => point.y)) + radius + 1),
-    ),
+    minX: Math.max(0, Math.floor(Math.min(...points.map((point) => point.x)) - reach)),
+    minY: Math.max(0, Math.floor(Math.min(...points.map((point) => point.y)) - reach)),
+    maxX: Math.min(imageWidth, Math.ceil(Math.max(...points.map((point) => point.x)) + reach)),
+    maxY: Math.min(imageHeight, Math.ceil(Math.max(...points.map((point) => point.y)) + reach)),
   };
 }
 

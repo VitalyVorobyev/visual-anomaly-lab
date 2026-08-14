@@ -44,6 +44,11 @@ export interface Series {
 
 export const TERMINAL: readonly JobStatus[] = ["succeeded", "failed", "cancelled"];
 
+/** How long a dropped socket waits before it is reopened, doubling up to a ceiling. */
+export function reconnectDelay(retries: number): number {
+  return Math.min(1000 * 2 ** retries, 15000);
+}
+
 export function isTerminal(status: JobStatus | undefined): boolean {
   return status !== undefined && TERMINAL.includes(status);
 }
@@ -141,19 +146,31 @@ export interface UseJobOptions {
  * persists it at a 0.25 s interval) and refetching the whole experiment at that rate would
  * be a poll wearing an event's clothes; the job row alone carries what the bar draws.
  *
- * `queryKeys` is hierarchical, so the experiment key also covers its results, threshold
- * report, curves, per-sample images and diagnostics index.
+ * It is narrow in the *other* axis too, and that is why `exact` exists. `queryKeys` is
+ * hierarchical and `invalidateQueries` matches by prefix, so `["jobs", id]` also names
+ * `["jobs", id, "metrics"]` — and that snapshot is read by parsing the entire job log
+ * file. Four times a second, for the length of a training run. It also contradicts the
+ * freeze rule this file is built on: the metric baseline must not be re-read live, because
+ * it comes back already holding the points the socket just delivered (ADR-0020).
+ *
+ * A terminal frame keeps the prefix behaviour. There the metric series *should* be
+ * re-read, and the experiment key is meant to cover its results, threshold report, curves,
+ * per-sample images and diagnostics index.
  */
 export function invalidatedBy(
   ev: JobEvent["ev"],
   jobId: number,
   experimentId: number | undefined,
-): readonly (readonly unknown[])[] {
-  const job = [queryKeys.job(jobId)];
-  if (ev === "progress") return job;
+): readonly { queryKey: readonly unknown[]; exact: boolean }[] {
+  if (ev === "progress") return [{ queryKey: queryKeys.job(jobId), exact: true }];
   if (ev !== "done" && ev !== "error" && ev !== "end") return [];
+  const job = [{ queryKey: queryKeys.job(jobId), exact: false }];
   if (experimentId === undefined) return job;
-  return [...job, queryKeys.experiment(experimentId), queryKeys.experimentLists()];
+  return [
+    ...job,
+    { queryKey: queryKeys.experiment(experimentId), exact: false },
+    { queryKey: queryKeys.experimentLists(), exact: false },
+  ];
 }
 
 export function useJob(jobId: number | undefined, options: UseJobOptions = {}): UseJobResult {
@@ -161,6 +178,10 @@ export function useJob(jobId: number | undefined, options: UseJobOptions = {}): 
   const queryClient = useQueryClient();
   const [live, setLive] = useState<Console | null>(null);
   const [metrics, setMetrics] = useState<Metrics | null>(null);
+  /** Bumped to reopen a dropped socket; see the reconnection comment in the effect. */
+  const [attempt, setAttempt] = useState(0);
+  /** Consecutive failed reconnections, for the backoff. Reset by a successful open. */
+  const retries = useRef(0);
 
   const snapshot = useQuery({
     queryKey: queryKeys.job(jobId ?? -1),
@@ -207,10 +228,12 @@ export function useJob(jobId: number | undefined, options: UseJobOptions = {}): 
       streamed: new Map(),
     });
     const socket = new WebSocket(websocketUrl(`/ws/jobs/${jobId}`));
+    /** Whether the stream ended on purpose, which is the one close not worth reopening. */
+    let ended = false;
 
     const invalidate = (ev: JobEvent["ev"]) => {
-      for (const queryKey of invalidatedBy(ev, jobId, experimentId)) {
-        void queryClient.invalidateQueries({ queryKey });
+      for (const { queryKey, exact } of invalidatedBy(ev, jobId, experimentId)) {
+        void queryClient.invalidateQueries({ queryKey, exact });
       }
     };
 
@@ -226,6 +249,7 @@ export function useJob(jobId: number | undefined, options: UseJobOptions = {}): 
       if (parsed.ev === "end") {
         // Refetch rather than trusting the frame: the snapshot carries the result payload
         // and the terminal status, which the stream does not.
+        ended = true;
         invalidate(parsed.ev);
         return;
       }
@@ -250,8 +274,49 @@ export function useJob(jobId: number | undefined, options: UseJobOptions = {}): 
       invalidate(parsed.ev);
     };
 
-    return () => socket.close();
-  }, [jobId, snapshotted, finished, queryClient, experimentId]);
+    /*
+     * A socket that drops is reopened, because until now one that dropped stayed dropped.
+     *
+     * There is no `end` frame in that case — the queue only sends one when the job really
+     * finished — so the console simply stopped, at whatever step it had reached, next to a
+     * badge still reading `running`. Navigating away and back fixed it, which is the same
+     * signature as a screen that never asked again. A sidecar restart, a proxy idle
+     * timeout and a subscriber-buffer overflow all produce it.
+     *
+     * Recovery is the cycle this file already describes rather than a second mechanism:
+     * bumping `attempt` re-runs the effect, which takes a fresh snapshot and subscribes to
+     * it. First load, a late join and a reconnection stay one code path, and the snapshot
+     * is what closes the gap the drop left.
+     *
+     * The delay backs off, because the sidecar being *down* looks exactly like one dropped
+     * socket and a fixed retry would be a one-second poll for as long as the tab is open.
+     * The count lives in a ref rather than in `attempt`: resetting state on a successful
+     * open would re-run this effect and close the socket it had just opened.
+     */
+    let unmounting = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    socket.onopen = () => {
+      retries.current = 0;
+    };
+    socket.onclose = () => {
+      // `end` already said the run is over, and the refetch it triggered will set
+      // `finished` and keep this effect from running again. Reopening in the meantime
+      // would connect to a finished job just to be closed again.
+      if (unmounting || ended) return;
+      // Refresh the snapshot first, so the effect's next run reads a tail that covers the
+      // gap rather than the one that was current when the socket died.
+      invalidate("end");
+      const delay = reconnectDelay(retries.current);
+      retries.current += 1;
+      timer = setTimeout(() => setAttempt((count) => count + 1), delay);
+    };
+
+    return () => {
+      unmounting = true;
+      if (timer !== undefined) clearTimeout(timer);
+      socket.close();
+    };
+  }, [jobId, snapshotted, finished, queryClient, experimentId, attempt]);
 
   return {
     job: snapshot.data,

@@ -17,6 +17,7 @@ import {
   invalidatedBy,
   isTerminal,
   mergeSeries,
+  reconnectDelay,
   toSeries,
 } from "./useJob";
 
@@ -105,9 +106,9 @@ describe("invalidatedBy", () => {
   it("refreshes the experiment when the run ends, not only the job", () => {
     for (const ev of ["done", "error", "end"] as const) {
       expect(invalidatedBy(ev, 10, 2)).toEqual([
-        queryKeys.job(10),
-        queryKeys.experiment(2),
-        queryKeys.experimentLists(),
+        { queryKey: queryKeys.job(10), exact: false },
+        { queryKey: queryKeys.experiment(2), exact: false },
+        { queryKey: queryKeys.experimentLists(), exact: false },
       ]);
     }
   });
@@ -115,17 +116,50 @@ describe("invalidatedBy", () => {
   it("leaves the experiment alone on progress", () => {
     // Progress lands up to four times a second; refetching the experiment at that rate
     // would be a poll wearing an event's clothes.
-    expect(invalidatedBy("progress", 10, 2)).toEqual([queryKeys.job(10)]);
+    expect(invalidatedBy("progress", 10, 2)).toEqual([
+      { queryKey: queryKeys.job(10), exact: true },
+    ]);
+  });
+
+  it("does not drag the metric snapshot along on progress", () => {
+    /**
+     * `["jobs", 10]` is a *prefix* of `["jobs", 10, "metrics"]`, and `invalidateQueries`
+     * matches by prefix. So progress used to refetch the metric history too — four times a
+     * second, each one re-reading and re-parsing the whole job log file, and each one
+     * violating the freeze rule the snapshot depends on (ADR-0020).
+     */
+    const [progress] = invalidatedBy("progress", 10, 2);
+    expect(progress?.exact).toBe(true);
+    expect(queryKeys.jobMetrics(10).slice(0, 2)).toEqual([...queryKeys.job(10)]);
   });
 
   it("refreshes only the job for a run that belongs to no experiment", () => {
     // Import, verify and prewarm jobs have no experiment to refresh.
-    expect(invalidatedBy("done", 4, undefined)).toEqual([queryKeys.job(4)]);
+    expect(invalidatedBy("done", 4, undefined)).toEqual([
+      { queryKey: queryKeys.job(4), exact: false },
+    ]);
   });
 
   it("refreshes nothing for frames that change no server state", () => {
     expect(invalidatedBy("log", 10, 2)).toEqual([]);
     expect(invalidatedBy("metric", 10, 2)).toEqual([]);
+  });
+});
+
+describe("reconnectDelay", () => {
+  /**
+   * A dropped socket used to stay dropped: no `onclose`, no `end` frame to explain it, so
+   * the console froze at whatever step it had reached beside a badge still reading
+   * `running`, and only a remount recovered.
+   *
+   * It backs off because the sidecar being *down* is indistinguishable from one dropped
+   * socket, and a fixed retry would be a one-second poll for as long as the tab is open.
+   */
+  it("reopens promptly, then backs off to a ceiling", () => {
+    expect(reconnectDelay(0)).toBe(1000);
+    expect(reconnectDelay(1)).toBe(2000);
+    expect(reconnectDelay(4)).toBe(15000);
+    expect(reconnectDelay(40)).toBe(15000);
   });
 });
 

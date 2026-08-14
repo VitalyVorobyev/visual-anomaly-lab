@@ -58,11 +58,18 @@ export function ExperimentRoute() {
 
   // A job that is still running when the screen opens should be followed without anyone
   // having to press anything — reload during training and the console picks up again.
+  //
+  // Re-syncing rather than latching once: a run started from another screen, or a second
+  // run started after this one finished, is live and unfollowed otherwise, and the bar
+  // above reads its progress from whatever this follows. Only a *terminal* follower gives
+  // way, so a reader watching a finished run's console is not yanked off it mid-sentence.
+  const liveJob = experiment.data?.jobs.find((job) => !isTerminal(job.status));
+  const followingStatus = experiment.data?.jobs.find((job) => job.id === followingJobId)?.status;
   useEffect(() => {
-    if (followingJobId !== undefined || !experiment.data) return;
-    const live = experiment.data.jobs.find((job) => !isTerminal(job.status));
-    if (live) setFollowingJobId(live.id);
-  }, [experiment.data, followingJobId]);
+    if (liveJob === undefined) return;
+    if (followingJobId !== undefined && !isTerminal(followingStatus)) return;
+    setFollowingJobId(liveJob.id);
+  }, [liveJob, followingJobId, followingStatus]);
 
   // The charts want the most recent training run whether or not anyone is following it,
   // so that opening the tab after a run finished shows the run rather than nothing.
@@ -149,6 +156,7 @@ export function ExperimentRoute() {
         experimentId={experimentId}
         detail={detail}
         jobs={detail.jobs}
+        liveJob={charted.job}
         hasTrained={hasTrained}
         onFollow={setFollowingJobId}
         onViewLog={() => selectTab("training")}

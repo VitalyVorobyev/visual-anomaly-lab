@@ -104,6 +104,26 @@ def active_jobs_for_experiment(conn: sqlite3.Connection, experiment_id: int) -> 
     return [_to_job(row) for row in rows]
 
 
+def active_jobs_for_region_profile(conn: sqlite3.Connection, profile_id: int) -> list[Job]:
+    """Queued or running preparation work that makes deleting the profile unsafe.
+
+    A `region_prepare` job carries its profile in `params` JSON rather than a column, so
+    this is a JSON read and not a join — the same shape `_enqueue_preparation` uses to
+    refuse a second concurrent build.
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM job
+         WHERE kind = 'region_prepare'
+           AND status IN ('queued', 'running')
+           AND CAST(json_extract(params, '$.profile_id') AS INTEGER) = ?
+         ORDER BY id
+        """,
+        (profile_id,),
+    ).fetchall()
+    return [_to_job(row) for row in rows]
+
+
 def active_jobs_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[Job]:
     """Queued or running work that reads a dataset or one of its experiments."""
     rows = conn.execute(

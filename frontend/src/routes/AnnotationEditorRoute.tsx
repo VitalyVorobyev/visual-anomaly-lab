@@ -75,6 +75,7 @@ import {
   Dialog,
   Empty,
   ErrorBox,
+  NumberInput,
   ProgressBar,
   SegmentedControl,
   Select,
@@ -99,6 +100,11 @@ import {
   useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
+import {
+  MAX_BRUSH_SIZE,
+  MIN_BRUSH_SIZE,
+  useBrushSize,
+} from "../hooks/useBrushSize";
 import { useMaskOpacity } from "../hooks/useMaskOpacity";
 import { useCancelJob } from "../hooks/useExperiments";
 import { isTerminal, useJob } from "../hooks/useJob";
@@ -128,8 +134,8 @@ interface Workspace {
   setMaskOpacity: (value: number) => void;
   tool: EditorTool;
   setTool: (tool: EditorTool) => void;
-  brushRadius: number;
-  setBrushRadius: (radius: number) => void;
+  brushSize: number;
+  setBrushSize: (radius: number) => void;
   view: CanvasView;
   setView: (view: CanvasView) => void;
 }
@@ -140,7 +146,7 @@ function useWorkspace(frame: string): Workspace {
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [maskOpacity, setMaskOpacity] = useMaskOpacity();
   const [tool, setTool] = useState<EditorTool>("select");
-  const [brushRadius, setBrushRadius] = useState(18);
+  const [brushSize, setBrushSize] = useBrushSize();
   // The view is stamped with the frame it was expressed on and derived back out, so moving
   // to another part resets it during render rather than in an effect that would first paint
   // the previous part's zoom over the new photograph.
@@ -160,13 +166,13 @@ function useWorkspace(frame: string): Workspace {
       setMaskOpacity,
       tool,
       setTool,
-      brushRadius,
-      setBrushRadius,
+      brushSize,
+      setBrushSize,
       view,
       setView,
     }),
     [
-      brushRadius,
+      brushSize,
       maskOpacity,
       overlayOpacity,
       paneMode,
@@ -308,8 +314,8 @@ function EditorReady({
     setMaskOpacity,
     tool,
     setTool,
-    brushRadius,
-    setBrushRadius,
+    brushSize,
+    setBrushSize,
     view,
     setView,
   } = workspace;
@@ -572,7 +578,7 @@ function EditorReady({
     async (points: AnnotationPoint[]) => {
       const geometry = {
         points,
-        radius: brushRadius,
+        size: brushSize,
         imageWidth: history.present.image_width,
         imageHeight: history.present.image_height,
       };
@@ -585,7 +591,7 @@ function EditorReady({
           ? [target]
           : strokeTargets(
               history.present.shapes,
-              strokeBounds(points, brushRadius, geometry.imageWidth, geometry.imageHeight),
+              strokeBounds(points, brushSize, geometry.imageWidth, geometry.imageHeight),
             );
         if (targets.length === 0) {
           setMessage(
@@ -636,7 +642,7 @@ function EditorReady({
       dispatch({ type: "commit", document: withShape(history.present, shape) });
       setSelectedId(shape.id);
     },
-    [brushRadius, history.present, labelKey, operation, selected, selectedId, tool],
+    [brushSize, history.present, labelKey, operation, selected, selectedId, tool],
   );
 
   const completeCurrent = useCallback(async () => {
@@ -843,6 +849,12 @@ function EditorReady({
         void openChannel(activeIndex - 1);
       } else if (event.key === "]") {
         void openChannel(activeIndex + 1);
+      } else if (event.key === "," || event.key === "<") {
+        // Not `[` and `]`, the conventional pair — those are channel navigation here and
+        // have been longer. Shift jumps by ten so the whole range is a few keystrokes.
+        setBrushSize(brushSize - (event.shiftKey ? 10 : 1));
+      } else if (event.key === "." || event.key === ">") {
+        setBrushSize(brushSize + (event.shiftKey ? 10 : 1));
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
       } else if (key === "0") {
@@ -1085,7 +1097,7 @@ function EditorReady({
           selectedId={selectedId}
           tool={tool}
           pendingPoints={pendingPoints}
-          brushRadius={brushRadius}
+          brushSize={brushSize}
           assistMode={assistMode}
           assistPoints={assistPoints}
           assistBox={assistBox}
@@ -1147,7 +1159,7 @@ function EditorReady({
                   selectedId={null}
                   tool="select"
                   pendingPoints={[]}
-                  brushRadius={brushRadius}
+                  brushSize={brushSize}
                   assistMode="point"
                   assistPoints={[]}
                   assistBox={null}
@@ -1207,16 +1219,33 @@ function EditorReady({
                 <div>
                   <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
                     <span>Brush size</span>
-                    <span className="font-mono">{brushRadius}px</span>
+                    <span className="font-mono">
+                      {brushSize} px {brushSize === 1 ? "· one pixel" : ""}
+                    </span>
                   </div>
-                  <Slider
-                    aria-label="Brush size"
-                    value={brushRadius}
-                    min={2}
-                    max={96}
-                    step={1}
-                    onValueChange={setBrushRadius}
-                  />
+                  {/* Slider *and* a number box: the useful values for correcting a mask are
+                      at the very bottom of a 128-step track, where a drag cannot reliably
+                      land on 1 rather than 2. The `,` and `.` keys do the same job with the
+                      other hand still on the canvas. */}
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      aria-label="Brush size"
+                      value={brushSize}
+                      min={MIN_BRUSH_SIZE}
+                      max={MAX_BRUSH_SIZE}
+                      step={1}
+                      onValueChange={setBrushSize}
+                    />
+                    <NumberInput
+                      className="w-16 shrink-0"
+                      aria-label="Brush size in pixels"
+                      min={MIN_BRUSH_SIZE}
+                      max={MAX_BRUSH_SIZE}
+                      step={1}
+                      value={brushSize}
+                      onChange={(event) => setBrushSize(Number(event.target.value))}
+                    />
+                  </div>
                 </div>
                 {/* The rule, where the hand is, because it is the one thing about this tool
                     nobody can infer from looking at it. */}

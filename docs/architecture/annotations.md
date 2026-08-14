@@ -228,9 +228,20 @@ Four rules, and each replaced something that only looked like it worked.
 **A stroke extends the selected region.** A brush or eraser gesture composites into the selected bitmap
 region and re-crops it to what is actually painted, so a defect is drawn in as many touches as it takes and
 stays one region. With nothing selected the brush starts a region and selects it. Both PNG shapes the
-raster contract allows are normalised on the way in by compositing over an opaque black ground, so erasing
-is painting black rather than a compositing mode, and the output is the opaque black-and-white the backend
-itself writes. A region erased to nothing is removed.
+raster contract allows are normalised on the way in by compositing over an opaque black ground, and the
+output is the opaque black-and-white the backend itself writes. A region erased to nothing is removed.
+
+**A brush size is a diameter, and one means one pixel.** `rasterizeStroke` walks the pointer samples into
+an 8-connected integer spine and stamps a disc of the given diameter on every pixel of it, one row span at
+a time. Canvas2D path stroking did this until it could not: fractional coordinates and an antialiased edge,
+thresholded afterwards, gave *one* setting *three* footprints — a new region kept every touched pixel, a
+stroke continuing an existing region needed a quarter coverage, and the eraser needed three quarters. So
+brush and eraser at the same setting did not undo each other, the smallest possible mark was a blob about
+three pixels across, and the control would not go below a radius of 2 — four pixels — while calling itself
+"Brush size" in `px`. The rasteriser is now shared by all three paths, so the eraser removes exactly what
+the brush at that size would add, and the spine is what closes the gaps between `mousemove` samples that
+`lineTo` used to close. The in-progress preview draws at true source size with a one-*screen*-pixel floor,
+because a one-pixel stroke at fit zoom is otherwise invisible while it is being made.
 
 **The eraser never creates.** It takes paint off the selected region, or — with nothing selected — off
 every painted region the stroke passes over, in one commit so the gesture is one undo step. It briefly

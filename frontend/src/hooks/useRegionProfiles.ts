@@ -8,6 +8,8 @@ import type {
   RegionBuildSummary,
   RegionExtractorDescription,
   RegionProfileCreate,
+  RegionProfileDeletionPreview,
+  RegionProfileDeletionResult,
   RegionProfileRevision,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -44,6 +46,36 @@ export function useCreateRegionProfile(datasetId: number) {
           body,
         }),
         "the region profile revision",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.regionProfiles(datasetId) });
+    },
+  });
+}
+
+export function useRegionProfileDeletionPreview(profileId: number | undefined) {
+  return useQuery<RegionProfileDeletionPreview>({
+    queryKey: queryKeys.regionProfileDeletion(profileId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/region-profiles/{profile_id}/deletion-preview", {
+          params: { path: { profile_id: profileId as number } },
+        }),
+        "the deletion preview",
+      ),
+    enabled: profileId !== undefined,
+  });
+}
+
+export function useDeleteRegionProfile(datasetId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<RegionProfileDeletionResult, Error, number>({
+    mutationFn: async (profileId) =>
+      unwrap(
+        await api.DELETE("/api/region-profiles/{profile_id}", {
+          params: { path: { profile_id: profileId } },
+        }),
+        "the deletion result",
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.regionProfiles(datasetId) });

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
+import shutil
 import sqlite3
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
@@ -13,6 +16,7 @@ from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import JobKind, RegionProfileRevision, SpatialResample
 from anomaly_lab.jobs.queue import JobQueue
@@ -27,9 +31,48 @@ from anomaly_lab.regions.registry import (
     describe_all,
     validate_config,
 )
+from anomaly_lab.owned_storage import path_usage
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(tags=["region-profiles"])
+
+
+class RegionProfileHolder(BaseModel):
+    """One experiment that pins this revision, named so a refusal can be acted on."""
+
+    model_config = API_MODEL_CONFIG
+
+    experiment_id: int
+    name: str
+
+
+class RegionProfileDeletionPreview(BaseModel):
+    """What deleting a profile revision will remove, and what currently blocks it."""
+
+    model_config = API_MODEL_CONFIG
+
+    profile_id: int
+    name: str
+    revision_no: int
+    experiments: list[RegionProfileHolder] = Field(default_factory=list)
+    generated_files: int
+    generated_bytes: int
+    active_jobs: list[JobSummary] = Field(default_factory=list)
+    storage_location_safe: bool = True
+    can_delete: bool
+    blocker: str | None = None
+
+
+class RegionProfileDeletionResult(BaseModel):
+    """The completed database deletion and best-effort prepared-pixel cleanup."""
+
+    model_config = API_MODEL_CONFIG
+
+    deleted: bool
+    prepared_removed: bool
+    freed_files: int
+    freed_bytes: int
+    prepared_error: str | None = None
 
 
 class RegionProfileCreate(BaseModel):
@@ -178,6 +221,145 @@ def preview_region_profile(request: Request, profile_id: int) -> JobSummary:
 @router.post("/api/region-profiles/{profile_id}/build", summary="Prepare a profile for every image")
 def build_region_profile(request: Request, profile_id: int) -> JobSummary:
     return _enqueue_preparation(request, profile_id, "build")
+
+
+def _owned_profile_dir(settings: Settings, profile_id: int) -> Path | None:
+    """The profile's app-owned directory, or ``None`` when the location is not safe to remove.
+
+    The same rule `experiment_artifact_path` applies, for the same reason: deletion follows
+    no symlink, out of this root or into it. A refusal here is a 409, never a best guess.
+    """
+    root = settings.region_profiles_dir
+    if root.is_symlink():
+        return None
+    path = settings.region_profile_dir(profile_id)
+    if path.parent != root or path.is_symlink():
+        return None
+    return path
+
+
+@router.get(
+    "/api/region-profiles/{profile_id}/deletion-preview",
+    summary="Preview the app-owned records and prepared pixels a profile deletion removes",
+)
+def preview_region_profile_deletion(
+    request: Request, profile_id: int
+) -> RegionProfileDeletionPreview:
+    profile = _require_profile(request, profile_id)
+    settings: Settings = request.app.state.settings
+    owned = _owned_profile_dir(settings, profile_id)
+    usage = path_usage(owned)
+    with connection(settings.db_path) as conn:
+        pinning = profiles_repo.experiments_pinning(conn, profile_id)
+        active = jobs_repo.active_jobs_for_region_profile(conn, profile_id)
+
+    blocker: str | None = None
+    if pinning:
+        named = ", ".join(f"#{identifier} {name}" for identifier, name in pinning[:3])
+        rest = "" if len(pinning) <= 3 else f" and {len(pinning) - 3} more"
+        blocker = (
+            f"{len(pinning)} experiment{'' if len(pinning) == 1 else 's'} "
+            f"still use this input ({named}{rest}). Delete them first."
+        )
+    elif active:
+        blocker = "Cancel or wait for the active preparation job before deleting this profile."
+    elif owned is None:
+        blocker = "The prepared-pixel location is outside this profile's app-owned directory."
+
+    return RegionProfileDeletionPreview(
+        profile_id=profile.id,
+        name=profile.name,
+        revision_no=profile.revision_no,
+        experiments=[
+            RegionProfileHolder(experiment_id=identifier, name=name) for identifier, name in pinning
+        ],
+        generated_files=usage.files,
+        generated_bytes=usage.bytes,
+        active_jobs=[summary_of(job) for job in active],
+        storage_location_safe=owned is not None,
+        can_delete=blocker is None,
+        blocker=blocker,
+    )
+
+
+@router.delete(
+    "/api/region-profiles/{profile_id}",
+    summary="Delete a region profile revision and its prepared pixels",
+)
+async def delete_region_profile(request: Request, profile_id: int) -> RegionProfileDeletionResult:
+    """Remove the rows, then the directory — the order the experiment deletion uses.
+
+    The filesystem cannot join a database transaction, so the deletion that can be rolled
+    back goes first. A leftover directory is inert; a row pointing at deleted pixels is a
+    broken screen.
+
+    Removing a revision is not the in-place edit ADR-0033 forbids. The `BEFORE UPDATE`
+    trigger stays the guarantee that a published build is never rewritten, and a
+    replacement gets a fresh id — so nothing can be republished over what was deleted.
+    """
+    _require_profile(request, profile_id)
+    settings: Settings = request.app.state.settings
+    owned = _owned_profile_dir(settings, profile_id)
+    if owned is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "refusing to remove a prepared-pixel path outside this profile's "
+                "app-owned directory"
+            ),
+        )
+    queue: JobQueue = request.app.state.job_queue
+
+    async with queue.lifecycle_guard():
+        # Stable now: no worker can write into the directory while it is measured and
+        # removed, so the result reports what was actually reclaimed.
+        usage = await asyncio.to_thread(path_usage, owned)
+        with connection(settings.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                # Inside the write transaction, so a preparation job cannot be enqueued
+                # between naming the consequences and committing the delete.
+                pinning = profiles_repo.experiments_pinning(conn, profile_id)
+                if pinning:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"{len(pinning)} experiment(s) still use region profile "
+                            f"{profile_id}; delete them first"
+                        ),
+                    )
+                active = jobs_repo.active_jobs_for_region_profile(conn, profile_id)
+                if active:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "cancel or wait for the active preparation job before deleting "
+                            f"region profile {profile_id}"
+                        ),
+                    )
+                deleted = profiles_repo.delete_revision(conn, profile_id)
+                conn.execute("COMMIT")
+            except BaseException:
+                if conn.in_transaction:
+                    conn.execute("ROLLBACK")
+                raise
+
+        removed = True
+        prepared_error: str | None = None
+        if deleted and owned.exists():
+            try:
+                await asyncio.to_thread(shutil.rmtree, owned)
+            except OSError as exc:
+                removed = False
+                prepared_error = str(exc)
+
+    return RegionProfileDeletionResult(
+        deleted=deleted,
+        prepared_removed=removed,
+        freed_files=usage.files if removed else 0,
+        freed_bytes=usage.bytes if removed else 0,
+        prepared_error=prepared_error,
+    )
 
 
 @router.get(

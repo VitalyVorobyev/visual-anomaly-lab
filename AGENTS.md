@@ -155,6 +155,13 @@ comparing them under one evaluation protocol.
   JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
   needs a change in any of them, that is a finding about the boundary. `train` and `infer` cost exactly
   that in M3.
+- **A worker's result travels as one JSON line, and a handler tested in-process never proves it.**
+  `split_output` flushes an unterminated fragment so no library can wedge the queue, which for years
+  quietly cut any event past 16 KiB in half: a 24-entry `region_prepare` preview finished `succeeded`
+  carrying `result = {}` and the screen reading it drew nothing beside a green badge. Candidate events now
+  get `MAX_EVENT_BYTES`. The discipline that remains: a result whose size grows with the dataset is a
+  finding about the result, and a handler exercised only by calling it directly says nothing about whether
+  its answer reaches the parent.
 - **A new method costs one entry** in `models/registry.py` and one module implementing `AnomalyModel`
   (ADR-0007). It must not need a route, a schema, or a line of TypeScript — the method picker and every
   configuration form are generated from the plugin's own JSON Schema. Keep heavy imports *inside* the

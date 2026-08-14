@@ -75,6 +75,13 @@ def test_preview_reports_transforms_without_writing_prepared_pixels(
     settings: Settings,
     prepared_fixture: tuple[Fixture, int],
 ) -> None:
+    """What the handler computes, called directly.
+
+    Directly is the limitation worth naming: this bypasses the worker pipe, so it says
+    nothing about whether the result *reaches* the parent. A 24-entry preview frame
+    exceeds 16 KiB and used to be split mid-JSON, which this test could not have caught
+    and did not — see `test_an_event_larger_than_a_log_line_survives_the_split`.
+    """
     fixture, profile_id = prepared_fixture
 
     result = run_region_prepare_job(_context(settings, fixture, profile_id, mode="preview"))

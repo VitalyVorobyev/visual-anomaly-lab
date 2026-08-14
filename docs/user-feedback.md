@@ -28,6 +28,62 @@ make GKN datasets imported and available by default
 
 ## Resolved
 
+### 022
+
+Five things from a working session: two faults, two limits that had been written into a schema, and one
+missing control.
+
+**"In annotation, I need a thinner brush. Ideally, I would like to mark a single pixel."** The slider
+floor was `min={2}` on a value that was a *radius* while the label and the readout both said "Brush size
+… px" — so the smallest brush was four pixels wide, not two. Lowering the floor would not have delivered
+it either: strokes were antialiased Canvas2D paths at fractional coordinates, thresholded afterwards, and
+the three code paths applied three *different* coverage rules. A new region kept every touched pixel, a
+stroke continuing an existing region needed a quarter, and the eraser needed three quarters — so brush and
+eraser at the same setting did not undo each other, and the smallest possible mark was a blob about three
+pixels across. `rasterizeStroke` now walks the pointer samples into an 8-connected integer spine and
+stamps a disc of the given **diameter** on it, shared by all three paths. Size 1 marks exactly one pixel,
+the eraser removes exactly what the brush added, and the size is typeable as well as draggable because the
+useful values sit at the very bottom of the track. `,` and `.` adjust it from the keyboard; `[` and `]`
+remain channel navigation.
+
+**"In the Experiment view the progress bar is not updated online, only after component rebuild."**
+Correct, and the screenshot contained the diagnosis: `step 421/8000` in the top bar over `step 461/8000`
+in the job card below it. The bar read `ExperimentDetail.jobs[]`, and a `progress` frame deliberately does
+not invalidate that query — at four frames a second it would be a poll wearing an event's clothes — so it
+refreshed on window focus and terminal frames only. It reads the live job row now, which is already
+refreshed on every frame. Two neighbours on the same path went with it: `["jobs", id]` was invalidating by
+*prefix*, dragging `["jobs", id, "metrics"]` along and re-parsing the entire job log four times a second
+against ADR-0020's freeze rule; and a dropped socket had no `onclose`, so it stayed dropped until a
+remount — which is the same symptom by a different route.
+
+**"In MobileSAM auto segmentation there is min 0.5 area fraction. I need even less to work with can ends
+datasets."** The control is `max_area_fraction`, floored at `ge=0.5`, and the extractor keeps the
+*largest* mask inside the window — so a near-full-frame mask always qualified and always won. On a dataset
+whose part is smaller than its background that ruled the extractor out entirely: the only setting that
+would have excluded the frame was the one the form refused to accept. The two bounds were a partition of
+`(0, 1]` at 0.5 for no reason the extractor needs; they are now independent, with a validator enforcing
+the one relationship that is real, and both fields finally carry a description saying what the number does.
+
+**"I want to have the delete button for saved Prepare presets."** Added, following the dataset and
+experiment deletion idiom exactly — a preview naming the consequences, the queue's lifecycle guard,
+rows before files, and a 409 for anything unsafe. The interesting case is the refusal: experiments pin a
+revision with `ON DELETE RESTRICT`, so SQLite would have refused on its own, as an `IntegrityError` naming
+a constraint. The preview counts them first and the dialog prints their names, because "delete those
+first" is only actionable if you know which ones. Deleting is not the in-place edit ADR-0033 forbids —
+the `BEFORE UPDATE` trigger is still what guarantees a published build is never rewritten.
+
+**"Foreground threshold shows no images after I press Preview 24."** Neither the extractor nor the grid.
+The worker sends its result as one JSON line, and `split_output` flushes an unterminated fragment past
+16 KiB so that no library can wedge the queue with an endless tqdm bar. A 24-entry preview frame passes
+16 KiB once `foreground_threshold`'s six metadata keys per entry are in it, so the frame was cut mid-JSON,
+both halves failed to parse, no `DoneEvent` was seen, and the job finished **`succeeded` with
+`result = {}`** — leaving the Visual audit panel with nothing to draw beside a green badge. The live logs
+show it exactly: jobs 38, 39, 46, 47 and 48 cut at 16384 bytes with `"succeeded":24,"failed":0` visible in
+the surviving half. A protocol event now gets its own, much larger budget, told apart by the one thing
+that distinguishes it — it begins with `{`, and half a frame is not a frame, while half a progress bar is
+still a readable log line. MobileSAM sat at ~15.6 KiB and was one metadata key from the same fault. The
+screen also says so now when a succeeded preview reports nothing, rather than rendering no panel at all.
+
 ### 021
 
 Five things from the first real session in the reworked editor, four of them faults and one of them a

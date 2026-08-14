@@ -1,7 +1,7 @@
 /** Dataset-local spatial preparation: define, inspect, then materialise model input. */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Eye, Play, Sparkles } from "lucide-react";
+import { Check, Copy, Eye, Play, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 
@@ -10,6 +10,7 @@ import {
   describeFields,
   initialValues,
   jsonErrors,
+  outOfRange,
   toOptions,
 } from "../api/schemaForm";
 import type { OptionsSchema, RawValues } from "../api/schemaForm";
@@ -26,6 +27,7 @@ import {
   Badge,
   Button,
   Callout,
+  ConfirmDialog,
   Empty,
   ErrorBox,
   Field,
@@ -42,8 +44,10 @@ import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 import {
   useCreateRegionProfile,
+  useDeleteRegionProfile,
   useRegionBuild,
   useRegionExtractors,
+  useRegionProfileDeletionPreview,
   useRegionProfiles,
   useStartRegionBuild,
   useStartRegionPreview,
@@ -75,6 +79,7 @@ export function RegionPreparationRoute() {
   const preview = useStartRegionPreview();
   const build = useStartRegionBuild();
   const installAsset = useInstallModelAsset();
+  const remove = useDeleteRegionProfile(datasetId);
   const queryClient = useQueryClient();
 
   const [selectedId, setSelectedId] = useState<number>();
@@ -90,6 +95,8 @@ export function RegionPreparationRoute() {
   const [jobProfileId, setJobProfileId] = useState<number>();
   const [jobMode, setJobMode] = useState<"preview" | "build" | "asset">();
   const [view, setView] = useState("source");
+  const [pendingDelete, setPendingDelete] = useState<RegionProfileRevision | null>(null);
+  const deletionPreview = useRegionProfileDeletionPreview(pendingDelete?.id);
 
   const selected = profiles.data?.find((profile) => profile.id === selectedId);
   const extractor = extractors.data?.find((item) => item.key === extractorKey);
@@ -119,6 +126,20 @@ export function RegionPreparationRoute() {
   const previewResult =
     jobMode === "preview" && jobProfileId === selectedId ? asPreviewResult(job.job) : null;
   const entries = previewResult?.entries ?? buildReport.data?.preview_entries ?? [];
+  /*
+   * A preview that succeeded and reported nothing to draw.
+   *
+   * The Visual audit panel is gated on having entries, so without this the screen answers
+   * a press of Preview 24 with no panel, no grid and no message — beside a green badge
+   * saying the job succeeded. That is how a `done` frame truncated at 16 KiB went
+   * undiagnosed until someone read the log file by hand. The transport is fixed; this is
+   * here so the *next* way a result goes missing is visible on the screen it belongs to.
+   */
+  const previewReportedNothing =
+    jobMode === "preview" &&
+    jobProfileId === selectedId &&
+    job.job?.status === "succeeded" &&
+    previewResult === null;
   const requiredAssets = (extractor?.required_assets ?? []).map((key) => ({
     key,
     asset: assets.data?.assets.find((item) => item.key === key),
@@ -128,6 +149,7 @@ export function RegionPreparationRoute() {
     preview.error,
     build.error,
     installAsset.error,
+    remove.error,
   ].filter((error): error is Error => error instanceof Error);
 
   const chooseExtractor = (key: string) => {
@@ -195,10 +217,19 @@ export function RegionPreparationRoute() {
     setJobId(summary.id);
   };
 
+  /*
+   * A field whose typed value is outside the schema's own bounds. Native `min`/`max` mark
+   * the input invalid but do not stop a paste, and this screen — unlike the experiment
+   * form, which has run `outOfRange` all along — let the value through to the backend and
+   * showed a raw 422 instead. Worth having now that the area window is two free bounds
+   * with a rule between them rather than a fixed partition.
+   */
+  const outOfBounds = outOfRange(configFields, configValues);
   const invalid =
     name.trim() === "" ||
     !extractor?.availability.available ||
     jsonErrors(configFields, configValues).length > 0 ||
+    outOfBounds.length > 0 ||
     !validNumber(width, 8, 2048) ||
     !validNumber(height, 8, 2048) ||
     !validNumber(padding, 0, 1) ||
@@ -248,9 +279,18 @@ export function RegionPreparationRoute() {
                     <span className="font-mono text-fg">{selected.prepared_width}×{selected.prepared_height}</span>
                     <span> · {selected.resample} · pad {selected.padding_fraction}</span>
                   </div>
-                  <Button size="sm" variant="ghost" icon={<Copy />} onClick={() => revise(selected)}>
-                    Revise
-                  </Button>
+                  <div className="flex shrink-0 items-center gap-1">
+                    <Button size="sm" variant="ghost" icon={<Copy />} onClick={() => revise(selected)}>
+                      Revise
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      aria-label={`Delete ${selected.name} revision ${selected.revision_no}`}
+                      icon={<Trash2 />}
+                      onClick={() => setPendingDelete(selected)}
+                    />
+                  </div>
                 </div>
               )}
 
@@ -310,6 +350,14 @@ export function RegionPreparationRoute() {
                 <Select aria-label="Resampling" value={resample} onValueChange={(value) => setResample(value as SpatialResample)} options={RESAMPLE_OPTIONS} />
               </Field>
 
+              {/* Said out loud rather than left to a greyed-out button: "why can't I press
+                  this" is a question the screen should answer on its own. */}
+              {outOfBounds.length > 0 && (
+                <p className="text-xs text-defect">
+                  Outside the allowed range: {outOfBounds.join(", ")}.
+                </p>
+              )}
+
               <Button variant="primary" icon={<Check />} disabled={invalid} loading={create.isPending} onClick={() => void createRevision()}>
                 Save immutable revision
               </Button>
@@ -343,6 +391,12 @@ export function RegionPreparationRoute() {
               )}
               {jobId !== undefined && (
                 <JobProgress jobId={jobId} job={job.job} lines={job.lines} error={job.error} />
+              )}
+              {previewReportedNothing && (
+                <Callout tone="warning">
+                  This preview finished but returned no per-image entries, so there is nothing to
+                  audit. The job log above is the record of what it actually did.
+                </Callout>
               )}
             </Panel>
 
@@ -386,6 +440,64 @@ export function RegionPreparationRoute() {
               </Panel>
             )}
           </main>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+        title="Delete this profile revision?"
+        description={
+          pendingDelete && (
+            <>
+              <span className="font-medium text-fg">
+                {pendingDelete.name} · revision {pendingDelete.revision_no}
+              </span>{" "}
+              and any prepared pixels it materialised will be removed. Source dataset files are
+              never touched.
+              {deletionPreview.isPending && (
+                <span className="mt-3 block text-fg-subtle">Inspecting prepared files…</span>
+              )}
+              {deletionPreview.error && (
+                <span className="mt-3 block text-defect">{deletionPreview.error.message}</span>
+              )}
+              {deletionPreview.data && (
+                <span className="mt-3 block rounded-control border border-line bg-raised px-3 py-2">
+                  <span className="block font-mono text-xs text-fg">
+                    {deletionPreview.data.generated_files} prepared files ·{" "}
+                    {formatBytes(deletionPreview.data.generated_bytes)}
+                  </span>
+                  {/* A refusal names what holds the profile, because "delete the
+                      experiments first" is only actionable if you know which ones. */}
+                  {deletionPreview.data.blocker && (
+                    <span className="mt-1 block text-xs text-warn">
+                      {deletionPreview.data.blocker}
+                    </span>
+                  )}
+                </span>
+              )}
+            </>
+          )
+        }
+        confirmLabel="Delete revision"
+        destructive
+        loading={remove.isPending}
+        disabled={!deletionPreview.data?.can_delete}
+        onConfirm={() => {
+          if (pendingDelete === null || !deletionPreview.data?.can_delete) return;
+          const deletedId = pendingDelete.id;
+          remove.mutate(deletedId, {
+            onSuccess: () => {
+              // The selection and anything keyed to it — the job console, the build
+              // report — described a revision that no longer exists.
+              if (selectedId !== deletedId) return;
+              setSelectedId(undefined);
+              setJobId(undefined);
+              setJobMode(undefined);
+              setJobProfileId(undefined);
+            },
+            onSettled: () => setPendingDelete(null),
+          });
+        }}
+      />
     </TabScroll>
   );
 }
