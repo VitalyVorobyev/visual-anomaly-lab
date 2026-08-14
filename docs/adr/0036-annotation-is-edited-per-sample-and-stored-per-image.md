@@ -91,3 +91,11 @@ Negative consequences, accepted honestly:
   masks are ignored by the sample routes rather than refused. Opening a shared draft on a sample whose
   newest revision has a `source_mask` base is a `409`, which is the guard that matters, but the
   ordering itself is not prevented.
+
+## Changelog
+
+- **2026-08-14** — "Scope changes need an empty desk" stands, but the desk is now reachable. Drafts
+  are created by the first save (see ADR-0032's changelog), so an open draft names real unfinished
+  work rather than every image ever looked at, and the discard the blocker asks for is a route that
+  exists. No untouched drafts are silently deleted by the transition: after the write-path fix there
+  are none to delete.

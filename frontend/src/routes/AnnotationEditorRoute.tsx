@@ -47,6 +47,7 @@ import type {
   PolygonShape,
   SampleSummary,
 } from "../api/client";
+import { ApiError } from "../api/client";
 import { ChannelTabs } from "../components/ChannelTabs";
 import {
   AnnotationCanvas,
@@ -58,6 +59,7 @@ import {
 import {
   Badge,
   Button,
+  ConfirmDialog,
   Empty,
   ErrorBox,
   ProgressBar,
@@ -74,6 +76,7 @@ import {
   type DraftTarget,
   useAnnotationLabels,
   useCompleteDraft,
+  useDiscardDraft,
   useEditorDraft,
   useSaveDraft,
   useSegmentAssist,
@@ -213,10 +216,12 @@ function EditorReady({
   const [assistBox, setAssistBox] = useState<AssistBox | null>(null);
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [assetJobId, setAssetJobId] = useState<number>();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
   const save = useSaveDraft(target);
+  const discard = useDiscardDraft(target);
   const complete = useCompleteDraft(
     target,
     useMemo(() => sample.images.map((image) => image.id), [sample.images]),
@@ -303,14 +308,33 @@ function EditorReady({
     [datasetId, dirty, imageId, navigate, perSample, queueOffset, sample.id, sample.images],
   );
 
-  const persist = useCallback(async (): Promise<string> => {
-    if (!dirty) return etag;
-    const saved = await save.mutateAsync({ document: history.present, etag });
-    setEtag(saved.etag);
-    setDraftVersion(saved.version);
-    setSavedDocument(saved.document);
-    setMessage("Draft saved");
-    return saved.etag;
+  /**
+   * Ensure a persisted draft exists and return the token that owns it.
+   *
+   * Two things it must get right. A clean document still has to be materialised when nothing
+   * is persisted yet — completing an unedited seed is a real action, and accepting an imported
+   * source mask as truth verbatim is the common case. And concurrent callers must share one
+   * flight: the idle autosave and an explicit save would otherwise both start from the same
+   * token and the loser would collect a 412 it caused itself.
+   */
+  const inFlight = useRef<Promise<string> | null>(null);
+  const persist = useCallback((): Promise<string> => {
+    if (inFlight.current) return inFlight.current;
+    if (!dirty && etag !== null) return Promise.resolve(etag);
+    const flight = save
+      .mutateAsync({ document: history.present, etag })
+      .then((saved) => {
+        setEtag(saved.etag);
+        setDraftVersion(saved.version);
+        setSavedDocument(saved.document);
+        setMessage("Draft saved");
+        return saved.etag as string;
+      })
+      .finally(() => {
+        inFlight.current = null;
+      });
+    inFlight.current = flight;
+    return flight;
   }, [dirty, etag, history.present, save]);
 
   const finishPolygon = useCallback(() => {
@@ -343,6 +367,21 @@ function EditorReady({
       // The mutations expose their errors in the inspector; keep the current image open.
     }
   }, [complete, openQueueItem, persist, queueIndex]);
+
+  const discardCurrent = useCallback(
+    async (force: boolean) => {
+      try {
+        await discard.mutateAsync({ etag, force });
+        setConfirmDiscard(false);
+        setMessage("Draft discarded");
+        await onReload();
+      } catch {
+        // A 412 keeps the dialog open and turns its button into the explicit force; the
+        // mutation's error is rendered inside it.
+      }
+    },
+    [discard, etag, onReload],
+  );
 
   const removeSelected = useCallback(() => {
     if (!selectedId) return;
@@ -523,6 +562,9 @@ function EditorReady({
   }, [message]);
 
   const mutationError = save.error ?? complete.error;
+  // 412 rather than a substring of the detail: the status is the contract, the prose is not.
+  const isConflict = (error: Error | null | undefined) =>
+    error instanceof ApiError && error.status === 412;
 
   useBeforeUnload(
     useCallback(
@@ -586,6 +628,19 @@ function EditorReady({
             {message ?? (dirty ? "Unsaved changes" : `Draft v${draftVersion}`)}
           </span>
           <Button
+            variant="ghost"
+            icon={<Trash2 />}
+            disabled={etag === null || discard.isPending}
+            title={
+              etag === null
+                ? "Nothing is saved yet — there is no draft to discard"
+                : "Throw away this draft and reopen the newest completed truth"
+            }
+            onClick={() => setConfirmDiscard(true)}
+          >
+            Discard
+          </Button>
+          <Button
             icon={<Save />}
             disabled={!dirty || save.isPending}
             onClick={() => void persist()}
@@ -607,7 +662,7 @@ function EditorReady({
         <div className="shrink-0 border-b border-line bg-surface px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <ErrorBox>{mutationError.message}</ErrorBox>
-            {mutationError.message.includes("changed elsewhere") && (
+            {isConflict(mutationError) && (
               <Button onClick={() => void onReload()}>Reload server draft</Button>
             )}
           </div>
@@ -1056,6 +1111,31 @@ function EditorReady({
           </footer>
         </aside>
       </div>
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        destructive
+        title="Discard this draft?"
+        description={
+          <>
+            {perSample
+              ? "Every channel of this part reopens on its newest completed truth, or on a blank canvas if it has none."
+              : "This image reopens on its newest completed truth, or on a blank canvas if it has none."}{" "}
+            Completed revisions are immutable and are not affected.
+            {discard.error && (
+              <span className="mt-2 block text-defect">
+                {discard.error.message}
+                {isConflict(discard.error) &&
+                  " Discarding now throws away whatever the other window saved."}
+              </span>
+            )}
+          </>
+        }
+        confirmLabel={isConflict(discard.error) ? "Discard anyway" : "Discard draft"}
+        loading={discard.isPending}
+        onConfirm={() => void discardCurrent(isConflict(discard.error))}
+      />
     </div>
   );
 }

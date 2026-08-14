@@ -84,8 +84,14 @@ def _use_sample_scope(client: TestClient, dataset_id: int) -> dict[str, Any]:
 
 
 def _open_sample_draft(client: TestClient, sample_id: int) -> tuple[dict[str, Any], str]:
-    response = client.post(f"/api/samples/{sample_id}/annotations/draft")
-    assert response.status_code == 200, response.text
+    seed = client.get(f"/api/samples/{sample_id}/annotations/draft")
+    assert seed.status_code == 200, seed.text
+    response = client.post(
+        f"/api/samples/{sample_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert response.status_code == 201, response.text
     etag = response.headers["etag"]
     assert etag.startswith('"annotation-sample-draft-')
     payload: dict[str, Any] = response.json()
@@ -188,7 +194,9 @@ def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
         assert path.parent == settings.annotation_image_dir(revision["image_id"])
 
     # The draft is consumed, and the existing image-keyed resolver sees every channel.
-    assert client.get(f"/api/samples/{sample_id}/annotations/draft").status_code == 404
+    after = client.get(f"/api/samples/{sample_id}/annotations/draft")
+    assert after.status_code == 200
+    assert after.json()["persisted"] is False
     with connection(settings.db_path) as conn:
         resolved = annotations_repo.resolve_ground_truth_masks(
             conn, images_by_sample[sample_id], verify_bytes=True
@@ -251,7 +259,7 @@ def test_a_stale_token_is_refused_and_the_image_routes_point_at_the_sample_route
     )
 
     image_id = images_by_sample[sample_id][0]
-    opened = client.post(f"/api/images/{image_id}/annotations/draft")
+    opened = client.get(f"/api/images/{image_id}/annotations/draft")
     assert opened.status_code == 409
     assert "/api/samples/" in opened.json()["detail"]
 
@@ -315,14 +323,26 @@ def test_scope_cannot_change_while_a_draft_is_open_in_either_direction(
 ) -> None:
     dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, tmp_path / "src")
 
-    client.post(f"/api/images/{images_by_sample[sample_ids[0]][0]}/annotations/draft")
+    image_id = images_by_sample[sample_ids[0]][0]
+    # Only a *save* opens a draft now, so this is what an operator with unfinished work has.
+    seed = client.get(f"/api/images/{image_id}/annotations/draft")
+    created = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert created.status_code == 201, created.text
+
     blocked = client.put(f"/api/datasets/{dataset_id}/annotation-scope", json={"scope": "sample"})
     assert blocked.status_code == 409
     assert "drafts are open" in blocked.json()["detail"]
 
-    with connection(settings.db_path) as conn:
-        annotations_repo.get_draft(conn, images_by_sample[sample_ids[0]][0])
-        conn.execute("DELETE FROM annotation_draft")
+    # And the discard the blocker names is a route, not an invitation to edit the database.
+    discarded = client.delete(
+        f"/api/images/{image_id}/annotations/draft",
+        headers={"If-Match": created.headers["etag"]},
+    )
+    assert discarded.status_code == 204, discarded.text
     _use_sample_scope(client, dataset_id)
 
     _open_sample_draft(client, sample_ids[1])

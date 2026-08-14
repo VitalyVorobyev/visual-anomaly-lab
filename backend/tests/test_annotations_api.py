@@ -24,8 +24,15 @@ from .conftest import Fixture
 
 
 def _open(client: TestClient, image_id: int) -> tuple[dict[str, object], str]:
-    response = client.post(f"/api/images/{image_id}/annotations/draft")
-    assert response.status_code == 200, response.text
+    """Read the seed, then materialise it — the first save, as the editor performs it."""
+    seed = client.get(f"/api/images/{image_id}/annotations/draft")
+    assert seed.status_code == 200, seed.text
+    response = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert response.status_code == 201, response.text
     assert response.headers["etag"].startswith('"annotation-draft-')
     return response.json(), response.headers["etag"]
 
@@ -74,6 +81,138 @@ def test_dataset_gets_a_stable_default_defect_taxonomy(client: TestClient, seede
     assert updated.json()["name"] == "Surface scratch"
 
 
+def _draft_rows(settings: Settings) -> int:
+    with connection(settings.db_path) as conn:
+        return int(conn.execute("SELECT COUNT(*) FROM annotation_draft").fetchone()[0])
+
+
+def test_reading_a_draft_never_creates_one(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """The regression this whole lifecycle exists for.
+
+    Reading used to 404, so the editor called the upsert POST from a query function and every
+    image ever opened became a permanent blocker on `annotation_scope`.
+    """
+    empty_image = seeded.normal_image_ids[0]
+    masked_image = seeded.defect_image_ids[0]
+
+    for _ in range(2):
+        for image_id, base in ((empty_image, "empty"), (masked_image, "source_mask")):
+            seed = client.get(f"/api/images/{image_id}/annotations/draft")
+            assert seed.status_code == 200, seed.text
+            assert seed.json()["persisted"] is False
+            assert seed.json()["version"] is None
+            assert seed.json()["document"]["base"] == base
+            assert "etag" not in seed.headers
+
+    assert _draft_rows(settings) == 0
+
+    # A read may not record the imported mask's digest either: hashing and pinning belong to
+    # the create, which is a write, and to completion, which verifies what was pinned.
+    with connection(settings.db_path) as conn:
+        source = masks_repo.get_mask_for_image(conn, masked_image)
+    assert source is not None
+    assert source.sha256 is None
+
+
+def test_creating_a_draft_is_create_only_and_refuses_a_second_writer(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    image_id = seeded.normal_image_ids[0]
+    seed = client.get(f"/api/images/{image_id}/annotations/draft").json()["document"]
+
+    assert client.post(f"/api/images/{image_id}/annotations/draft", json=seed).status_code == 428
+    assert (
+        client.post(
+            f"/api/images/{image_id}/annotations/draft",
+            json=seed,
+            headers={"If-None-Match": '"annotation-draft-1-v1"'},
+        ).status_code
+        == 422
+    )
+    assert _draft_rows(settings) == 0
+
+    created = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed,
+        headers={"If-None-Match": "*"},
+    )
+    assert created.status_code == 201, created.text
+    assert created.headers["etag"].endswith('-v1"')
+
+    again = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed,
+        headers={"If-None-Match": "*"},
+    )
+    assert again.status_code == 412
+    assert "changed elsewhere" in again.json()["detail"]
+
+
+def test_a_second_window_holding_a_stale_seed_cannot_silently_overwrite_the_first(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """Why creation is create-only rather than an upsert.
+
+    An upsert hands the loser a winning token: window B would receive A's *saved* draft together
+    with a currently-valid ETag for a document B never read, and B's next save would then
+    overwrite A's work with no precondition able to refuse it.
+    """
+    image_id = seeded.normal_image_ids[0]
+    both_read = client.get(f"/api/images/{image_id}/annotations/draft").json()["document"]
+
+    window_a = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=both_read,
+        headers={"If-None-Match": "*"},
+    )
+    assert window_a.status_code == 201
+    saved = client.put(
+        f"/api/images/{image_id}/annotations/draft",
+        json=_triangle(both_read),
+        headers={"If-Match": window_a.headers["etag"]},
+    )
+    assert saved.status_code == 200, saved.text
+
+    window_b = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=both_read,
+        headers={"If-None-Match": "*"},
+    )
+    assert window_b.status_code == 412
+    assert "etag" not in window_b.headers
+
+    current = client.get(f"/api/images/{image_id}/annotations/draft").json()
+    assert current["document"]["shapes"], "window A's work survived"
+
+
+def test_a_draft_can_be_discarded_and_the_force_is_a_deliberate_second_choice(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    image_id = seeded.normal_image_ids[0]
+    opened, etag = _open(client, image_id)
+
+    assert client.delete(f"/api/images/{image_id}/annotations/draft").status_code == 428
+
+    moved = client.put(
+        f"/api/images/{image_id}/annotations/draft",
+        json=_triangle(opened["document"]),  # type: ignore[arg-type]
+        headers={"If-Match": etag},
+    )
+    assert moved.status_code == 200
+    stale = client.delete(f"/api/images/{image_id}/annotations/draft", headers={"If-Match": etag})
+    assert stale.status_code == 412
+    assert _draft_rows(settings) == 1
+
+    forced = client.delete(f"/api/images/{image_id}/annotations/draft", headers={"If-Match": "*"})
+    assert forced.status_code == 204
+    assert _draft_rows(settings) == 0
+
+    gone = client.delete(f"/api/images/{image_id}/annotations/draft", headers={"If-Match": "*"})
+    assert gone.status_code == 404
+
+
 def test_draft_save_is_etag_guarded_and_completion_materialises_a_binary_png(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
@@ -110,7 +249,12 @@ def test_draft_save_is_etag_guarded_and_completion_materialises_a_binary_png(
     assert revision["revision_no"] == 1
     assert len(revision["document_sha256"]) == 64
     assert len(revision["mask_sha256"]) == 64
-    assert client.get(f"/api/images/{image_id}/annotations/draft").status_code == 404
+    # Completion consumes the draft, and reading afterwards seeds from the revision it wrote
+    # rather than resurrecting a row.
+    after = client.get(f"/api/images/{image_id}/annotations/draft")
+    assert after.status_code == 200
+    assert after.json()["persisted"] is False
+    assert "etag" not in after.headers
 
     mask = client.get(f"/api/images/{image_id}/annotations/revisions/{revision['id']}/mask")
     assert mask.status_code == 200

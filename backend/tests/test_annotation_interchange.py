@@ -156,8 +156,14 @@ def test_coco_and_labelme_polygons_remain_editable_vectors() -> None:
 
 
 def _open(client: TestClient, image_id: int) -> str:
-    opened = client.post(f"/api/images/{image_id}/annotations/draft")
-    assert opened.status_code == 200, opened.text
+    seed = client.get(f"/api/images/{image_id}/annotations/draft")
+    assert seed.status_code == 200, seed.text
+    opened = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert opened.status_code == 201, opened.text
     return opened.headers["etag"]
 
 

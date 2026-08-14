@@ -151,11 +151,45 @@ export type ConfusionCounts = Schemas["ConfusionCounts"];
  * and error states by whether the function threw. Every hook funnels through here so
  * that decision is made the same way once.
  */
-export function unwrap<T>(result: { data?: T; error?: unknown }, what: string): T {
+/**
+ * A failed request, carrying the status the caller may need to branch on.
+ *
+ * The message stays exactly what `describeError` produced, so anything matching on prose keeps
+ * working. The status is what lets a caller tell a precondition failure (412 — the draft moved,
+ * offer to reload or to force) from a missing one (428) or a vanished resource (404), none of
+ * which are distinguishable from the detail string alone.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function unwrap<T>(
+  result: { data?: T; error?: unknown; response?: Response },
+  what: string,
+): T {
   if (result.error !== undefined || result.data === undefined) {
-    throw new Error(describeError(result.error, what));
+    throw apiError(result, what);
   }
   return result.data;
+}
+
+/**
+ * The exception `unwrap` would have thrown, for a route with no body to unwrap.
+ *
+ * A `204` carries nothing, so `unwrap` cannot speak for it — its "no data" test would treat
+ * success as failure.
+ */
+export function apiError(
+  result: { error?: unknown; response?: Response },
+  what: string,
+): ApiError {
+  return new ApiError(describeError(result.error, what), result.response?.status ?? 0);
 }
 
 function describeError(error: unknown, what: string): string {

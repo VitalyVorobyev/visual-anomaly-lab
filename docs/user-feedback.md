@@ -28,6 +28,26 @@ make GKN datasets imported and available by default
 
 ## Resolved
 
+### 017
+
+"I always see a warning like that: *This dataset cannot share one annotation per part. 11 image
+drafts are open; complete or discard them first.*"
+
+**Cause: the editor's read path was a write.** `useEditorDraft` was a TanStack `useQuery` whose
+`queryFn` issued `POST .../annotations/draft`, and that route was an idempotent open — so rendering
+the editor on an image persisted an `annotation_draft` row, and browsing eleven images left eleven
+rows. Worse, `useCompleteDraft` invalidated the draft query while its observer was still mounted, so
+every completion refetched, re-POSTed, and **recreated the draft it had just consumed** — one orphan
+per unit of finished work. Nothing could remove a row but completing it: there was no `DELETE` route
+at all. `count_open_image_drafts` counts rows, so the blocker was permanent and truthful about the
+data while being nonsense about the work.
+
+A draft is now created by the first save (ADR-0032's changelog): the `GET` is read-or-seed, the
+`POST` is create-only behind `If-None-Match: *` — which also closes a lost-update hole an upsert
+cannot — and `DELETE` gives the blocker's own advice somewhere to land, with `If-Match: *` as an
+explicit force after a conflict. Migration 016 cleared the eleven. The count keeps no predicate,
+because counting rows is now exactly counting work.
+
 ### 013
 
 Let the annotation editor show every channel of a sample at once, and optionally share one

@@ -204,6 +204,19 @@ def update_draft(
     return get_draft(conn, image_id)
 
 
+def delete_draft(conn: sqlite3.Connection, image_id: int, expected_version: int | None) -> bool:
+    """Discard a draft, optionally only if the caller still owns the version it read.
+
+    `expected_version=None` is the `If-Match: *` force path: the caller has been shown that
+    the draft moved under them and has chosen to throw it away anyway.
+    """
+    cursor = conn.execute(
+        "DELETE FROM annotation_draft WHERE image_id = ? AND (? IS NULL OR version = ?)",
+        (image_id, expected_version, expected_version),
+    )
+    return cursor.rowcount == 1
+
+
 def insert_revision(
     conn: sqlite3.Connection,
     draft: AnnotationDraft,
@@ -302,8 +315,16 @@ def update_sample_draft(
     return get_sample_draft(conn, sample_id)
 
 
-def delete_sample_draft(conn: sqlite3.Connection, sample_id: int) -> None:
-    conn.execute("DELETE FROM annotation_sample_draft WHERE sample_id = ?", (sample_id,))
+def delete_sample_draft(
+    conn: sqlite3.Connection, sample_id: int, expected_version: int | None = None
+) -> bool:
+    """See `delete_draft`. `None` means "whatever version is there", which is what the
+    completion path wants — it has already consumed the draft it read."""
+    cursor = conn.execute(
+        "DELETE FROM annotation_sample_draft WHERE sample_id = ? AND (? IS NULL OR version = ?)",
+        (sample_id, expected_version, expected_version),
+    )
+    return cursor.rowcount == 1
 
 
 def latest_revision_for_sample(
@@ -383,6 +404,15 @@ def next_revision_no(conn: sqlite3.Connection, image_id: int) -> int:
 
 
 def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
+    """How many images hold unsaved annotation work.
+
+    **The absence of a predicate here is load-bearing.** A draft row exists only because
+    somebody saved one, so counting rows is counting work. It was not always so: creation used
+    to happen when the editor opened an image, which is what made every image ever looked at a
+    permanent blocker on `annotation_scope` and what migration 016 cleaned up. Do not be
+    tempted to filter on `version` — under the current write path `version = 1` means "saved
+    once", not "untouched".
+    """
     return int(
         conn.execute(
             """
@@ -398,6 +428,7 @@ def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
 
 
 def count_open_sample_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
+    """See `count_open_image_drafts` for why this counts rows and nothing else."""
     return int(
         conn.execute(
             """

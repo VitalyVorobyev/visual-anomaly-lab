@@ -41,14 +41,35 @@ its own `annotation_sample_draft` table with its own ETag namespace
 
 ## Draft lifecycle
 
-`POST /api/images/{id}/annotations/draft` is idempotent. It returns the existing draft, copies the newest
-completed document, or opens a new document on the imported mask / an empty canvas. Opening on a source mask
-hashes and pins that file without changing it. Every draft response carries an ETag of the image id and
-monotonic version.
+**A draft records work, not a page view.** It is created by the first save and by nothing else, which is
+what makes "how many drafts are open" the same question as "how much unfinished work is there" — the
+question `annotation_scope` has to answer (ADR-0036).
+
+`GET /api/images/{id}/annotations/draft` is **read-or-seed** and never writes. It returns the draft in
+progress with its ETag, or — with `persisted: false`, a null `version` and no ETag — the document a new
+draft *would* open on: the newest completed revision, the imported mask, or an empty canvas. One helper
+produces that seed for both the read and the create, so the two cannot disagree about what a draft starts
+from. The read deliberately does not hash or record the imported mask; that belongs to the create, which
+is a write, and to completion, which verifies what the create pinned.
+
+`POST .../draft` **creates and only creates**, requiring `If-None-Match: *` (`428` without it) and taking
+the document as its body. `412` if a draft already exists. Create-only rather than an upsert is a
+correctness choice, not tidiness: an upsert hands a second window holding the same seed the *first*
+window's saved draft together with a currently-valid token for a document it never read, and its next save
+then overwrites work no precondition can protect.
 
 `PUT .../draft` requires the ETag in `If-Match`. Missing preconditions receive `428`; a stale one receives
 `412`. The successful save increments the version and returns a new ETag. There is one writer in normal use,
 but this contract also handles a second window and an autosave racing a manual save without silent loss.
+
+`DELETE .../draft` discards without completing, `If-Match` guarded the same way. `If-Match: *` is the
+deliberate force, offered by the editor only after a `412` has told the user the draft moved under them, so
+discarding another window's work is always a second, informed click. Every route above has a
+`/api/samples/{id}/…` twin with its own ETag namespace.
+
+Migration 016 deleted the drafts the previous design left behind, when opening the editor created one and
+completing one recreated it. Its `version = 1` predicate meant "never saved" only under *that* write path
+and is never valid again — which is why `count_open_image_drafts` counts rows with no predicate at all.
 
 ## Completion and storage
 

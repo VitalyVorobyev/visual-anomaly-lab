@@ -46,13 +46,21 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the current editable annotation draft */
+        /**
+         * The draft in progress, or the document a new one would start from
+         * @description Read-or-seed, and never a write.
+         *
+         *     This used to 404, and the editor reached for the POST instead -- from a query function, so
+         *     opening an image persisted a row and completing one resurrected it. Every such row then
+         *     counted as unsaved work forever (see migration 016).
+         */
         get: operations["get_annotation_draft_api_images__image_id__annotations_draft_get"];
         /** Save a draft if the caller still owns the version it read */
         put: operations["save_annotation_draft_api_images__image_id__annotations_draft_put"];
-        /** Open an existing draft or start one from the latest truth */
-        post: operations["open_annotation_draft_api_images__image_id__annotations_draft_post"];
-        delete?: never;
+        /** Create a draft from the first save, refusing if one already exists */
+        post: operations["create_annotation_draft_api_images__image_id__annotations_draft_post"];
+        /** Throw away a draft without completing it */
+        delete: operations["discard_annotation_draft_api_images__image_id__annotations_draft_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -242,13 +250,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the sample's current shared draft */
+        /** The shared draft in progress, or the document a new one would start from */
         get: operations["get_sample_annotation_draft_api_samples__sample_id__annotations_draft_get"];
         /** Save the shared draft if the caller still owns the version it read */
         put: operations["save_sample_annotation_draft_api_samples__sample_id__annotations_draft_put"];
-        /** Open the sample's shared draft, or start one from its latest truth */
-        post: operations["open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post"];
-        delete?: never;
+        /** Create the shared draft from the first save, refusing if one already exists */
+        post: operations["create_sample_annotation_draft_api_samples__sample_id__annotations_draft_post"];
+        /** Throw away the shared draft without completing it */
+        delete: operations["discard_sample_annotation_draft_api_samples__sample_id__annotations_draft_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1600,6 +1609,34 @@ export interface components {
             /** Updated At */
             updated_at: string;
         };
+        /**
+         * AnnotationDraftState
+         * @description What the editor opens on: a persisted draft, or the seed one would start from.
+         *
+         *     `version` and `updated_at` are null exactly when `persisted` is false, and that null is the
+         *     domain fact rather than a placeholder -- it is how the client knows its first save has to
+         *     create the draft rather than update it. The write routes keep returning `AnnotationDraft`,
+         *     where both are always present.
+         */
+        AnnotationDraftState: {
+            /** Image Id */
+            image_id: number;
+            /** Persisted */
+            persisted: boolean;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Base Revision Id */
+            base_revision_id: number | null;
+            /** Source Mask Id */
+            source_mask_id: number | null;
+            /** Source Mask Path */
+            source_mask_path: string | null;
+            /** Source Mask Sha256 */
+            source_mask_sha256: string | null;
+        };
         /** AnnotationLabel */
         AnnotationLabel: {
             /** Id */
@@ -1688,6 +1725,21 @@ export interface components {
             version: number;
             /** Updated At */
             updated_at: string;
+        };
+        /**
+         * AnnotationSampleDraftState
+         * @description See `AnnotationDraftState`. Narrower, for the same reason `AnnotationSampleDraft` is.
+         */
+        AnnotationSampleDraftState: {
+            /** Sample Id */
+            sample_id: number;
+            /** Persisted */
+            persisted: boolean;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
         };
         /**
          * AnnotationScope
@@ -4422,7 +4474,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationDraft"];
+                    "application/json": components["schemas"]["AnnotationDraftState"];
                 };
             };
             /** @description Validation Error */
@@ -4473,10 +4525,49 @@ export interface operations {
             };
         };
     };
-    open_annotation_draft_api_images__image_id__annotations_draft_post: {
+    create_annotation_draft_api_images__image_id__annotations_draft_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "If-None-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_annotation_draft_api_images__image_id__annotations_draft_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
             path: {
                 image_id: number;
             };
@@ -4485,13 +4576,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["AnnotationDraft"];
-                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -4889,7 +4978,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                    "application/json": components["schemas"]["AnnotationSampleDraftState"];
                 };
             };
             /** @description Validation Error */
@@ -4940,10 +5029,49 @@ export interface operations {
             };
         };
     };
-    open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post: {
+    create_sample_annotation_draft_api_samples__sample_id__annotations_draft_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "If-None-Match"?: string | null;
+            };
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_sample_annotation_draft_api_samples__sample_id__annotations_draft_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
             path: {
                 sample_id: number;
             };
@@ -4952,13 +5080,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["AnnotationSampleDraft"];
-                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

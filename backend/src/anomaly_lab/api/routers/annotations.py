@@ -68,6 +68,31 @@ def _require_if_match(value: str | None) -> str:
     return value
 
 
+def _require_if_none_match(value: str | None) -> None:
+    """`If-None-Match: *` is what makes draft creation create-only.
+
+    Without it the route would have to be an upsert, and an upsert is how the previous design
+    lost work: a second window holding a stale seed would POST, be handed the *first* window's
+    saved draft together with a currently-valid ETag for a document it had never read, and then
+    overwrite it with a PUT that no precondition could refuse.
+    """
+    if value is None:
+        raise HTTPException(
+            status_code=428,
+            detail="If-None-Match: * is required when creating an annotation draft",
+        )
+    if value.strip() != "*":
+        raise HTTPException(
+            status_code=422, detail="If-None-Match must be * when creating an annotation draft"
+        )
+
+
+def _is_wildcard(value: str) -> bool:
+    """`If-Match: *` matches any current representation (RFC 9110), which is the deliberate
+    force-discard: the caller has been shown that the draft moved and chose to drop it anyway."""
+    return value.strip() == "*"
+
+
 def _sample_etag(draft: AnnotationSampleDraft) -> str:
     # A namespace of its own, not `annotation-draft-…`: an image id and a sample id are
     # both small integers and would collide into a token that validates against the wrong
@@ -316,11 +341,129 @@ def update_annotation_label(
     return updated
 
 
+class AnnotationDraftState(BaseModel):
+    """What the editor opens on: a persisted draft, or the seed one would start from.
+
+    `version` and `updated_at` are null exactly when `persisted` is false, and that null is the
+    domain fact rather than a placeholder -- it is how the client knows its first save has to
+    create the draft rather than update it. The write routes keep returning `AnnotationDraft`,
+    where both are always present.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    image_id: int
+    persisted: bool
+    document: AnnotationDocument
+    version: int | None = None
+    updated_at: str | None = None
+    base_revision_id: int | None = None
+    source_mask_id: int | None = None
+    source_mask_path: str | None = None
+    source_mask_sha256: str | None = None
+
+
+def _persisted_state(draft: AnnotationDraft) -> AnnotationDraftState:
+    return AnnotationDraftState(persisted=True, **draft.model_dump(mode="python"))
+
+
+def _seed_state(conn: sqlite3.Connection, image_id: int) -> AnnotationDraftState:
+    """What a draft for this image *would* open on, without creating one.
+
+    Shared by the read and the create so the two can never disagree about what a seed is.
+    Deliberately does not hash or record anything: a read must not write, and the imported
+    mask's digest is verified where it is pinned (the create) and again where it is consumed
+    (`render_binary_mask` at completion), which are the two places that matter.
+    """
+    image = images_repo.get_image(conn, image_id)
+    if image is None:  # pragma: no cover - ownership join already found it
+        raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+
+    latest = annotations_repo.latest_revision(conn, image_id)
+    if latest is not None:
+        return AnnotationDraftState(
+            image_id=image_id,
+            persisted=False,
+            document=latest.document,
+            base_revision_id=latest.id,
+            source_mask_id=latest.source_mask_id,
+            source_mask_path=latest.source_mask_path,
+            source_mask_sha256=latest.source_mask_sha256,
+        )
+
+    source = masks_repo.get_mask_for_image(conn, image_id)
+    return AnnotationDraftState(
+        image_id=image_id,
+        persisted=False,
+        document=AnnotationDocument(
+            image_width=image.width,
+            image_height=image.height,
+            base="source_mask" if source is not None else "empty",
+        ),
+        source_mask_id=source.id if source else None,
+        source_mask_path=source.path if source else None,
+        source_mask_sha256=source.sha256 if source else None,
+    )
+
+
+def _pin_source_mask(conn: sqlite3.Connection, seed: AnnotationDraftState) -> str | None:
+    """Verify the imported mask on the way into a draft, and record its digest if it is new."""
+    if seed.source_mask_id is None or seed.source_mask_path is None:
+        return None
+    if seed.base_revision_id is not None:
+        # Provenance copied from a completed revision is already pinned and immutable.
+        return seed.source_mask_sha256
+    path = Path(seed.source_mask_path)
+    if not path.is_file():
+        raise HTTPException(status_code=409, detail="the source mask is unavailable")
+    actual = sha256_of(path)
+    if seed.source_mask_sha256 is not None and seed.source_mask_sha256 != actual:
+        raise HTTPException(
+            status_code=409,
+            detail="the imported source mask changed after it entered the catalog",
+        )
+    if seed.source_mask_sha256 is None:
+        masks_repo.record_sha256(conn, seed.source_mask_id, actual)
+    return actual
+
+
+@router.get(
+    "/api/images/{image_id}/annotations/draft",
+    summary="The draft in progress, or the document a new one would start from",
+)
+def get_annotation_draft(
+    request: Request, response: Response, image_id: int
+) -> AnnotationDraftState:
+    """Read-or-seed, and never a write.
+
+    This used to 404, and the editor reached for the POST instead -- from a query function, so
+    opening an image persisted a row and completing one resurrected it. Every such row then
+    counted as unsaved work forever (see migration 016).
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        draft = annotations_repo.get_draft(conn, image_id)
+        if draft is None:
+            return _seed_state(conn, image_id)
+    _set_draft_etag(response, draft)
+    return _persisted_state(draft)
+
+
 @router.post(
     "/api/images/{image_id}/annotations/draft",
-    summary="Open an existing draft or start one from the latest truth",
+    summary="Create a draft from the first save, refusing if one already exists",
+    status_code=201,
 )
-def open_annotation_draft(request: Request, response: Response, image_id: int) -> AnnotationDraft:
+def create_annotation_draft(
+    request: Request,
+    response: Response,
+    image_id: int,
+    document: AnnotationDocument,
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
+) -> AnnotationDraft:
+    _require_if_none_match(if_none_match)
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -328,57 +471,22 @@ def open_annotation_draft(request: Request, response: Response, image_id: int) -
             dataset_id = _image_dataset_id(conn, image_id)
             _require_image_scope(conn, dataset_id)
             annotations_repo.ensure_default_label(conn, dataset_id)
-            existing = annotations_repo.get_draft(conn, image_id)
-            if existing is not None:
-                conn.execute("COMMIT")
-                _set_draft_etag(response, existing)
-                return existing
-
-            image = images_repo.get_image(conn, image_id)
-            if image is None:  # pragma: no cover
-                raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
-            latest = annotations_repo.latest_revision(conn, image_id)
-            if latest is not None:
-                document = latest.document
-                base_revision_id = latest.id
-                source_mask_id = latest.source_mask_id
-                source_mask_path = latest.source_mask_path
-                source_mask_sha256 = latest.source_mask_sha256
-            else:
-                source = masks_repo.get_mask_for_image(conn, image_id)
-                source_mask_id = source.id if source else None
-                source_mask_path = source.path if source else None
-                source_mask_sha256 = None
-                if source is not None:
-                    path = Path(source.path)
-                    if not path.is_file():
-                        raise HTTPException(
-                            status_code=409, detail="the source mask is unavailable"
-                        )
-                    actual = sha256_of(path)
-                    if source.sha256 is not None and source.sha256 != actual:
-                        raise HTTPException(
-                            status_code=409,
-                            detail="the imported source mask changed after it entered the catalog",
-                        )
-                    if source.sha256 is None:
-                        masks_repo.record_sha256(conn, source.id, actual)
-                    source_mask_sha256 = actual
-                document = AnnotationDocument(
-                    image_width=image.width,
-                    image_height=image.height,
-                    base="source_mask" if source is not None else "empty",
+            if annotations_repo.get_draft(conn, image_id) is not None:
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
                 )
-                base_revision_id = None
-
+            seed = _seed_state(conn, image_id)
+            _validate_document(
+                conn, image_id, dataset_id, document, expected_base=seed.document.base
+            )
             created = annotations_repo.create_draft(
                 conn,
                 image_id,
                 document,
-                base_revision_id=base_revision_id,
-                source_mask_id=source_mask_id,
-                source_mask_path=source_mask_path,
-                source_mask_sha256=source_mask_sha256,
+                base_revision_id=seed.base_revision_id,
+                source_mask_id=seed.source_mask_id,
+                source_mask_path=seed.source_mask_path,
+                source_mask_sha256=_pin_source_mask(conn, seed),
             )
             conn.execute("COMMIT")
         except BaseException:
@@ -389,18 +497,39 @@ def open_annotation_draft(request: Request, response: Response, image_id: int) -
     return created
 
 
-@router.get(
+@router.delete(
     "/api/images/{image_id}/annotations/draft",
-    summary="Read the current editable annotation draft",
+    summary="Throw away a draft without completing it",
+    status_code=204,
 )
-def get_annotation_draft(request: Request, response: Response, image_id: int) -> AnnotationDraft:
+def discard_annotation_draft(
+    request: Request,
+    image_id: int,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Response:
+    expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        draft = annotations_repo.get_draft(conn, image_id)
-    if draft is None:
-        raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
-    _set_draft_etag(response, draft)
-    return draft
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
+            current = annotations_repo.get_draft(conn, image_id)
+            if current is None:
+                raise HTTPException(
+                    status_code=404, detail=f"image {image_id} has no annotation draft"
+                )
+            if not _is_wildcard(expected) and expected != _etag(current):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            annotations_repo.delete_draft(conn, image_id, current.version)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    return Response(status_code=204)
 
 
 @router.put(
@@ -753,8 +882,8 @@ def _scope_state(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScopeSt
     )
     if open_drafts and scope is AnnotationScope.IMAGE:
         blockers.append(
-            f"{open_drafts} image drafts are open; complete or discard them first, because "
-            "sample scope would leave them unreachable"
+            f"{open_drafts} images hold unsaved annotation work; complete or discard them "
+            "first, because sample scope would leave them unreachable"
         )
 
     return AnnotationScopeState(
@@ -832,13 +961,72 @@ def _shared_frame(images: list[Image]) -> tuple[int, int]:
     return frames.pop()
 
 
+class AnnotationSampleDraftState(BaseModel):
+    """See `AnnotationDraftState`. Narrower, for the same reason `AnnotationSampleDraft` is."""
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    persisted: bool
+    document: AnnotationDocument
+    version: int | None = None
+    updated_at: str | None = None
+
+
+def _sample_seed_state(conn: sqlite3.Connection, sample_id: int) -> AnnotationSampleDraftState:
+    """What a shared draft for this sample would open on, without creating one."""
+    width, height = _shared_frame(images_repo.list_images_for_sample(conn, sample_id))
+    document = AnnotationDocument(image_width=width, image_height=height)
+    latest = annotations_repo.latest_revision_for_sample(conn, sample_id)
+    if latest is not None:
+        if latest.document.base != "empty":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "this sample's newest revision was opened on an imported source "
+                    "mask, which belongs to one image and cannot be shared"
+                ),
+            )
+        if (latest.document.image_width, latest.document.image_height) != (width, height):
+            raise HTTPException(
+                status_code=409,
+                detail="this sample's newest revision was drawn in a different frame",
+            )
+        document = latest.document
+    return AnnotationSampleDraftState(sample_id=sample_id, persisted=False, document=document)
+
+
+@router.get(
+    "/api/samples/{sample_id}/annotations/draft",
+    summary="The shared draft in progress, or the document a new one would start from",
+)
+def get_sample_annotation_draft(
+    request: Request, response: Response, sample_id: int
+) -> AnnotationSampleDraftState:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        dataset_id = _sample_dataset_id(conn, sample_id)
+        _require_sample_scope(conn, dataset_id)
+        draft = annotations_repo.get_sample_draft(conn, sample_id)
+        if draft is None:
+            return _sample_seed_state(conn, sample_id)
+    _set_sample_draft_etag(response, draft)
+    return AnnotationSampleDraftState(persisted=True, **draft.model_dump(mode="python"))
+
+
 @router.post(
     "/api/samples/{sample_id}/annotations/draft",
-    summary="Open the sample's shared draft, or start one from its latest truth",
+    summary="Create the shared draft from the first save, refusing if one already exists",
+    status_code=201,
 )
-def open_sample_annotation_draft(
-    request: Request, response: Response, sample_id: int
+def create_sample_annotation_draft(
+    request: Request,
+    response: Response,
+    sample_id: int,
+    document: AnnotationDocument,
+    if_none_match: Annotated[str | None, Header(alias="If-None-Match")] = None,
 ) -> AnnotationSampleDraft:
+    _require_if_none_match(if_none_match)
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         conn.execute("BEGIN IMMEDIATE")
@@ -846,31 +1034,14 @@ def open_sample_annotation_draft(
             dataset_id = _sample_dataset_id(conn, sample_id)
             _require_sample_scope(conn, dataset_id)
             annotations_repo.ensure_default_label(conn, dataset_id)
-            existing = annotations_repo.get_sample_draft(conn, sample_id)
-            if existing is not None:
-                conn.execute("COMMIT")
-                _set_sample_draft_etag(response, existing)
-                return existing
-
-            width, height = _shared_frame(images_repo.list_images_for_sample(conn, sample_id))
-            latest = annotations_repo.latest_revision_for_sample(conn, sample_id)
-            document = AnnotationDocument(image_width=width, image_height=height)
-            if latest is not None:
-                if latest.document.base != "empty":
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "this sample's newest revision was opened on an imported source "
-                            "mask, which belongs to one image and cannot be shared"
-                        ),
-                    )
-                if (latest.document.image_width, latest.document.image_height) != (width, height):
-                    raise HTTPException(
-                        status_code=409,
-                        detail="this sample's newest revision was drawn in a different frame",
-                    )
-                document = latest.document
-
+            if annotations_repo.get_sample_draft(conn, sample_id) is not None:
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            # Resolved for its refusals -- a shared frame, and a newest revision that can
+            # actually be shared -- before anything is written.
+            _sample_seed_state(conn, sample_id)
+            _validate_sample_document(conn, sample_id, dataset_id, document)
             created = annotations_repo.create_sample_draft(conn, sample_id, document)
             conn.execute("COMMIT")
         except BaseException:
@@ -881,20 +1052,39 @@ def open_sample_annotation_draft(
     return created
 
 
-@router.get(
+@router.delete(
     "/api/samples/{sample_id}/annotations/draft",
-    summary="Read the sample's current shared draft",
+    summary="Throw away the shared draft without completing it",
+    status_code=204,
 )
-def get_sample_annotation_draft(
-    request: Request, response: Response, sample_id: int
-) -> AnnotationSampleDraft:
+def discard_sample_annotation_draft(
+    request: Request,
+    sample_id: int,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> Response:
+    expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        draft = annotations_repo.get_sample_draft(conn, sample_id)
-    if draft is None:
-        raise HTTPException(status_code=404, detail=f"sample {sample_id} has no annotation draft")
-    _set_sample_draft_etag(response, draft)
-    return draft
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _sample_dataset_id(conn, sample_id)
+            _require_sample_scope(conn, dataset_id)
+            current = annotations_repo.get_sample_draft(conn, sample_id)
+            if current is None:
+                raise HTTPException(
+                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
+                )
+            if not _is_wildcard(expected) and expected != _sample_etag(current):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            annotations_repo.delete_sample_draft(conn, sample_id, current.version)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    return Response(status_code=204)
 
 
 @router.put(
