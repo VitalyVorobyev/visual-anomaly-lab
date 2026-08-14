@@ -177,11 +177,12 @@ export function useEditorDraft(target: DraftTarget | undefined) {
 /**
  * Every channel of the part, read ahead of being asked for.
  *
- * Two things fall out of it, and both used to be impossible. Switching channel resolves from
- * the cache instead of blanking the editor while a request runs — which is only affordable
+ * Three things fall out of it, and all three used to be impossible. Switching channel resolves
+ * from the cache instead of blanking the editor while a request runs — which is only affordable
  * now that reading a draft is a read; under the previous design this would have persisted a
- * row per channel per part visited. And the copy dialog can say what each channel already
- * holds, so "copy to dark" is a decision rather than a guess.
+ * row per channel per part visited. The copy dialog can say what each channel already holds, so
+ * "copy to dark" is a decision rather than a guess. And the side-by-side reference pane can
+ * draw the *other channel's own* regions instead of a blank overlay.
  *
  * Sample scope has nothing to prefetch: one document already covers every channel.
  */
@@ -194,14 +195,12 @@ export function useSiblingDrafts(imageIds: readonly number[], enabled: boolean) 
       staleTime: Infinity,
     })),
     combine: (results) => {
-      const shapeCounts = new Map<number, number>();
+      const drafts = new Map<number, DraftEnvelope>();
       results.forEach((result, index) => {
         const imageId = imageIds[index];
-        if (imageId !== undefined && result.data) {
-          shapeCounts.set(imageId, result.data.document.shapes.length);
-        }
+        if (imageId !== undefined && result.data) drafts.set(imageId, result.data);
       });
-      return shapeCounts;
+      return drafts;
     },
   });
 }

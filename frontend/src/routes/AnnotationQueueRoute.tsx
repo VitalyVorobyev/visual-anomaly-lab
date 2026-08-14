@@ -13,7 +13,7 @@ import { ArrowRight, Check, PenTool } from "lucide-react";
 import { Link, useParams, useSearchParams } from "react-router";
 
 import { queueUnits } from "../api/annotationQueue";
-import type { Label } from "../api/client";
+import type { Label, OpenDraftUnit } from "../api/client";
 import { imageUrl } from "../api/imageUrl";
 import {
   Badge,
@@ -137,6 +137,15 @@ export function AnnotationQueueRoute() {
                 <li key={blocker}>{blocker}</li>
               ))}
             </ul>
+            <OpenDraftLinks datasetId={datasetId} units={scope.data.open_draft_units} />
+          </Callout>
+        )}
+        {/* The other direction is blocked by the same thing and used to say so only in a 409
+            after the click. */}
+        {perSample && scope.data && scope.data.open_draft_units.length > 0 && (
+          <Callout tone="info" title="Annotation work is in progress">
+            Going back to per-image editing needs an empty desk, the same way getting here did.
+            <OpenDraftLinks datasetId={datasetId} units={scope.data.open_draft_units} />
           </Callout>
         )}
 
@@ -237,5 +246,31 @@ export function AnnotationQueueRoute() {
         </footer>
       )}
     </div>
+  );
+}
+
+/**
+ * The units standing in the way, each one a click from being finished or discarded.
+ *
+ * There is deliberately no "discard all". A draft row now exists only because somebody saved
+ * one, so a bulk button would destroy real annotation work behind a single confirm — the exact
+ * thing the draft-lifecycle change was made to stop happening by accident.
+ */
+function OpenDraftLinks({ datasetId, units }: { datasetId: number; units: OpenDraftUnit[] }) {
+  if (units.length === 0) return null;
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+      <span className="text-fg-muted">Open:</span>
+      {units.map((unit) => (
+        <Link
+          key={unit.image_id}
+          to={`/datasets/${datasetId}/annotate/${unit.sample_id}/${unit.image_id}`}
+          className="rounded-control border border-line px-1.5 py-0.5 font-mono text-[11px] hover:border-signal hover:text-signal"
+        >
+          {unit.sample_key}
+          {unit.channel !== null && unit.channel !== undefined && ` · ${unit.channel}`}
+        </Link>
+      ))}
+    </p>
   );
 }

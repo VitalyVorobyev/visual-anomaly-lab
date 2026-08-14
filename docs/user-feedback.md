@@ -28,6 +28,48 @@ make GKN datasets imported and available by default
 
 ## Resolved
 
+### 021
+
+Five things from the first real session in the reworked editor, four of them faults and one of them a
+preference.
+
+**"Defect masks are only shown in the left half. The right one shows no mask and no new mask can be
+added."** The reference pane was handed `{...document, shapes: []}` under image scope — a deliberate
+refusal to draw the active channel's regions over a sibling, which is right, applied by blanking the
+document, which is not. It draws the reference channel's **own draft** now, prefetched with the rest of
+the part, so an already-annotated channel looks annotated. Drawing on it is answered by `Edit this
+channel`, which exchanges the panes: editing stays in one pane so a stroke never has an ambiguous
+destination, and the swap writes the outgoing channel into the reference preference so a three-channel
+part swaps rather than rotating.
+
+**"Eraser tool creates new defect. It doesn't make sense. It only should be able to delete."** Correct,
+and it was a decision taken for a reason that did not survive contact: with nothing selected the eraser
+appended a `subtract` layer, because cutting a hole through a *polygon* is the one thing erasing pixels
+cannot do. But a `subtract` layer is a region, so the tool for removing things added one and named it in
+the region list. The eraser now takes paint off whatever it passes over and never creates; a cut is an
+explicit Subtract region in the New region panel, where creating something is what the control says it
+does.
+
+**"Change the color of defect, please. Red looks not very pleasant."** The seeded class was `#ef4444`.
+It is magenta now, with migration 017 moving existing datasets — see the handbook for why that register
+is wrong for a mask somebody stares at for minutes, and why only untouched labels move.
+
+**"Blend slider is tiny after update."** A regression from giving `SegmentedControl` `shrink-0` and
+`whitespace-nowrap` so "Side by side" stopped wrapping onto three lines: that made the slider the only
+shrinkable item left in an over-subscribed row, and it collapsed to a few pixels of track. The channel
+tabs are now what gives way — they read fine half-scrolled — and every control to their right has a
+floor.
+
+**"I still see this: 2 images hold unsaved annotation work."** Down from eleven, so migration 016 did
+its job and these two are real. But the message was a wall: no way to find two images among several
+hundred. `AnnotationScopeState` now carries the units themselves and the queue renders each as a link
+into the editor, where Complete and Discard already are. Still no bulk discard — a draft means work now,
+and one click that destroys all of it is exactly what the lifecycle change was made to prevent. The
+prose also stopped saying *unsaved*: a draft row exists because somebody saved, and the word sent them
+looking for an unsaved editor.
+
+Reported as working and left alone: polygon vertex move, and mask drag and move.
+
 ### 017
 
 "I always see a warning like that: *This dataset cannot share one annotation per part. 11 image

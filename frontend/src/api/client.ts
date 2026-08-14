@@ -48,6 +48,7 @@ export type AnnotationDraft = Schemas["AnnotationDraft"];
 export type AnnotationSampleDraft = Schemas["AnnotationSampleDraft"];
 export type AnnotationScope = Schemas["AnnotationScope"];
 export type AnnotationScopeState = Schemas["AnnotationScopeState"];
+export type OpenDraftUnit = Schemas["OpenDraftUnit"];
 export type AnnotationState = Schemas["AnnotationState"];
 export type AnnotationDocument = Schemas["AnnotationDocument-Output"];
 export type AnnotationDocumentInput = Schemas["AnnotationDocument-Input"];

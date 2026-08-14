@@ -7,6 +7,7 @@
 
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
   Brush,
   Check,
@@ -38,10 +39,17 @@ import {
   withShape,
   withoutShape,
 } from "../api/annotationState";
-import { bitmapStroke, paintStroke, traceBitmapShape } from "../api/annotationBitmap";
+import {
+  bitmapStroke,
+  paintStroke,
+  strokeBounds,
+  strokeTargets,
+  traceBitmapShape,
+} from "../api/annotationBitmap";
 import { paneFrame, resolveReference, type PaneMode } from "../api/annotationPanes";
 import { queueUnits } from "../api/annotationQueue";
 import type {
+  AnnotationDocument,
   AnnotationLabel,
   AnnotationPoint,
   AnnotationShape,
@@ -203,7 +211,7 @@ export function AnnotationEditorRoute() {
   const workspace = useWorkspace(
     paneFrame(sampleId, activeImage?.width ?? 0, activeImage?.height ?? 0),
   );
-  const siblingShapeCounts = useSiblingDrafts(
+  const siblingDrafts = useSiblingDrafts(
     useMemo(() => images.map((image) => image.id), [images]),
     // Sample scope has one document for the whole part, so there are no siblings to read.
     !perSample && dataset.data !== undefined,
@@ -246,7 +254,7 @@ export function AnnotationEditorRoute() {
       labels={labels.data}
       initial={draft.data}
       workspace={workspace}
-      siblingShapeCounts={siblingShapeCounts}
+      siblingDrafts={siblingDrafts}
       onReload={async () => {
         await draft.refetch();
         setReloadGeneration((generation) => generation + 1);
@@ -269,7 +277,7 @@ function EditorReady({
   labels,
   initial,
   workspace,
-  siblingShapeCounts,
+  siblingDrafts,
   onReload,
 }: {
   datasetId: number;
@@ -285,8 +293,8 @@ function EditorReady({
   labels: AnnotationLabel[];
   initial: DraftEnvelope;
   workspace: Workspace;
-  /** How many regions each channel already holds, so a copy is a decision, not a guess. */
-  siblingShapeCounts: Map<number, number>;
+  /** What each channel already holds, so a copy is a decision and a reference pane is honest. */
+  siblingDrafts: Map<number, DraftEnvelope>;
   onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
@@ -374,17 +382,30 @@ function EditorReady({
   const candidate = candidates[candidateIndex] ?? null;
 
   /**
-   * Shapes are drawn on a pane only when the document is truth *for that pane's image*.
+   * A pane draws the document that is truth *for that pane's image* — its own, never a
+   * neighbour's.
    *
-   * Under sample scope it is, by construction — one completion writes the same mask to
-   * every channel. Under image scope the document belongs to the displayed photograph
-   * alone, so drawing it over a sibling channel would show truth that does not exist
-   * there. The reference pane then shows the bare photograph, which is still the thing
-   * worth seeing: "is the defect visible in dark field at all?"
+   * Under sample scope that is the edited document by construction: one completion writes the
+   * same mask to every channel. Under image scope it is the reference channel's **own draft**,
+   * prefetched with the rest of the part. Drawing the active channel's regions over a sibling
+   * would claim truth that does not exist there; drawing nothing, which is what this did until
+   * now, hid truth that does — a channel already annotated looked untouched, and the pane
+   * beside the one being worked in appeared to be broken.
+   *
+   * Until that draft arrives the pane shows the bare photograph rather than a wrong overlay.
    */
-  const referenceDocument = perSample
-    ? history.present
-    : { ...history.present, shapes: [] };
+  const referenceDocument: AnnotationDocument | null =
+    reference === null
+      ? null
+      : perSample
+        ? history.present
+        : (siblingDrafts.get(reference.id)?.document ?? {
+            ...history.present,
+            base: "empty",
+            image_width: reference.width,
+            image_height: reference.height,
+            shapes: [],
+          });
 
   const openQueueItem = useCallback(
     (index: number) => {
@@ -447,19 +468,20 @@ function EditorReady({
    * screen, which is the one case where losing the edit is still possible.
    */
   const openChannel = useCallback(
-    async (index: number) => {
+    async (index: number): Promise<boolean> => {
       const image = sample.images[index];
-      if (!image || image.id === imageId) return;
+      if (!image || image.id === imageId) return false;
       if (!perSample && dirty) {
         try {
           await persist();
         } catch {
-          return;
+          return false;
         }
       }
       navigate(`/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`, {
         replace: true,
       });
+      return true;
     },
     [
       datasetId,
@@ -473,6 +495,19 @@ function EditorReady({
       sample.images,
     ],
   );
+
+  /**
+   * Exchange the two panes, so the channel being looked at becomes the channel being edited.
+   *
+   * The reference is stored as a preference rather than derived, so the outgoing channel has
+   * to be written into it: without that, a three-channel part would move the reference on to
+   * the *next* channel and the pair on screen would change under the hand.
+   */
+  const swapPanes = useCallback(async () => {
+    if (referenceIndex === null) return;
+    const outgoing = activeIndex;
+    if (await openChannel(referenceIndex)) workspace.setReferenceIndex(outgoing);
+  }, [activeIndex, openChannel, referenceIndex, workspace]);
 
   const copyToChannels = useCallback(async () => {
     if (copyTargets.length === 0) return;
@@ -524,30 +559,70 @@ function EditorReady({
    * One brush or eraser gesture.
    *
    * The rule, stated in the inspector so it is never a guess: **a stroke extends the selected
-   * region**, and with nothing selected the brush starts one while the eraser cuts through
-   * everything below it. Every gesture used to mint a new shape, so a defect painted in three
-   * strokes was three regions and the eraser was a brush that appended a `subtract` layer —
-   * it could not take paint back off the thing under the cursor.
+   * region**, and with nothing selected the brush starts one. Every gesture used to mint a new
+   * shape, so a defect painted in three strokes was three regions.
    *
-   * Cutting through the stack is not a fallback but the only way to punch a hole in a
-   * *polygon*, which erasing pixels cannot do.
+   * **The eraser never creates.** It takes paint off the selected region, or — with nothing
+   * selected — off every painted region it passes over. It used to append a `subtract` layer
+   * instead, which is a region: the tool for removing things added one, and said so in the
+   * region list. Cutting a hole through a *polygon* is still possible, but as an explicit
+   * Subtract region in the New region panel rather than as the eraser's side effect.
    */
   const applyStroke = useCallback(
     async (points: AnnotationPoint[]) => {
-      const erase = tool === "eraser";
+      const geometry = {
+        points,
+        radius: brushRadius,
+        imageWidth: history.present.image_width,
+        imageHeight: history.present.image_height,
+      };
       const target = selected?.kind === "bitmap" ? selected : null;
-      if (target) {
-        const painted = await paintStroke(target, {
-          points,
-          radius: brushRadius,
-          imageWidth: history.present.image_width,
-          imageHeight: history.present.image_height,
-          erase,
+
+      if (tool === "eraser") {
+        // The selection scopes the eraser exactly as it scopes the brush; without one, the
+        // pointer itself is the scope.
+        const targets = target
+          ? [target]
+          : strokeTargets(
+              history.present.shapes,
+              strokeBounds(points, brushRadius, geometry.imageWidth, geometry.imageHeight),
+            );
+        if (targets.length === 0) {
+          setMessage(
+            selected?.kind === "polygon"
+              ? "The eraser takes paint off painted regions. Reshape this polygon by its vertices, or delete it."
+              : "Nothing painted here to erase.",
+          );
+          return;
+        }
+        const painted = await Promise.all(
+          targets.map((shape) => paintStroke(shape, { ...geometry, erase: true })),
+        );
+        let next = history.present;
+        let removed = 0;
+        targets.forEach((shape, index) => {
+          const result = painted[index];
+          if (result === undefined) return;
+          if (result === null) {
+            next = withoutShape(next, shape.id);
+            removed += 1;
+            if (shape.id === selectedId) setSelectedId(null);
+            return;
+          }
+          next = replaceShape(next, shape.id, [result]);
         });
+        dispatch({ type: "commit", document: next });
+        if (removed > 0) setMessage(removed === 1 ? "Region erased" : `${removed} regions erased`);
+        return;
+      }
+
+      if (target) {
+        const painted = await paintStroke(target, { ...geometry, erase: false });
+        // A brush cannot empty a region, but `paintStroke` promises `null` for an empty result
+        // and honouring it here keeps the one contract rather than two.
         if (painted === null) {
           dispatch({ type: "commit", document: withoutShape(history.present, target.id) });
           setSelectedId(null);
-          setMessage("Region erased");
           return;
         }
         dispatch({
@@ -556,19 +631,12 @@ function EditorReady({
         });
         return;
       }
-      const shape = bitmapStroke({
-        points,
-        radius: brushRadius,
-        imageWidth: history.present.image_width,
-        imageHeight: history.present.image_height,
-        labelKey,
-        operation: erase ? "subtract" : operation,
-      });
+      const shape = bitmapStroke({ ...geometry, labelKey, operation });
       if (!shape) return;
       dispatch({ type: "commit", document: withShape(history.present, shape) });
       setSelectedId(shape.id);
     },
-    [brushRadius, history.present, labelKey, operation, selected, tool],
+    [brushRadius, history.present, labelKey, operation, selected, selectedId, tool],
   );
 
   const completeCurrent = useCallback(async () => {
@@ -923,13 +991,21 @@ function EditorReady({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {sample.images.length > 1 && (
-            <div className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-line bg-surface px-3">
-              <ChannelTabs
-                images={sample.images}
-                active={activeIndex}
-                onSelect={(index) => void openChannel(index)}
-              />
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+              {/* The tabs are what gives way when the strip is over-subscribed, because they
+                  are the one thing here that reads perfectly well half-scrolled. Everything to
+                  the right is a control with a usable minimum size, and the blend slider in
+                  particular collapsed to a few pixels of track once the view switch stopped
+                  wrapping — a slider narrower than its own thumb is a rendering fault, not a
+                  tight fit. */}
+              <div className="min-w-0 flex-1 overflow-x-auto">
+                <ChannelTabs
+                  images={sample.images}
+                  active={activeIndex}
+                  onSelect={(index) => void openChannel(index)}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
                 {!perSample && (
                   <Button
                     icon={<Copy />}
@@ -953,10 +1029,8 @@ function EditorReady({
                   </Button>
                 )}
                 {paneMode === "overlay" && (
-                  <div className="flex w-40 items-center gap-2">
-                    <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
-                      {Math.round(overlayOpacity * 100)}%
-                    </span>
+                  <div className="flex w-56 shrink-0 items-center gap-2">
+                    <span className="shrink-0 text-[11px] text-fg-muted">Blend</span>
                     <Slider
                       aria-label="Overlay opacity"
                       value={overlayOpacity}
@@ -964,20 +1038,25 @@ function EditorReady({
                       max={1}
                       step={0.02}
                       onValueChange={setOverlayOpacity}
+                      readout={`${Math.round(overlayOpacity * 100)}%`}
                     />
                   </div>
                 )}
                 {paneMode !== "single" && referenceIndex !== null && (
-                  <Select
-                    aria-label="Second channel"
-                    value={String(referenceIndex)}
-                    options={sample.images.flatMap((image, index) =>
-                      index === activeIndex
-                        ? []
-                        : [{ value: String(index), label: image.channel ?? "unassigned" }],
-                    )}
-                    onValueChange={(value) => workspace.setReferenceIndex(Number(value))}
-                  />
+                  // A fixed box, because `Select`'s trigger is `w-full` and would otherwise
+                  // bid for the row against the slider beside it.
+                  <div className="w-36 shrink-0">
+                    <Select
+                      aria-label="Second channel"
+                      value={String(referenceIndex)}
+                      options={sample.images.flatMap((image, index) =>
+                        index === activeIndex
+                          ? []
+                          : [{ value: String(index), label: image.channel ?? "unassigned" }],
+                      )}
+                      onValueChange={(value) => workspace.setReferenceIndex(Number(value))}
+                    />
+                  </div>
                 )}
                 <SegmentedControl
                   aria-label="Channel view"
@@ -1035,11 +1114,29 @@ function EditorReady({
             setAssistBox(box);
           }}
         />
-            {paneMode === "compare" && reference && (
+            {paneMode === "compare" && reference && referenceDocument && (
               // A peer pane, not a second editor: it shares the one controlled `view`, so
               // panning or zooming either keeps both showing the same source pixels — which
               // is the entire point of putting two illuminations of one part side by side.
-              <div className="flex min-h-0 min-w-0 flex-1 border-l border-line">
+              //
+              // Editing happens in one pane, always the left one, so there is never a question
+              // of which document a stroke lands in. Wanting to draw on the right is answered
+              // by making it the left: `Edit this channel` swaps the two.
+              <div className="relative flex min-h-0 min-w-0 flex-1 border-l border-line">
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-2">
+                  <span className="rounded-control border border-line bg-surface/90 px-2 py-1 text-[11px] text-fg-muted shadow-panel backdrop-blur-sm">
+                    {reference.channel ?? "unassigned"}
+                    {!perSample &&
+                      ` · ${referenceDocument.shapes.length} region${referenceDocument.shapes.length === 1 ? "" : "s"}`}
+                  </span>
+                  {!perSample && (
+                    <span className="pointer-events-auto">
+                      <Button icon={<ArrowLeftRight />} onClick={() => void swapPanes()}>
+                        Edit this channel
+                      </Button>
+                    </span>
+                  )}
+                </div>
                 <AnnotationCanvas
                   imageId={reference.id}
                   maskOpacity={maskOpacity}
@@ -1127,11 +1224,11 @@ function EditorReady({
                   {selected?.kind === "bitmap"
                     ? tool === "eraser"
                       ? "Erasing region " +
-                        `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new cut.`
+                        `${history.present.shapes.indexOf(selected) + 1} only. Escape to erase across all of them.`
                       : "Painting into region " +
                         `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new one.`
                     : tool === "eraser"
-                      ? "Nothing selected: this cuts through every region below it."
+                      ? "Nothing selected: this takes paint off whatever it passes over, and never adds a region."
                       : "Nothing selected: this starts a new region. Strokes after it extend that one."}
                 </p>
               </div>
@@ -1466,7 +1563,7 @@ function EditorReady({
       >
         <div className="mt-3 flex flex-col gap-2">
           {otherImages.map((image) => {
-            const held = siblingShapeCounts.get(image.id);
+            const held = siblingDrafts.get(image.id)?.document.shapes.length;
             const sized =
               currentImage !== undefined &&
               (image.width !== currentImage.width || image.height !== currentImage.height);

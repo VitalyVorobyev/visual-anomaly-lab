@@ -978,6 +978,17 @@ def export_annotation_coco(request: Request, image_id: int) -> CocoDocument:
 # `MetricSet` digest and all three interchange formats never learn that scope exists.
 
 
+class OpenDraftUnit(BaseModel):
+    """One unit standing between the dataset and a scope change, addressable."""
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    sample_key: str
+    image_id: int
+    channel: str | None = None
+
+
 class AnnotationScopeState(BaseModel):
     """A dataset's annotation scope, and everything that would stop it changing."""
 
@@ -989,6 +1000,13 @@ class AnnotationScopeState(BaseModel):
     multi_image_samples: int
     open_drafts: int = Field(
         description="Drafts open in the current scope. Any scope change requires zero."
+    )
+    open_draft_units: list[OpenDraftUnit] = Field(
+        default_factory=list,
+        description=(
+            "Which units hold that work, so 'complete or discard them first' is reachable "
+            "rather than merely true. Capped; `open_drafts` is the whole count."
+        ),
     )
     can_use_sample_scope: bool
     blockers: list[str] = Field(
@@ -1028,15 +1046,24 @@ def _scope_state(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScopeSt
             "pins one source frame"
         )
 
+    per_sample = scope is AnnotationScope.SAMPLE
     open_drafts = (
         annotations_repo.count_open_sample_drafts(conn, dataset_id)
-        if scope is AnnotationScope.SAMPLE
+        if per_sample
         else annotations_repo.count_open_image_drafts(conn, dataset_id)
     )
-    if open_drafts and scope is AnnotationScope.IMAGE:
+    units = (
+        annotations_repo.list_open_sample_drafts(conn, dataset_id)
+        if per_sample
+        else annotations_repo.list_open_image_drafts(conn, dataset_id)
+    )
+    if open_drafts and not per_sample:
+        # Not "unsaved": a draft row exists precisely because somebody saved one. What it is
+        # missing is a completion, and saying otherwise sent an operator looking for an
+        # unsaved editor they had already saved.
         blockers.append(
-            f"{open_drafts} images hold unsaved annotation work; complete or discard them "
-            "first, because sample scope would leave them unreachable"
+            f"{open_drafts} images hold annotation work that has not been completed; finish "
+            "or discard it first, because sample scope would leave it unreachable"
         )
 
     return AnnotationScopeState(
@@ -1045,6 +1072,7 @@ def _scope_state(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScopeSt
         samples=samples_repo.count_samples(conn, dataset_id, samples_repo.SampleFilter()),
         multi_image_samples=annotations_repo.count_multi_image_samples(conn, dataset_id),
         open_drafts=open_drafts,
+        open_draft_units=[OpenDraftUnit(**vars(unit)) for unit in units],
         can_use_sample_scope=not blockers,
         blockers=blockers,
     )

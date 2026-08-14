@@ -12,7 +12,7 @@
  * painting, which works for both shapes of PNG.
  */
 
-import type { AnnotationPoint, BitmapShape, PolygonShape } from "./client";
+import type { AnnotationPoint, AnnotationShape, BitmapShape, PolygonShape } from "./client";
 import { nextShapeId } from "./annotationState";
 
 /** Above this luminance a pixel is part of the mask. The backend's rule is `> 0`; this keeps a
@@ -254,6 +254,34 @@ export function maskBounds(
   }
   if (maxX < 0) return null;
   return { minX, minY, width: maxX - minX + 1, height: maxY - minY + 1 };
+}
+
+/**
+ * The painted regions a stroke passes over, nearest the front first.
+ *
+ * This is what makes the eraser an eraser with nothing selected. It used to append a
+ * `subtract` layer instead, which is a *new region* — so the tool whose whole job is to take
+ * something away added something, and the region list grew by one every time it was used.
+ * A cut is still available, but as a deliberate choice in the New region panel rather than as
+ * the eraser's silent side effect.
+ *
+ * Later shapes are painted over earlier ones, so the reverse of document order is what the
+ * pointer is nearest.
+ */
+export function strokeTargets(
+  shapes: readonly AnnotationShape[],
+  stroke: { minX: number; minY: number; maxX: number; maxY: number },
+): BitmapShape[] {
+  return shapes
+    .filter(
+      (shape): shape is BitmapShape =>
+        shape.kind === "bitmap" &&
+        shape.x < stroke.maxX &&
+        shape.x + shape.width > stroke.minX &&
+        shape.y < stroke.maxY &&
+        shape.y + shape.height > stroke.minY,
+    )
+    .reverse();
 }
 
 export function strokeBounds(

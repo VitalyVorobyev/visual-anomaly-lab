@@ -1798,6 +1798,11 @@ export interface components {
              * @description Drafts open in the current scope. Any scope change requires zero.
              */
             open_drafts: number;
+            /**
+             * Open Draft Units
+             * @description Which units hold that work, so 'complete or discard them first' is reachable rather than merely true. Capped; `open_drafts` is the whole count.
+             */
+            open_draft_units: components["schemas"]["OpenDraftUnit"][];
             /** Can Use Sample Scope */
             can_use_sample_scope: boolean;
             /**
@@ -3581,6 +3586,20 @@ export interface components {
             config_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * OpenDraftUnit
+         * @description One unit standing between the dataset and a scope change, addressable.
+         */
+        OpenDraftUnit: {
+            /** Sample Id */
+            sample_id: number;
+            /** Sample Key */
+            sample_key: string;
+            /** Image Id */
+            image_id: number;
+            /** Channel */
+            channel: string | null;
         };
         /**
          * OperatingPoint

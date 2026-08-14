@@ -24,6 +24,13 @@ resolves its colours from the design tokens at runtime — Konva cannot take a c
 palette (ADR-0021). Mask weight is a persisted per-reader preference; the label colour is dataset
 taxonomy and is edited through the existing `PUT .../annotation-labels/{key}`.
 
+The seeded `defect` class is magenta (`#c026d3`), not red. A mask sits over the photograph at partial
+opacity for minutes at a time while somebody works: red reads as an error state, and over a metal part
+in dark field it turns muddy brown. Magenta stays legible on metal, on plastic and in dark field, and
+cannot be mistaken for the teal `signal` accent drawing the selection outline on top of it. Migration
+017 moved existing datasets, touching only labels still carrying the old default — a colour somebody
+chose through the swatch is theirs.
+
 ## Coordinate and document contract
 
 An annotation document is JSON schema version 1 in **source-image pixel coordinates**. It pins
@@ -94,6 +101,15 @@ There is deliberately no bulk discard on the queue screen. Now that a draft mean
 eleven drafts blocking this scope change" would destroy eleven pieces of real annotation work behind one
 click, with nothing on screen saying what was in them. Discarding stays per draft, in the editor, beside
 the document it throws away.
+
+What the queue does instead is **name them**. `AnnotationScopeState` carries `open_draft_units` beside
+the count — sample key, channel and the image id to open the editor at, capped at 24 with the count
+telling the whole truth. A blocker that says "2 images hold annotation work; finish or discard it first"
+over a dataset of several hundred is accurate and unusable; each unit is now a link into the editor,
+where Complete and Discard already live. A sample draft is named through its sample's first image,
+because the editor is addressed by the pair in either scope. The prose says *not completed* rather than
+*unsaved* for the same reason: a draft row exists precisely because somebody saved one, and telling them
+otherwise sent them looking for an editor they had already saved.
 
 ## Copying regions between channels
 
@@ -167,15 +183,32 @@ shapes stay on screen and visibly land on the new illumination; under image scop
 own truth, so it is real navigation, and it saves first rather than refusing. Three view modes: one
 channel, two side by side sharing a single controlled view, or a blend that composites a second channel
 at adjustable alpha. The blend is the registration check — a few pixels of drift are invisible side by
-side. Shapes are drawn on a pane only when the document is truth for that pane's image, so an
-image-scoped reference pane shows the bare photograph.
+side.
+
+**A pane draws the document that is truth for its own image, never a neighbour's.** Under sample scope
+that is the edited document by construction; under image scope the reference pane draws the reference
+channel's **own draft**, read from the same prefetched cache the copy dialog counts. Drawing the active
+channel's regions there would claim truth that does not exist; drawing nothing, which it did at first,
+hid truth that does — an already-annotated channel looked untouched, and a pane that showed no mask and
+took no strokes read as broken.
+
+**Editing happens in one pane, always the left one**, so a stroke never has an ambiguous destination.
+Wanting to draw on the right is answered by making it the left: `Edit this channel` exchanges the two,
+writing the outgoing channel into the reference preference so a part with three channels swaps rather
+than rotating. The reference pane is otherwise inert — its regions do not answer the pointer, because a
+drag affordance that snaps back on release is an affordance that lies.
 
 The second pane is chosen by channel *position*, not by image id: the preference has to outlive the
 image it was expressed on, so that a reader who put `dark` beside `bright` still has a second pane on the
 next part. Choosing the channel that is already active wraps to the next one, which is what stops a
-two-channel sample from showing the same photograph twice. Under image scope the editor also reads every
-channel's draft ahead of being asked, so switching channel resolves from the cache and the copy dialog can
-say what each channel already holds — affordable only because reading a draft no longer writes one.
+two-channel sample from showing the same photograph twice. Under image scope the editor reads every
+channel's draft ahead of being asked, so switching channel resolves from the cache, the reference pane is
+populated before it is looked at and the copy dialog can say what each channel already holds — affordable
+only because reading a draft no longer writes one.
+
+The channel strip's tabs are the one thing in it that gives way when the row is over-subscribed: they
+read perfectly well half-scrolled, and everything to their right is a control with a usable minimum
+size. A slider narrower than its own thumb is a rendering fault, not a tight fit.
 
 The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex and brush/eraser
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
@@ -194,11 +227,19 @@ Four rules, and each replaced something that only looked like it worked.
 
 **A stroke extends the selected region.** A brush or eraser gesture composites into the selected bitmap
 region and re-crops it to what is actually painted, so a defect is drawn in as many touches as it takes and
-stays one region. With nothing selected the brush starts a region and selects it; the eraser instead
-appends a `subtract` layer that cuts through everything below, which is the only way to punch a hole in a
-*polygon*. Both PNG shapes the raster contract allows are normalised on the way in by compositing over an
-opaque black ground, so erasing is painting black rather than a compositing mode, and the output is the
-opaque black-and-white the backend itself writes. A region erased to nothing is removed.
+stays one region. With nothing selected the brush starts a region and selects it. Both PNG shapes the
+raster contract allows are normalised on the way in by compositing over an opaque black ground, so erasing
+is painting black rather than a compositing mode, and the output is the opaque black-and-white the backend
+itself writes. A region erased to nothing is removed.
+
+**The eraser never creates.** It takes paint off the selected region, or — with nothing selected — off
+every painted region the stroke passes over, in one commit so the gesture is one undo step. It briefly
+appended a `subtract` layer instead, on the reasoning that cutting a hole through a *polygon* is the one
+thing erasing pixels cannot do; but a `subtract` layer is a **region**, so the tool for removing things
+added one, named it in the region list, and left an operator holding a document with more shapes than
+before. Cutting a polygon is still available — as an explicit Subtract region in the New region panel,
+where creating something is what the control says it does. A stroke over nothing painted says so and
+changes nothing.
 
 **A region moves.** Dragging with Select translates it and an arrow key nudges it — 1 px, or 10 with
 Shift. The offset is clamped once against the shape's own extent, never per coordinate, because clamping

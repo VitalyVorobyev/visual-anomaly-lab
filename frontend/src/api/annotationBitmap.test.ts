@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { maskBounds, maskFromPixels, paintRect, strokeBounds, traceMask } from "./annotationBitmap";
+import type { BitmapShape, PolygonShape } from "./client";
+import {
+  maskBounds,
+  maskFromPixels,
+  paintRect,
+  strokeBounds,
+  strokeTargets,
+  traceMask,
+} from "./annotationBitmap";
 
 describe("brush bitmap bounds", () => {
   it("crops a stroke with its antialias margin and clamps it to the source frame", () => {
@@ -128,5 +136,52 @@ describe("maskBounds", () => {
 
   it("reports nothing left, which is how the last of a region is erased", () => {
     expect(maskBounds(new Uint8Array(16), 4, 4)).toBeNull();
+  });
+});
+
+describe("strokeTargets", () => {
+  const bitmap = (id: string, x: number, y: number): BitmapShape => ({
+    id,
+    label_key: "defect",
+    kind: "bitmap",
+    operation: "add",
+    x,
+    y,
+    width: 10,
+    height: 10,
+    png_base64: "",
+  });
+  const polygon: PolygonShape = {
+    id: "ring",
+    label_key: "defect",
+    kind: "polygon",
+    operation: "add",
+    points: [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 0, y: 30 },
+    ],
+  };
+  const shapes = [bitmap("under", 0, 0), polygon, bitmap("over", 5, 5), bitmap("far", 60, 60)];
+
+  it("finds every painted region the stroke passes over, nearest first", () => {
+    // What makes the eraser an eraser with nothing selected: it takes paint off what is under
+    // the pointer instead of appending a `subtract` region, which is what it used to do.
+    expect(strokeTargets(shapes, { minX: 6, minY: 6, maxX: 8, maxY: 8 }).map((s) => s.id)).toEqual([
+      "over",
+      "under",
+    ]);
+  });
+
+  it("ignores regions the stroke misses and polygons it does not", () => {
+    // A polygon has no pixels to take away; the eraser says so rather than inventing a cut.
+    expect(strokeTargets(shapes, { minX: 20, minY: 20, maxX: 25, maxY: 25 })).toEqual([]);
+  });
+
+  it("treats a shared edge as a miss and one pixel inside as a hit", () => {
+    expect(strokeTargets(shapes, { minX: 10, minY: 0, maxX: 12, maxY: 2 })).toEqual([]);
+    expect(strokeTargets(shapes, { minX: 9, minY: 0, maxX: 12, maxY: 2 }).map((s) => s.id)).toEqual([
+      "under",
+    ]);
   });
 });

@@ -213,6 +213,38 @@ def test_migration_016_clears_the_drafts_that_only_viewing_created(settings: Set
         assert conn.execute("SELECT COUNT(*) FROM annotation_sample_draft").fetchone()[0] == 0
 
 
+def test_migration_017_recolours_only_the_untouched_default(settings: Settings) -> None:
+    """A colour somebody chose is theirs, even when it happens to be the old default."""
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 16:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+
+        for name in ("seeded", "chosen"):
+            conn.execute("INSERT INTO dataset (name, root_path) VALUES (?, ?)", (name, f"/{name}"))
+            conn.execute(
+                "INSERT INTO annotation_label (dataset_id, key, name, color, position) "
+                "VALUES ((SELECT MAX(id) FROM dataset), 'defect', 'Defect', '#ef4444', 0)"
+            )
+        # Dataset 2 also has a class somebody deliberately made the same red.
+        conn.execute(
+            "INSERT INTO annotation_label (dataset_id, key, name, color, position) "
+            "VALUES (2, 'scratch', 'Scratch', '#ef4444', 1)"
+        )
+
+        assert apply_migrations_to(conn) >= 17
+
+        colours = dict(
+            conn.execute("SELECT key || ':' || dataset_id, color FROM annotation_label").fetchall()
+        )
+        assert colours["defect:1"] == "#c026d3"
+        assert colours["defect:2"] == "#c026d3"
+        assert colours["scratch:2"] == "#ef4444"
+
+
 def test_region_profile_revisions_are_dataset_owned_and_immutable(
     migrated_db: sqlite3.Connection,
 ) -> None:

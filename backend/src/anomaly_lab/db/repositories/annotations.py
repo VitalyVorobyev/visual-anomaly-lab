@@ -70,14 +70,18 @@ def _sample_draft(row: sqlite3.Row) -> AnnotationSampleDraft:
     return AnnotationSampleDraft.model_validate(values)
 
 
+#: The seeded colour of the `defect` class. Migration 017 says why it is not red.
+DEFAULT_LABEL_COLOR = "#c026d3"
+
+
 def ensure_default_label(conn: sqlite3.Connection, dataset_id: int) -> None:
     conn.execute(
         """
         INSERT INTO annotation_label (dataset_id, key, name, color, position)
-             VALUES (?, 'defect', 'Defect', '#ef4444', 0)
+             VALUES (?, 'defect', 'Defect', ?, 0)
         ON CONFLICT (dataset_id, key) DO NOTHING
         """,
-        (dataset_id,),
+        (dataset_id, DEFAULT_LABEL_COLOR),
     )
 
 
@@ -404,7 +408,7 @@ def next_revision_no(conn: sqlite3.Connection, image_id: int) -> int:
 
 
 def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
-    """How many images hold unsaved annotation work.
+    """How many images hold annotation work that has not been completed.
 
     **The absence of a predicate here is load-bearing.** A draft row exists only because
     somebody saved one, so counting rows is counting work. It was not always so: creation used
@@ -425,6 +429,77 @@ def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
             (dataset_id,),
         ).fetchone()[0]
     )
+
+
+@dataclass(frozen=True)
+class OpenDraft:
+    """One unit whose draft holds saved-but-uncompleted work.
+
+    A count on its own is a dead end. "2 images hold annotation work that has not been
+    completed" is true, and leaves an operator with a dataset of several hundred images and no
+    way to find the two. A scope change needs an empty desk (ADR-0036), so the
+    desk has to say what is on it.
+
+    `image_id` is always present, including for a sample draft, where it is the sample's first
+    image: the editor is addressed by the pair either way, so a caller can always build a link.
+    """
+
+    sample_id: int
+    sample_key: str
+    image_id: int
+    channel: str | None
+
+
+#: How many open drafts are named before the rest are only counted. A dataset with hundreds of
+#: them is not going to be cleared from a list, and the count still tells the whole truth.
+OPEN_DRAFT_SAMPLE = 24
+
+
+def list_open_image_drafts(
+    conn: sqlite3.Connection, dataset_id: int, limit: int = OPEN_DRAFT_SAMPLE
+) -> list[OpenDraft]:
+    """Which images hold work, ordered as the queue orders them."""
+    rows = conn.execute(
+        """
+        SELECT sample.id           AS sample_id,
+               sample.external_id  AS sample_key,
+               image.id            AS image_id,
+               channel.name        AS channel
+          FROM annotation_draft
+          JOIN image   ON image.id = annotation_draft.image_id
+          JOIN sample  ON sample.id = image.sample_id
+     LEFT JOIN channel ON channel.id = image.channel_id
+         WHERE sample.dataset_id = ?
+         ORDER BY sample.id, channel.position, image.id
+         LIMIT ?
+        """,
+        (dataset_id, limit),
+    ).fetchall()
+    return [OpenDraft(**dict(row)) for row in rows]
+
+
+def list_open_sample_drafts(
+    conn: sqlite3.Connection, dataset_id: int, limit: int = OPEN_DRAFT_SAMPLE
+) -> list[OpenDraft]:
+    """Which samples hold work, each addressed through its first image."""
+    rows = conn.execute(
+        """
+        SELECT sample.id          AS sample_id,
+               sample.external_id AS sample_key,
+               (SELECT image.id FROM image WHERE image.sample_id = sample.id
+                 ORDER BY image.id LIMIT 1) AS image_id,
+               NULL               AS channel
+          FROM annotation_sample_draft
+          JOIN sample ON sample.id = annotation_sample_draft.sample_id
+         WHERE sample.dataset_id = ?
+         ORDER BY sample.id
+         LIMIT ?
+        """,
+        (dataset_id, limit),
+    ).fetchall()
+    # A sample with no images cannot be opened, and cannot have acquired a draft either;
+    # skipping it keeps `image_id` a promise rather than a hope.
+    return [OpenDraft(**dict(row)) for row in rows if row["image_id"] is not None]
 
 
 def count_open_sample_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:

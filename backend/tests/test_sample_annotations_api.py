@@ -101,6 +101,74 @@ def test_imported_masks_and_mixed_frames_are_reported_together_not_one_at_a_time
     assert "part-1" in refused.json()["detail"]
 
 
+def test_open_drafts_are_named_and_not_merely_counted(
+    client: TestClient, settings: Settings, tmp_path: Path
+) -> None:
+    """A blocker an operator cannot navigate to is a wall, not a message.
+
+    The count alone was accurate and useless: "2 images hold annotation work" over a dataset
+    of several hundred left nowhere to go, so the scope control stayed dead with no way to
+    revive it.
+    """
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
+    held = images_by_sample[sample_ids[1]][1]
+    seed = client.get(f"/api/images/{held}/annotations/draft")
+    assert (
+        client.post(
+            f"/api/images/{held}/annotations/draft",
+            json=seed.json()["document"],
+            headers={"If-None-Match": "*"},
+        ).status_code
+        == 201
+    )
+
+    state = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+
+    assert state["can_use_sample_scope"] is False
+    assert state["open_drafts"] == 1
+    assert state["open_draft_units"] == [
+        {
+            "sample_id": sample_ids[1],
+            "sample_key": "part-1",
+            "image_id": held,
+            "channel": "dark",
+        }
+    ]
+
+    # Discarding the work empties the desk, and the unit list empties with it.
+    etag = client.get(f"/api/images/{held}/annotations/draft").headers["etag"]
+    assert (
+        client.delete(
+            f"/api/images/{held}/annotations/draft", headers={"If-Match": etag}
+        ).status_code
+        == 204
+    )
+    cleared = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+    assert cleared["open_draft_units"] == []
+    assert cleared["can_use_sample_scope"] is True
+
+
+def test_a_sample_draft_is_named_through_an_image_so_the_editor_is_reachable(
+    client: TestClient, settings: Settings, tmp_path: Path
+) -> None:
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
+    _use_sample_scope(client, dataset_id)
+    _open_sample_draft(client, sample_ids[0])
+
+    state = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+
+    # The editor is addressed by the pair in either scope, so a sample draft still carries an
+    # image to open it with.
+    assert state["open_draft_units"] == [
+        {
+            "sample_id": sample_ids[0],
+            "sample_key": "part-0",
+            "image_id": images_by_sample[sample_ids[0]][0],
+            "channel": None,
+        }
+    ]
+
+
 def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:

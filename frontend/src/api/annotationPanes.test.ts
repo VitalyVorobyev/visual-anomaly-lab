@@ -26,6 +26,15 @@ describe("resolveReference", () => {
     expect(resolveReference(2, 0, 0)).toBe(1);
   });
 
+  it("holds a swap steady on a part with more than two channels", () => {
+    // "Edit this channel" exchanges the panes: bright|dome becomes dome|bright. It writes the
+    // outgoing channel into the preference for exactly this reason — leaving the preference
+    // alone would resolve to the *next* channel and put dome|far on screen, changing the pair
+    // under the hand.
+    expect(resolveReference(3, 1, 0)).toBe(0);
+    expect(resolveReference(3, 1, null)).toBe(2); // what it would have shown instead
+  });
+
   it("ignores a preference that no longer names a channel", () => {
     // A sample with fewer channels than the last one; the stored index is simply gone.
     expect(resolveReference(2, 0, 5)).toBe(1);
