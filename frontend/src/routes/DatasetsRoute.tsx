@@ -17,7 +17,7 @@ import {
   PageHeader,
   Panel,
   SkeletonRows,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { JobProgress } from "../components/JobProgress";
 import { queryKeys } from "../api/queryKeys";
 import {

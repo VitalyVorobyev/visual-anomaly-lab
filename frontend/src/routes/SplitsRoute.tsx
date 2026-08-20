@@ -30,7 +30,7 @@ import {
   Slider,
   Table,
   type Column,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useDataset, useSplits } from "../hooks/useCatalog";
 
 type Strategy = "normal_only_train" | "imported";

@@ -12,9 +12,17 @@ import { Moon, Sun, SunMoon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 
-import { Tooltip, TooltipProvider, cn, focusRing } from "./components/ui";
+import {
+  Tooltip,
+  TooltipProvider,
+  cn,
+  focusRing,
+  readThemeChoice,
+  setThemeChoice,
+  type ThemeChoice,
+} from "@vitavision/lab-ui";
 import { useHealth } from "./hooks/useHealth";
-import { readThemeChoice, setThemeChoice, type ThemeChoice } from "./theme";
+import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
 const NAV = [
   { to: "/", label: "Datasets", end: true },
@@ -207,12 +215,12 @@ function ThemeToggle() {
   // Read after mount rather than during render: the inline script in index.html has already
   // painted the right palette, and touching localStorage during render would make the
   // first client render disagree with itself under StrictMode's double invocation.
-  useEffect(() => setChoice(readThemeChoice()), []);
+  useEffect(() => setChoice(readThemeChoice(THEME_STORAGE_KEY)), []);
 
   const advance = () => {
     const next = THEME_ORDER[(THEME_ORDER.indexOf(choice) + 1) % THEME_ORDER.length]!;
     setChoice(next);
-    setThemeChoice(next);
+    setThemeChoice(next, THEME_STORAGE_KEY);
   };
 
   const Icon = THEME_ICON[choice];

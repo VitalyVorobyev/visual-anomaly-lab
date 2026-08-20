@@ -23,6 +23,7 @@
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-query": "^5.101.4",
     "@tanstack/react-virtual": "^3.14.9",
+    "@vitavision/lab-ui": "file:../../lab-ui",
     "clsx": "^2.1.1",
     "konva": "^10.3.0",
     "lucide-react": "^1.30.0",

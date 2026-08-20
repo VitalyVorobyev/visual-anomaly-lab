@@ -22,8 +22,7 @@ import type { CompareState } from "../../api/compareState";
 import { writeCompareState } from "../../api/compareState";
 import type { Outcome } from "../../api/resultsState";
 import { OUTCOMES } from "../../api/resultsState";
-import { Tabs } from "../../components/Tabs";
-import { Badge, Empty, Panel, Switch } from "../../components/ui";
+import { Badge, Empty, Panel, Switch, Tabs } from "@vitavision/lab-ui";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "../experiment/ResultsPanel";
 
 export function AgreementTable({

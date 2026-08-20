@@ -18,7 +18,7 @@ import {
   PageHeader,
   ReadoutStrip,
   SkeletonRows,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useDataset, useSamples } from "../hooks/useCatalog";
 
 const QUEUE_PAGE = 120;

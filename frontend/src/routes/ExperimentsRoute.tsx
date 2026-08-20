@@ -35,37 +35,8 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import {
-  describeFields,
-  initialValues,
-  jsonErrors,
-  missingRequired,
-  outOfRange,
-  overrideCount,
-  toOptions,
-} from "../api/schemaForm";
-import type { RawValues } from "../api/schemaForm";
+import { Badge, Button, Callout, ConfirmDialog, ErrorBox, Field, Input, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, cn, describeFields, initialValues, jsonErrors, missingRequired, outOfRange, overrideCount, toOptions, type Column, type RawValues, type Tone } from "@vitavision/lab-ui";
 import { DatasetSectionNav } from "../components/DatasetSectionNav";
-import { SchemaForm } from "../components/SchemaForm";
-import { Tabs } from "../components/Tabs";
-import {
-  Badge,
-  Button,
-  Callout,
-  ConfirmDialog,
-  ErrorBox,
-  Field,
-  Input,
-  PageHeader,
-  Panel,
-  Section,
-  Select,
-  SkeletonRows,
-  Table,
-  cn,
-  type Column,
-  type Tone,
-} from "../components/ui";
 import { useDatasets, useSplits } from "../hooks/useCatalog";
 import { useDataset } from "../hooks/useCatalog";
 import {
