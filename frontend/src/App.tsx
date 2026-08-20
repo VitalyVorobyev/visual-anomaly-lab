@@ -8,19 +8,9 @@
  * conclusion from if the sidecar has died while you were on another one.
  */
 
-import { Moon, Sun, SunMoon } from "lucide-react";
-import { useEffect, useState } from "react";
 import { NavLink, Outlet } from "react-router";
 
-import {
-  Tooltip,
-  TooltipProvider,
-  cn,
-  focusRing,
-  readThemeChoice,
-  setThemeChoice,
-  type ThemeChoice,
-} from "@vitavision/lab-ui";
+import { ThemeToggle, Tooltip, TooltipProvider, cn, focusRing } from "@vitavision/lab-ui";
 import { useHealth } from "./hooks/useHealth";
 import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
@@ -72,7 +62,7 @@ export function App() {
 
             <div className="ml-auto flex items-center gap-3">
               <BackendStatus />
-              <ThemeToggle />
+              <ThemeToggle storageKey={THEME_STORAGE_KEY} />
             </div>
           </div>
         </header>
@@ -201,43 +191,3 @@ function BackendStatus() {
   );
 }
 
-const THEME_ORDER: ThemeChoice[] = ["system", "light", "dark"];
-const THEME_ICON = { system: SunMoon, light: Sun, dark: Moon };
-const THEME_LABEL = {
-  system: "Theme: following the system",
-  light: "Theme: light",
-  dark: "Theme: dark",
-};
-
-function ThemeToggle() {
-  const [choice, setChoice] = useState<ThemeChoice>("system");
-
-  // Read after mount rather than during render: the inline script in index.html has already
-  // painted the right palette, and touching localStorage during render would make the
-  // first client render disagree with itself under StrictMode's double invocation.
-  useEffect(() => setChoice(readThemeChoice(THEME_STORAGE_KEY)), []);
-
-  const advance = () => {
-    const next = THEME_ORDER[(THEME_ORDER.indexOf(choice) + 1) % THEME_ORDER.length]!;
-    setChoice(next);
-    setThemeChoice(next, THEME_STORAGE_KEY);
-  };
-
-  const Icon = THEME_ICON[choice];
-
-  return (
-    <Tooltip content={THEME_LABEL[choice]}>
-      <button
-        type="button"
-        onClick={advance}
-        aria-label={THEME_LABEL[choice]}
-        className={cn(
-          "rounded-control p-1.5 text-fg-muted transition-colors hover:bg-raised hover:text-fg",
-          focusRing,
-        )}
-      >
-        <Icon className="size-4" />
-      </button>
-    </Tooltip>
-  );
-}
