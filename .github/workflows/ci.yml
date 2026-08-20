@@ -119,16 +119,20 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-
       # frontend/package.json depends on @vitavision/lab-ui as `file:../../lab-ui` -- a
-      # sibling checkout of this repo, same as on a contributor's own machine. `path` is
-      # resolved under $GITHUB_WORKSPACE, so `../lab-ui` lands one level up from this
-      # repo's own checkout: exactly the sibling the relative dependency path expects.
+      # sibling checkout of this repo, same as on a contributor's own machine.
+      # actions/checkout refuses a `path` that escapes $GITHUB_WORKSPACE (no `..`), so both
+      # repos are placed *inside* it instead, as siblings of each other: this repo at
+      # `visual-anomaly-lab/`, the package at `lab-ui/`. `visual-anomaly-lab/frontend/../../lab-ui`
+      # then resolves to `lab-ui/`, exactly as the relative dependency path expects.
+      - uses: actions/checkout@v7
+        with:
+          path: visual-anomaly-lab
+
       - uses: actions/checkout@v7
         with:
           repository: VitalyVorobyev/lab-ui
-          path: ../lab-ui
+          path: lab-ui
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -141,23 +145,23 @@ jobs:
         run: |
           bun install
           bun run build
-        working-directory: ../lab-ui
+        working-directory: lab-ui
 
       - name: Install
         run: bun install --frozen-lockfile
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Types
         run: bun run typecheck
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Tests
         run: bun run test
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Build
         run: bunx vite build
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
   api-contract:
     name: API contract is in sync
@@ -251,14 +255,17 @@ jobs:
     name: Tauri shell
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v7
-
       # See the Frontend job above: frontend/'s `file:../../lab-ui` dependency needs the
-      # package checked out as a sibling and built before `bun install` here.
+      # package checked out as a sibling (both nested under $GITHUB_WORKSPACE, since
+      # actions/checkout refuses a `path` that escapes it) and built before `bun install`.
+      - uses: actions/checkout@v7
+        with:
+          path: visual-anomaly-lab
+
       - uses: actions/checkout@v7
         with:
           repository: VitalyVorobyev/lab-ui
-          path: ../lab-ui
+          path: lab-ui
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -268,23 +275,23 @@ jobs:
         run: |
           bun install
           bun run build
-        working-directory: ../lab-ui
+        working-directory: lab-ui
 
       # tauri-build reads tauri.conf.json, which points at the built frontend.
       - name: Build the frontend
         run: |
           bun install --frozen-lockfile
           bunx vite build
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: frontend/src-tauri
+          workspaces: visual-anomaly-lab/frontend/src-tauri
 
       - name: Format
         run: cargo fmt --check
-        working-directory: frontend/src-tauri
+        working-directory: visual-anomaly-lab/frontend/src-tauri
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-        working-directory: frontend/src-tauri
+        working-directory: visual-anomaly-lab/frontend/src-tauri
