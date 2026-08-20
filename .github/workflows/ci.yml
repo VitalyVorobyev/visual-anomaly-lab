@@ -121,9 +121,27 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # frontend/package.json depends on @vitavision/lab-ui as `file:../../lab-ui` -- a
+      # sibling checkout of this repo, same as on a contributor's own machine. `path` is
+      # resolved under $GITHUB_WORKSPACE, so `../lab-ui` lands one level up from this
+      # repo's own checkout: exactly the sibling the relative dependency path expects.
+      - uses: actions/checkout@v7
+        with:
+          repository: VitalyVorobyev/lab-ui
+          path: ../lab-ui
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      # lab-ui ships no build output in git (its dist/ is gitignored, same convention as
+      # this repo's own frontend/dist) -- it has to be built before this repo's `bun
+      # install` can resolve the package's exports.
+      - name: Build @vitavision/lab-ui
+        run: |
+          bun install
+          bun run build
+        working-directory: ../lab-ui
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -235,9 +253,22 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # See the Frontend job above: frontend/'s `file:../../lab-ui` dependency needs the
+      # package checked out as a sibling and built before `bun install` here.
+      - uses: actions/checkout@v7
+        with:
+          repository: VitalyVorobyev/lab-ui
+          path: ../lab-ui
+
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
+
+      - name: Build @vitavision/lab-ui
+        run: |
+          bun install
+          bun run build
+        working-directory: ../lab-ui
 
       # tauri-build reads tauri.conf.json, which points at the built frontend.
       - name: Build the frontend
