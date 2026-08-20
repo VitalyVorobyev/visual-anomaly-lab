@@ -21,20 +21,7 @@ import { useSearchParams } from "react-router";
 import type { Subset } from "../api/client";
 import type { CompareState, CompareView } from "../api/compareState";
 import { readCompareState, toggleRun, writeCompareState } from "../api/compareState";
-import { Tabs } from "../components/Tabs";
-import {
-  Callout,
-  Disclosure,
-  Empty,
-  ErrorBox,
-  NumberInput,
-  PageHeader,
-  Panel,
-  ReadoutStrip,
-  SegmentedControl,
-  Select,
-  SkeletonRows,
-} from "../components/ui";
+import { Callout, Disclosure, Empty, ErrorBox, NumberInput, PageHeader, Panel, ReadoutStrip, SegmentedControl, Select, SkeletonRows, Tabs } from "@vitavision/lab-ui";
 import { useComparison } from "../hooks/useComparison";
 import { AgreementTable } from "./compare/AgreementTable";
 import { CompareCurves } from "./compare/CompareCurves";

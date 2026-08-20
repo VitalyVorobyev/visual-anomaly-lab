@@ -100,7 +100,8 @@ comparing them under one evaluation protocol.
   through scikit-learn's numpy RNG, which `torch.manual_seed` does not touch, so its bank is not
   reproducible; M6 found the same shape in torch's global stream for weight init. When adding a
   method, assert reproducibility in *both* directions — same seed identical, different seed different.
-- **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Select`,
+- **Controls come from `@vitavision/lab-ui`** (the shared design system package; see its own
+  README for the consumer wiring). There is an `Input`, `NumberInput`, `Select`,
   `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
   `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
   `<select>`, `<input type="range">` or `<table>` — those are what the pass removed. A raw

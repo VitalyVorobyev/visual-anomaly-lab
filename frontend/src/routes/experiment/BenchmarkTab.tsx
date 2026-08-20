@@ -12,7 +12,7 @@ import { useState } from "react";
 import type { MetricSummary, Subset } from "../../api/client";
 import { groupingNote } from "../../api/metrics";
 import { CurveChart } from "../../components/charts/CurveChart";
-import { Callout, Empty, Panel, SkeletonRows } from "../../components/ui";
+import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/lab-ui";
 import { useCurves } from "../../hooks/useExperiments";
 import { Results } from "./ResultsPanel";
 

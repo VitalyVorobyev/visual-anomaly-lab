@@ -66,7 +66,7 @@ import {
   Tooltip,
   cn,
   focusRing,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import {
   type DraftEnvelope,
   useAnnotationDraft,

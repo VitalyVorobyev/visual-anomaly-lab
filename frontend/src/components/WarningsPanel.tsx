@@ -12,8 +12,7 @@
  */
 
 import type { ManifestWarning } from "../api/client";
-import { Badge, Checkbox, Panel } from "./ui";
-import type { Tone } from "./ui";
+import { Badge, Checkbox, Panel, type Tone } from "@vitavision/lab-ui";
 
 const WARNING_TONE: Record<string, Tone> = {
   // Not a defect in the data — the reference dataset genuinely has a capture group with

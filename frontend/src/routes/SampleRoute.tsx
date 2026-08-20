@@ -22,10 +22,8 @@ import {
 } from "../api/browseState";
 import type { ImageSummary, Label } from "../api/client";
 import { imageUrl } from "../api/imageUrl";
-import { FULL_TIER_ZOOM, RESET_VIEW, ZoomPanCanvas } from "../components/ZoomPanCanvas";
-import type { View } from "../components/ZoomPanCanvas";
+import { Badge, Button, Empty, ErrorBox, FULL_TIER_ZOOM, PageHeader, Panel, RESET_VIEW, ReadoutStrip, SkeletonRows, Switch, ZoomPanCanvas, type View } from "@vitavision/lab-ui";
 import { ChannelTabs } from "../components/ChannelTabs";
-import { Badge, Button, Empty, ErrorBox, PageHeader, Panel, SkeletonRows, ReadoutStrip, Switch } from "../components/ui";
 import { useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {

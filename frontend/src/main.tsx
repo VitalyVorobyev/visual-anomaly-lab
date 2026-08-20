@@ -10,6 +10,8 @@ import { lazy, StrictMode, Suspense } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter, Route, Routes } from "react-router";
 
+import { initTheme } from "@vitavision/lab-ui";
+
 import { App, CanvasLayout, ReadingLayout, WorkspaceLayout } from "./App";
 import { CompareRoute } from "./routes/CompareRoute";
 import { CompareSampleRoute } from "./routes/compare/CompareSampleRoute";
@@ -27,7 +29,7 @@ import { SampleRoute } from "./routes/SampleRoute";
 import { SplitsRoute } from "./routes/SplitsRoute";
 import { RegionPreparationRoute } from "./routes/RegionPreparationRoute";
 import "./styles.css";
-import { initTheme } from "./theme";
+import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
 const queryClient = new QueryClient();
 const AnnotationEditorRoute = lazy(async () => {
@@ -42,7 +44,7 @@ if (container === null) {
 
 // index.html already painted the stored choice before first paint; this subscribes so that
 // a choice of "system" keeps following the OS after mount.
-initTheme();
+initTheme(THEME_STORAGE_KEY);
 
 // HashRouter, not BrowserRouter: routing must not depend on the path the bundle happens
 // to be served from. The desktop shell loads `…/index.html` (and production serves from

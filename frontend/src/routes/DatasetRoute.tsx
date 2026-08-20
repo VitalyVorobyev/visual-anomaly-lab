@@ -45,7 +45,7 @@ import {
   ReadoutStrip,
   Select,
   SkeletonRows,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 
 const COLUMNS = 6;
