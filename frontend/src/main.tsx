@@ -12,7 +12,8 @@ import { HashRouter } from "react-router";
 
 import { initTheme } from "@vitavision/lab-ui";
 
-import { CrashBoundary, installCrashHandlers } from "./components/CrashScreen";
+import { shellStartupError } from "./api/shell";
+import { CrashBoundary, CrashScreen, installCrashHandlers } from "./components/CrashScreen";
 import { AppRoutes } from "./routes";
 import "./styles.css";
 import { THEME_STORAGE_KEY } from "./themeStorageKey";
@@ -33,6 +34,12 @@ installCrashHandlers(container);
 // a choice of "system" keeps following the OS after mount.
 initTheme(THEME_STORAGE_KEY);
 
+// The desktop shell builds its window even when the backend never started, and says why
+// through the same injected global it otherwise uses for capabilities. Mounting the
+// workbench in that case would mean fetching a base URL nothing is listening on, so the
+// window shows the reason instead — see `api/shell.ts`.
+const startupFailure = shellStartupError();
+
 // HashRouter, not BrowserRouter: routing must not depend on the path the bundle happens
 // to be served from. The desktop shell loads `…/index.html` (and production serves from
 // `tauri://localhost`), where a path-based router matches no route and renders a silent
@@ -40,15 +47,23 @@ initTheme(THEME_STORAGE_KEY);
 // file://, and survives a reload on a nested route.
 createRoot(container).render(
   <StrictMode>
-    {/* Outside everything it guards, and outside the router in particular: a route that
-        throws must still be caught, and a router that fails to construct must still be
-        reported rather than unmounting the root into a black window. */}
-    <CrashBoundary>
-      <QueryClientProvider client={queryClient}>
-        <HashRouter>
-          <AppRoutes />
-        </HashRouter>
-      </QueryClientProvider>
-    </CrashBoundary>
+    {startupFailure !== null ? (
+      <CrashScreen
+        headline="The lab could not start its backend."
+        message={startupFailure.message}
+        detail={startupFailure.detail ?? null}
+      />
+    ) : (
+      // Outside everything it guards, and outside the router in particular: a route that
+      // throws must still be caught, and a router that fails to construct must still be
+      // reported rather than unmounting the root into a black window.
+      <CrashBoundary>
+        <QueryClientProvider client={queryClient}>
+          <HashRouter>
+            <AppRoutes />
+          </HashRouter>
+        </QueryClientProvider>
+      </CrashBoundary>
+    )}
   </StrictMode>,
 );

@@ -15,7 +15,7 @@
         "@radix-ui/react-tooltip": "^1.2.16",
         "@tanstack/react-query": "^5.101.4",
         "@tanstack/react-virtual": "^3.14.9",
-        "@vitavision/lab-ui": "^0.1.0",
+        "@vitavision/lab-ui": "^0.3.0",
         "clsx": "^2.1.1",
         "konva": "^10.3.0",
         "lucide-react": "^1.30.0",
@@ -345,7 +345,7 @@
 
     "@typescript/typescript-win32-x64": ["@typescript/typescript-win32-x64@7.0.2", "", { "os": "win32", "cpu": "x64" }, "sha512-0BQ3HkAHHlKLSp1qRvf3SUhGpGsDuhB/jgFw75guyqbxJqEaS0Cw/VFO8i2nHglJUzQCRtMMR/IBAKE3ETMC4g=="],
 
-    "@vitavision/lab-ui": ["@vitavision/lab-ui@0.1.0", "", { "dependencies": { "@radix-ui/react-checkbox": "^1.3.11", "@radix-ui/react-dialog": "^1.1.23", "@radix-ui/react-select": "^2.3.7", "@radix-ui/react-slider": "^1.4.7", "@radix-ui/react-switch": "^1.3.7", "@radix-ui/react-tooltip": "^1.2.16", "clsx": "^2.1.1", "lucide-react": "^1.30.0", "tailwind-merge": "^3.6.0" }, "peerDependencies": { "react": "^19.2.8", "react-dom": "^19.2.8", "react-router": "^8.3.0" } }, "sha512-sjYzm3voWZA0Et8zcfVYNExSUsRRPKTPcwOz9fzoBYJsCJqcBR8hHr0Eylymsvs8yuAdNHTiUg/RXlQy2nBZzg=="],
+    "@vitavision/lab-ui": ["@vitavision/lab-ui@0.3.0", "", { "dependencies": { "@radix-ui/react-checkbox": "^1.3.11", "@radix-ui/react-dialog": "^1.1.23", "@radix-ui/react-select": "^2.3.7", "@radix-ui/react-slider": "^1.4.7", "@radix-ui/react-switch": "^1.3.7", "@radix-ui/react-tooltip": "^1.2.16", "clsx": "^2.1.1", "lucide-react": "^1.30.0", "tailwind-merge": "^3.6.0" }, "peerDependencies": { "react": "^19.2.8", "react-dom": "^19.2.8", "react-router": "^8.3.0" } }, "sha512-cnbhLi5dneiHRKLyqBNxUar9LueTLOGez9DAfY05TvpjBe+H/7Glb9sKT6FEIG+PLxoIlRDSYTGWMRUqXY0R+w=="],
 
     "@vitejs/plugin-react": ["@vitejs/plugin-react@6.0.5", "", { "dependencies": { "@rolldown/pluginutils": "^1.0.1" }, "peerDependencies": { "@rolldown/plugin-babel": "^0.1.7 || ^0.2.0", "babel-plugin-react-compiler": "^1.0.0", "vite": "^8.0.0" }, "optionalPeers": ["@rolldown/plugin-babel", "babel-plugin-react-compiler"] }, "sha512-BOVzne/NL162sMdResB25mUv+vWMF5NoAjNf09TeGlE7ZpszZWSD3winycicLJw72yeVsoCn/2kOhEuCvEShMA=="],
 

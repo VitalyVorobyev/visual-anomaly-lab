@@ -65,3 +65,21 @@ Negative consequences, accepted honestly:
   against each other only by testing (see ADR-0002).
 - **Debugging spans two runtimes.** A failure may live in the Rust shell, the HTTP layer, or the
   Python worker, and stack traces do not cross the boundary.
+
+## Changelog
+
+### 2026-08-22 — The shell resolves `uv` itself, and its setup hook cannot fail
+
+The "fiddly and easy to get subtly wrong on macOS" cost above came due. An installed build aborted
+with `SIGABRT` before drawing anything: `Command::new("uv")` searched only the inherited `PATH`, and
+an app started by launchd from Finder gets `/usr/bin:/bin:/usr/sbin:/sbin` — no `~/.local/bin`, so
+the spawn failed with `ENOENT`. That error then returned from Tauri's `setup` hook, which runs inside
+`did_finish_launching`; a panic may not unwind out of an Objective-C callback, so Tauri's `panic!` on
+a setup error became `abort()`.
+
+The boundary is unchanged — the shell still spawns the backend from the checkout and reads the port
+back. Two obligations are now explicit: the shell **resolves `uv` to an absolute path** across `PATH`
+and the known install directories, and **nothing in its setup hook returns an error** — a backend
+that will not start is reported through the window it builds regardless. See
+[the handbook](../architecture/README.md) for what it does, and
+[frontend](../architecture/frontend.md) for what the page shows.

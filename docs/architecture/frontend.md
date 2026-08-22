@@ -85,6 +85,16 @@ The file imports nothing — no `@vitavision/lab-ui`, no Tailwind class, no toke
 styles only. A crash screen that needs the stylesheet is another black window on the day
 the stylesheet is what failed.
 
+**The same panel reports a backend that never started.** The shell builds its window either
+way and injects `startupError` instead of the capabilities — on macOS its `setup` hook runs
+inside `did_finish_launching`, an Objective-C callback an unwind may not cross, so returning
+an error there aborts the process and shows nothing at all (that is exactly how an installed
+build died before `uv` was resolved by absolute path). `main.tsx` reads it through
+`shellStartupError()` **before** mounting anything and renders `CrashScreen` with its own
+headline; the router, the query client and every fetch against a port nothing is listening on
+are never constructed. A packaged app's stderr is written to nothing, so the panel carries the
+detail the shell collected — the paths searched, and the backend's own last output.
+
 ## Scroll and layout ownership
 
 **The document cannot scroll, by construction.** `html`, `body` and `#root` are pinned to `height:
