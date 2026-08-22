@@ -20,10 +20,9 @@
 import { useState } from "react";
 
 import type { JobDetail, JobSummary } from "../../api/client";
-import { LineChart } from "../../components/charts/LineChart";
+import { Disclosure, Empty, LineChart, Panel, Switch } from "@vitavision/lab-ui";
 import { JobProgress } from "../../components/JobProgress";
 import type { Series } from "../../hooks/useJob";
-import { Disclosure, Empty, Panel, Switch } from "../../components/ui";
 
 /** Anything not obviously a loss goes on its own linear chart — a rate, a count. */
 function isLoss(name: string): boolean {

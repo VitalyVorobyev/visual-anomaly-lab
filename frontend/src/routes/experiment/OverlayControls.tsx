@@ -14,7 +14,7 @@
 import type { MapScale } from "../../api/client";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue } from "../../api/resultsState";
-import { Slider, ToggleChip } from "../../components/ui";
+import { Slider, ToggleChip } from "@vitavision/lab-ui";
 
 /**
  * The colours the *server* draws these layers in, repeated here for the swatches.

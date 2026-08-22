@@ -26,19 +26,7 @@ import type { ComparedRun, ComparedSample, ImageScore } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { cutFor, readCompareState, writeCompareState } from "../../api/compareState";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
-import { Tabs } from "../../components/Tabs";
-import {
-  Badge,
-  Empty,
-  ErrorBox,
-  PageHeader,
-  SkeletonRows,
-  Slider,
-  ToggleChip,
-  cn,
-} from "../../components/ui";
-import { FULL_TIER_ZOOM, RESET_VIEW, ZoomPanCanvas } from "../../components/ZoomPanCanvas";
-import type { View } from "../../components/ZoomPanCanvas";
+import { Badge, Empty, ErrorBox, FULL_TIER_ZOOM, PageHeader, RESET_VIEW, SkeletonRows, Slider, Tabs, ToggleChip, ZoomPanCanvas, cn, type View } from "@vitavision/lab-ui";
 import { useComparison, useSampleImageSets } from "../../hooks/useComparison";
 import {
   HEATMAP_SWATCH,

@@ -21,7 +21,7 @@ import {
   NumberInput,
   ProgressBar,
   StatusDot,
-} from "../../components/ui";
+} from "@vitavision/lab-ui";
 import type { ExperimentDetail, JobSummary } from "../../api/client";
 import { isTerminal } from "../../hooks/useJob";
 import { useCancelJob, useStartExport, useStartRun } from "../../hooks/useExperiments";

@@ -45,7 +45,7 @@ import {
   ReadoutStrip,
   Skeleton,
   Tooltip,
-} from "../../components/ui";
+} from "@vitavision/lab-ui";
 import { useDataset } from "../../hooks/useCatalog";
 
 export function DatasetLayout() {

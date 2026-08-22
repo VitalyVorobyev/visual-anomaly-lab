@@ -18,7 +18,7 @@
 import { useMemo, useState } from "react";
 import { ChevronRight } from "lucide-react";
 
-import { Badge, Button, Input, cn } from "../ui";
+import { Badge, Button, Input, cn } from "@vitavision/lab-ui";
 
 export interface ModuleNode {
   id: string;

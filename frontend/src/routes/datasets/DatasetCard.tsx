@@ -19,7 +19,7 @@ import { Link } from "react-router";
 
 import type { DatasetSummary } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { Button, cn, focusRing } from "../../components/ui";
+import { Button, cn, focusRing } from "@vitavision/lab-ui";
 
 export function DatasetCard({
   dataset,

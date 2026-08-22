@@ -23,7 +23,7 @@ import {
   ErrorBox,
   SegmentedControl,
   SkeletonRows,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useAnnotationScope, useSetAnnotationScope } from "../hooks/useAnnotations";
 import { useDataset, useSamples } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";

@@ -19,7 +19,7 @@ import { Link } from "react-router";
 
 import type { SampleSummary } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { Badge, Checkbox, cn, focusRing } from "../../components/ui";
+import { Badge, Checkbox, cn, focusRing } from "@vitavision/lab-ui";
 import type { Label } from "../../api/client";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {

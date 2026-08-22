@@ -18,7 +18,7 @@
  * exactly as it did.
  */
 
-import { Badge, Empty } from "../ui";
+import { Badge, Empty } from "@vitavision/lab-ui";
 import { ModuleTree, hasHierarchy, parameterCount, shape } from "./ModuleTree";
 import type { ModuleNode } from "./ModuleTree";
 

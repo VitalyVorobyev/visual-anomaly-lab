@@ -13,7 +13,7 @@
 import { ChevronRight, Pencil } from "lucide-react";
 
 import type { DatasetSummary } from "../../api/client";
-import { Button, cn, focusRing } from "../../components/ui";
+import { Button, cn, focusRing } from "@vitavision/lab-ui";
 import { DatasetCard } from "./DatasetCard";
 
 const GRID = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";

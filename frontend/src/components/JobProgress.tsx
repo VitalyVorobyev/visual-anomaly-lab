@@ -12,8 +12,7 @@ import { api } from "../api/client";
 import type { JobDetail, JobStatus } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, Disclosure, ErrorBox, ProgressBar, SkeletonRows, cn } from "./ui";
-import type { Tone } from "./ui";
+import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows, type Tone } from "@vitavision/lab-ui";
 
 const STATUS_TONE: Record<JobStatus, Tone> = {
   queued: "neutral",

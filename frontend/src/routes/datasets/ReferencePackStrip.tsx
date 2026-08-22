@@ -18,7 +18,7 @@ import { useCallback, useEffect, useState } from "react";
 
 import { queryKeys } from "../../api/queryKeys";
 import { JobProgress } from "../../components/JobProgress";
-import { Button, ErrorBox, Skeleton } from "../../components/ui";
+import { Button, ErrorBox, Skeleton } from "@vitavision/lab-ui";
 import { useReferencePacks, useRegisterReferencePacks } from "../../hooks/useCatalog";
 import { isTerminal, useJob } from "../../hooks/useJob";
 

@@ -39,7 +39,7 @@ import {
   Field,
   Select,
   SkeletonRows,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 import { SampleTile, type SelectModifiers } from "./dataset/SampleTile";
 

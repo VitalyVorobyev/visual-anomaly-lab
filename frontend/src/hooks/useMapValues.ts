@@ -12,8 +12,8 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import type { ValuePlane } from "../api/mapValues";
-import { anomalyMapValuesUrl, fetchPlane, sourceValuesUrl } from "../api/mapValues";
+import { fetchPlane, type ValuePlane } from "@vitavision/lab-ui";
+import { anomalyMapValuesUrl, sourceValuesUrl } from "../api/valuesUrl";
 
 const FOREVER = {
   staleTime: Number.POSITIVE_INFINITY,

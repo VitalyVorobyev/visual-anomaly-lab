@@ -18,7 +18,7 @@
 
 import type { ReactNode } from "react";
 
-import { cn } from "../../components/ui";
+import { cn } from "@vitavision/lab-ui";
 
 export function TabScroll({
   measure = "read",

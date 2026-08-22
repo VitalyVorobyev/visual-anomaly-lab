@@ -1,7 +1,6 @@
 import { useState } from "react";
 
-import { Badge, Button, Empty, Input, PageHeader, Panel } from "../components/ui";
-import type { Tone } from "../components/ui";
+import { Badge, Button, Empty, Input, PageHeader, Panel, type Tone } from "@vitavision/lab-ui";
 import { useEcho } from "../hooks/useEcho";
 
 const STATE_LABEL: Record<string, { text: string; tone: Tone }> = {

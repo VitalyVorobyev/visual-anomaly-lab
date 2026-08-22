@@ -10,9 +10,12 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router";
 
+import { initTheme } from "@vitavision/lab-ui";
+
+import { CrashBoundary, installCrashHandlers } from "./components/CrashScreen";
 import { AppRoutes } from "./routes";
 import "./styles.css";
-import { initTheme } from "./theme";
+import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
 const queryClient = new QueryClient();
 
@@ -21,9 +24,14 @@ if (container === null) {
   throw new Error("index.html is missing its #root element.");
 }
 
+// Before the first render, so a module that throws on the way in still says so. The
+// desktop shell has no console: an uncaught error there is a black window and nothing
+// else. See `components/CrashScreen.tsx`.
+installCrashHandlers(container);
+
 // index.html already painted the stored choice before first paint; this subscribes so that
 // a choice of "system" keeps following the OS after mount.
-initTheme();
+initTheme(THEME_STORAGE_KEY);
 
 // HashRouter, not BrowserRouter: routing must not depend on the path the bundle happens
 // to be served from. The desktop shell loads `…/index.html` (and production serves from
@@ -32,10 +40,15 @@ initTheme();
 // file://, and survives a reload on a nested route.
 createRoot(container).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <HashRouter>
-        <AppRoutes />
-      </HashRouter>
-    </QueryClientProvider>
+    {/* Outside everything it guards, and outside the router in particular: a route that
+        throws must still be caught, and a router that fails to construct must still be
+        reported rather than unmounting the root into a black window. */}
+    <CrashBoundary>
+      <QueryClientProvider client={queryClient}>
+        <HashRouter>
+          <AppRoutes />
+        </HashRouter>
+      </QueryClientProvider>
+    </CrashBoundary>
   </StrictMode>,
 );

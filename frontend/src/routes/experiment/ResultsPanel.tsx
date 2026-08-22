@@ -13,13 +13,8 @@ import { Link } from "react-router";
 
 import type { SampleVerdict, Subset } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { StackedBars } from "../../components/charts/BarChart";
-import { DEFECT_COLOUR, NORMAL_COLOUR } from "../../components/charts/Frame";
-import { ScoreHistogram } from "../../components/charts/Histogram";
 import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
-import { Tabs } from "../../components/Tabs";
-import { Badge, Empty, ErrorBox, Panel, Select, Slider } from "../../components/ui";
-import type { Tone } from "../../components/ui";
+import { Badge, DEFECT_COLOUR, Empty, ErrorBox, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
 import {
   useCurves,
   useResults,
