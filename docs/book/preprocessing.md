@@ -17,7 +17,7 @@ manifest.
 
 Identity is the correct starting point. Localization adds value when object pose or background dominates the
 signal, but it can remove the very defect being measured. The public paired gate in
-[`measurements-region-profiles.md`](../measurements-region-profiles.md) demonstrates the trap: a threshold
+[`measurements.md`](../measurements.md) demonstrates the trap: a threshold
 crop improved one image-level ROC-AUC while sharply degrading source-frame localization metrics by excluding
 defect pixels.
 

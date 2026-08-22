@@ -111,7 +111,7 @@ class JobQueue:
     ) -> None:
         self._settings = settings
         # Awaited immediately before every worker starts. One hook, injected — the queue
-        # must not import the resident worker, or the dependency that keeps ADR-0014's
+        # must not import the resident worker, or the dependency that keeps handbook frontend.md's
         # boundary straight would point the wrong way. `app.py` points at both (ADR-0026).
         self._before_spawn = before_spawn
         self._wake = asyncio.Event()

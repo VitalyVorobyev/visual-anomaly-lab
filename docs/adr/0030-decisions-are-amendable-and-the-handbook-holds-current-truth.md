@@ -60,25 +60,24 @@ live alternative. Accepted records may be amended; only a reversal gets a new nu
   reads as one coherent thing rather than as an original plus four extensions filed elsewhere.
 
 - **A reversal still gets a new number and supersedes explicitly.** Reversal is a different
-  decision, and the superseded reasoning is what makes the new one legible — ADR-0001 → ADR-0022 is
-  the pattern and it stays. Editing a record to say the opposite of what it said would destroy the
+  decision, and the replacement is written to stand on its own — ADR-0022 restates what it took
+  from the record it superseded, which is what lets that record go. Editing a record to say the opposite of what it said would destroy the
   only thing the directory is for.
 
-- **Numbers are permanent, including for folded records.** A record whose current truth has moved
-  into the handbook keeps its file, its number and its full text, and gains a status of **Folded**
-  and a line at the top naming the page to read instead. Every one of the 658 citations still
-  resolves.
+- **A record whose truth has moved into the handbook is removed.** It is history at that point,
+  not a decision: the handbook says what the code does, and the record only preserves how it was
+  once argued for. Every citation is repointed at the page that answers the question now — as part
+  of the same change, never left dangling.
 
-- **The existing twenty-nine are classified once, here, by that bar** — seventeen decisions, eleven
-  folded, one already superseded. The classification is in `docs/adr/README.md` and is itself
-  amendable: a folded record that turns out to still be settling an argument can be un-folded.
+- **Numbers are still permanent.** They are never reused, so a surviving record keeps the number it
+  has always had and no `ADR-NNNN` in the code can resolve to the wrong record.
 
 ## Consequences
 
 There is one place to learn how the system works, and it is not a chronological reconstruction from
 thirty documents. A refinement to an existing decision costs a paragraph and a changelog line
 instead of a new record, which removes the pressure that produced four of the five diagnostics
-records. The `ADR-NNNN` citations in the code keep working unchanged.
+records. The `ADR-NNNN` citations in the code point only at records that still exist.
 
 Negative consequences, accepted honestly:
 
@@ -87,9 +86,11 @@ Negative consequences, accepted honestly:
   ADR-0013's list of three claims ADR-0006 asserted without measuring, two of them false, is the
   most useful paragraph in the directory. The changelog is the only defence and nothing enforces it.
   This is a real loss, taken knowingly.
-- **"Folded" is one reader's judgement made in one sitting.** Some of the eleven will turn out to
-  have been settling an argument that comes back. The mitigation is that folding costs nothing to
-  undo, and that the full text stays.
+- **Removal is one reader's judgement, and it is not free to undo.** Some of what goes will turn
+  out to have been settling an argument that comes back, and the text is then only in the git
+  history. This was originally softened by keeping folded records in place; that kept a reader
+  wondering which of thirty-six documents were load-bearing, which is the cost this record exists
+  to remove. Reconstructing a deleted record from `git log` is the accepted price.
 - **Two places to write now, and the failure mode is writing in neither.** Previously every decision
   had one obvious home. The handbook has no template and no status field, so nothing prompts for
   the honest-negatives section that makes these records worth re-reading.
@@ -99,3 +100,14 @@ Negative consequences, accepted honestly:
 - **The bar is a judgement call wearing a rule's clothes.** "Would a competent engineer plausibly
   have chosen otherwise" is answerable in the clear cases and arguable in exactly the cases where a
   rule would help most.
+
+## Changelog
+
+### 2026-08-22 — Folded records are removed rather than kept in place
+
+The eleven records this decision classified as *folded* were kept on disk with a status line, so
+their citations resolved and their reasoning stayed readable. In practice that left a reader facing
+thirty-six documents with no way to tell, without opening each one, which twenty-four were
+load-bearing — the confusion this record was written to end. They are deleted now, and their
+citations point at the handbook page that holds the current truth (or, for ADR-0001, at the record
+that superseded it). Numbers remain permanent: none is reused.

@@ -34,7 +34,7 @@ fn repo_root() -> PathBuf {
 ///
 /// The import flow needs a path the *backend* can open, and a browser cannot produce one:
 /// a file input yields a `File` and a bare name, deliberately. So the shell offers this
-/// and the browser offers a text field (ADR-0014).
+/// and the browser offers a text field (handbook frontend.md).
 ///
 /// `async` on purpose — the blocking picker must not run on the main thread, and an async
 /// command is dispatched to a worker.
@@ -49,7 +49,7 @@ async fn pick_directory(app: tauri::AppHandle) -> Option<String> {
 
 /// Show a path in the OS file manager.
 ///
-/// The second capability ADR-0014 anticipated, and it exists for a concrete complaint: a
+/// The second capability handbook frontend.md anticipated, and it exists for a concrete complaint: a
 /// run spends eleven minutes producing a 31 MB checkpoint and the app never says where it
 /// went. A browser has no equivalent and gets the path as selectable text instead.
 ///
@@ -100,7 +100,7 @@ fn data_root() -> PathBuf {
 ///
 /// Everything the shell offers is *injected*, never imported: that is what keeps
 /// `frontend/src/` free of any Tauri dependency, so the same bundle runs in a plain browser
-/// (§2, ADR-0014). The UI feature-detects `pickDirectory` and falls back to a text field
+/// (§2, handbook frontend.md). The UI feature-detects `pickDirectory` and falls back to a text field
 /// when it is absent.
 fn ready_script(base_url: &str) -> String {
     format!(

@@ -350,7 +350,7 @@ class PenaltyStream:
 
     Reproducible is the point. The reference draws these from a shuffled torch `DataLoader`
     whose position is outside its checkpoint entirely, so continuing a run restarts the
-    penalty sequence — ADR-0025 records that as an accepted cost. Here the order is a
+    penalty sequence — handbook jobs.md records that as an accepted cost. Here the order is a
     permutation seeded from one integer, and `state()` is small enough to sit in a
     checkpoint, so a continued run picks up the sequence where it stopped.
     """

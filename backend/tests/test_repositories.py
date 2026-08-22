@@ -12,7 +12,7 @@ from tests.conftest import SeededCatalog
 
 
 def test_dataset_is_found_by_its_root_path(migrated_db: sqlite3.Connection) -> None:
-    """Re-import resolves the dataset to update by root, not by name (ADR-0013)."""
+    """Re-import resolves the dataset to update by root, not by name (handbook import.md)."""
     created = datasets.create_dataset(migrated_db, name="d", root_path="/roots/d")
 
     assert datasets.find_dataset_by_root(migrated_db, "/roots/d") == created
@@ -101,7 +101,7 @@ def test_upsert_sample_is_idempotent_on_its_natural_key(
 def test_a_manual_label_survives_re_import(
     migrated_db: sqlite3.Connection, catalog: SeededCatalog
 ) -> None:
-    """An operator's correction outranks whatever the folder structure says (ADR-0013)."""
+    """An operator's correction outranks whatever the folder structure says (handbook import.md)."""
     sample_id = catalog.sample_ids["group-a/1"]
     samples.set_label(migrated_db, sample_id, Label.DEFECT)
 

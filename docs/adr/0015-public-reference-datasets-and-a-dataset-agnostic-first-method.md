@@ -2,8 +2,7 @@
 
 **Status:** Accepted (2026-08-07)
 
-**Supersedes:** the sequencing claim in ADR-0010's context, and `system-design.md` §10's
-statement that `classical_circular` is the vertical slice's first model.
+**Supersedes:** the sequencing claim that `classical_circular` is the vertical slice's first model.
 
 ## Context
 
@@ -42,10 +41,10 @@ would add gigabytes to buy nothing.
 - **A dataset-agnostic floor baseline, `pixel_reference`, takes the slice's baseline
   slot.** Per-pixel median and MAD over the training normals, a z-map, and a
   high-percentile score: numpy and Pillow only, trains in seconds, works on any dataset.
-  It is the geometry-free core of ADR-0010, so reviving `classical_circular` later means
-  adding a circle-fit front-end rather than starting over.
-- **`classical_circular` is deferred to a later, optional milestone.** ADR-0010 stays
-  accepted and its algorithm stays valid; only its position in the order changes.
+  It is the geometry-free core of the classical baseline, so reviving `classical_circular` later
+  means adding a circle-fit front-end rather than starting over.
+- **`classical_circular` is deferred to a later, optional milestone.** Its algorithm stays valid
+  (handbook methods.md); only its position in the order changes.
 - **Public reference datasets are downloaded, never committed.** `/datasets/` is
   gitignored, the README says how to obtain each and credits both, and
   `scripts/check-repo-safety.sh` fails if anything under it is ever staged.
@@ -58,7 +57,7 @@ would add gigabytes to buy nothing.
 The first end-to-end proof of the architecture is a proof that it works for datasets in
 general, and the plugin boundary of ADR-0007 gets exercised by a real deep model rather
 than by a method written to fit the interface. Pixel-level metrics become computable,
-because VisA ships masks — which is what makes ADR-0017 possible at all.
+because VisA ships masks — which is what makes pixel-level evaluation possible at all.
 
 Negative consequences, accepted honestly:
 
@@ -74,8 +73,8 @@ Negative consequences, accepted honestly:
   are exactly the cases a universal tool must handle, and they now live only in an opt-in
   test that CI never runs.
 - **`classical_circular` may never be built.** Deferring an optional milestone in a
-  spare-time project is close to cancelling it, and ADR-0010 should be read as a design
-  that exists rather than one that ships.
+  spare-time project is close to cancelling it, and its sketch in handbook methods.md should be
+  read as a design that exists rather than one that ships.
 - **The reference datasets are not reproducible from the repository.** A clone plus
   `uv sync` does not get you a runnable benchmark; it gets you instructions. That is the
   price of not committing gigabytes, and the README carries the cost.

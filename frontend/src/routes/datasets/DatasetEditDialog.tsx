@@ -3,7 +3,7 @@
  *
  * Two fields, both free text, both clearable. `name` and `root_path` are deliberately not
  * here: they are the dataset's identity, unique in the schema, and the key a re-import
- * resolves against (ADR-0013).
+ * resolves against (handbook import.md).
  *
  * The collection field is a plain input with a `datalist` rather than a picker, because
  * the two things a reader wants from it are opposite. Joining an existing group should

@@ -83,7 +83,7 @@ STATE_FILENAME = "efficientad.pt"
 CHECKPOINT_FORMAT = 2
 """Format 1 was weights and `model_size` alone. Format 2 adds what a continuation needs:
 optimizer moments, LR-schedule state, the absolute step counter and both RNG streams
-(ADR-0025). A format-1 checkpoint still loads and still infers; it cannot be continued."""
+(handbook jobs.md). A format-1 checkpoint still loads and still infers; it cannot be continued."""
 PENALTY_SUBDIR = "imagenette"
 
 # The paper trains for 70000 steps. That is roughly two and a half hours on this Mac at
@@ -207,7 +207,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
         super().__init__(config)
         self.config = config
         self._module: Any = None
-        # Everything below is what makes a run continuable (ADR-0025). Held on the
+        # Everything below is what makes a run continuable (handbook jobs.md). Held on the
         # instance rather than reconstructed, because `save` is called by the job handler
         # after `fit` returns and has no other way to reach the optimizer.
         self._completed = 0
@@ -344,7 +344,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
     # ------------------------------------------------------------------ resume
 
     def completed_steps(self) -> int:
-        """Steps trained so far, across every run (ADR-0025)."""
+        """Steps trained so far, across every run (handbook jobs.md)."""
         return self._completed
 
     def fit_more(
@@ -509,7 +509,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
         **Steps reported to `ctx.metric` are absolute across the experiment's training**,
         so a continued run's curve is a continuation of the first rather than a second
         curve starting at zero — no stitching in the chart, and no extra log reads, which
-        is the cliff ADR-0020 named.
+        is the cliff handbook jobs.md named.
         """
         import torch
 
@@ -667,7 +667,8 @@ class EfficientAdAnomalibModel(AnomalyModel):
         Every module is recorded, not only the three branches, through the shared helper in
         `models/introspect.py` — so this method contributes only *which roots to walk* and
         *how they are wired*, and any other torch method inherits the same view by doing the
-        same (ADR-0024). The branch nodes remain, as the depth-0 rows, so a reader who knows
+        same (handbook diagnostics.md). The branch nodes remain, as the depth-0 rows, so
+        a reader who knows
         the old three-card picture is not lost.
         """
         if not ctx.diagnostics.enabled:
@@ -887,7 +888,7 @@ class EfficientAdAnomalibModel(AnomalyModel):
     def save(self, artifact_dir: Path) -> None:
         """Write everything a *continuation* needs, not only everything inference needs.
 
-        Format 2 (ADR-0025) carries the optimizer moments, the LR-schedule state, the step
+        Format 2 (handbook jobs.md) carries the optimizer moments, the LR-schedule state, the step
         counter and both random streams. That is roughly three times the size of the
         weights alone — 32 MB becomes about 96 MB — and there is deliberately no option to
         skip it: an option would make "can I continue this run?" depend on a flag someone

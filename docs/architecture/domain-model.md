@@ -47,7 +47,7 @@ erDiagram
 `collection`, `annotation_scope`.
 A named collection of samples rooted at an absolute path on disk, outside this repository.
 `root_path` is a reference, never a copy destination, and it is **unique**: re-importing a directory
-updates the dataset it already produced rather than creating a second one beside it (ADR-0013).
+updates the dataset it already produced rather than creating a second one beside it (handbook import.md).
 Because it is unique, one capture tree holding several products is several datasets, and the scan's
 `dataset_root` is how each records an identity distinct from the directory that was walked — see
 [import](import.md). `adapter` and `manifest_path` record how the dataset came to look the way it does.
@@ -85,7 +85,7 @@ UI) so that hand corrections are distinguishable from imported guesses.
 
 **`Image`** — `id`, `sample_id`, `channel_id` (nullable), `path`, `width`, `height`, `bit_depth`,
 `file_size`, `sha256`, `imported_at`.
-One file on disk, unique on `(sample_id, path)` — the key that makes a re-import idempotent (ADR-0013).
+One file on disk, unique on `(sample_id, path)` — the key that makes a re-import idempotent (handbook import.md).
 `channel_id` is nullable so that single-view datasets need no synthetic channel. It is also `RESTRICT`,
 so a channel cannot be dropped out from under the images using it; the cost is that deleting a dataset
 cannot rely on cascades, since SQLite does not order them, and the repository deletes children first
@@ -96,7 +96,7 @@ identities, which is what allows caching by `image_id` ([the media layer](media.
 **`Mask`** — `id`, `image_id`, `path`, `kind`, `sha256` (nullable).
 Pixel-level ground truth, referenced in place like the image it annotates. The table existed unused from the
 first migration until public datasets that ship masks were adopted (ADR-0015); defining it early is what let
-them be imported with no schema change (ADR-0016). Identity is `(image_id, kind)`, so a re-import repoints a
+them be imported with no schema change (handbook import.md). Identity is `(image_id, kind)`, so a re-import repoints a
 mask rather than accumulating a second one; a mask the manifest no longer mentions is left alone, for the same
 reason a missing image is reported rather than deleted.
 
@@ -130,7 +130,7 @@ Two strategies exist. **`normal_only_train`** draws one: seeded, stratified by c
 training. **`imported`** adopts the partition the source dataset published, read from the manifest the dataset
 was committed from and recorded in `params.manifest_id` — no seed, no fractions, no stratification, because
 the point is to reproduce someone else's split exactly so that a number computed here is comparable to the one
-they published (ADR-0016). Samples the manifest does not place are left *out* of the split rather than swept
+they published (handbook import.md). Samples the manifest does not place are left *out* of the split rather than swept
 into `test`: a benchmark's protocol decides what belongs in its test set, and adding samples it never scored
 would change the denominator of every metric.
 

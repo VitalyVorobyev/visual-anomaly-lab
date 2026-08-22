@@ -110,7 +110,7 @@ reached beside a badge still reading `running`, and only a remount recovered.
 **Progress belongs to the job row, and only there.** A `progress` frame invalidates `["jobs", id]`
 *exactly* — not the experiment, which at four frames a second would be a poll wearing an event's clothes,
 and not the key's own children, because `["jobs", id, "metrics"]` is a prefix match away and that snapshot
-is built by parsing the whole log file (**ADR-0020** also forbids re-reading it live). Anything drawing live
+is built by parsing the whole log file (re-reading it live is forbidden for the same reason). Anything drawing live
 progress must therefore read the job row: the experiment detail payload carries a copy of it that is
 refreshed on window focus and terminal frames alone, and a bar drawn from that copy stands still for the
 length of a run.
@@ -126,7 +126,7 @@ finds, downsampled to a drawable number of points with the drop reported. No tab
 second event channel — the log is already the durable copy of the stream. The client takes this snapshot
 when it opens the socket and appends live frames to it, under the same freeze rule the console follows: the
 snapshot cannot be re-read live, because every event invalidates it and it comes back already containing the
-points the socket just delivered (**ADR-0020**).
+points the socket just delivered.
 
 ## Import jobs
 
@@ -141,7 +141,7 @@ capability** — `Capabilities.supports_resume` plus a `runtime_checkable` `Supp
 carrying `completed_steps()` and `fit_more(train, ctx, *, additional_steps)`. A protocol rather than
 two more abstract methods, so `pixel_reference` — which has no notion of a step — grows no stub. The
 train handler checks the flag *and* the protocol against each other and names a disagreement as a
-plugin bug (**ADR-0025**).
+plugin bug.
 
 - **`TrainParams.additional_steps`, so the experiment's config is untouched.** How long to continue
   for is a property of *this run*; the frozen record that makes an experiment reproducible stays

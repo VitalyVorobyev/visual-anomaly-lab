@@ -2,7 +2,8 @@
 
 **Status:** Accepted (2026-08-08)
 
-Supersedes **ADR-0001**. Its four mechanisms are kept; the arrangement they were protecting is
+Supersedes **ADR-0001** (*private data never leaves the machine*, since removed — see ADR-0030).
+Its four mechanisms are kept; the arrangement they were protecting is
 replaced.
 
 ## Context
@@ -70,9 +71,9 @@ Negative consequences, accepted honestly:
   directory is gone, because the absence of a path is not something the repository can observe. The
   safety script still fails if anything named `privatedata` is ever staged, which is the part it can
   check.
-- **ADR-0001's own record now reads oddly.** It is immutable and stays, describing an arrangement
-  that no longer exists. That is the cost of the convention, and it is cheaper than a record nobody
-  can trust to mean what it said.
+- **The superseded record read oddly for as long as it stayed**, describing an arrangement that no
+  longer existed. It has since been removed under ADR-0030's rule that a record which no longer
+  settles anything is history rather than a decision; what it argued is summarised above.
 - **Documentation referencing `privatedata/` had to be swept** — `system-design.md` mentioned it in
   seven places, including a diagram. A stale reference to a directory that must not exist is worse
   than none, because it reads as instruction.

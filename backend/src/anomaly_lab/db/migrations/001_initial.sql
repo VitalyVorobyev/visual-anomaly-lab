@@ -25,7 +25,7 @@ CREATE TABLE dataset (
     id             INTEGER PRIMARY KEY AUTOINCREMENT,
     name           TEXT    NOT NULL UNIQUE,
     -- Unique so that re-importing a directory updates the dataset it already produced
-    -- instead of creating a second one beside it (ADR-0013).
+    -- instead of creating a second one beside it (handbook import.md).
     root_path      TEXT    NOT NULL UNIQUE,
     -- Which adapter proposed this dataset, and the manifest that was accepted. Together
     -- they answer "how did this dataset come to look like this?" months later (ADR-0006).
@@ -80,7 +80,7 @@ CREATE TABLE image (
     imported_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- The upsert key that makes re-import idempotent: one file contributes one row to
     -- the sample it belongs to, so a second commit of the same manifest updates rather
-    -- than duplicates (ADR-0013).
+    -- than duplicates (handbook import.md).
     UNIQUE (sample_id, path)
 );
 

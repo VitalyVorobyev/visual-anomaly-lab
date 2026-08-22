@@ -13,7 +13,7 @@
  * **Two views over one payload.** The cards are the branches and how they are wired — the
  * only connections anyone measured, since forward hooks see modules and not the functional
  * operations between them. Below them, when the payload carries a hierarchy, is every
- * module the pass actually reached (ADR-0024). A payload with no hierarchy — an index
+ * module the pass actually reached (handbook diagnostics.md). A payload with no hierarchy — an index
  * written before M4.7, or a method that records only its branches — draws the cards alone,
  * exactly as it did.
  */

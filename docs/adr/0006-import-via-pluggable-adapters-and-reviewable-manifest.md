@@ -36,7 +36,7 @@ reviewable manifest.**
 4. **Commit.** The accepted manifest creates the database rows and is **persisted verbatim** to
    `data/manifests/` so the import is reproducible and auditable after the fact.
 
-**Images are never copied** (ADR-0001). At import, a **sha256** of each file is recorded; a separate
+**Images are never copied** (ADR-0022). At import, a **sha256** of each file is recorded; a separate
 verify operation re-hashes the referenced files later to detect moved, replaced, or corrupted
 source images.
 

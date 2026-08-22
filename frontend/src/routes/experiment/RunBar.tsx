@@ -184,7 +184,7 @@ export function RunBar({
       )}
 
       {/* The consequence is surprising enough that it is printed before the run rather
-          than discovered afterwards in the learning-rate chart (ADR-0025). */}
+          than discovered afterwards in the learning-rate chart (handbook jobs.md). */}
       {canContinue && state !== null && steps > 0 && (
         <p className="text-xs text-fg-muted">
           {state.completed_steps} steps completed over {state.runs} run

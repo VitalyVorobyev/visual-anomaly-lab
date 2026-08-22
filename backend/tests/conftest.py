@@ -1,7 +1,7 @@
 """Shared fixtures.
 
 Every test runs against a temporary data directory. Nothing here reads the repo-local
-`data/`, and no test fixture is ever a real dataset file (ADR-0001).
+`data/`, and no test fixture is ever a real dataset file (ADR-0022).
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def write_image(
 ) -> Path:
     """Write a tiny synthetic image, creating parents.
 
-    Fixtures are generated, never checked in, and never a real dataset file (ADR-0001).
+    Fixtures are generated, never checked in, and never a real dataset file (ADR-0022).
     The format follows the suffix, so a test that needs the BMP decode path asks for
     `.bmp` and gets one — inside `tmp_path`, which is not the repository.
 

@@ -1,4 +1,4 @@
-"""Continuing a finished run, and whether it is actually the same run (ADR-0025).
+"""Continuing a finished run, and whether it is actually the same run (handbook jobs.md).
 
 `dl`-gated: CI's main backend job installs without `--extra dl`, so this skips there. It
 runs in the separate `backend-dl` job, and locally under `uv sync --extra dl`.
@@ -264,7 +264,7 @@ def test_the_first_run_already_spent_its_own_schedule(
 ) -> None:
     """Continuing is **not** the same as having trained that long in one go, and why.
 
-    `max_steps` is a per-run budget frozen into the experiment (ADR-0025), so a run of 10
+    `max_steps` is a per-run budget frozen into the experiment (handbook jobs.md), so a run of 10
     sizes its own `StepLR` for 10 and completes its tenfold decay inside those steps. A
     later continuation resizes the schedule to the new total, which puts the learning rate
     back up. Both facts are deliberate and both are printed on screen; this pins them so
@@ -297,7 +297,7 @@ def test_the_first_run_already_spent_its_own_schedule(
 
 @pytest.mark.usefixtures("pinned_external_inputs")
 def test_a_continued_run_reports_absolute_steps(tmp_path: Path, images: list[ImageRecord]) -> None:
-    """So the chart is one curve, with no stitching and no extra log reads (ADR-0020)."""
+    """So the chart is one curve, with no stitching and no extra log reads (handbook jobs.md)."""
 
     class Recorder(NullReporter):
         def __init__(self) -> None:

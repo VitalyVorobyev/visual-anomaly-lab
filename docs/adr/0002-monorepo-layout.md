@@ -25,7 +25,7 @@ frontend/    React + TypeScript + Vite app, with the Tauri Rust shell embedded a
              frontend/src-tauri/
 docs/        Design docs, roadmap, backlog, and these ADRs
 scripts/     Dev and safety scripts (dev launcher, check-repo-safety.sh)
-privatedata/ Gitignored. Source images, referenced in place (see ADR-0001)
+privatedata/ Gitignored. Source images, referenced in place (see ADR-0022)
 data/        Gitignored. Application-managed state (see ADR-0004)
 ```
 

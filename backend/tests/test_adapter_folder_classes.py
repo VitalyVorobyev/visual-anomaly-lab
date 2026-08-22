@@ -2,7 +2,7 @@
 
 The fixture trees here are shaped like the public datasets this adapter exists for — a
 folder of good parts and one or more folders of bad ones — built from small synthetic
-PNGs, never a real dataset file (ADR-0001).
+PNGs, never a real dataset file (ADR-0022).
 """
 
 from __future__ import annotations

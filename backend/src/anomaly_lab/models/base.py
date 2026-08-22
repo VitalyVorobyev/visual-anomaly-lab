@@ -11,7 +11,7 @@ Three seams carry the weight:
     `ImageRecord.channel` internally and still returns one `Prediction` per input image.
   * **A model touches nothing but its context.** No SQLite, no `Settings`, no writing
     outside `artifact_dir`. Everything a long-running plugin needs — progress,
-    cancellation, logging, diagnostics — is injected (ADR-0014), so a plugin is testable
+    cancellation, logging, diagnostics — is injected (handbook frontend.md), so a plugin is testable
     with a fake reporter and no job system at all.
   * **Configuration is a pydantic model.** Its JSON Schema is served to the frontend,
     which generates the form. Adding a hyperparameter is a Python field and nothing else.
@@ -66,7 +66,7 @@ class Capabilities(BaseModel):
     channel_aware: bool = False
     dataset_specific: bool = False
     supports_resume: bool = False
-    """Whether a finished run can be continued for further steps (ADR-0025).
+    """Whether a finished run can be continued for further steps (handbook jobs.md).
 
     A capability rather than a special case, because most methods have no notion of a
     step: `pixel_reference` builds a median over the training set and is either fitted or
@@ -356,7 +356,7 @@ class AnomalyModel(ABC):
 
 @runtime_checkable
 class SupportsResume(Protocol):
-    """A method whose training can be continued from where it stopped (ADR-0025).
+    """A method whose training can be continued from where it stopped (handbook jobs.md).
 
     A **Protocol**, not two more abstract methods on `AnomalyModel`. Most methods have no
     steps to continue — `pixel_reference` computes a median and is done — and making them
@@ -373,7 +373,7 @@ class SupportsResume(Protocol):
         """Total steps this fitted model has trained for, across every run.
 
         Absolute, not per-run. It is what makes a continued run's loss curve a
-        continuation rather than a second curve starting at zero (ADR-0020).
+        continuation rather than a second curve starting at zero (handbook jobs.md).
         """
         ...
 

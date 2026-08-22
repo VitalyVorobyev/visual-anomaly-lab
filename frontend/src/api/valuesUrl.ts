@@ -1,5 +1,5 @@
 /**
- * The value-plane endpoints this app fetches from — the addressing half of ADR-0023.
+ * The value-plane endpoints this app fetches from — the addressing half of handbook diagnostics.md.
  *
  * `@vitavision/lab-ui`'s `api/mapValues` owns the wire format (decode, index); it knows
  * nothing about this backend's routes. Those routes are application-specific, so they stay

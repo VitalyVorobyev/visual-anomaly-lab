@@ -8,17 +8,17 @@ cost. It is not the system's documentation. To learn how the workbench works, re
 would changing it now cost more than a refactor?* Both must be yes. A contract detail, a helper, a
 read path for something already decided, or a new option on an existing seam is handbook material.
 
-**Records are amendable.** An accepted record may be edited when the decision it describes is
-refined, with a dated entry in a `## Changelog` section naming what changed. A **reversal** still
-gets a new number and supersedes the old record explicitly — the superseded reasoning is what makes
-the replacement legible.
+**Records are amendable.** An accepted record is edited when the decision it describes is refined,
+with a dated entry in a `## Changelog` section naming what changed. A **reversal** gets a new number
+and supersedes the old record explicitly.
 
-**Numbers are permanent.** Citations of the form `ADR-NNNN` exist across the backend, the
-frontend and the docs. A number is an address; it is never reused and never withdrawn.
+**A record that no longer settles anything is removed, not archived.** Once the handbook holds the
+current truth and the record only preserves how the code used to be argued for, it is history rather
+than a decision, and it goes — with every citation repointed at the page that answers the question
+now. Numbers are never reused, so a surviving record keeps the number it has always had and no
+citation can resolve to the wrong record.
 
 ## Decisions
-
-The twenty-four that still settle something.
 
 | # | Title | Area |
 |---|---|---|
@@ -47,40 +47,10 @@ The twenty-four that still settle something.
 | [0035](0035-an-experiment-selects-its-channels-by-name.md) | An experiment selects its channels, by name | Evaluation |
 | [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
 
-## Folded
-
-Eleven records whose current truth now lives in the handbook. Each keeps its number, its file and
-its full text — the reasoning is still worth reading, and 658 citations still resolve. What changed
-is that **you no longer have to read them to learn how the system works.**
-
-Most exist because the old immutability rule left no other way to refine a decision: four of the
-five diagnostics records are extensions of ADR-0018 that would today be an amendment to it.
-
-| # | Title | Read instead |
-|---|---|---|
-| [0010](0010-classical-circular-part-baseline-algorithm.md) | Classical circular-part baseline algorithm | [methods](../architecture/methods.md) |
-| [0013](0013-import-rescan-and-commit-semantics.md) | Import re-scan and commit semantics | [import](../architecture/import.md) |
-| [0014](0014-shell-capabilities-are-injected-not-imported.md) | Shell capabilities are injected, not imported | [frontend](../architecture/frontend.md) |
-| [0016](0016-adapters-for-public-datasets-masks-and-imported-splits.md) | Adapters for public datasets, masks in the catalog, imported splits | [import](../architecture/import.md) |
-| [0017](0017-pixel-level-evaluation-at-constant-memory.md) | Pixel-level evaluation, at constant memory | [evaluation](../architecture/evaluation.md) |
-| [0019](0019-serving-diagnostic-payloads-through-the-index.md) | Serving diagnostic payloads through the index, on a recorded scale | [diagnostics](../architecture/diagnostics.md) |
-| [0020](0020-metric-series-are-replayed-from-the-job-log.md) | Metric series are replayed from the job log, not buffered | [jobs](../architecture/jobs.md) |
-| [0023](0023-raw-values-beside-the-rendered-picture.md) | Raw values are served beside the rendered picture | [diagnostics](../architecture/diagnostics.md) |
-| [0024](0024-layer-level-introspection-as-a-shared-helper.md) | Layer-level introspection is a shared torch helper | [diagnostics](../architecture/diagnostics.md) |
-| [0025](0025-training-is-resumable-as-a-declared-capability.md) | Training is resumable as a declared capability, and steps are absolute | [jobs](../architecture/jobs.md) |
-| [0027](0027-on-demand-diagnostics-are-first-class-and-deletable.md) | On-demand diagnostics are first-class in the index, and are deletable | [diagnostics](../architecture/diagnostics.md) |
-
-## Superseded
-
-| # | Title | Superseded by |
-|---|---|---|
-| [0001](0001-private-data-never-leaves-the-machine.md) | Private data never leaves the machine | [0022](0022-private-source-data-lives-outside-the-working-tree.md) |
-
 ## Conventions
 
 - **Filename:** `NNNN-kebab-case-title.md`, `NNNN` the next unused number, zero-padded.
-- **Status:** `Accepted`, `Folded into <page>`, `Superseded by ADR-NNNN` or `Deprecated`, with the
-  date it was reached.
+- **Status:** `Accepted`, `Superseded by ADR-NNNN` or `Deprecated`, with the date it was reached.
 - **Length:** one page. If a record does not fit, the decision is probably two decisions.
 - **Cross-references:** cite related records inline as `(see ADR-0007)`.
 - **Consequences are honest.** Negative consequences are stated plainly. A record with only upsides

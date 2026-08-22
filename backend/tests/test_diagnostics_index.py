@@ -1,4 +1,4 @@
-"""How the diagnostics index merges (ADR-0018, ADR-0019, ADR-0027).
+"""How the diagnostics index merges (ADR-0018, handbook diagnostics.md, handbook diagnostics.md).
 
 Torch-free, and the rules here are subtle enough that the tests are the specification.
 Two of them are regression pins for bugs that were invisible on screen: an inference run
@@ -83,7 +83,7 @@ def test_a_run_leaves_another_key_alone(tmp_path: Path) -> None:
     assert {entry.key for entry in index.entries} == {"teacher", "map_st"}
 
 
-# ------------------------------------------------------- run vs on demand (ADR-0027)
+# ------------------------------------------------------- run vs on demand (handbook diagnostics.md)
 
 
 def test_an_on_demand_entry_does_not_wipe_a_run_s_sample(tmp_path: Path) -> None:
@@ -165,7 +165,8 @@ def test_an_on_demand_emission_only_widens_the_scale(tmp_path: Path) -> None:
     """One browsed image must not re-fit a run-wide scale.
 
     Widening keeps every already-drawn picture correct, which is only true because the
-    payload validator covers the range (ADR-0023). Narrowing would silently reinterpret
+    payload validator covers the range (handbook diagnostics.md). Narrowing would
+    silently reinterpret
     every other image against a span fitted from one.
     """
     root = tmp_path / "diag"
@@ -223,7 +224,7 @@ def test_the_index_is_written_atomically(tmp_path: Path) -> None:
 
 
 def test_an_index_written_before_origins_reads_as_run(tmp_path: Path) -> None:
-    """Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made."""
+    """Additive, so `INDEX_VERSION` does not move — the diagnostics handbook's argument."""
     root = tmp_path / "diag"
     root.mkdir(parents=True)
     (root / INDEX_FILENAME).write_text(

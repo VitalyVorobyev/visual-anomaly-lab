@@ -16,7 +16,7 @@ Building it made a different question unavoidable: once the from-scratch impleme
 correct, what is it *for*? A faithful clone produces no new information. This is a research
 workbench, and by M6 it has everything an evidence loop needs — the plugin boundary (**ADR-0007**),
 one shared preprocessing bridge so two methods see identical pixels, one evaluation protocol
-(**ADR-0011**, **ADR-0017**), resumable training (**ADR-0025**), comparison in non-commensurable
+(**ADR-0011**, handbook evaluation.md), resumable training (handbook jobs.md), comparison in non-commensurable
 score units (**ADR-0028**), and a public benchmark with masks and an official split (**ADR-0015**).
 
 Four measured facts sharpen it, all found while writing the implementation:
@@ -62,7 +62,7 @@ measured against, not the specification it must match.**
   cannot drift: VisA, the official one-class split unmodified, 256×256 RGB bilinear, a fixed step
   budget, three seeds, median and range reported, `pixel_reference` as the floor. **A change that
   moves sample ROC-AUC by less than the seed range is not evidence.**
-- **Measurements accumulate in `docs/measurements-efficientad.md`**, append-only. The roadmap keeps
+- **Measurements accumulate in `docs/measurements.md`**, append-only. The roadmap keeps
   only the headline, because that file is for what still constrains new work.
 - **The diagnostic keys are the wrapper's**, pinned by a test that reads them out of the wrapper's own
   source rather than restating them — so the wrapper is the executable specification of the

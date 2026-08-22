@@ -494,7 +494,7 @@ def test_a_checkpoint_loses_nothing(saved: Saved) -> None:
 def test_a_checkpoint_carries_what_a_continuation_needs(saved: Saved) -> None:
     """Weights alone are not a continuation: Adam's moments are most of what a run learned.
 
-    The penalty state is the one the wrapper does not carry — ADR-0025 records its penalty
+    The penalty state is the one the wrapper does not carry — handbook jobs.md records its penalty
     sequence restarting on every resume as an accepted cost.
     """
     restored = EfficientAdCustomModel(_config(max_steps=10))

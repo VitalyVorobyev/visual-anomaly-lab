@@ -1,5 +1,5 @@
 /**
- * Every module a model is made of, with the shapes it actually produced (ADR-0024).
+ * Every module a model is made of, with the shapes it actually produced (handbook diagnostics.md).
  *
  * A tree of rows rather than nested boxes or a node-link diagram, for three reasons. A
  * real backbone is hundreds of modules and a canvas of boxes stops being readable well

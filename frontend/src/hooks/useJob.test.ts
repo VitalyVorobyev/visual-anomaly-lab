@@ -126,7 +126,7 @@ describe("invalidatedBy", () => {
      * `["jobs", 10]` is a *prefix* of `["jobs", 10, "metrics"]`, and `invalidateQueries`
      * matches by prefix. So progress used to refetch the metric history too — four times a
      * second, each one re-reading and re-parsing the whole job log file, and each one
-     * violating the freeze rule the snapshot depends on (ADR-0020).
+     * violating the freeze rule the snapshot depends on (handbook jobs.md).
      */
     const [progress] = invalidatedBy("progress", 10, 2);
     expect(progress?.exact).toBe(true);

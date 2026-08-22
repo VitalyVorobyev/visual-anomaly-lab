@@ -63,7 +63,7 @@ class Label(StrEnum):
 
 
 class LabelSource(StrEnum):
-    """Where a label came from, so hand corrections survive a re-import (ADR-0013)."""
+    """Where a label came from, so hand corrections survive a re-import (handbook import.md)."""
 
     IMPORT = "import"
     MANUAL = "manual"
@@ -172,7 +172,7 @@ class Sample(BaseModel):
 
 
 class Image(BaseModel):
-    """One file on disk, referenced in place and never copied (ADR-0001)."""
+    """One file on disk, referenced in place and never copied (ADR-0022)."""
 
     model_config = API_MODEL_CONFIG
 

@@ -165,7 +165,7 @@ def test_one_tree_becomes_two_datasets_when_each_records_its_own_root(
 ) -> None:
     """A capture tree can hold several products, and each is its own dataset.
 
-    `root_path` is `UNIQUE` and is what a re-import resolves against (ADR-0013), so two
+    `root_path` is `UNIQUE` and is what a re-import resolves against (handbook import.md), so two
     scans of one tree would otherwise collide into a single dataset holding both — which
     trains a normal-only method on two different parts and calls the mixture a baseline.
     """
@@ -305,7 +305,7 @@ def test_re_importing_the_same_tree_is_idempotent(
 def test_a_hand_corrected_label_survives_re_import(
     client: TestClient, settings: Settings, tree: Path
 ) -> None:
-    """The whole point of `label_source` (ADR-0013)."""
+    """The whole point of `label_source` (handbook import.md)."""
     first = _commit(client, _manifest(client, _scan(client, tree)["result"]["manifest_id"]))
 
     with connection(settings.db_path) as conn:

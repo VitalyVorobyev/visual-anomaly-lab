@@ -152,7 +152,7 @@ def upsert_sample(
 
     A label the operator set by hand is never overwritten by an imported guess: if
     `label_source` is already `manual`, the incoming label is ignored. This is what makes
-    re-importing a corrected dataset safe (ADR-0013).
+    re-importing a corrected dataset safe (handbook import.md).
 
     `notes` follows the same instinct one step further: an import writes them when it has
     something to say and **never clears them**, because `None` from an adapter means "this

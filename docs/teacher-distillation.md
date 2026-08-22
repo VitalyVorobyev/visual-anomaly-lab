@@ -134,7 +134,7 @@ occupying the GPU:
 
 **The student's number is the expected one and it is meaningless as accuracy.** Both
 EfficientAD implementations in this repository are *inverted* at 50 steps — 0.226 and 0.227
-are recorded in [the measurements](measurements-efficientad.md) — because an undertrained
+are recorded in [the measurements](measurements.md) — because an undertrained
 student's error tracks texture rather than defect. A 50-step teacher distilled at batch 1 is
 barely distinguishable from its initialization. What the run demonstrates is that the chain
 holds together: the corpus loads, the source's statistics are measured, the PDN regresses onto
@@ -178,4 +178,4 @@ there to enforce.
 
 ---
 
-[← the handbook](architecture/README.md) · [the measurements](measurements-efficientad.md)
+[← the handbook](architecture/README.md) · [the measurements](measurements.md)

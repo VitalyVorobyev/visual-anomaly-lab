@@ -27,7 +27,7 @@ def get_dataset(conn: sqlite3.Connection, dataset_id: int) -> Dataset | None:
 
 
 def find_dataset_by_root(conn: sqlite3.Connection, root_path: str) -> Dataset | None:
-    """Resolve the dataset a re-import should update (ADR-0013)."""
+    """Resolve the dataset a re-import should update (handbook import.md)."""
     row = conn.execute("SELECT * FROM dataset WHERE root_path = ?", (root_path,)).fetchone()
     return _to_dataset(row) if row is not None else None
 

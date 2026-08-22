@@ -54,20 +54,19 @@ comparing them under one evaluation protocol.
   exactly**: `Dataset`, `Channel`, `Sample`, `Image`, `Split`, `SplitAssignment`, `Experiment`, `Job`,
   `ImageResult`, `SampleResult`, `MetricSet`. Pages carry no status and are **edited freely** when the
   code changes — updating one is part of the change, not a follow-up.
-- `docs/roadmap.md` — milestones M0–M12 with scope and exit criteria. Check which milestone is current
-  before starting work.
-- `docs/backlog.md` — task-level breakdown by epic.
-- `docs/user-feedback.md` — **what the user asked for, and what was done about it**, numbered and
-  filed under reported / rejected / accepted / resolved. A resolved entry states the cause, not just
-  the symptom. Add to it when acting on feedback; it is the record of why a screen looks the way it does.
-- `docs/adr/` — **36 records: 24 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
-  reclassified them; `docs/adr/README.md` is the index). A record captures a choice **that had a live
-  alternative**; the bar is *would a competent engineer plausibly have chosen otherwise, and would
-  changing it now cost more than a refactor?* A contract detail, a helper, or a read path for something
-  already decided is **handbook material, not a new ADR** — that granularity is what produced five
-  records for one diagnostics contract. **Records may be amended** with a dated `## Changelog` entry;
-  only a **reversal** gets a new number that supersedes explicitly. Numbers are permanent — they are
-  cited ~660 times in code and docs.
+- `docs/roadmap.md` — **what the workbench does today, and what is still open.** Status only; no
+  milestone history. Read it before starting work.
+- `docs/backlog.md` — the open task list, and nothing that has shipped.
+- `docs/measurements.md` — **the numbers that still decide something**: each predeclared gate, its
+  protocol and its verdict. Cite it rather than restating a figure.
+- `docs/adr/` — **24 records, every one of them live** (`docs/adr/README.md` is the index). A record
+  captures a choice **that had a live alternative**; the bar is *would a competent engineer plausibly
+  have chosen otherwise, and would changing it now cost more than a refactor?* A contract detail, a
+  helper, or a read path for something already decided is **handbook material, not a new ADR**.
+  **Records are amended** with a dated `## Changelog` entry; only a **reversal** gets a new number
+  that supersedes explicitly. A record whose truth has moved into the handbook is **removed**, with
+  its citations repointed in the same change (ADR-0030). Numbers are never reused, so a surviving
+  record keeps the number it has always had.
 - When the handbook and a record disagree, the **handbook is right about what the code does** and the
   **record is right about why it was chosen**.
 - **The design tokens live in `@vitavision/lab-ui` (ADR-0021)**, not in this repo: colour, type and
@@ -79,10 +78,9 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **M0–M7 and M9–M13 are done; M8 and M12 are in flight.** The loop
-  closes, its output is reachable, it can be iterated in, and **N methods can be read against each
-  other**: import a directory tree or a public benchmark, browse and label it, annotate it at pixel
-  level, pin an invertible region profile, split it, train, score, read image- and pixel-level
+- **Everything below closes, and the one open piece of the loop is the visual pass** (see
+  `docs/roadmap.md`). **N methods can be read against each other**: import a directory tree or a
+  public benchmark, browse and label it, annotate it at pixel level, pin an invertible region profile, split it, train, score, read image- and pixel-level
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
@@ -99,11 +97,6 @@ comparing them under one evaluation protocol.
   by one shared rule** whose name and resolved value are printed on screen, and a cut carried between
   runs is a *fraction of each range*, never a value. A single slider over a comparison would be
   wrong in a way that looks exactly like being right.
-- **M8 (dataset-first workbench + lifecycle) is where UI work lands, and M12's last open criterion
-  is the visual pass** — key screens at both target sizes and in both themes. Read `docs/roadmap.md`
-  before starting work; the completed milestones there are summaries that keep only what still
-  constrains new work, and the in-flight ones say what is deliberately postponed rather than
-  forgotten.
 - **A `dl`-gated test file must be named `test_dl_*.py`.** CI's `Backend (dl extra)` job globs exactly
   that, and a file outside the pattern is collected-and-skipped in the torch-free job and run in no
   job at all. A test that is merely *about* a deep method but needs no torch does not take the prefix.
@@ -148,14 +141,8 @@ comparing them under one evaluation protocol.
   import has now landed, so every further change is a new numbered migration (ADR-0004).
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
   fails on a stale file.
-- **Follow the milestone order** in the roadmap, which is where the numbering is authoritative: M1
-  walking skeleton → M2 import + browse → M3 universal vertical slice → M4 workbench UI (+ M4.5 UI/UX,
-  M4.6 reachability, M4.7 iteration) → M5 comparison UI → M6 custom EfficientAD → M7 PatchCore →
-  **M8 dataset-first workbench + lifecycle** → M9 annotation system + editor → M10 spatial input
-  pipeline + region profiles → M11 modern reference methods → **M12 portable deployment +
-  reproducible onboarding** → **M13 multi-channel as a first-class experiment variable**. Numbers are
-  chronological, not strictly sequential: M9–M11 were finished while M8 stayed open. Do not build a later
-  milestone's machinery while an earlier one is unfinished.
+- **Take work from `docs/backlog.md`, and finish what is open before starting what is new.** The
+  roadmap says what stands today and what is still missing; the backlog says what to do about it.
 - **A new job kind costs one entry** in `jobs/handlers.py` and one handler function. The queue, the
   JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
   needs a change in any of them, that is a finding about the boundary. `train` and `infer` cost exactly

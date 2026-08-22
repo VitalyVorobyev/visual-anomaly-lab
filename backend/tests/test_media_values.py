@@ -1,4 +1,4 @@
-"""The float32 value plane (ADR-0023).
+"""The float32 value plane (handbook diagnostics.md).
 
 The format exists so a browser can read a number under the cursor without a numpy parser
 in TypeScript and without inverting a colormap. Its whole contract is the 16-byte header,

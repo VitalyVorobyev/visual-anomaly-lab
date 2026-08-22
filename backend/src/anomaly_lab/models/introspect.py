@@ -1,4 +1,4 @@
-"""What a torch model is actually made of, read from a real forward pass (ADR-0024).
+"""What a torch model is actually made of, read from a real forward pass (handbook diagnostics.md).
 
 M4's architecture view drew three boxes — teacher, student, autoencoder — with the shape
 going in and the shape coming out. That is honest and it is not enough: it says nothing

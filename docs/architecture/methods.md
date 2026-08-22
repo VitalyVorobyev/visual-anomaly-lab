@@ -90,7 +90,7 @@ without touching the rest of the app" true in practice rather than aspirational.
 - `InferContext.write_map(image_id, array)` — projects through the pinned image transform, persists one
   source-frame float32 map and accumulates the finite run display range.
 
-Everything above is *injected* (ADR-0014). Models never touch SQLite, never read application settings, and
+Everything above is *injected* (handbook frontend.md). Models never touch SQLite, never read application settings, and
 never write outside `artifact_dir` and `cache_dir` — which is also what makes a plugin unit-testable with a
 `NullReporter` and no job system at all.
 
@@ -240,7 +240,7 @@ The checkpoint stores the bottleneck, decoder, optimizer, CPU/MPS random streams
 and completed step. The frozen encoder remains in the app-managed asset cache and is represented by its
 name, exact tensor fingerprint and dependency versions. Reload refuses a changed encoder rather than
 silently attaching old decoder weights to a different feature space. Public VisA evidence and the exact
-resource protocol are recorded in [`measurements-dinomaly.md`](../measurements-dinomaly.md).
+resource protocol are recorded in [`measurements.md`](../measurements.md).
 
 ## A learned-synthesis method needs a bounded reference frame
 
@@ -266,7 +266,7 @@ in the measurement record, but becomes app-managed storage only if a paired publ
 ablation shows value. Likewise, the upstream per-category `svd` switch is exposed only as
 the generic `synthesis_anchor` experiment control; no dataset name enters the method.
 Resource evidence and the external-asset policy are recorded in
-[`measurements-glass.md`](../measurements-glass.md). The bounded paired public gate missed
+[`measurements.md`](../measurements.md). The bounded paired public gate missed
 its image-level quality floor, so the method remains available as an explicitly experimental
 comparison rather than the recommended learned-synthesis reference.
 Its portable graph embeds ImageNet normalization, the fitted projection and discriminator, and emits both
@@ -375,15 +375,14 @@ a tight Python-driven loop over small kernels is a reason to measure rather than
 first model, on the grounds that it needs no training infrastructure, no GPU and no external framework. That
 ordering has been **superseded**: making the *showcase-specific* method the first one contradicted the
 universal goal, so the slice is now proven with a dataset-agnostic method and a dataset-agnostic floor
-baseline, and this method is scheduled later as an optional milestone. In outline (ADR-0010): a **circle
+baseline, and this method is scheduled later as an optional milestone. In outline: a **circle
 fit** on the part boundary with a **prior-based fallback** when the fit is poor; the resulting geometry is
 **shared across all channels of a sample**, since the views are near-simultaneous images of the same physical
 object; a **polar transform** about the fitted centre turns rotation into translation; **FFT angular
 correlation** recovers orientation; a **per-channel median/MAD reference** is built from the training normals;
 and scoring is a **percentile of the per-pixel z-score** map. It runs in seconds per sample on CPU. This
 method is explicitly `dataset_specific = True` (above) — it is showcase-dataset-specific (circular parts),
-exploiting the part's circular geometry, which the deep methods must not. The full algorithm, its parameters
-and its failure modes are in **ADR-0010**.
+exploiting the part's circular geometry, which the deep methods must not.
 
 ---
 

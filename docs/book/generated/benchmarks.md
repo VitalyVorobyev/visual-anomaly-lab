@@ -5,7 +5,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## Dinomaly promotion gate
 
-**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. Same prepared pixels within each class. Dinomaly: 5,000 steps. PatchCore: WRN-50, 256 images, 50,000 candidates, 10% coreset. [Full evidence](../../measurements-dinomaly.md).
+**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. Same prepared pixels within each class. Dinomaly: 5,000 steps. PatchCore: WRN-50, 256 images, 50,000 candidates, 10% coreset. [Full evidence](../../measurements.md).
 
 ![Dinomaly promotion gate](dinomaly-gate.svg)
 
@@ -18,7 +18,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## GLASS bounded public gate
 
-**Protocol:** VisA official one-class split; 288 × 288 RGB identity; seed `20260812`. Same prepared pixels within each class. GLASS: 5,000 updates, batch 1. PatchCore is the paired reference for this gate. [Full evidence](../../measurements-glass.md).
+**Protocol:** VisA official one-class split; 288 × 288 RGB identity; seed `20260812`. Same prepared pixels within each class. GLASS: 5,000 updates, batch 1. PatchCore is the paired reference for this gate. [Full evidence](../../measurements.md).
 
 ![GLASS bounded public gate](glass-gate.svg)
 
@@ -37,13 +37,13 @@ Prepared size changes the workload, so these bars describe Mac feasibility and s
 
 | Method | Device | Prepared | Inference | Peak RSS | MPS driver | Evidence |
 |---|---|---:|---:|---:|---:|---|
-| Dinomaly | MPS | 196² | 13.7 ms | 0.82 GiB | 0.52 GiB | [log](../../measurements-dinomaly.md) |
-| Dinomaly | MPS | 392² | 42.3 ms | 0.82 GiB | 0.62 GiB | [log](../../measurements-dinomaly.md) |
-| GLASS | MPS | 144² | 12.7 ms | 1.04 GiB | 1.20 GiB | [log](../../measurements-glass.md) |
-| GLASS | MPS | 288² | 30.9 ms | 1.05 GiB | 1.19 GiB | [log](../../measurements-glass.md) |
-| AnomalyVFM | MPS | 256² | 88.4 ms | 3.18 GiB | 2.08 GiB | [log](../../measurements-anomalyvfm.md) |
-| AnomalyVFM | MPS | 512² | 260.5 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements-anomalyvfm.md) |
-| AnomalyVFM | MPS | 768² | 591.3 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements-anomalyvfm.md) |
+| Dinomaly | MPS | 196² | 13.7 ms | 0.82 GiB | 0.52 GiB | [log](../../measurements.md) |
+| Dinomaly | MPS | 392² | 42.3 ms | 0.82 GiB | 0.62 GiB | [log](../../measurements.md) |
+| GLASS | MPS | 144² | 12.7 ms | 1.04 GiB | 1.20 GiB | [log](../../measurements.md) |
+| GLASS | MPS | 288² | 30.9 ms | 1.05 GiB | 1.19 GiB | [log](../../measurements.md) |
+| AnomalyVFM | MPS | 256² | 88.4 ms | 3.18 GiB | 2.08 GiB | [log](../../measurements.md) |
+| AnomalyVFM | MPS | 512² | 260.5 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements.md) |
+| AnomalyVFM | MPS | 768² | 591.3 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements.md) |
 
 ## What the evidence supports
 

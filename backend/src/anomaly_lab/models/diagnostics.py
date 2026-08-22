@@ -68,11 +68,11 @@ class DiagnosticKind(StrEnum):
 class DiagnosticOrigin(StrEnum):
     """Whether an entry came from a run, or from someone asking about one image.
 
-    Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made for
+    Additive, so `INDEX_VERSION` does not move — the same argument handbook diagnostics.md made for
     `ranges`. It exists because the two have genuinely different lifetimes and different
     supersession rules: a run's per-image entries are a *sample* of that run and replace
     each other wholesale, while an on-demand entry is a question somebody asked and must
-    not be swept away by the next run of inference, nor sweep one away (ADR-0027).
+    not be swept away by the next run of inference, nor sweep one away (handbook diagnostics.md).
     """
 
     RUN = "run"
@@ -114,7 +114,7 @@ class DiagnosticEntry(BaseModel):
     kind: DiagnosticKind
     scope: DiagnosticScope
     origin: DiagnosticOrigin = DiagnosticOrigin.RUN
-    """Where this entry came from (ADR-0027).
+    """Where this entry came from (handbook diagnostics.md).
 
     A literal default is correct here, unlike on a request body: this is a *response*
     model, so "required in TypeScript" means the client reads it without a null check.
@@ -156,7 +156,7 @@ class DiagnosticIndex(BaseModel):
 
 
 class PruneScope(StrEnum):
-    """How much of a run's diagnostics to delete (ADR-0027)."""
+    """How much of a run's diagnostics to delete (handbook diagnostics.md)."""
 
     IMAGE = "image"
     """Every per-image entry, of both origins. The default: it is the bulk of the disk."""
@@ -357,10 +357,11 @@ class DiagnosticWriter:
         a different quantity.
 
         An **on-demand** emission may only *widen*. It is one array, and letting one array
-        re-fix a run-wide scale is exactly the failure ADR-0019 already warns about for a
+        re-fix a run-wide scale is exactly the failure the diagnostics handbook warns
+        about for a
         cancelled run — except that here it would happen every time somebody browsed a hot
         image. Widening keeps every previously drawn picture correct, which is only true
-        because the payload ETag now covers the range (ADR-0023).
+        because the payload ETag now covers the range (handbook diagnostics.md).
         """
         if self._origin is DiagnosticOrigin.RUN:
             merged = {
@@ -395,7 +396,8 @@ class DiagnosticWriter:
         A model that crashed halfway has written its arrays but no index entry for them,
         which reads correctly as "that run produced no usable diagnostics".
 
-        **The rules below are scoped by origin (ADR-0027).** A run's per-image entries are
+        **The rules below are scoped by origin (handbook diagnostics.md).** A run's
+        per-image entries are
         that run's *sample* and supersede each other wholesale; an on-demand entry is a
         question somebody asked about one image. Neither may sweep the other away, so
         every rule here applies within an origin and never across one.
@@ -501,7 +503,7 @@ def write_index(root: Path, index: DiagnosticIndex) -> None:
 
 
 def prune(root: Path, *, scope: PruneScope = PruneScope.IMAGE) -> PruneResult:
-    """Delete some of a run's diagnostics and report what that reclaimed (ADR-0027).
+    """Delete some of a run's diagnostics and report what that reclaimed (handbook diagnostics.md).
 
     **Directories are removed, not the files the index names.** A run that crashed
     part-way wrote its arrays and no index entry for them; walking `entry.path` would

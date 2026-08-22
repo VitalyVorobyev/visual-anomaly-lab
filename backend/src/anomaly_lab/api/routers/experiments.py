@@ -95,7 +95,7 @@ CURVE_POINT_LIMIT = 2000
 
 
 class PayloadFormat(StrEnum):
-    """Whether a caller wants the picture or the numbers behind it (ADR-0023)."""
+    """Whether a caller wants the picture or the numbers behind it (handbook diagnostics.md)."""
 
     PNG = "png"
     RAW = "raw"
@@ -215,7 +215,7 @@ class MapScale(BaseModel):
     Served as JSON because an `<img>` tag cannot read a response header, and the map
     endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
     cold looks exactly like one that failed to render — which is what score-driven alpha
-    does to every low-scoring image (ADR-0019).
+    does to every low-scoring image (handbook diagnostics.md).
     """
 
     model_config = API_MODEL_CONFIG
@@ -238,7 +238,7 @@ class ExperimentDetail(ExperimentSummary):
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
     supports_resume: bool = False
-    """Whether this method can continue a finished run (ADR-0025)."""
+    """Whether this method can continue a finished run (handbook jobs.md)."""
     portable_formats: list[PortableFormat] = Field(default_factory=list)
     """Verified deployment formats this fitted method can produce (ADR-0034)."""
     training_state: TrainingState | None = None
@@ -251,7 +251,8 @@ class ExperimentDetail(ExperimentSummary):
     """
     map_range: MapScale | None = None
     """
-    The run-wide display range every one of this run's maps is drawn against (ADR-0019).
+    The run-wide display range every one of this run's maps is drawn against
+    (handbook diagnostics.md).
 
     A segmentation threshold has to come from *this*, not from the image on screen: a cut
     derived per image is a different cut on every image, so two samples' predicted regions
@@ -995,14 +996,14 @@ def get_threshold(
 def get_artifacts(request: Request, experiment_id: int) -> ArtifactListing:
     """Everything under the experiment's directory, grouped and sized.
 
-    A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
-    directory statically, and one of its stated reasons was that doing so exposes the
-    checkpoints; nothing here changes that. What it fixes is the other half of the
+    A *listing*, not a download and not a mount. Serving the artifact directory
+    statically was ruled out (handbook diagnostics.md), one stated reason being that it
+    exposes the checkpoints; nothing here changes that. What it fixes is the other half of the
     problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
     and then not say where it was — the path was in `ExperimentDetail` all along and no
     screen showed it.
 
-    Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+    Opening the directory is the desktop shell's job (handbook frontend.md), and a browser gets the
     path as text, which is a different affordance rather than a broken one.
     """
     experiment, _ = _load(request, experiment_id)
@@ -1101,7 +1102,8 @@ def get_curves(
     threshold-dependent and nothing is written (ADR-0011).
 
     Pixel-level curves are deliberately absent. The pixel accumulator streams its
-    histograms and discards them by design (ADR-0017), so drawing that curve would mean
+    histograms and discards them by design (handbook evaluation.md), so drawing that
+    curve would mean
     re-reading every anomaly map — the expensive pass this layer exists to avoid.
     """
     experiment, settings = _load(request, experiment_id)
@@ -1250,7 +1252,7 @@ async def diagnose(request: Request, experiment_id: int, body: DiagnoseRequest) 
 
     **It does not change this image's score, its map, or any metric.** Those come from a
     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
-    `on_demand` in the index (ADR-0027).
+    `on_demand` in the index (handbook diagnostics.md).
 
     Refused with 409 while a job is running: one machine, one device, and a browse request
     must not queue behind a two-hour train.
@@ -1292,7 +1294,7 @@ async def clear_diagnostics(
         ),
     ),
 ) -> PruneResult:
-    """Remove stored diagnostics and report what it reclaimed (ADR-0027).
+    """Remove stored diagnostics and report what it reclaimed (handbook diagnostics.md).
 
     **Anomaly maps are never touched.** They live in a sibling directory and each is
     referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
@@ -1324,7 +1326,7 @@ async def clear_diagnostics(
     },
 )
 def read_source_values(request: Request, experiment_id: int, image_id: int) -> Response:
-    """The pinned prepared pixels as float32, every colour plane (ADR-0023).
+    """The pinned prepared pixels as float32, every colour plane (handbook diagnostics.md).
 
     **The preprocessed array, not the display tier.** A readout taken from the rendered
     preview would report what the browser is showing — 8-bit, resampled for display — when
@@ -1415,7 +1417,9 @@ def read_diagnostic_payload(
     payload_format: PayloadFormat = Query(
         default=PayloadFormat.PNG,
         alias="format",
-        description="`png` to draw it; `raw` for the float32 values behind it (ADR-0023).",
+        description=(
+            "`png` to draw it; `raw` for the float32 values behind it (handbook diagnostics.md)."
+        ),
     ),
 ) -> Response:
     """Render one stored diagnostic array as a PNG.
@@ -1541,7 +1545,8 @@ def _payload_etag(
 
     **The range is part of the identity too**, and used not to be. The same array drawn
     over a different `(low, high)` is a different picture, so anything that widened a key's
-    range — re-inference, and now a diagnostic computed on demand (ADR-0027) — left every
+    range — re-inference, and now a diagnostic computed on demand
+    (handbook diagnostics.md) — left every
     already-fetched PNG cached at the old scale, with nothing on screen to say so.
     """
     try:

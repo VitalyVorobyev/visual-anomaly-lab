@@ -3,7 +3,7 @@
  *
  * One fetch per plane per image, `staleTime: Infinity`, because the alternative — a point
  * query per `pointermove` — gives a readout that lags the cursor and shows nothing at all
- * while panning (ADR-0023). At the default 256x256 a plane is 256 KB, which on a loopback
+ * while panning (handbook diagnostics.md). At the default 256x256 a plane is 256 KB, which on a loopback
  * interface to a local sidecar is cheaper than the round trips it replaces.
  *
  * `enabled` is the whole cost control: nothing is fetched until a pointer is actually over

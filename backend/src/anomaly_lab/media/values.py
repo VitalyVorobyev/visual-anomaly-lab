@@ -1,4 +1,4 @@
-"""The numbers behind a picture, in a form a browser can index (ADR-0023).
+"""The numbers behind a picture, in a form a browser can index (handbook diagnostics.md).
 
 A rendered anomaly map answers "is this region hotter than that one". It cannot answer
 "how hot, in the units the metrics are computed in", and reading the answer back out of
@@ -8,7 +8,8 @@ ADR-0007 run backwards — nothing about colormap or normalization is baked into
 data, and inverting a colormap in the client is exactly that rule reversed.
 
 So the values are served as values. **Deliberately not `.npy`**: that would mean a dtype
-parser in TypeScript, which is what ADR-0019 refused when it ruled this out for rendering.
+parser in TypeScript, which is what the diagnostics handbook refused when it ruled this
+out for rendering.
 This is a fixed 24-byte header and a float32 body, decodable with a `DataView` and a loop,
 and it exists to be *read* — the colormap and the display range stay server-side.
 

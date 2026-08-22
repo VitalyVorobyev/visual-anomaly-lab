@@ -4,7 +4,7 @@ Everything here runs on `pixel_reference`, which needs neither torch nor a netwo
 trains in milliseconds on 16x16 fixtures. That is exactly why it exists — the whole
 results path is provable without the optional deep-learning group installed.
 
-The fixtures are synthetic PNGs generated in code (ADR-0001): a smooth gradient with a
+The fixtures are synthetic PNGs generated in code (ADR-0022): a smooth gradient with a
 little noise for normals, and the same gradient with a bright square stamped in for
 defects, plus matching ground-truth masks so the pixel metrics have something to measure.
 """
@@ -594,7 +594,7 @@ def test_a_grid_frame_beyond_the_payload_is_a_404_naming_the_count(
 
 
 def _plane(payload: bytes) -> tuple[np.ndarray, int]:
-    """The header the frontend decodes (ADR-0023), returning `(H, W, C)`."""
+    """The header the frontend decodes (handbook diagnostics.md), returning `(H, W, C)`."""
     assert payload[:4] == b"VAM1"
     width, height, stride, channels, _ = struct.unpack("<IIIII", payload[4:24])
     values = np.frombuffer(payload[24:], dtype="<f4")
@@ -605,7 +605,10 @@ def _plane(payload: bytes) -> tuple[np.ndarray, int]:
 def test_an_anomaly_map_serves_its_own_numbers_for_a_readout(
     client: TestClient, seeded: Fixture, scored: dict[str, Any]
 ) -> None:
-    """A rendered map cannot be read back: the colormap clips and quantizes (ADR-0023)."""
+    """A rendered map cannot be read back: the colormap clips and quantizes.
+
+    See handbook diagnostics.md.
+    """
     image_id = seeded.defect_image_ids[0]
     response = client.get(
         f"/api/images/{image_id}/anomaly-map/values",
@@ -763,7 +766,7 @@ def test_a_payload_revalidates_rather_than_being_cached_forever(
 def test_every_image_of_one_key_is_drawn_on_the_run_s_scale(
     client: TestClient, settings: Settings, scored: dict[str, Any]
 ) -> None:
-    """A recorded range is what makes two images comparable by eye (ADR-0019)."""
+    """A recorded range is what makes two images comparable by eye (handbook diagnostics.md)."""
     root = settings.experiment_dir(scored["id"]) / "diagnostics"
     ranges = json.loads((root / "diagnostics.json").read_text(encoding="utf-8"))["ranges"]
 
@@ -962,7 +965,7 @@ def test_an_experiment_left_mid_training_is_reconciled_at_startup(
     assert reopened["status"] == "failed"
 
 
-# ------------------------------------------------------- continuing a run (ADR-0025)
+# ------------------------------------------------------- continuing a run (handbook jobs.md)
 
 
 def test_continuing_a_method_without_steps_is_refused_as_a_form(

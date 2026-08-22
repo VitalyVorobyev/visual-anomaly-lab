@@ -262,7 +262,7 @@ describe("RunBar", () => {
 
   it("prints what continuing will do to the learning rate before the run", () => {
     // The rate goes back up at the resume point. Surprising enough to state rather than
-    // leave to be discovered in the chart afterwards (ADR-0025).
+    // leave to be discovered in the chart afterwards (handbook jobs.md).
     wrap(
       <RunBar
         experimentId={3}

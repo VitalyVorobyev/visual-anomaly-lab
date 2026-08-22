@@ -151,7 +151,7 @@ export interface UseJobOptions {
  * `["jobs", id, "metrics"]` — and that snapshot is read by parsing the entire job log
  * file. Four times a second, for the length of a training run. It also contradicts the
  * freeze rule this file is built on: the metric baseline must not be re-read live, because
- * it comes back already holding the points the socket just delivered (ADR-0020).
+ * it comes back already holding the points the socket just delivered (handbook jobs.md).
  *
  * A terminal frame keeps the prefix behaviour. There the metric series *should* be
  * re-read, and the experiment key is meant to cover its results, threshold report, curves,
@@ -192,7 +192,7 @@ export function useJob(jobId: number | undefined, options: UseJobOptions = {}): 
 
   // The history behind the chart. Without it, reloading during a two-hour training run
   // would throw the run away — `log_tail` is 200 raw lines of a stream that also carries
-  // progress and library output, which for a long run is its final seconds (ADR-0020).
+  // progress and library output, which for a long run is its final seconds (handbook jobs.md).
   const storedMetrics = useQuery({
     queryKey: queryKeys.jobMetrics(jobId ?? -1),
     queryFn: () => fetchJobMetrics(jobId as number),
