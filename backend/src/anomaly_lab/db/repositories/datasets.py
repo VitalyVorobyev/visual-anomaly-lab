@@ -5,7 +5,7 @@ from __future__ import annotations
 import sqlite3
 
 from anomaly_lab.db.repositories import annotations as annotations_repo
-from anomaly_lab.domain.entities import Channel, Dataset, Label
+from anomaly_lab.domain.entities import AnnotationScope, Channel, Dataset, Label
 
 
 def _to_dataset(row: sqlite3.Row) -> Dataset:
@@ -73,6 +73,49 @@ def record_manifest(
         """,
         (adapter, manifest_path, dataset_id),
     )
+
+
+def update_dataset(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    *,
+    fields: dict[str, str | None],
+) -> Dataset | None:
+    """Write the caller's chosen subset of the editable columns.
+
+    `fields` carries only what the request actually named, which is the whole point: an
+    absent key leaves its column alone, and a key set to `None` clears the override so the
+    derived value takes over again. A signature of optional parameters could not express
+    the difference -- "not mentioned" and "set to null" would arrive identically.
+    """
+    editable = {"notes", "collection"}
+    unknown = set(fields) - editable
+    if unknown:  # pragma: no cover - the API model already constrains the keys
+        msg = f"dataset has no editable column {sorted(unknown)!r}"
+        raise ValueError(msg)
+    if fields:
+        assignments = ", ".join(f"{column} = ?" for column in fields)
+        conn.execute(
+            # The column names are interpolated, the values are not: `editable` above is
+            # what keeps this from being a string-built query over user input.
+            f"UPDATE dataset SET {assignments} WHERE id = ?",
+            (*fields.values(), dataset_id),
+        )
+    return get_dataset(conn, dataset_id)
+
+
+def set_annotation_scope(
+    conn: sqlite3.Connection, dataset_id: int, scope: AnnotationScope
+) -> Dataset | None:
+    """Move a dataset between per-image and per-sample annotation editing.
+
+    Kept out of `update_dataset`'s `editable` set on purpose: that function writes
+    free-text overrides that no other row depends on, while this one changes which
+    endpoints a dataset answers and has preconditions the caller must be able to read
+    before trying. Mixing them would give one route two unrelated failure modes.
+    """
+    conn.execute("UPDATE dataset SET annotation_scope = ? WHERE id = ?", (scope.value, dataset_id))
+    return get_dataset(conn, dataset_id)
 
 
 def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> bool:
@@ -186,6 +229,28 @@ def label_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[Label, int]:
     for row in rows:
         counts[Label(row["label"])] = int(row["n"])
     return counts
+
+
+def cover_image_id(conn: sqlite3.Connection, dataset_id: int) -> int | None:
+    """One image that stands for the dataset in the catalogue, or `None` if it has none.
+
+    A normal sample is preferred over a defective one: the cover answers "what am I looking
+    at", and the healthy part is the better answer to that. Within a label the order is the
+    insertion order, so the same image comes back on every read and a card does not change
+    picture between visits.
+    """
+    row = conn.execute(
+        """
+        SELECT image.id AS id
+          FROM image
+          JOIN sample ON sample.id = image.sample_id
+         WHERE sample.dataset_id = ?
+         ORDER BY (sample.label = 'normal') DESC, sample.id, image.id
+         LIMIT 1
+        """,
+        (dataset_id,),
+    ).fetchone()
+    return int(row["id"]) if row is not None else None
 
 
 def count_images(conn: sqlite3.Connection, dataset_id: int) -> int:

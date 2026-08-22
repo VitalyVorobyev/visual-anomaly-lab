@@ -26,7 +26,7 @@ from anomaly_lab.datasets.adapters.base import (
 )
 from anomaly_lab.datasets.commit import CommitError, commit_manifest
 from anomaly_lab.datasets.manifest import Manifest
-from anomaly_lab.datasets.scan import DEFAULT_ADAPTER, ScanParams
+from anomaly_lab.datasets.scan import DEFAULT_ADAPTER, ScanParams, dataset_identity
 from anomaly_lab.datasets.storage import (
     ManifestNotFoundError,
     UnsupportedManifestVersionError,
@@ -58,6 +58,15 @@ class ScanRequest(BaseModel):
     dataset_name: str
     adapter: str = DEFAULT_ADAPTER
     options: dict[str, Any] = Field(default_factory=dict)
+    dataset_root: str | None = Field(
+        default=None,
+        description=(
+            "Record this path as the dataset's identity instead of the scan root. Must be "
+            "the scan root or a directory inside it. Use it with the adapter's `exclude` "
+            "to split one capture tree into several datasets — one per product variant — "
+            "which a shared root would collide into one."
+        ),
+    )
 
 
 class CommitRequest(BaseModel):
@@ -124,7 +133,10 @@ def start_scan(request: Request, body: ScanRequest) -> JobSummary:
     try:
         adapter = get_adapter(body.adapter)
         parse_options(adapter, body.options)
+        identity = dataset_identity(root, body.dataset_root)
     except UnknownAdapterError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except NotADirectoryError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"invalid adapter options: {exc}") from exc
@@ -135,6 +147,7 @@ def start_scan(request: Request, body: ScanRequest) -> JobSummary:
         dataset_name=body.dataset_name,
         adapter=body.adapter,
         options=body.options,
+        dataset_root=str(identity) if body.dataset_root is not None else None,
     )
     return summary_of(queue.enqueue(kind=JobKind.IMPORT, params=params.model_dump()))
 

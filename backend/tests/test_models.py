@@ -41,10 +41,17 @@ from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.glass_anomalib import GlassConfig, planned_center_refreshes
 from anomaly_lab.models.glass_anomalib import plan_training as plan_glass_training
 from anomaly_lab.models.patchcore_anomalib import plan_bank
-from anomaly_lab.models.pixel_reference import PixelReferenceConfig, PixelReferenceModel
+from anomaly_lab.models.pixel_reference import (
+    PixelReferenceConfig,
+    PixelReferenceModel,
+    ReferenceScope,
+)
 from anomaly_lab.models.preprocessing import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
     ColorMode,
     PreprocessingConfig,
+    expand_planes,
     load_array,
     load_mask,
     to_chw,
@@ -95,6 +102,56 @@ def test_to_chw_gives_torch_the_layout_it_wants(tmp_path: Path) -> None:
         PreprocessingConfig(width=16, height=8),
     )
     assert to_chw(array).shape == (3, 8, 16)
+
+
+def test_grayscale_stays_one_plane_through_the_bridge(tmp_path: Path) -> None:
+    """The seam that makes the colour option mean something.
+
+    If `load_array` expanded to three planes itself, `grayscale` and `rgb` would produce
+    identical arrays for a mono file — the experiment would record a choice that changed
+    nothing. Plane expansion is the *method's* business, so this must keep failing to
+    happen here.
+    """
+    config = PreprocessingConfig(width=16, height=16, color=ColorMode.GRAYSCALE)
+    array = load_array(write_image(tmp_path / "g.png", mode="L", size=(16, 16)), config)
+    assert to_chw(array).shape == (1, 16, 16)
+    assert config.channels == 1
+
+
+def test_expand_planes_repeats_a_single_plane() -> None:
+    one = np.arange(6, dtype=np.float32).reshape(1, 2, 3)
+    widened = expand_planes(one, 3)
+    assert widened.shape == (3, 2, 3)
+    for plane in range(3):
+        assert np.array_equal(widened[plane], one[0])
+
+
+def test_expand_planes_passes_through_an_already_wide_array() -> None:
+    """Callers apply it unconditionally, so the no-op case has to be free and exact."""
+    three = np.random.default_rng(0).random((3, 4, 5)).astype(np.float32)
+    assert expand_planes(three, 3) is three
+
+
+def test_expand_planes_refuses_a_count_it_cannot_mean() -> None:
+    """Two planes are not a mono image and not an RGB one; guessing would be the bug."""
+    with pytest.raises(ValueError, match="cannot expand 2 planes to 3"):
+        expand_planes(np.zeros((2, 4, 4), dtype=np.float32), 3)
+
+
+def test_expanding_then_standardizing_matches_the_broadcast_it_replaces() -> None:
+    """PatchCore's grayscale path was right by accident; making it explicit must not move it.
+
+    `(B, 1, H, W) - (1, 3, 1, 1)` broadcasts to the same numbers as expanding first. That
+    is why no grayscale PatchCore run was ever wrong — and why the change is safe.
+    """
+    mono = np.random.default_rng(1).random((1, 1, 4, 4)).astype(np.float32)
+    mean = np.asarray(IMAGENET_MEAN, dtype=np.float32).reshape(1, 3, 1, 1)
+    std = np.asarray(IMAGENET_STD, dtype=np.float32).reshape(1, 3, 1, 1)
+
+    broadcast = (mono - mean) / std
+    explicit = (np.stack([expand_planes(mono[0], 3)]) - mean) / std
+
+    assert np.array_equal(broadcast, explicit)
 
 
 def test_a_mask_is_any_nonzero_pixel(tmp_path: Path) -> None:
@@ -856,3 +913,196 @@ def test_pca_to_rgb_refuses_a_shape_it_cannot_reduce() -> None:
         pca_to_rgb(np.zeros((2, 4, 4), dtype=np.float32))
     with pytest.raises(ValueError, match="\\(C, H, W\\)"):
         pca_to_rgb(np.zeros((4, 4), dtype=np.float32))
+
+
+# ------------------------------------------------ channel-aware reference (ADR-0007)
+
+
+def _bright(path: Path, seed: int) -> Path:
+    """A bright-field-looking scene: a light gradient."""
+    from PIL import Image
+
+    generator = np.random.default_rng(seed)
+    base = np.linspace(150, 220, 16 * 16).reshape(16, 16)
+    noisy = np.clip(base + generator.normal(0, 2, size=(16, 16)), 0, 255).astype(np.uint8)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(noisy, mode="L").convert("RGB").save(path)
+    return path
+
+
+def _dark(path: Path, seed: int) -> Path:
+    """A dark-field-looking scene: mostly black with a bright rim. Nothing like `_bright`."""
+    from PIL import Image
+
+    generator = np.random.default_rng(seed + 500)
+    base = np.full((16, 16), 12.0)
+    base[:2, :] = 200
+    base[-2:, :] = 200
+    noisy = np.clip(base + generator.normal(0, 2, size=(16, 16)), 0, 255).astype(np.uint8)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(noisy, mode="L").convert("RGB").save(path)
+    return path
+
+
+def _two_channel_train(tmp_path: Path) -> list[ImageRecord]:
+    records = []
+    for index in range(6):
+        records.append(
+            ImageRecord(
+                image_id=index,
+                sample_id=index,
+                channel="bright",
+                path=_bright(tmp_path / f"b{index}.png", index),
+            )
+        )
+        records.append(
+            ImageRecord(
+                image_id=100 + index,
+                sample_id=index,
+                channel="dark",
+                path=_dark(tmp_path / f"d{index}.png", index),
+            )
+        )
+    return records
+
+
+def test_a_reference_is_fitted_per_channel(tmp_path: Path) -> None:
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, _ = _contexts(tmp_path, config)
+
+    model = PixelReferenceModel(PixelReferenceConfig(smoothing_sigma=1.0))
+    model.fit(_two_channel_train(tmp_path), train_ctx)
+
+    assert set(model._references) == {"bright", "dark"}
+    # Two illuminations that look nothing alike must not have produced the same reference.
+    bright, dark = model._references["bright"], model._references["dark"]
+    assert not np.allclose(bright.median, dark.median)
+
+
+def _bright_with_defect(path: Path, seed: int) -> Path:
+    from PIL import Image
+
+    generator = np.random.default_rng(seed)
+    base = np.linspace(150, 220, 16 * 16).reshape(16, 16)
+    noisy = np.clip(base + generator.normal(0, 2, size=(16, 16)), 0, 255)
+    noisy[5:10, 5:10] = 20
+    path.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(noisy.astype(np.uint8), mode="L").convert("RGB").save(path)
+    return path
+
+
+def test_pooling_two_illuminations_desensitizes_the_detector(tmp_path: Path) -> None:
+    """Why this is a correctness fix and not a refinement.
+
+    One reference over two illuminations has a per-pixel MAD dominated by the difference
+    *between* the channels rather than by variation among normals. Every deviation is then
+    divided by that inflated scale, so a real defect is flattened towards the same z-value
+    as ordinary noise — the baseline still runs, still produces maps, and quietly stops
+    being able to tell them apart.
+    """
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, infer_ctx = _contexts(tmp_path, config)
+    train = _two_channel_train(tmp_path)
+
+    per_channel = PixelReferenceModel(
+        PixelReferenceConfig(smoothing_sigma=1.0, reference_scope=ReferenceScope.CHANNEL)
+    )
+    per_channel.fit(train, train_ctx)
+    pooled = PixelReferenceModel(
+        PixelReferenceConfig(smoothing_sigma=1.0, reference_scope=ReferenceScope.DATASET)
+    )
+    pooled.fit(train, train_ctx)
+
+    normal = ImageRecord(
+        image_id=900, sample_id=900, channel="bright", path=_bright(tmp_path / "hb.png", 41)
+    )
+    defective = ImageRecord(
+        image_id=901,
+        sample_id=901,
+        channel="bright",
+        path=_bright_with_defect(tmp_path / "hbd.png", 42),
+    )
+
+    def separation(model: PixelReferenceModel) -> float:
+        scores = model.predict([normal, defective], infer_ctx)
+        return scores[1].score - scores[0].score
+
+    # The pooled scale is inflated by the gap between the illuminations...
+    assert np.median(pooled._references[""].scale) > np.median(
+        per_channel._references["bright"].scale
+    )
+    # ...and that is what costs it the ability to separate a defect from a normal.
+    assert separation(per_channel) > separation(pooled)
+
+
+def test_scoring_a_channel_that_was_never_fitted_is_refused_by_name(tmp_path: Path) -> None:
+    """Falling back to another channel's reference would produce a confident map of nothing
+    but the difference between two illuminations."""
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, infer_ctx = _contexts(tmp_path, config)
+
+    model = PixelReferenceModel(PixelReferenceConfig(smoothing_sigma=1.0))
+    model.fit(
+        [
+            ImageRecord(
+                image_id=i, sample_id=i, channel="bright", path=_bright(tmp_path / f"b{i}.png", i)
+            )
+            for i in range(5)
+        ],
+        train_ctx,
+    )
+
+    stranger = [
+        ImageRecord(image_id=7, sample_id=7, channel="dome", path=_dark(tmp_path / "x.png", 3))
+    ]
+    with pytest.raises(RuntimeError, match="no reference for channel dome"):
+        model.predict(stranger, infer_ctx)
+
+
+def test_the_per_channel_bank_round_trips_through_save_and_load(tmp_path: Path) -> None:
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, infer_ctx = _contexts(tmp_path, config)
+
+    model = PixelReferenceModel(PixelReferenceConfig(smoothing_sigma=1.0))
+    model.fit(_two_channel_train(tmp_path), train_ctx)
+    model.save(tmp_path)
+
+    restored = PixelReferenceModel(PixelReferenceConfig(smoothing_sigma=1.0))
+    restored.load(tmp_path)
+
+    assert set(restored._references) == {"bright", "dark"}
+    probe = [
+        ImageRecord(
+            image_id=901, sample_id=901, channel="dark", path=_dark(tmp_path / "hd.png", 42)
+        )
+    ]
+    assert restored.predict(probe, infer_ctx)[0].score == pytest.approx(
+        model.predict(probe, infer_ctx)[0].score
+    )
+
+
+def test_dataset_scope_is_unchanged_by_the_channel_split(tmp_path: Path) -> None:
+    """The old behaviour has to still be available and still be exactly the old behaviour."""
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, _ = _contexts(tmp_path, config)
+    train = _two_channel_train(tmp_path)
+
+    model = PixelReferenceModel(
+        PixelReferenceConfig(smoothing_sigma=1.0, reference_scope=ReferenceScope.DATASET)
+    )
+    model.fit(train, train_ctx)
+
+    assert set(model._references) == {""}
+
+
+def test_exporting_onnx_refuses_a_multi_channel_bank_by_name(tmp_path: Path) -> None:
+    """One static graph carries one reference tensor. Refused in the plugin, so no route
+    has to branch on a method's own configuration."""
+    config = PreprocessingConfig(width=16, height=16)
+    train_ctx, _ = _contexts(tmp_path, config)
+
+    model = PixelReferenceModel(PixelReferenceConfig(smoothing_sigma=1.0))
+    model.fit(_two_channel_train(tmp_path), train_ctx)
+
+    with pytest.raises(ValueError, match="reference_scope=channel"):
+        model.export_onnx(tmp_path / "m.onnx", config)

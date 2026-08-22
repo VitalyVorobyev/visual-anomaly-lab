@@ -35,10 +35,9 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, ConfirmDialog, ErrorBox, Field, Input, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, cn, describeFields, initialValues, jsonErrors, missingRequired, outOfRange, overrideCount, toOptions, type Column, type RawValues, type Tone } from "@vitavision/lab-ui";
-import { DatasetSectionNav } from "../components/DatasetSectionNav";
-import { useDatasets, useSplits } from "../hooks/useCatalog";
-import { useDataset } from "../hooks/useCatalog";
+import { Badge, Button, Callout, cn, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues, type Tone } from "@vitavision/lab-ui";
+import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
+import { TabScroll } from "./dataset/TabScroll";
 import {
   useCreateExperiment,
   useDeleteExperiment,
@@ -49,10 +48,15 @@ import {
 
 type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
 
-export function ExperimentsRoute() {
-  const params = useParams();
-  const datasetId = params["datasetId"] === undefined ? undefined : Number(params["datasetId"]);
-  const dataset = useDataset(datasetId);
+/**
+ * The catalogue itself: filters, table, deletion dialog, and no page chrome.
+ *
+ * It is mounted twice — as a screen of its own at `/experiments`, and as a tab under the
+ * dataset band — so `datasetId` arrives as a prop rather than out of `useParams`. That is
+ * what makes the two mounts honest: the Dataset column is genuinely absent inside a dataset
+ * rather than incidentally so.
+ */
+export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
   const datasets = useDatasets();
   const methods = useModelTypes();
   const remove = useDeleteExperiment();
@@ -153,25 +157,6 @@ export function ExperimentsRoute() {
 
   return (
     <div className="flex flex-col gap-4">
-      <PageHeader
-        title="Experiments"
-        meta={dataset.data ? <span>Dataset · {dataset.data.name}</span> : undefined}
-        actions={
-          <Link
-            to={
-              datasetId === undefined
-                ? "/experiments/new"
-                : `/datasets/${datasetId}/experiments/new`
-            }
-          >
-            <Button variant="primary" icon={<Plus />}>
-              New experiment
-            </Button>
-          </Link>
-        }
-      />
-      {datasetId !== undefined && <DatasetSectionNav datasetId={datasetId} />}
-
       <Panel
         title={experiments.data ? `${experiments.data.length} experiments` : "Experiment history"}
         actions={
@@ -312,24 +297,76 @@ export function ExperimentsRoute() {
   );
 }
 
-export function CreateExperimentRoute() {
-  const params = useParams();
-  const datasetId = params["datasetId"] === undefined ? undefined : Number(params["datasetId"]);
-  const dataset = useDataset(datasetId);
-
+/** `/experiments` — the cross-dataset view, under `ReadingLayout`. */
+export function ExperimentsRoute() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        back={{
-          to: datasetId === undefined ? "/experiments" : `/datasets/${datasetId}/experiments`,
-          label: "Back to experiments",
-        }}
-        title="New experiment"
-        meta={dataset.data ? <span>Dataset · {dataset.data.name}</span> : undefined}
+        title="Experiments"
+        actions={
+          <Link to="/experiments/new">
+            <Button variant="primary" icon={<Plus />}>
+              New experiment
+            </Button>
+          </Link>
+        }
       />
-      {datasetId !== undefined && <DatasetSectionNav datasetId={datasetId} />}
-      <CreateExperiment initialDatasetId={datasetId} />
+      <ExperimentCatalog />
     </div>
+  );
+}
+
+/**
+ * `/datasets/:id/experiments` — the tab.
+ *
+ * No header of its own: the band above already carries the dataset's name and the
+ * New-experiment button, and a title here would only repeat the tab you just clicked. All
+ * this contributes is its one scroll region.
+ */
+export function DatasetExperimentsRoute() {
+  const datasetId = Number(useParams()["datasetId"]);
+
+  return (
+    <TabScroll>
+      <ExperimentCatalog datasetId={datasetId} />
+    </TabScroll>
+  );
+}
+
+/** `/experiments/new` — the cross-dataset form, under `ReadingLayout`. */
+export function CreateExperimentRoute() {
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader
+        back={{ to: "/experiments", label: "Back to experiments" }}
+        title="New experiment"
+      />
+      <CreateExperiment />
+    </div>
+  );
+}
+
+/**
+ * `/datasets/:id/experiments/new` — a sub-page *of* the Experiments tab, not a tab.
+ *
+ * This back link survives where the tabs' did not: it points at a sibling inside the tab,
+ * not up to a destination the strip already offers one click away.
+ */
+export function DatasetCreateExperimentRoute() {
+  const datasetId = Number(useParams()["datasetId"]);
+
+  return (
+    <TabScroll>
+      <div className="flex flex-col gap-3">
+        <Link
+          to={`/datasets/${datasetId}/experiments`}
+          className="w-fit text-xs text-fg-muted transition-colors hover:text-signal"
+        >
+          ← Back to experiments
+        </Link>
+        <CreateExperiment initialDatasetId={datasetId} title="New experiment" />
+      </div>
+    </TabScroll>
   );
 }
 
@@ -365,7 +402,17 @@ function formatBytes(value: number): string {
 
 type ConfigTab = "method" | "preprocessing" | "evaluation";
 
-function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
+/**
+ * `title` is how the dataset mount names the form without a second `<h1>` — the band's
+ * dataset name is the only one on the screen, so this heading is the panel's, not the page's.
+ */
+function CreateExperiment({
+  initialDatasetId,
+  title,
+}: {
+  initialDatasetId?: number;
+  title?: string;
+}) {
   const navigate = useNavigate();
   const catalog = useModelTypes();
   const datasets = useDatasets();
@@ -379,9 +426,12 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
+  const [channels, setChannels] = useState<string[]>([]);
   const [tab, setTab] = useState<ConfigTab>("method");
 
   const splits = useSplits(datasetId);
+  const dataset = useDataset(datasetId);
+  const datasetChannels = dataset.data?.channels ?? [];
   const regionProfiles = useRegionProfiles(datasetId);
   const regionBuild = useRegionBuild(regionProfileId);
   const method: ModelDescription | undefined = catalog.data?.methods.find(
@@ -456,6 +506,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
         config: toOptions(configFields, configValues),
         preprocessing: toOptions(preprocessingFields, preprocessingValues),
         evaluation: toOptions(evaluationFields, evaluationValues),
+        channels,
       },
       { onSuccess: (created) => void navigate(`/experiments/${created.id}`) },
     );
@@ -464,7 +515,7 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
   const noSplits = datasetId !== undefined && splits.data?.length === 0;
 
   return (
-    <Panel>
+    <Panel title={title}>
       <div className="flex flex-col gap-7">
         {catalog.error && <ErrorBox>{catalog.error.message}</ErrorBox>}
 
@@ -577,6 +628,39 @@ function CreateExperiment({ initialDatasetId }: { initialDatasetId?: number }) {
                 onValueChange={(value) => setSplitId(value === "" ? undefined : Number(value))}
               />
             </Field>
+
+            {/* Absent entirely for a single-view dataset: there is nothing to select, and
+                a control offering one option is a question with no answer. Two channels
+                render two chips — nothing here knows how many there should be. */}
+            {datasetChannels.length > 0 && (
+              <Field
+                as="group"
+                label="Channels"
+                description={
+                  channels.length === 0
+                    ? "All channels. Pick some to train and score on a subset."
+                    : `${channels.length} of ${datasetChannels.length} channels.`
+                }
+              >
+                <div className="flex flex-wrap gap-2">
+                  {datasetChannels.map((channel) => (
+                    <ToggleChip
+                      key={channel.id}
+                      checked={channels.includes(channel.name)}
+                      onCheckedChange={(checked) =>
+                        setChannels((current) =>
+                          checked
+                            ? [...current, channel.name]
+                            : current.filter((name) => name !== channel.name),
+                        )
+                      }
+                    >
+                      {channel.name}
+                    </ToggleChip>
+                  ))}
+                </div>
+              </Field>
+            )}
           </div>
         </Section>
 

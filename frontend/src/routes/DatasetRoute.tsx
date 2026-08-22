@@ -18,7 +18,7 @@
 
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams, useSearchParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
 
 import type { BrowseState } from "../api/browseState";
 import {
@@ -28,36 +28,29 @@ import {
   toSampleQuery,
   writeBrowseState,
 } from "../api/browseState";
-import { imageUrl } from "../api/imageUrl";
 import type { DatasetDetail, Label, SampleSummary, SplitDetail, Subset } from "../api/client";
-import { Plus, SlidersHorizontal } from "lucide-react";
+import { SlidersHorizontal } from "lucide-react";
 
-import { DatasetSectionNav } from "../components/DatasetSectionNav";
 import {
-  Badge,
   Button,
-  CountRun,
   Disclosure,
   Empty,
   ErrorBox,
   Field,
-  PageHeader,
-  ReadoutStrip,
   Select,
   SkeletonRows,
 } from "@vitavision/lab-ui";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
+import { SampleTile, type SelectModifiers } from "./dataset/SampleTile";
 
 const COLUMNS = 6;
 const ROW_HEIGHT = 132;
 
-const LABELS: Label[] = ["normal", "defect", "unlabeled"];
+/** What stands in for the virtual grid while there is nothing to virtualize. */
+const PLACEHOLDER_SCROLLER =
+  "min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 [scrollbar-gutter:stable]";
 
-const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
-  normal: "normal",
-  defect: "defect",
-  unlabeled: "unlabeled",
-};
+const LABELS: Label[] = ["normal", "defect", "unlabeled"];
 
 export function DatasetRoute() {
   const params = useParams();
@@ -82,9 +75,9 @@ export function DatasetRoute() {
     setLabellingAll(false);
   }, [search]);
 
-  if (dataset.error) return <ErrorBox>{dataset.error.message}</ErrorBox>;
-  if (dataset.isPending || !dataset.data) return <SkeletonRows rows={6} />;
-
+  // No early return: the band above belongs to the layout and must stay put while this
+  // loads. The filter rail carries the wait instead, because it is the only part of this
+  // screen that needs the dataset — it builds the channel picker from the channel dictionary.
   const detail = dataset.data;
   const items = page.data?.items ?? [];
   const total = page.data?.total ?? 0;
@@ -110,52 +103,19 @@ export function DatasetRoute() {
       { onSuccess: () => setLabellingAll(false) },
     );
 
-  const filters = (
+  const filters = detail ? (
     <DatasetFilters
       browse={browse}
       detail={detail}
       splits={splits.data ?? []}
       onChange={setFilter}
     />
+  ) : (
+    <SkeletonRows rows={4} />
   );
 
   return (
     <div className="flex min-h-0 flex-1 flex-col bg-ground">
-      <header className="border-b border-line bg-ground px-5 py-4 lg:px-6">
-        <div className="mx-auto flex w-full max-w-[100rem] flex-col gap-3">
-          <PageHeader
-            title={detail.name}
-            actions={
-              <Link to={`/datasets/${datasetId}/experiments/new`}>
-                <Button variant="primary" icon={<Plus />}>
-                  New experiment
-                </Button>
-              </Link>
-            }
-            meta={
-              <ReadoutStrip
-                items={[
-                  { label: "samples", value: detail.samples },
-                  { label: "images", value: detail.images },
-                  ...(detail.channels.length > 0
-                    ? [{ label: "channels", value: detail.channels.length }]
-                    : []),
-                  { value: detail.root_path },
-                ]}
-              />
-            }
-          />
-          <DatasetSectionNav datasetId={datasetId} />
-          <CountRun
-            counts={[
-              ["normal", detail.label_counts["normal"] ?? 0, "normal"],
-              ["defect", detail.label_counts["defect"] ?? 0, "defect"],
-              ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
-            ]}
-          />
-        </div>
-      </header>
-
       <div className="border-b border-line bg-surface px-4 py-2 lg:hidden">
         <Disclosure
           summary={
@@ -195,16 +155,26 @@ export function DatasetRoute() {
               </Button>
             )}
           </div>
-          <div className="p-4">{filters}</div>
+          {/* A peer column beside the grid, not a scroller stacked inside it: without this
+              the rail is clipped by the workspace's `overflow-hidden` and a long channel
+              dictionary becomes unreachable. */}
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4">{filters}</div>
         </aside>
 
         <section className="relative flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
+          {dataset.error && <div className="p-4"><ErrorBox>{dataset.error.message}</ErrorBox></div>}
           {page.error && <div className="p-4"><ErrorBox>{page.error.message}</ErrorBox></div>}
           {setLabels.error && (
             <div className="p-4"><ErrorBox>{setLabels.error.message}</ErrorBox></div>
           )}
 
-          {page.isPending && !page.data && <div className="p-4"><SkeletonRows rows={6} /></div>}
+          {/* The grid is this tab's one scroller, so a state that renders no grid has to
+              stand in for it — otherwise the gutter it reserves blinks in and out. */}
+          {!page.data && (
+            <div data-scroll="tab" className={PLACEHOLDER_SCROLLER}>
+              {page.isPending && <SkeletonRows rows={6} />}
+            </div>
+          )}
 
           {page.data && (
             <>
@@ -256,12 +226,15 @@ export function DatasetRoute() {
               </div>
 
               {items.length === 0 ? (
-                <div className="p-4"><Empty>No samples match these filters.</Empty></div>
+                <div data-scroll="tab" className={PLACEHOLDER_SCROLLER}>
+                  <Empty>No samples match these filters.</Empty>
+                </div>
               ) : (
                 <SampleGrid
                   datasetId={datasetId}
                   samples={items}
                   search={search}
+                  channelId={browse.channelId ?? undefined}
                   selected={selected}
                   onSelected={setSelected}
                 />
@@ -381,12 +354,15 @@ function SampleGrid({
   datasetId,
   samples,
   search,
+  channelId,
   selected,
   onSelected,
 }: {
   datasetId: number;
   samples: SampleSummary[];
   search: string;
+  /** The channel the rail is filtered to, so each tile previews that one. */
+  channelId?: number | undefined;
   selected: ReadonlySet<number>;
   onSelected: (selected: ReadonlySet<number>) => void;
 }) {
@@ -407,7 +383,7 @@ function SampleGrid({
    * touched. Range extension works on the *displayed* order, which is the order the user
    * can see.
    */
-  const select = (index: number, event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => {
+  const select = (index: number, event: SelectModifiers) => {
     const sample = samples[index];
     if (!sample) return;
     const next = new Set(selected);
@@ -435,6 +411,9 @@ function SampleGrid({
     <div
       ref={scrollRef}
       data-testid="sample-grid"
+      /* This tab's one scroll region. It stays inside `SampleGrid` because the virtualizer
+         measures the element it holds a ref to; hoisting it would measure the wrong box. */
+      data-scroll="tab"
       tabIndex={-1}
       onKeyDown={(event) => {
         if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "a") {
@@ -442,7 +421,7 @@ function SampleGrid({
           selectAll();
         }
       }}
-      className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+      className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]"
     >
       <div style={{ height: virtualizer.getTotalSize(), position: "relative" }}>
         {virtualizer.getVirtualItems().map((row) => (
@@ -465,6 +444,7 @@ function SampleGrid({
                     datasetId={datasetId}
                     sample={sample}
                     search={search}
+                    channelId={channelId}
                     selected={selected.has(sample.id)}
                     onSelect={(event) => select(index, event)}
                   />
@@ -474,76 +454,5 @@ function SampleGrid({
         ))}
       </div>
     </div>
-  );
-}
-
-function SampleTile({
-  datasetId,
-  sample,
-  search,
-  selected,
-  onSelect,
-}: {
-  datasetId: number;
-  sample: SampleSummary;
-  search: string;
-  selected: boolean;
-  onSelect: (event: { shiftKey: boolean; metaKey: boolean; ctrlKey: boolean }) => void;
-}) {
-  const cover = sample.images[0];
-
-  return (
-    <Link
-      // The browse filters travel with the link so the viewer can page through the same
-      // set the grid is showing.
-      to={`/datasets/${datasetId}/samples/${sample.id}${search ? `?${search}` : ""}`}
-      onClick={(event) => {
-        // A modified click selects instead of navigating; a plain click still opens.
-        if (event.shiftKey || event.metaKey || event.ctrlKey) {
-          event.preventDefault();
-          onSelect(event);
-        }
-      }}
-      className={`relative flex flex-col overflow-hidden rounded-control border transition-colors ${
-        selected ? "border-signal ring-2 ring-signal" : "border-line hover:border-line-strong"
-      }`}
-      title={`${sample.group_key}/${sample.external_id}`}
-    >
-      <input
-        type="checkbox"
-        aria-label={`Select ${sample.group_key}/${sample.external_id}`}
-        checked={selected}
-        // The checkbox is the discoverable path to selection; the modifier keys are the
-        // fast one. Both end up in the same place.
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          onSelect(event);
-        }}
-        onChange={() => undefined}
-        className="absolute top-1 left-1 z-10 h-4 w-4 cursor-pointer accent-signal"
-      />
-      <div className="flex h-20 items-center justify-center bg-raised">
-        {cover ? (
-          <img
-            // The grid never asks for a full-resolution decode.
-            src={imageUrl(cover.id, "thumb")}
-            alt=""
-            loading="lazy"
-            className="h-full w-full object-contain"
-          />
-        ) : (
-          <span className="text-xs text-fg-subtle">no image</span>
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-1 px-1.5 py-1">
-        <span className="truncate font-mono text-xs">{sample.external_id}</span>
-        <span className="flex items-center gap-1">
-          {/* The channel count is whatever this sample has. */}
-          <span className="font-mono text-[10px] text-fg-subtle">{sample.images.length}ch</span>
-          <Badge tone={LABEL_TONE[sample.label]}>{sample.label.slice(0, 3)}</Badge>
-        </span>
-      </div>
-    </Link>
   );
 }

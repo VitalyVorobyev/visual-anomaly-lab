@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 import sqlite3
 from collections.abc import Callable
 from pathlib import Path
@@ -11,6 +12,7 @@ from typing import Annotated
 import numpy as np
 from fastapi import APIRouter, Body, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse
+from pydantic import BaseModel, Field
 
 from anomaly_lab.annotation_bitmap import AnnotationBitmapError, decode_shape, encode_png
 from anomaly_lab.annotation_interchange import (
@@ -31,6 +33,7 @@ from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import masks as masks_repo
+from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.annotations import (
     AnnotationDocument,
     AnnotationDraft,
@@ -38,11 +41,14 @@ from anomaly_lab.domain.annotations import (
     AnnotationLabelCreate,
     AnnotationLabelUpdate,
     AnnotationRevision,
+    AnnotationSampleDraft,
     AnnotationShape,
     BitmapShape,
 )
+from anomaly_lab.domain.entities import AnnotationScope, Image
 from anomaly_lab.media.decode import UnreadableImageError, sha256_of
 from anomaly_lab.models.preprocessing import load_mask
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(tags=["annotations"])
 
@@ -62,6 +68,58 @@ def _require_if_match(value: str | None) -> str:
     return value
 
 
+def _sample_etag(draft: AnnotationSampleDraft) -> str:
+    # A namespace of its own, not `annotation-draft-…`: an image id and a sample id are
+    # both small integers and would collide into a token that validates against the wrong
+    # document.
+    return f'"annotation-sample-draft-{draft.sample_id}-v{draft.version}"'
+
+
+def _set_sample_draft_etag(response: Response, draft: AnnotationSampleDraft) -> None:
+    response.headers["ETag"] = _sample_etag(draft)
+    response.headers["Cache-Control"] = "no-store"
+
+
+def _annotation_scope(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScope:
+    dataset = datasets_repo.get_dataset(conn, dataset_id)
+    if dataset is None:  # pragma: no cover - callers resolved the id from a row
+        raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+    return dataset.annotation_scope
+
+
+def _require_image_scope(conn: sqlite3.Connection, dataset_id: int) -> None:
+    """Refuse a per-image write on a dataset whose truth is edited per sample.
+
+    A 409 with a pointer rather than a quiet redirect: two writers editing the same part
+    through two different scopes would each hold a valid ETag for a different document and
+    neither would detect the other.
+    """
+    if _annotation_scope(conn, dataset_id) is AnnotationScope.SAMPLE:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "this dataset annotates whole samples; use /api/samples/{sample_id}/annotations/…"
+            ),
+        )
+
+
+def _require_sample_scope(conn: sqlite3.Connection, dataset_id: int) -> None:
+    if _annotation_scope(conn, dataset_id) is AnnotationScope.IMAGE:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "this dataset annotates individual images; use /api/images/{image_id}/annotations/…"
+            ),
+        )
+
+
+def _sample_dataset_id(conn: sqlite3.Connection, sample_id: int) -> int:
+    sample = samples_repo.get_sample(conn, sample_id)
+    if sample is None:
+        raise HTTPException(status_code=404, detail=f"no sample with id {sample_id}")
+    return sample.dataset_id
+
+
 def _image_dataset_id(conn: sqlite3.Connection, image_id: int) -> int:
     # Kept as a tiny SQL join here because an image's owning dataset is context for
     # taxonomy validation, not a new domain read model.
@@ -76,6 +134,28 @@ def _image_dataset_id(conn: sqlite3.Connection, image_id: int) -> int:
     if row is None:
         raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
     return int(row["dataset_id"])
+
+
+def _validate_taxonomy(
+    conn: sqlite3.Connection, dataset_id: int, document: AnnotationDocument
+) -> None:
+    """The checks that are about the document alone, not about which frame it belongs to.
+
+    Split out because a sample-scoped document is validated against a *shared* frame that
+    no single image owns, while these two checks are identical in both scopes.
+    """
+    known = {label.key for label in annotations_repo.list_labels(conn, dataset_id)}
+    unknown = sorted({shape.label_key for shape in document.shapes} - known)
+    if unknown:
+        raise HTTPException(
+            status_code=422, detail=f"unknown annotation labels: {', '.join(unknown)}"
+        )
+    for shape in document.shapes:
+        if isinstance(shape, BitmapShape):
+            try:
+                decode_shape(shape)
+            except AnnotationBitmapError as exc:
+                raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def _validate_document(
@@ -96,18 +176,7 @@ def _validate_document(
         )
     if document.base != expected_base:
         raise HTTPException(status_code=422, detail="a draft's base layer cannot be changed")
-    known = {label.key for label in annotations_repo.list_labels(conn, dataset_id)}
-    unknown = sorted({shape.label_key for shape in document.shapes} - known)
-    if unknown:
-        raise HTTPException(
-            status_code=422, detail=f"unknown annotation labels: {', '.join(unknown)}"
-        )
-    for shape in document.shapes:
-        if isinstance(shape, BitmapShape):
-            try:
-                decode_shape(shape)
-            except AnnotationBitmapError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+    _validate_taxonomy(conn, dataset_id, document)
 
 
 def _save_import(
@@ -125,6 +194,7 @@ def _save_import(
         conn.execute("BEGIN IMMEDIATE")
         try:
             dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
             current = annotations_repo.get_draft(conn, image_id)
             if current is None:
                 raise HTTPException(
@@ -256,6 +326,7 @@ def open_annotation_draft(request: Request, response: Response, image_id: int) -
         conn.execute("BEGIN IMMEDIATE")
         try:
             dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
             annotations_repo.ensure_default_label(conn, dataset_id)
             existing = annotations_repo.get_draft(conn, image_id)
             if existing is not None:
@@ -349,6 +420,7 @@ def save_annotation_draft(
         conn.execute("BEGIN IMMEDIATE")
         try:
             dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
             current = annotations_repo.get_draft(conn, image_id)
             if current is None:
                 raise HTTPException(
@@ -391,6 +463,7 @@ def complete_annotation_draft(
         conn.execute("BEGIN IMMEDIATE")
         try:
             dataset_id = _image_dataset_id(conn, image_id)
+            _require_image_scope(conn, dataset_id)
             draft = annotations_repo.get_draft(conn, image_id)
             if draft is None:
                 raise HTTPException(
@@ -614,3 +687,360 @@ def export_annotation_labelme(request: Request, image_id: int) -> LabelMeDocumen
 def export_annotation_coco(request: Request, image_id: int) -> CocoDocument:
     mask, image_path, label = _export_context(request, image_id)
     return coco_from_mask(mask, image_path=image_path, label=label)
+
+
+# --- Sample-scoped editing (ADR-0036) --------------------------------------------------
+#
+# One document, edited once, materialised onto every image of the sample. Truth below this
+# boundary stays image-keyed: `resolve_ground_truth_masks`, pixel metrics, `has_mask`, the
+# `MetricSet` digest and all three interchange formats never learn that scope exists.
+
+
+class AnnotationScopeState(BaseModel):
+    """A dataset's annotation scope, and everything that would stop it changing."""
+
+    model_config = API_MODEL_CONFIG
+
+    dataset_id: int
+    scope: AnnotationScope
+    samples: int
+    multi_image_samples: int
+    open_drafts: int = Field(
+        description="Drafts open in the current scope. Any scope change requires zero."
+    )
+    can_use_sample_scope: bool
+    blockers: list[str] = Field(
+        default_factory=list,
+        description="Every reason sample scope is unavailable, reported together.",
+    )
+
+
+class AnnotationScopeUpdate(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    scope: AnnotationScope
+
+
+def _scope_state(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScopeState:
+    """Answer the whole question at once rather than failing on the first obstacle.
+
+    An operator who fixes one blocker and is then told about a second has learned the
+    system does not know its own mind. Every reason is collected before any is reported.
+    """
+    scope = _annotation_scope(conn, dataset_id)
+    blockers: list[str] = []
+
+    masks = masks_repo.count_masks_for_dataset(conn, dataset_id)
+    if masks:
+        blockers.append(
+            f"{masks} imported source masks are pinned to individual images; a document "
+            "shared across channels cannot carry one image's provenance"
+        )
+
+    mixed = annotations_repo.samples_with_mixed_dimensions(conn, dataset_id)
+    if mixed:
+        shown = ", ".join(mixed[:5])
+        rest = f" and {len(mixed) - 5} more" if len(mixed) > 5 else ""
+        blockers.append(
+            f"{len(mixed)} samples mix image dimensions ({shown}{rest}); a shared document "
+            "pins one source frame"
+        )
+
+    open_drafts = (
+        annotations_repo.count_open_sample_drafts(conn, dataset_id)
+        if scope is AnnotationScope.SAMPLE
+        else annotations_repo.count_open_image_drafts(conn, dataset_id)
+    )
+    if open_drafts and scope is AnnotationScope.IMAGE:
+        blockers.append(
+            f"{open_drafts} image drafts are open; complete or discard them first, because "
+            "sample scope would leave them unreachable"
+        )
+
+    return AnnotationScopeState(
+        dataset_id=dataset_id,
+        scope=scope,
+        samples=samples_repo.count_samples(conn, dataset_id, samples_repo.SampleFilter()),
+        multi_image_samples=annotations_repo.count_multi_image_samples(conn, dataset_id),
+        open_drafts=open_drafts,
+        can_use_sample_scope=not blockers,
+        blockers=blockers,
+    )
+
+
+@router.get(
+    "/api/datasets/{dataset_id}/annotation-scope",
+    summary="Whether this dataset annotates images or whole samples",
+)
+def read_annotation_scope(request: Request, dataset_id: int) -> AnnotationScopeState:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        if datasets_repo.get_dataset(conn, dataset_id) is None:
+            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+        return _scope_state(conn, dataset_id)
+
+
+@router.put(
+    "/api/datasets/{dataset_id}/annotation-scope",
+    summary="Move a dataset between per-image and per-sample annotation editing",
+)
+def set_annotation_scope(
+    request: Request, dataset_id: int, body: AnnotationScopeUpdate
+) -> AnnotationScopeState:
+    """Completed revisions are untouched in either direction.
+
+    They are immutable and image-keyed, so they stay valid truth whichever scope produced
+    them. Only the editing surface moves.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            if datasets_repo.get_dataset(conn, dataset_id) is None:
+                raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            state = _scope_state(conn, dataset_id)
+            if body.scope is not state.scope:
+                if state.open_drafts:
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"{state.open_drafts} annotation drafts are open; complete or "
+                            "discard them before changing scope"
+                        ),
+                    )
+                if body.scope is AnnotationScope.SAMPLE and state.blockers:
+                    raise HTTPException(status_code=409, detail="; ".join(state.blockers))
+                datasets_repo.set_annotation_scope(conn, dataset_id, body.scope)
+            updated = _scope_state(conn, dataset_id)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    return updated
+
+
+def _shared_frame(images: list[Image]) -> tuple[int, int]:
+    if not images:
+        raise HTTPException(status_code=404, detail="this sample has no images to annotate")
+    frames = {(image.width, image.height) for image in images}
+    if len(frames) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail="this sample's images do not share one source frame",
+        )
+    return frames.pop()
+
+
+@router.post(
+    "/api/samples/{sample_id}/annotations/draft",
+    summary="Open the sample's shared draft, or start one from its latest truth",
+)
+def open_sample_annotation_draft(
+    request: Request, response: Response, sample_id: int
+) -> AnnotationSampleDraft:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _sample_dataset_id(conn, sample_id)
+            _require_sample_scope(conn, dataset_id)
+            annotations_repo.ensure_default_label(conn, dataset_id)
+            existing = annotations_repo.get_sample_draft(conn, sample_id)
+            if existing is not None:
+                conn.execute("COMMIT")
+                _set_sample_draft_etag(response, existing)
+                return existing
+
+            width, height = _shared_frame(images_repo.list_images_for_sample(conn, sample_id))
+            latest = annotations_repo.latest_revision_for_sample(conn, sample_id)
+            document = AnnotationDocument(image_width=width, image_height=height)
+            if latest is not None:
+                if latest.document.base != "empty":
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            "this sample's newest revision was opened on an imported source "
+                            "mask, which belongs to one image and cannot be shared"
+                        ),
+                    )
+                if (latest.document.image_width, latest.document.image_height) != (width, height):
+                    raise HTTPException(
+                        status_code=409,
+                        detail="this sample's newest revision was drawn in a different frame",
+                    )
+                document = latest.document
+
+            created = annotations_repo.create_sample_draft(conn, sample_id, document)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    _set_sample_draft_etag(response, created)
+    return created
+
+
+@router.get(
+    "/api/samples/{sample_id}/annotations/draft",
+    summary="Read the sample's current shared draft",
+)
+def get_sample_annotation_draft(
+    request: Request, response: Response, sample_id: int
+) -> AnnotationSampleDraft:
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        draft = annotations_repo.get_sample_draft(conn, sample_id)
+    if draft is None:
+        raise HTTPException(status_code=404, detail=f"sample {sample_id} has no annotation draft")
+    _set_sample_draft_etag(response, draft)
+    return draft
+
+
+@router.put(
+    "/api/samples/{sample_id}/annotations/draft",
+    summary="Save the shared draft if the caller still owns the version it read",
+)
+def save_sample_annotation_draft(
+    request: Request,
+    response: Response,
+    sample_id: int,
+    document: AnnotationDocument,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> AnnotationSampleDraft:
+    expected = _require_if_match(if_match)
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _sample_dataset_id(conn, sample_id)
+            _require_sample_scope(conn, dataset_id)
+            current = annotations_repo.get_sample_draft(conn, sample_id)
+            if current is None:
+                raise HTTPException(
+                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
+                )
+            if expected != _sample_etag(current):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            _validate_sample_document(conn, sample_id, dataset_id, document)
+            saved = annotations_repo.update_sample_draft(conn, sample_id, current.version, document)
+            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            raise
+    _set_sample_draft_etag(response, saved)
+    return saved
+
+
+def _validate_sample_document(
+    conn: sqlite3.Connection,
+    sample_id: int,
+    dataset_id: int,
+    document: AnnotationDocument,
+) -> None:
+    width, height = _shared_frame(images_repo.list_images_for_sample(conn, sample_id))
+    if (document.image_width, document.image_height) != (width, height):
+        raise HTTPException(
+            status_code=422,
+            detail="annotation dimensions must match the sample's shared frame exactly",
+        )
+    if document.base != "empty":
+        raise HTTPException(
+            status_code=422,
+            detail="a sample-scoped document has no base layer to inherit",
+        )
+    _validate_taxonomy(conn, dataset_id, document)
+
+
+@router.post(
+    "/api/samples/{sample_id}/annotations/complete",
+    summary="Freeze the shared draft as one revision per image of the sample",
+)
+def complete_sample_annotation_draft(
+    request: Request,
+    sample_id: int,
+    if_match: Annotated[str | None, Header(alias="If-Match")] = None,
+) -> list[AnnotationRevision]:
+    """Render once, then write the same bytes to every image's own revision path.
+
+    The digest is therefore identical across the fan-out, which is what makes "these
+    channels share one truth" checkable after the fact rather than merely intended. Each
+    image keeps its own `revision_no`, so one that carries earlier image-scoped history
+    continues counting from where it stopped.
+    """
+    expected = _require_if_match(if_match)
+    settings: Settings = request.app.state.settings
+    written: list[Path] = []
+    with connection(settings.db_path) as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            dataset_id = _sample_dataset_id(conn, sample_id)
+            _require_sample_scope(conn, dataset_id)
+            draft = annotations_repo.get_sample_draft(conn, sample_id)
+            if draft is None:
+                raise HTTPException(
+                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
+                )
+            if expected != _sample_etag(draft):
+                raise HTTPException(
+                    status_code=412, detail="the annotation draft changed elsewhere"
+                )
+            _validate_sample_document(conn, sample_id, dataset_id, draft.document)
+            if settings.annotations_dir.is_symlink():
+                raise HTTPException(
+                    status_code=409, detail="the app-owned annotation directory is unsafe"
+                )
+
+            images = images_repo.list_images_for_sample(conn, sample_id)
+            document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
+            rendered: Path | None = None
+            mask_sha256 = ""
+            revisions: list[AnnotationRevision] = []
+            for image in images:
+                next_no = annotations_repo.next_revision_no(conn, image.id)
+                destination = settings.annotation_image_dir(image.id) / f"revision-{next_no}.png"
+                if destination.parent.is_symlink():
+                    raise HTTPException(
+                        status_code=409, detail="the app-owned annotation directory is unsafe"
+                    )
+                if rendered is None:
+                    try:
+                        mask_sha256 = render_binary_mask(
+                            draft.document,
+                            destination,
+                            source_mask_path=None,
+                            source_mask_sha256=None,
+                        )
+                    except AnnotationRenderError as exc:
+                        raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    rendered = destination
+                else:
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copyfile(rendered, destination)
+                written.append(destination)
+                revisions.append(
+                    annotations_repo.insert_shared_revision(
+                        conn,
+                        image.id,
+                        draft.document,
+                        document_sha256=document_sha256,
+                        mask_path=str(destination),
+                        mask_sha256=mask_sha256,
+                    )
+                )
+            annotations_repo.delete_sample_draft(conn, sample_id)
+            conn.execute("COMMIT")
+        except BaseException:
+            if conn.in_transaction:
+                conn.execute("ROLLBACK")
+            for path in written:
+                path.unlink(missing_ok=True)
+            raise
+    return revisions

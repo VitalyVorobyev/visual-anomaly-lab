@@ -46,6 +46,18 @@ export interface AnnotationCanvasHandle {
 
 interface Props {
   imageId: number;
+  /**
+   * A second channel of the same sample, composited over the first at `overlayOpacity`.
+   *
+   * This is a registration check, not decoration: a multi-shot rig triggers its exposures
+   * milliseconds apart, and whether the part moved between them decides whether one
+   * annotation can be shared across the channels at all. Blending them is the only way to
+   * see a few pixels of drift; side by side, it is invisible.
+   */
+  overlayImageId?: number | undefined;
+  overlayOpacity?: number;
+  /** What a screen reader calls this surface. Panes beside the editor are not the editor. */
+  label?: string;
   document: AnnotationDocument;
   labels: AnnotationLabel[];
   selectedId: string | null;
@@ -69,6 +81,9 @@ interface Props {
 
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(function AnnotationCanvas({
   imageId,
+  overlayImageId,
+  overlayOpacity = 0.5,
+  label = "Annotation canvas",
   document,
   labels,
   selectedId,
@@ -109,6 +124,9 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     y: document.image_height / 2,
   });
   const source = useHtmlImage(imageUrl(imageId, "full"));
+  const overlay = useHtmlImage(
+    overlayImageId === undefined ? undefined : imageUrl(overlayImageId, "full"),
+  );
   const baseMask = useHtmlImage(
     document.base === "source_mask" ? maskUrl(imageId) : undefined,
   );
@@ -344,7 +362,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       role="region"
       tabIndex={0}
       data-annotation-canvas
-      aria-label="Annotation canvas"
+      aria-label={label}
       aria-description="Use arrow keys to move the source-pixel cursor. Shift moves ten pixels. Space applies the current drawing tool; Enter closes a polygon after three points."
       onFocus={() => setKeyboardFocused(true)}
       onBlur={() => setKeyboardFocused(false)}
@@ -398,6 +416,15 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                 image={source}
                 width={document.image_width}
                 height={document.image_height}
+                listening={false}
+              />
+            )}
+            {overlay && (
+              <KonvaImage
+                image={overlay}
+                width={document.image_width}
+                height={document.image_height}
+                opacity={overlayOpacity}
                 listening={false}
               />
             )}

@@ -18,6 +18,27 @@ The source frame is load-bearing. A future crop/localisation profile may change 
 annotation never moves into model-input or canvas coordinates. The UI transform and the spatial input
 pipeline must map back to this frame.
 
+## Scope: what one annotation is *of*
+
+A dataset annotates either each image or each whole sample, and `Dataset.annotation_scope` says which
+(ADR-0036). `image` is the default and the original behaviour. `sample` is for a multi-shot rig whose
+channels are exposures of one registered part: one document is edited once and materialised as **one
+ordinary `AnnotationRevision` per image of the sample**. Truth below that boundary is unchanged —
+`resolve_ground_truth_masks`, pixel metrics, `has_mask`, the `MetricSet` digest and all three
+interchange formats stay image-keyed and never learn that scope exists.
+
+`GET`/`PUT /api/datasets/{id}/annotation-scope` reads and moves it, and the read reports **every**
+reason sample scope is unavailable rather than failing on the first: imported source masks (pinned per
+image, so a shared document cannot carry one image's provenance), samples whose images differ in
+dimensions (a shared document pins one source frame), and open drafts. Leaving sample scope is refused
+while any sample draft is open. Completed revisions are untouched in either direction. Under `sample`
+scope the per-image write routes return `409` naming the sample route, because two writers editing one
+part through two scopes would each hold a valid ETag for a different document.
+
+A sample-scoped document is always `base="empty"`, enforced rather than assumed, and its draft lives in
+its own `annotation_sample_draft` table with its own ETag namespace
+(`annotation-sample-draft-{sample}-v{n}`).
+
 ## Draft lifecycle
 
 `POST /api/images/{id}/annotations/draft` is idempotent. It returns the existing draft, copies the newest
@@ -35,6 +56,12 @@ but this contract also handles a second window and an autosave racing a manual s
 PNG, atomically writes `data/annotations/image-<id>/revision-<n>.png`, hashes the canonical document and mask,
 inserts an append-only revision, then removes the draft. A database trigger rejects `UPDATE` on revisions.
 The mask endpoint verifies both its expected app-owned path and digest before serving immutable bytes.
+
+`POST /api/samples/{id}/annotations/complete` does the same thing once and copies the rendered bytes to
+every image's own revision path, returning the list. The `mask_sha256` is therefore identical across the
+fan-out, which is what makes "these channels carry the same truth" checkable rather than merely intended;
+each image keeps its own `revision_no`, so one with earlier image-scoped history continues counting from
+where it stopped. Any failure removes every file it had written.
 
 Dataset deletion includes annotation directories and rows in its previewed app-owned cascade. The imported
 image and mask trees are outside that inventory and survive unchanged.
@@ -64,6 +91,20 @@ then the imported `Mask`, then no mask. Evaluation verifies pinned bytes before 
 content digest of the subset's sample labels and resolved mask identities in each `MetricSet`. A later label
 or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
 scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
+
+The queue filters to one label and to samples still missing ground truth, and marks each card with
+whether every image of that sample resolves to truth, some do, or none — resolved by the same SQL
+predicate the filter uses, so the queue can never disagree with what evaluation will read. Under sample
+scope a part is one card and one job however many times it was photographed.
+
+The editor's canvas column carries a channel strip whenever a sample has more than one image. Under
+sample scope switching channel is a pure display change — the document belongs to the part, so the
+shapes stay on screen and visibly land on the new illumination; under image scope each channel owns its
+own truth, so it is real navigation and takes the dirty guard. Three view modes: one channel, two side
+by side sharing a single controlled view, or a blend that composites a second channel at adjustable
+alpha. The blend is the registration check — a few pixels of drift are invisible side by side. Shapes
+are drawn on a pane only when the document is truth for that pane's image, so an image-scoped reference
+pane shows the bare photograph.
 
 The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex and brush/eraser
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no

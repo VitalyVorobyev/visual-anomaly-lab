@@ -10,9 +10,10 @@ comparing them under one evaluation protocol.
 
 - The target is a **universal anomaly-detection explorer for arbitrary image datasets**. The private
   showcase dataset is one reference dataset, not the scope.
-- **Only** the `classical_circular` plugin may assume anything about the showcase dataset's geometry. Domain
-  model, import layer, DL methods (`efficientad_anomalib`, `patchcore_anomalib`, `efficientad_custom`),
-  evaluation layer, and UI must stay dataset-agnostic.
+- **Only** a `classical_circular` plugin — not built, and optional — may assume anything about the
+  showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_anomalib`,
+  `efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`), evaluation
+  layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
   secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
   current two. `check-repo-safety.sh` fails if anything under `datasets/` is staged. Note the leading
@@ -47,15 +48,19 @@ comparing them under one evaluation protocol.
 
 - `docs/architecture/` — **the handbook: how the system works now.** One page per area — `README.md`
   (overview + components), `repository.md`, `domain-model.md`, `import.md`, `methods.md`,
-  `diagnostics.md`, `jobs.md`, `evaluation.md`, `media.md`, `frontend.md`, `security.md`. **Read this
+  `annotations.md`, `diagnostics.md`, `jobs.md`, `evaluation.md`, `media.md`, `deployment.md`,
+  `frontend.md`, `security.md`. **Read this
   first**; it replaced `system-design.md`, which no longer exists. Use its **canonical entity names
   exactly**: `Dataset`, `Channel`, `Sample`, `Image`, `Split`, `SplitAssignment`, `Experiment`, `Job`,
   `ImageResult`, `SampleResult`, `MetricSet`. Pages carry no status and are **edited freely** when the
   code changes — updating one is part of the change, not a follow-up.
-- `docs/roadmap.md` — milestones M0–M9 with scope and exit criteria. Check which milestone is current
+- `docs/roadmap.md` — milestones M0–M12 with scope and exit criteria. Check which milestone is current
   before starting work.
 - `docs/backlog.md` — task-level breakdown by epic.
-- `docs/adr/` — **31 records: 19 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
+- `docs/user-feedback.md` — **what the user asked for, and what was done about it**, numbered and
+  filed under reported / rejected / accepted / resolved. A resolved entry states the cause, not just
+  the symptom. Add to it when acting on feedback; it is the record of why a screen looks the way it does.
+- `docs/adr/` — **36 records: 24 live decisions, 11 folded into the handbook, 1 superseded** (ADR-0030
   reclassified them; `docs/adr/README.md` is the index). A record captures a choice **that had a live
   alternative**; the bar is *would a competent engineer plausibly have chosen otherwise, and would
   changing it now cost more than a refactor?* A contract detail, a helper, or a read path for something
@@ -65,30 +70,40 @@ comparing them under one evaluation protocol.
   cited ~660 times in code and docs.
 - When the handbook and a record disagree, the **handbook is right about what the code does** and the
   **record is right about why it was chosen**.
-- `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
-  there and nowhere else. Components name `surface`, `line`, `fg-muted`, `signal`, `normal`,
-  `defect`, `warn` — **never a raw Tailwind ramp step** like `slate-500`. A raw colour will compile
-  and look almost right, and quietly ignore the theme.
+- **The design tokens live in `@vitavision/lab-ui` (ADR-0021)**, not in this repo: colour, type and
+  radius are defined once for every lab app and `frontend/src/styles.css` only imports them (plus the
+  one rule that is this app's own — `#root` is a mount point, not a design decision). Components name
+  `surface`, `line`, `fg-muted`, `signal`, `normal`, `defect`, `warn` — **never a raw Tailwind ramp
+  step** like `slate-500`. A raw colour will compile and look almost right, and quietly ignore the
+  theme.
 
 ## Current status and working discipline
 
-- **M0–M5 are done.** The loop closes, its output is reachable, it can be iterated in, and **two
-  methods can now be read against each other**: import a directory tree or a public benchmark, browse
-  and label it, split it, train, score, read image- and pixel-level metrics, browse every scored
-  sample and filter to the model's mistakes, ask the method about any image, continue training — then
-  put N runs of one split side by side, find the samples they disagree on, and open one of them with
-  every method's map in its own pane. Four methods ship: `pixel_reference` (numpy + Pillow, the floor),
-  `efficientad_anomalib` and `efficientad_custom` (MPS), and `patchcore_anomalib` (a coreset memory
-  bank; nothing is trained).
+- **M0–M7 and M9–M13 are done; M8 and M12 are in flight.** The loop
+  closes, its output is reachable, it can be iterated in, and **N methods can be read against each
+  other**: import a directory tree or a public benchmark, browse and label it, annotate it at pixel
+  level, pin an invertible region profile, split it, train, score, read image- and pixel-level
+  metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
+  image, continue training — then put N runs of one split side by side, find the samples they
+  disagree on, open one of them with every method's map in its own pane, and export a fitted method
+  as a verified ONNX bundle. Six methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  `efficientad_anomalib` and `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
+  bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction) and `glass_anomalib`
+  (learned anomaly synthesis). A grouped multi-view dataset is now *usable* and not merely
+  representable: a run selects its channels by name, scores are normalized per channel before they are
+  aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
+  the registration the scan measured.
 - **Nothing is compared in score units (ADR-0028).** A score has no meaning outside its own run —
   `pixel_reference` operates around 14 and `efficientad_anomalib` around 0.065 on the same data.
   Threshold-independent metrics compare directly; anything threshold-dependent is resolved **per run
   by one shared rule** whose name and resolved value are printed on screen, and a cut carried between
   runs is a *fraction of each range*, never a value. A single slider over a comparison would be
   wrong in a way that looks exactly like being right.
-- **M6 (custom EfficientAD) and M7 (PatchCore) are both in flight.** Read `docs/roadmap.md` before
-  starting work; the completed milestones there are summaries that keep only what still constrains new
-  work, and the in-flight ones say what is deliberately postponed rather than forgotten.
+- **M8 (dataset-first workbench + lifecycle) is where UI work lands, and M12's last open criterion
+  is the visual pass** — key screens at both target sizes and in both themes. Read `docs/roadmap.md`
+  before starting work; the completed milestones there are summaries that keep only what still
+  constrains new work, and the in-flight ones say what is deliberately postponed rather than
+  forgotten.
 - **A `dl`-gated test file must be named `test_dl_*.py`.** CI's `Backend (dl extra)` job globs exactly
   that, and a file outside the pattern is collected-and-skipped in the torch-free job and run in no
   job at all. A test that is merely *about* a deep method but needs no torch does not take the prefix.
@@ -100,13 +115,26 @@ comparing them under one evaluation protocol.
   through scikit-learn's numpy RNG, which `torch.manual_seed` does not touch, so its bank is not
   reproducible; M6 found the same shape in torch's global stream for weight init. When adding a
   method, assert reproducibility in *both* directions — same seed identical, different seed different.
-- **Controls come from `@vitavision/lab-ui`** (the shared design system package; see its own
-  README for the consumer wiring). There is an `Input`, `NumberInput`, `Select`,
-  `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `Tooltip`, `Disclosure`,
-  `Skeleton`, `ToggleChip`, `PageHeader`, `Section` and `ReadoutStrip`. Reach for one before writing a bare
-  `<select>`, `<input type="range">` or `<table>` — those are what the pass removed. A raw
-  `<details>` in particular now renders **with no caret**, because the base layer drops the UA
-  marker; use `Disclosure`.
+- **Controls come from `@vitavision/lab-ui`** — the shared design system for every lab app, not a
+  helper extracted from this one; see its README for the consumer wiring. There is an `Input`,
+  `NumberInput`, `Textarea`, `Select`, `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`,
+  `Dialog`, `ConfirmDialog`, `Tooltip`, `InfoHint`, `Disclosure`, `Field`, `Badge`, `CountRun`,
+  `Empty`, `ErrorBox`, `Callout`, `Skeleton`, `ToggleChip`, `PageHeader`, `Panel`, `Section`,
+  `ReadoutStrip`, `Tabs`, `SchemaForm`, the chart set and `ImageStage`. Reach for one before writing
+  a bare `<select>`, `<input type="range">`, `<input type="checkbox">` or `<table>` — those are what
+  the pass removed. A raw `<details>` in particular renders **with no caret**, because the base layer
+  drops the UA marker; use `Disclosure`. **A primitive that needs improving is improved upstream in
+  lab-ui**, never patched locally — a local copy is how the apps stop agreeing with each other.
+- **One page-level scroller per screen, and the layout owns it.** Three route layouts —
+  `ReadingLayout`, `DatasetLayout`, `CanvasLayout` — are marked with `data-layout`, `data-band` and
+  `data-scroll` so the contract is assertable, and `frontend/src/routes/dataset/tabScroll.test.tsx`
+  asserts it. A nested `max-h-* overflow-y-auto` inside a page that already scrolls is the bug this
+  replaced. The one exception is a **peer column** — a rail beside the content, scrolling on its own.
+- **A control never nests inside a link.** Card actions and grid selection boxes are
+  absolutely-positioned siblings of their `<Link>`, not children. This is correctness, not styling: a
+  control inside an anchor has to cancel the click to stop the navigation, and cancelling a
+  checkbox's click makes the browser restore its previous state *after* React has written the new
+  one, so the tick lands one render late.
 - **A method or adapter option needs no frontend work, and that now holds for every pydantic shape.**
   `enum` is read before `type` and `$ref` is resolved through `$defs`, so `Literal` and `StrEnum`
   both become pickers and numeric bounds reach the control. If a new option still needs a change in
@@ -122,9 +150,12 @@ comparing them under one evaluation protocol.
   fails on a stale file.
 - **Follow the milestone order** in the roadmap, which is where the numbering is authoritative: M1
   walking skeleton → M2 import + browse → M3 universal vertical slice → M4 workbench UI (+ M4.5 UI/UX,
-  M4.6 reachability, M4.7 iteration) → M5 comparison UI → M6 custom EfficientAD → **M7 PatchCore** →
-  M8 `classical_circular` (optional) → **M9 polish + full README**. Do not build a later milestone's
-  machinery while an earlier one is unfinished.
+  M4.6 reachability, M4.7 iteration) → M5 comparison UI → M6 custom EfficientAD → M7 PatchCore →
+  **M8 dataset-first workbench + lifecycle** → M9 annotation system + editor → M10 spatial input
+  pipeline + region profiles → M11 modern reference methods → **M12 portable deployment +
+  reproducible onboarding** → **M13 multi-channel as a first-class experiment variable**. Numbers are
+  chronological, not strictly sequential: M9–M11 were finished while M8 stayed open. Do not build a later
+  milestone's machinery while an earlier one is unfinished.
 - **A new job kind costs one entry** in `jobs/handlers.py` and one handler function. The queue, the
   JSON-lines protocol, cancellation, log tee-ing and WebSocket fan-out are kind-agnostic; if a new kind
   needs a change in any of them, that is a finding about the boundary. `train` and `infer` cost exactly
@@ -144,9 +175,9 @@ comparing them under one evaluation protocol.
   `models.base.evenly_spaced`, never the first N, and log the cap. A silent truncation reads as "this is
   all there was".
 - **The deep-learning dependencies live behind the optional `dl` extra.** `pixel_reference`, the whole
-  evaluation layer and every test but the EfficientAD ones must work without torch installed. CI has
+  evaluation layer and every test but the `dl`-gated ones must work without torch installed. CI has
   **two** backend jobs for exactly this: `Backend` installs without the extra and is what *measures*
-  the torch-free boundary, and `Backend (dl extra)` runs the two `dl`-gated files. Run the MPS smoke
+  the torch-free boundary, and `Backend (dl extra)` runs the `test_dl_*.py` files. Run the MPS smoke
   test (`scripts/mps-smoke-test.py`) before trusting the accelerator, and before writing wrapper code
   against a new library (ADR-0008) — it has already paid for itself once.
 - **Type-check with bare `uv run mypy`, never `mypy --strict src`.** `pyproject` sets
@@ -166,5 +197,8 @@ comparing them under one evaluation protocol.
 - **Keep the vertical slice honest (ADR-0007).** Adding or changing a method means adding a module and a
   registry entry. If a change for a new method leaks into the jobs, evaluation, results, or UI layers, the
   plugin boundary is wrong — fix the boundary, not the caller.
+- **`AGENTS.md` is this file's twin for Codex.** They differ only in the first three lines. A change
+  to one of them belongs in both, in the same commit; guidance that holds for one agent and not the
+  other does not exist here.
 - Prefer the smallest change that satisfies the milestone's exit criteria. Small, understandable
   architecture beats premature generality.

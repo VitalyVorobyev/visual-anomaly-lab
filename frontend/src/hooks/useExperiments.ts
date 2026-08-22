@@ -102,6 +102,8 @@ export interface CreateExperimentInput {
   config: Record<string, unknown>;
   preprocessing: Record<string, unknown>;
   evaluation: Record<string, unknown>;
+  /** Acquisition channels to read, by name. Empty means every channel the dataset has. */
+  channels: string[];
 }
 
 export function useCreateExperiment() {

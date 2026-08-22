@@ -4,3 +4,32 @@
 /* See @vitavision/lab-ui's README "Consumer wiring" #1: Tailwind's @source only scans
    literal source text, and dist/index.js is where the package's own class names live. */
 @source "../node_modules/@vitavision/lab-ui/dist";
+
+@layer base {
+  /*
+   * The application is a fixed frame, not a document.
+   *
+   * The height chain used to rest on a single `h-screen` -- `height: 100vh` -- on a div whose
+   * ancestors had no height and no `overflow` at all. `100vh` is measured against the initial
+   * containing block: it does not subtract a horizontal scrollbar and does not track a
+   * fractional-device-pixel viewport, so the frame could be taller than what is actually
+   * visible. With nothing clipping `body`, the document then grew a scrollbar of its own
+   * beside the layout's, and the window narrowed by its width, which moved the shell header.
+   *
+   * These declarations make that structurally impossible: the viewport has no scrollport left
+   * to acquire a scrollbar, and `#root` is a percentage of a box that already *is* the visible
+   * area. `overflow` is set on `html` itself and not only on `body`, because the
+   * body-to-viewport propagation rule applies only while `html`'s own `overflow` is `visible`.
+   *
+   * It lives here rather than in @vitavision/lab-ui because `#root` is this application's
+   * mount point, not the design system's business. Everything else that used to be in this
+   * file -- the token layer, the base typography, the disclosure marker -- is the shared
+   * visual language and now comes from the package.
+   */
+  html,
+  body,
+  #root {
+    height: 100%;
+    overflow: hidden;
+  }
+}

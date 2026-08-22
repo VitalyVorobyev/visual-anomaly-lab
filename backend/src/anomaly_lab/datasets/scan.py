@@ -18,6 +18,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from anomaly_lab.datasets.adapters import channel_folders as _default_adapter
 from anomaly_lab.datasets.adapters.base import get_adapter, parse_options
+from anomaly_lab.datasets.probe import measure as probe_manifest
 from anomaly_lab.datasets.storage import save_manifest, scan_manifest_id
 from anomaly_lab.jobs.context import JobContext
 
@@ -33,6 +34,33 @@ class ScanParams(BaseModel):
     dataset_name: str
     adapter: str = DEFAULT_ADAPTER
     options: dict[str, Any] = Field(default_factory=dict)
+    dataset_root: str | None = Field(
+        default=None,
+        description=(
+            "The path recorded as this dataset's identity, when it is not where the walk "
+            "starts. Must be the scan root or a directory inside it."
+        ),
+    )
+
+
+def dataset_identity(root: Path, dataset_root: str | None) -> Path:
+    """Resolve the path this dataset will be known by, refusing a claim it cannot back.
+
+    Constrained to the scan root or a directory beneath it so an identity always names
+    somewhere the images actually came from. Without that, two unrelated imports could
+    claim each other's root and a re-import would update the wrong dataset.
+    """
+    if dataset_root is None:
+        return root
+    identity = Path(dataset_root).expanduser()
+    if not identity.is_dir():
+        msg = f"{identity} is not a directory"
+        raise NotADirectoryError(msg)
+    resolved, resolved_root = identity.resolve(), root.resolve()
+    if resolved != resolved_root and resolved_root not in resolved.parents:
+        msg = f"{identity} is not inside the scan root {root}"
+        raise ValueError(msg)
+    return identity
 
 
 def run_scan_job(context: JobContext) -> dict[str, Any]:
@@ -42,6 +70,8 @@ def run_scan_job(context: JobContext) -> dict[str, Any]:
     if not root.is_dir():
         msg = f"{root} is not a directory"
         raise NotADirectoryError(msg)
+
+    identity = dataset_identity(root, params.dataset_root)
 
     adapter = get_adapter(params.adapter)
     options = parse_options(adapter, params.options)
@@ -54,6 +84,28 @@ def run_scan_job(context: JobContext) -> dict[str, Any]:
         context.progress(fraction, message)
 
     manifest = adapter.scan(root, options, dataset_name=params.dataset_name, progress=report)
+    if identity != root:
+        # `root_path` is the dataset's stable identity -- it is `UNIQUE`, and commit
+        # resolves against it to make a re-import idempotent (ADR-0013). One capture tree
+        # can legitimately hold several datasets: VisA's twelve object classes already do
+        # this internally, and a rig that photographs two product variants into one
+        # channel-first tree needs exactly the same separation. Recording the walk root
+        # for both would collide them into one dataset.
+        context.log(f"recording {identity} as this dataset's root")
+        manifest = manifest.model_copy(update={"root_path": str(identity)})
+
+    # The measured half of the scan, after the adapter has decided what the files *are*.
+    # Kept here rather than inside any adapter so that every layout gets the same answers
+    # and no adapter has to know the probe exists.
+    context.raise_if_cancelled()
+    context.progress(0.97, "measuring colour and channel registration")
+    probe, probe_warnings = probe_manifest(manifest)
+    manifest = manifest.model_copy(
+        update={
+            "probe": probe.model_dump(mode="json"),
+            "warnings": [*manifest.warnings, *probe_warnings],
+        }
+    )
 
     manifest_id = scan_manifest_id(context.job_id)
     save_manifest(context.settings, manifest, manifest_id=manifest_id)

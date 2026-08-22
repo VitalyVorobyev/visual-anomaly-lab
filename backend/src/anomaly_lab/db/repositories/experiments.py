@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any, Literal
 
 from anomaly_lab.domain.entities import Experiment, ExperimentStatus
@@ -90,6 +90,7 @@ def create_experiment(
     preprocessing_config: Mapping[str, Any],
     eval_config: Mapping[str, Any],
     artifact_dir: str,
+    channels: Sequence[str] = (),
     notes: str | None = None,
 ) -> Experiment:
     cursor = conn.execute(
@@ -97,8 +98,8 @@ def create_experiment(
         INSERT INTO experiment
                (name, dataset_id, split_id, region_profile_id,
                 region_manifest_sha256, model_type, model_config,
-                preprocessing_config, eval_config, artifact_dir, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                preprocessing_config, eval_config, channels, artifact_dir, notes)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -110,6 +111,7 @@ def create_experiment(
             json.dumps(dict(model_config), sort_keys=True),
             json.dumps(dict(preprocessing_config), sort_keys=True),
             json.dumps(dict(eval_config), sort_keys=True),
+            json.dumps(list(channels)),
             artifact_dir,
             notes,
         ),

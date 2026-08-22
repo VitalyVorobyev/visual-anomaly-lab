@@ -13,8 +13,8 @@ import { Link } from "react-router";
 
 import type { SampleVerdict, Subset } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { Badge, DEFECT_COLOUR, Empty, ErrorBox, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
 import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
+import { Badge, DEFECT_COLOUR, Empty, ErrorBox, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
 import {
   useCurves,
   useResults,

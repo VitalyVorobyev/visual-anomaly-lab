@@ -14,6 +14,7 @@ import type {
   DatasetDeletionResult,
   DatasetDetail,
   DatasetSummary,
+  DatasetUpdate,
   Label,
   JobSummary,
   ReferencePackCatalog,
@@ -77,6 +78,7 @@ export function useSamples(datasetId: number | undefined, query: SampleQuery) {
               channel_id: query.channelId,
               split_id: query.splitId,
               subset: query.subset,
+              annotated: query.annotated,
               limit: query.limit,
               offset: query.offset,
             },
@@ -147,6 +149,74 @@ export function useSetLabels(datasetId: number) {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
+    },
+  });
+}
+
+/**
+ * Edit what a dataset says about itself: its description, and what it is filed under.
+ *
+ * The body carries only the keys the caller sets. That is the contract the endpoint is
+ * built on -- an absent key leaves its column alone, and an explicit `null` clears the
+ * override so the reference pack's own text comes back -- so never spread a whole dataset
+ * object in here to "keep the other field", which would rewrite it with what was on screen.
+ */
+export function useUpdateDataset() {
+  const queryClient = useQueryClient();
+  return useMutation<DatasetDetail, Error, { datasetId: number; changes: DatasetUpdate }>({
+    mutationFn: async ({ datasetId, changes }) =>
+      unwrap(
+        await api.PATCH("/api/datasets/{dataset_id}", {
+          params: { path: { dataset_id: datasetId } },
+          body: changes,
+        }),
+        "the dataset edit",
+      ),
+    onSuccess: (_result, { datasetId }) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.datasets() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
+    },
+  });
+}
+
+/** One dataset's new filing, as the collection dialog computes it. */
+export type CollectionMove = { datasetId: number; collection: string };
+
+/**
+ * File several datasets at once, which is what naming a collection actually is.
+ *
+ * Sequential rather than fanned out: SQLite has one writer, the list is a dozen entries at
+ * most, and a fan-out buys nothing while making a partial failure harder to describe. If
+ * one PATCH fails the rest are abandoned and the error says how many landed — the caller
+ * keeps its dialog open, and the invalidation below still runs, so the catalogue shows what
+ * actually happened rather than what was asked for.
+ */
+export function useMoveDatasets() {
+  const queryClient = useQueryClient();
+  return useMutation<void, Error, CollectionMove[]>({
+    mutationFn: async (moves) => {
+      let done = 0;
+      try {
+        for (const { datasetId, collection } of moves) {
+          unwrap(
+            await api.PATCH("/api/datasets/{dataset_id}", {
+              params: { path: { dataset_id: datasetId } },
+              body: { collection },
+            }),
+            "the dataset edit",
+          );
+          done += 1;
+        }
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new Error(`${done} of ${moves.length} datasets were filed. ${reason}`);
+      }
+    },
+    onSettled: (_result, _error, moves) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.datasets() });
+      for (const { datasetId } of moves) {
+        void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
+      }
     },
   });
 }

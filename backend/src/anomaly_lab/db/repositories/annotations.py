@@ -12,12 +12,26 @@ from anomaly_lab.domain.annotations import (
     AnnotationDraft,
     AnnotationLabel,
     AnnotationRevision,
+    AnnotationSampleDraft,
 )
+from anomaly_lab.domain.entities import AnnotationState
 from anomaly_lab.media.decode import sha256_of
 
 
 class GroundTruthDriftError(RuntimeError):
     """Pinned truth bytes no longer match their recorded identity."""
+
+
+# "This image has ground truth", spelled as SQL over an in-scope `image` row. It is exactly
+# what `resolve_ground_truth_masks` resolves -- a completed revision, else an imported
+# source mask -- and it is shared rather than restated so a queue filter can never disagree
+# with what evaluation will actually read.
+IMAGE_HAS_TRUTH = (
+    "(EXISTS (SELECT 1 FROM annotation_revision"
+    "         WHERE annotation_revision.image_id = image.id)"
+    " OR EXISTS (SELECT 1 FROM mask"
+    "            WHERE mask.image_id = image.id AND mask.kind = 'ground_truth'))"
+)
 
 
 @dataclass(frozen=True)
@@ -48,6 +62,12 @@ def _revision(row: sqlite3.Row) -> AnnotationRevision:
     values = dict(row)
     values["document"] = _document(str(values["document"]))
     return AnnotationRevision.model_validate(values)
+
+
+def _sample_draft(row: sqlite3.Row) -> AnnotationSampleDraft:
+    values = dict(row)
+    values["document"] = _document(str(values["document"]))
+    return AnnotationSampleDraft.model_validate(values)
 
 
 def ensure_default_label(conn: sqlite3.Connection, dataset_id: int) -> None:
@@ -242,6 +262,240 @@ def get_revision(conn: sqlite3.Connection, revision_id: int) -> AnnotationRevisi
     return _revision(row) if row is not None else None
 
 
+def get_sample_draft(conn: sqlite3.Connection, sample_id: int) -> AnnotationSampleDraft | None:
+    row = conn.execute(
+        "SELECT * FROM annotation_sample_draft WHERE sample_id = ?", (sample_id,)
+    ).fetchone()
+    return _sample_draft(row) if row is not None else None
+
+
+def create_sample_draft(
+    conn: sqlite3.Connection, sample_id: int, document: AnnotationDocument
+) -> AnnotationSampleDraft:
+    conn.execute(
+        "INSERT INTO annotation_sample_draft (sample_id, document) VALUES (?, ?)",
+        (sample_id, document.canonical_json()),
+    )
+    created = get_sample_draft(conn, sample_id)
+    if created is None:  # pragma: no cover
+        raise RuntimeError("annotation sample draft vanished after insertion")
+    return created
+
+
+def update_sample_draft(
+    conn: sqlite3.Connection,
+    sample_id: int,
+    expected_version: int,
+    document: AnnotationDocument,
+) -> AnnotationSampleDraft | None:
+    cursor = conn.execute(
+        """
+        UPDATE annotation_sample_draft
+           SET document = ?, version = version + 1,
+               updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+         WHERE sample_id = ? AND version = ?
+        """,
+        (document.canonical_json(), sample_id, expected_version),
+    )
+    if cursor.rowcount != 1:
+        return None
+    return get_sample_draft(conn, sample_id)
+
+
+def delete_sample_draft(conn: sqlite3.Connection, sample_id: int) -> None:
+    conn.execute("DELETE FROM annotation_sample_draft WHERE sample_id = ?", (sample_id,))
+
+
+def latest_revision_for_sample(
+    conn: sqlite3.Connection, sample_id: int
+) -> AnnotationRevision | None:
+    """The newest completed revision across a sample's images, for seeding a shared draft.
+
+    Under sample scope every image of a sample was written the same document, so any of
+    them answers the question. `completed_at` then `id` orders a fan-out written inside one
+    transaction deterministically, and an image-scoped history left behind by a scope flip
+    resolves to whichever image was edited last -- which is the only defensible reading of
+    "what did this part look like".
+    """
+    row = conn.execute(
+        """
+        SELECT annotation_revision.*
+          FROM annotation_revision
+          JOIN image ON image.id = annotation_revision.image_id
+         WHERE image.sample_id = ?
+         ORDER BY annotation_revision.completed_at DESC, annotation_revision.id DESC
+         LIMIT 1
+        """,
+        (sample_id,),
+    ).fetchone()
+    return _revision(row) if row is not None else None
+
+
+def insert_shared_revision(
+    conn: sqlite3.Connection,
+    image_id: int,
+    document: AnnotationDocument,
+    *,
+    document_sha256: str,
+    mask_path: str,
+    mask_sha256: str,
+) -> AnnotationRevision:
+    """Append one image's revision from a sample-scoped completion.
+
+    Deliberately separate from `insert_revision`: there is no image draft to consume and
+    no source-mask provenance to carry forward. `revision_no` is still per image, so an
+    image that has its own earlier history keeps counting from where it was.
+    """
+    next_no = int(
+        conn.execute(
+            "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM annotation_revision WHERE image_id = ?",
+            (image_id,),
+        ).fetchone()[0]
+    )
+    cursor = conn.execute(
+        """
+        INSERT INTO annotation_revision
+               (image_id, revision_no, document, document_sha256, mask_path, mask_sha256)
+             VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        (image_id, next_no, document.canonical_json(), document_sha256, mask_path, mask_sha256),
+    )
+    row = conn.execute(
+        "SELECT * FROM annotation_revision WHERE id = ?", (int(cursor.lastrowid or 0),)
+    ).fetchone()
+    if row is None:  # pragma: no cover
+        raise RuntimeError("annotation revision vanished after insertion")
+    return _revision(row)
+
+
+def next_revision_no(conn: sqlite3.Connection, image_id: int) -> int:
+    """What `insert_revision`/`insert_shared_revision` will number the next revision.
+
+    Read separately because the materialised PNG's filename embeds it, and the file has to
+    be written before the row that points at it.
+    """
+    return int(
+        conn.execute(
+            "SELECT COALESCE(MAX(revision_no), 0) + 1 FROM annotation_revision WHERE image_id = ?",
+            (image_id,),
+        ).fetchone()[0]
+    )
+
+
+def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+              FROM annotation_draft
+              JOIN image  ON image.id = annotation_draft.image_id
+              JOIN sample ON sample.id = image.sample_id
+             WHERE sample.dataset_id = ?
+            """,
+            (dataset_id,),
+        ).fetchone()[0]
+    )
+
+
+def count_open_sample_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*)
+              FROM annotation_sample_draft
+              JOIN sample ON sample.id = annotation_sample_draft.sample_id
+             WHERE sample.dataset_id = ?
+            """,
+            (dataset_id,),
+        ).fetchone()[0]
+    )
+
+
+def annotation_state_for_samples(
+    conn: sqlite3.Connection, sample_ids: list[int]
+) -> dict[int, AnnotationState]:
+    """Whether each sample's images all have truth, some do, or none do.
+
+    Three states rather than a boolean, because a multi-channel sample can genuinely be
+    half done: image scope lets a part's bright view be annotated while its dark view is
+    not, and calling that "annotated" would lose the only detail the queue exists to show.
+    """
+    states: dict[int, AnnotationState] = dict.fromkeys(sample_ids, AnnotationState.NONE)
+    for start in range(0, len(sample_ids), 900):
+        chunk = sample_ids[start : start + 900]
+        if not chunk:
+            continue
+        placeholders = ",".join("?" * len(chunk))
+        rows = conn.execute(
+            f"""
+            SELECT image.sample_id AS sample_id,
+                   COUNT(*)        AS total,
+                   SUM(CASE WHEN {IMAGE_HAS_TRUTH} THEN 1 ELSE 0 END) AS covered
+              FROM image
+             WHERE image.sample_id IN ({placeholders})
+             GROUP BY image.sample_id
+            """,
+            chunk,
+        ).fetchall()
+        for row in rows:
+            covered = int(row["covered"])
+            total = int(row["total"])
+            states[int(row["sample_id"])] = (
+                AnnotationState.COMPLETE
+                if covered == total
+                else AnnotationState.PARTIAL
+                if covered
+                else AnnotationState.NONE
+            )
+    return states
+
+
+def count_multi_image_samples(conn: sqlite3.Connection, dataset_id: int) -> int:
+    """Samples carrying more than one image — how much sample scope would actually save.
+
+    Not a threshold anything is gated on: a dataset of single-view samples may still be
+    put in sample scope and behaves identically to image scope. It is shown so the choice
+    is made against the data rather than against a guess.
+    """
+    return int(
+        conn.execute(
+            """
+            SELECT COUNT(*) FROM (
+                SELECT sample.id
+                  FROM sample
+                  JOIN image ON image.sample_id = sample.id
+                 WHERE sample.dataset_id = ?
+                 GROUP BY sample.id
+                HAVING COUNT(image.id) > 1
+            )
+            """,
+            (dataset_id,),
+        ).fetchone()[0]
+    )
+
+
+def samples_with_mixed_dimensions(conn: sqlite3.Connection, dataset_id: int) -> list[str]:
+    """External ids of samples whose images are not all the same size, newest first.
+
+    A shared document pins one `image_width`/`image_height`, so a sample whose channels
+    were captured at different resolutions has no single frame to annotate in. Reported
+    rather than silently skipped: the operator has to know which parts are affected.
+    """
+    rows = conn.execute(
+        """
+        SELECT sample.external_id AS external_id
+          FROM sample
+          JOIN image ON image.sample_id = sample.id
+         WHERE sample.dataset_id = ?
+         GROUP BY sample.id
+        HAVING COUNT(DISTINCT image.width || 'x' || image.height) > 1
+         ORDER BY sample.group_key, sample.external_id
+        """,
+        (dataset_id,),
+    ).fetchall()
+    return [str(row["external_id"]) for row in rows]
+
+
 def resolve_ground_truth_masks(
     conn: sqlite3.Connection,
     image_ids: list[int],
@@ -352,5 +606,10 @@ def delete_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> None:
     conn.execute(f"DELETE FROM annotation_draft WHERE image_id IN ({image_select})", (dataset_id,))
     conn.execute(
         f"DELETE FROM annotation_revision WHERE image_id IN ({image_select})", (dataset_id,)
+    )
+    conn.execute(
+        "DELETE FROM annotation_sample_draft "
+        "WHERE sample_id IN (SELECT id FROM sample WHERE dataset_id = ?)",
+        (dataset_id,),
     )
     conn.execute("DELETE FROM annotation_label WHERE dataset_id = ?", (dataset_id,))

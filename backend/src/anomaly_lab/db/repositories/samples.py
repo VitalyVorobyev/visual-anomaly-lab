@@ -12,6 +12,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.domain.entities import Label, LabelSource, Sample, Subset
 
 
@@ -27,6 +28,14 @@ class SampleFilter:
     channel_id: int | None = None
     split_id: int | None = None
     subset: Subset | None = None
+    annotated: bool | None = None
+
+
+_SAMPLE_MISSING_TRUTH = (
+    "EXISTS (SELECT 1 FROM image"
+    f"       WHERE image.sample_id = sample.id AND NOT {annotations_repo.IMAGE_HAS_TRUTH})"
+)
+_SAMPLE_HAS_IMAGES = "EXISTS (SELECT 1 FROM image WHERE image.sample_id = sample.id)"
 
 
 def _where(dataset_id: int, filters: SampleFilter) -> tuple[str, list[object]]:
@@ -43,6 +52,16 @@ def _where(dataset_id: int, filters: SampleFilter) -> tuple[str, list[object]]:
             " WHERE image.sample_id = sample.id AND image.channel_id = ?)"
         )
         params.append(filters.channel_id)
+
+    if filters.annotated is not None:
+        # A sample counts as annotated only when *every* one of its images has truth: a
+        # part whose dark-field view is still blank is unfinished work, and a queue that
+        # called it done would quietly drop it.
+        clauses.append(
+            _SAMPLE_MISSING_TRUTH
+            if not filters.annotated
+            else f"{_SAMPLE_HAS_IMAGES} AND NOT {_SAMPLE_MISSING_TRUTH}"
+        )
 
     # A subset without a split is meaningless, so the split id carries the join and the
     # subset narrows it.

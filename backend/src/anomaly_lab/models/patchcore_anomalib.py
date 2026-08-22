@@ -103,6 +103,7 @@ from anomaly_lab.models.preprocessing import (
     IMAGENET_STD,
     ColorMode,
     PreprocessingConfig,
+    expand_planes,
     load_array,
     to_chw,
 )
@@ -536,12 +537,21 @@ class PatchcoreAnomalibModel(AnomalyModel):
 
         Two separate acts, and the module docstring says why they must stay separate:
         `load_array` is the experiment's decision and is identical for every method, while
-        the ImageNet statistics belong to this backbone.
+        the plane count and the ImageNet statistics belong to this backbone.
+
+        The expansion is explicit rather than left to broadcasting. A `(B, 1, H, W)` batch
+        minus a `(1, 3, 1, 1)` mean broadcasts to the same numbers this now computes, so
+        grayscale runs were never wrong here — but they were right by accident, and an
+        accident that produces correct output is the kind that survives until the shapes
+        change.
         """
         import torch
 
         stacked = np.stack(
-            [to_chw(load_array(record.path, ctx.preprocessing)) for record in records]
+            [
+                expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)
+                for record in records
+            ]
         )
         batch = torch.from_numpy(stacked).to(device)
         mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)

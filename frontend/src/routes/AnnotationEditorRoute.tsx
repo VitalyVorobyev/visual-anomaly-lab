@@ -37,6 +37,7 @@ import {
   withoutShape,
 } from "../api/annotationState";
 import { bitmapStroke, traceBitmapShape } from "../api/annotationBitmap";
+import { queueUnits } from "../api/annotationQueue";
 import type {
   AnnotationLabel,
   AnnotationPoint,
@@ -46,6 +47,7 @@ import type {
   PolygonShape,
   SampleSummary,
 } from "../api/client";
+import { ChannelTabs } from "../components/ChannelTabs";
 import {
   AnnotationCanvas,
   INITIAL_CANVAS_VIEW,
@@ -69,10 +71,11 @@ import {
 } from "@vitavision/lab-ui";
 import {
   type DraftEnvelope,
-  useAnnotationDraft,
+  type DraftTarget,
   useAnnotationLabels,
-  useCompleteAnnotation,
-  useSaveAnnotation,
+  useCompleteDraft,
+  useEditorDraft,
+  useSaveDraft,
   useSegmentAssist,
   useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
@@ -82,6 +85,9 @@ import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 
 const QUEUE_PAGE = 120;
+
+/** How the whole channel column is shown at once. */
+type PaneMode = "single" | "compare" | "overlay";
 
 export function AnnotationEditorRoute() {
   const params = useParams();
@@ -101,7 +107,14 @@ export function AnnotationEditorRoute() {
   });
   const nextQueue = useSamples(datasetId, { limit: QUEUE_PAGE, offset: offset + QUEUE_PAGE });
   const labels = useAnnotationLabels(datasetId);
-  const draft = useAnnotationDraft(imageId);
+
+  const perSample = dataset.data?.annotation_scope === "sample";
+  const target: DraftTarget | undefined = dataset.data
+    ? perSample
+      ? { scope: "sample", sampleId }
+      : { scope: "image", imageId }
+    : undefined;
+  const draft = useEditorDraft(target);
 
   const error = dataset.error ?? sample.error ?? queue.error ?? labels.error ?? draft.error;
   if (error) return <ErrorBox>{error.message}</ErrorBox>;
@@ -115,16 +128,21 @@ export function AnnotationEditorRoute() {
     !sample.data ||
     !queue.data ||
     !labels.data ||
-    !draft.data
+    !draft.data ||
+    !target
   ) {
     return <SkeletonRows rows={8} />;
   }
 
   return (
     <EditorReady
-      key={`${imageId}-${reloadGeneration}`}
+      // Under sample scope the document belongs to the part, so switching channel changes
+      // only which photograph is under it: remounting there would discard unsaved edits
+      // and reopen the same draft.
+      key={`${perSample ? `s${sampleId}` : imageId}-${reloadGeneration}`}
       datasetId={datasetId}
       imageId={imageId}
+      target={target}
       datasetName={dataset.data.name}
       sample={sample.data}
       queue={queue.data.items}
@@ -145,6 +163,7 @@ export function AnnotationEditorRoute() {
 function EditorReady({
   datasetId,
   imageId,
+  target,
   datasetName,
   sample,
   queue,
@@ -158,6 +177,7 @@ function EditorReady({
 }: {
   datasetId: number;
   imageId: number;
+  target: DraftTarget;
   datasetName: string;
   sample: SampleSummary;
   queue: SampleSummary[];
@@ -170,10 +190,14 @@ function EditorReady({
   onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
-  const [history, dispatch] = useReducer(historyReducer, initial.draft.document, createHistory);
+  const perSample = target.scope === "sample";
+  const [history, dispatch] = useReducer(historyReducer, initial.document, createHistory);
   const [etag, setEtag] = useState(initial.etag);
-  const [draftVersion, setDraftVersion] = useState(initial.draft.version);
-  const [savedDocument, setSavedDocument] = useState(initial.draft.document);
+  const [draftVersion, setDraftVersion] = useState(initial.version);
+  const [savedDocument, setSavedDocument] = useState(initial.document);
+  const [paneMode, setPaneMode] = useState<PaneMode>("single");
+  const [referenceId, setReferenceId] = useState<number | null>(null);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [tool, setTool] = useState<EditorTool>("select");
   const [operation, setOperation] = useState<"add" | "subtract">("add");
   const [labelKey, setLabelKey] = useState(labels[0]?.key ?? "defect");
@@ -192,8 +216,11 @@ function EditorReady({
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
-  const save = useSaveAnnotation(imageId);
-  const complete = useCompleteAnnotation(imageId);
+  const save = useSaveDraft(target);
+  const complete = useCompleteDraft(
+    target,
+    useMemo(() => sample.images.map((image) => image.id), [sample.images]),
+  );
   const capability = useSegmentAssistCapability();
   const modelAssets = useModelAssets();
   const installAsset = useInstallModelAsset();
@@ -204,23 +231,36 @@ function EditorReady({
   const cancelAssetJob = useCancelJob();
   const dirty = canonical(history.present) !== canonical(savedDocument);
 
-  const flatQueue = useMemo(
-    () => queue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
-    [queue],
-  );
+  const flatQueue = useMemo(() => queueUnits(queue, perSample), [queue, perSample]);
   const flatPrevious = useMemo(
-    () => previousQueue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
-    [previousQueue],
+    () => queueUnits(previousQueue, perSample),
+    [previousQueue, perSample],
   );
-  const flatNext = useMemo(
-    () => nextQueue.flatMap((item) => item.images.map((image) => ({ sample: item, image }))),
-    [nextQueue],
+  const flatNext = useMemo(() => queueUnits(nextQueue, perSample), [nextQueue, perSample]);
+  const queueIndex = flatQueue.findIndex((item) =>
+    perSample ? item.sample.id === sample.id : item.image.id === imageId,
   );
-  const queueIndex = flatQueue.findIndex((item) => item.image.id === imageId);
   const currentImage = sample.images.find((image) => image.id === imageId);
+  const activeIndex = sample.images.findIndex((image) => image.id === imageId);
+  const otherImages = sample.images.filter((image) => image.id !== imageId);
+  const reference =
+    otherImages.find((image) => image.id === referenceId) ?? otherImages[0] ?? null;
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
   const candidates = assist.data?.candidates ?? [];
   const candidate = candidates[candidateIndex] ?? null;
+
+  /**
+   * Shapes are drawn on a pane only when the document is truth *for that pane's image*.
+   *
+   * Under sample scope it is, by construction — one completion writes the same mask to
+   * every channel. Under image scope the document belongs to the displayed photograph
+   * alone, so drawing it over a sibling channel would show truth that does not exist
+   * there. The reference pane then shows the bare photograph, which is still the thing
+   * worth seeing: "is the defect visible in dark field at all?"
+   */
+  const referenceDocument = perSample
+    ? history.present
+    : { ...history.present, shapes: [] };
 
   const openQueueItem = useCallback(
     (index: number) => {
@@ -242,12 +282,33 @@ function EditorReady({
     [datasetId, flatNext, flatPrevious, flatQueue, navigate, queue.length, queueOffset, queueTotal],
   );
 
+  /**
+   * Show a different channel of the same part.
+   *
+   * Under sample scope this is a pure display change: the document is the part's, so the
+   * shapes stay on screen and visibly land — or fail to land — on the new illumination.
+   * Under image scope each channel owns its own truth, so this is real navigation and
+   * takes the same dirty guard as moving through the queue.
+   */
+  const openChannel = useCallback(
+    (index: number) => {
+      const image = sample.images[index];
+      if (!image || image.id === imageId) return;
+      if (!perSample && dirty) return;
+      navigate(
+        `/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`,
+        { replace: true },
+      );
+    },
+    [datasetId, dirty, imageId, navigate, perSample, queueOffset, sample.id, sample.images],
+  );
+
   const persist = useCallback(async (): Promise<string> => {
     if (!dirty) return etag;
     const saved = await save.mutateAsync({ document: history.present, etag });
     setEtag(saved.etag);
-    setDraftVersion(saved.draft.version);
-    setSavedDocument(saved.draft.document);
+    setDraftVersion(saved.version);
+    setSavedDocument(saved.document);
     setMessage("Draft saved");
     return saved.etag;
   }, [dirty, etag, history.present, save]);
@@ -270,8 +331,13 @@ function EditorReady({
   const completeCurrent = useCallback(async () => {
     try {
       const currentEtag = await persist();
-      const revision = await complete.mutateAsync(currentEtag);
-      setMessage(`Completed revision ${revision.revision_no}`);
+      const revisions = await complete.mutateAsync(currentEtag);
+      const first = revisions[0];
+      setMessage(
+        revisions.length > 1
+          ? `Completed revision ${first?.revision_no} on ${revisions.length} channels`
+          : `Completed revision ${first?.revision_no}`,
+      );
       openQueueItem(queueIndex + 1);
     } catch {
       // The mutations expose their errors in the inspector; keep the current image open.
@@ -434,6 +500,10 @@ function EditorReady({
         openQueueItem(queueIndex + 1);
       } else if (key === "k" && !dirty) {
         openQueueItem(queueIndex - 1);
+      } else if (event.key === "[") {
+        openChannel(activeIndex - 1);
+      } else if (event.key === "]") {
+        openChannel(activeIndex + 1);
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
       } else if (key === "0") {
@@ -444,7 +514,7 @@ function EditorReady({
     };
     globalThis.addEventListener("keydown", onKey);
     return () => globalThis.removeEventListener("keydown", onKey);
-  }, [clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId]);
+  }, [activeIndex, clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openChannel, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId]);
 
   useEffect(() => {
     if (!message) return;
@@ -505,7 +575,9 @@ function EditorReady({
             </span>
           </div>
           <div className="font-mono text-[10px] text-fg-subtle">
-            {currentImage?.width} × {currentImage?.height} · image {queueIndex + 1} of {flatQueue.length}
+            {currentImage?.width} × {currentImage?.height} ·{" "}
+            {perSample ? "sample" : "image"} {queueIndex + 1} of {flatQueue.length}
+            {perSample && sample.images.length > 1 && ` · ${sample.images.length} channels share one annotation`}
           </div>
         </div>
 
@@ -562,9 +634,63 @@ function EditorReady({
           </span>
         </aside>
 
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          {sample.images.length > 1 && (
+            <div className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-line bg-surface px-3">
+              <ChannelTabs
+                images={sample.images}
+                active={activeIndex}
+                onSelect={openChannel}
+                disabled={!perSample && dirty}
+              />
+              <div className="ml-auto flex shrink-0 items-center gap-2">
+                {paneMode === "overlay" && (
+                  <div className="flex w-40 items-center gap-2">
+                    <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
+                      {Math.round(overlayOpacity * 100)}%
+                    </span>
+                    <Slider
+                      aria-label="Overlay opacity"
+                      value={overlayOpacity}
+                      min={0}
+                      max={1}
+                      step={0.02}
+                      onValueChange={setOverlayOpacity}
+                    />
+                  </div>
+                )}
+                {paneMode !== "single" && reference && (
+                  <Select
+                    aria-label="Second channel"
+                    value={String(reference.id)}
+                    options={otherImages.map((image) => ({
+                      value: String(image.id),
+                      label: image.channel ?? "unassigned",
+                    }))}
+                    onValueChange={(value) => setReferenceId(Number(value))}
+                  />
+                )}
+                <SegmentedControl
+                  aria-label="Channel view"
+                  value={paneMode}
+                  options={[
+                    { value: "single", label: "One" },
+                    { value: "compare", label: "Side by side" },
+                    { value: "overlay", label: "Blend" },
+                  ]}
+                  onValueChange={(value) => setPaneMode(value as PaneMode)}
+                />
+              </div>
+            </div>
+          )}
+
+          <div className="flex min-h-0 flex-1 overflow-hidden">
         <AnnotationCanvas
           ref={canvasRef}
           imageId={imageId}
+          overlayImageId={paneMode === "overlay" ? reference?.id : undefined}
+          overlayOpacity={overlayOpacity}
+          label={`Annotation canvas — ${currentImage?.channel ?? "the sample"}`}
           document={history.present}
           labels={labels}
           selectedId={selectedId}
@@ -610,6 +736,38 @@ function EditorReady({
             setAssistBox(box);
           }}
         />
+            {paneMode === "compare" && reference && (
+              // A peer pane, not a second editor: it shares the one controlled `view`, so
+              // panning or zooming either keeps both showing the same source pixels — which
+              // is the entire point of putting two illuminations of one part side by side.
+              <div className="flex min-h-0 min-w-0 flex-1 border-l border-line">
+                <AnnotationCanvas
+                  imageId={reference.id}
+                  label={`Reference channel — ${reference.channel ?? "unassigned"}`}
+                  document={referenceDocument}
+                  labels={labels}
+                  selectedId={null}
+                  tool="select"
+                  pendingPoints={[]}
+                  brushRadius={brushRadius}
+                  assistMode="point"
+                  assistPoints={[]}
+                  assistBox={null}
+                  assistShape={null}
+                  view={view}
+                  onView={setView}
+                  onSelect={() => undefined}
+                  onPoint={() => undefined}
+                  onMovePoint={() => undefined}
+                  onBrush={() => undefined}
+                  onFinishPolygon={() => undefined}
+                  onAssistPoint={() => undefined}
+                  onAssistBox={() => undefined}
+                />
+              </div>
+            )}
+          </div>
+        </div>
 
         <aside className="flex w-72 shrink-0 flex-col border-l border-line bg-surface" aria-label="Annotation inspector">
           <section className="border-b border-line p-3">
@@ -883,7 +1041,7 @@ function EditorReady({
               aria-label="Previous image"
             />
             <span className="text-center font-mono text-[10px] text-fg-subtle">
-              J/K after save · C completes
+              J/K after save · C completes{sample.images.length > 1 ? " · [ ] channel" : ""}
             </span>
             <Button
               icon={<ArrowRight />}

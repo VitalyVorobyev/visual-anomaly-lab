@@ -272,3 +272,83 @@ def test_a_split_and_its_assignments_are_written_atomically(
         )
 
     assert splits.list_splits(migrated_db, catalog.dataset_id) == []
+
+
+def _split_over_everything(migrated_db: sqlite3.Connection, catalog: SeededCatalog) -> int:
+    """Every seeded sample in `test`, so a channel filter is the only thing narrowing."""
+    split = splits.create_split(
+        migrated_db,
+        catalog.dataset_id,
+        name="all",
+        strategy="normal_only_train",
+        seed=1,
+        params={},
+        assignments=dict.fromkeys(catalog.sample_ids.values(), Subset.TEST),
+    )
+    return split.id
+
+
+def test_no_channel_filter_reads_every_channel(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    split_id = _split_over_everything(migrated_db, catalog)
+
+    rows = images.list_images_for_split(migrated_db, split_id, subsets=[Subset.TEST])
+
+    assert len(rows) == 5  # two grouped samples x two channels, plus one unassigned
+    assert {row.channel for row in rows} == {"bright", "dark", None}
+
+
+def test_a_channel_filter_narrows_to_that_channel(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    """The comparison three separate datasets used to require, on one split."""
+    split_id = _split_over_everything(migrated_db, catalog)
+
+    rows = images.list_images_for_split(
+        migrated_db, split_id, subsets=[Subset.TEST], channels=["bright"]
+    )
+
+    assert {row.channel for row in rows} == {"bright"}
+    assert len(rows) == 2
+
+
+def test_an_empty_channel_filter_means_every_channel(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    """`[]` is how a frozen experiment says 'unset', so it must not select nothing."""
+    split_id = _split_over_everything(migrated_db, catalog)
+
+    assert (
+        len(images.list_images_for_split(migrated_db, split_id, subsets=[Subset.TEST], channels=[]))
+        == 5
+    )
+
+
+def test_an_unassigned_image_is_excluded_by_a_named_selection(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    """ "No channel" is not a synonym for "all channels"."""
+    split_id = _split_over_everything(migrated_db, catalog)
+
+    rows = images.list_images_for_split(
+        migrated_db, split_id, subsets=[Subset.TEST], channels=["bright", "dark"]
+    )
+
+    assert len(rows) == 4
+    assert all(row.channel is not None for row in rows)
+
+
+def test_selecting_every_channel_by_name_still_drops_the_unassigned_one(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    """Naming every channel is not the same request as naming none, and the difference is
+    exactly the images that belong to no channel. Pinned so the two never quietly merge."""
+    split_id = _split_over_everything(migrated_db, catalog)
+
+    named = images.list_images_for_split(
+        migrated_db, split_id, subsets=[Subset.TEST], channels=["bright", "dark"]
+    )
+    unset = images.list_images_for_split(migrated_db, split_id, subsets=[Subset.TEST])
+
+    assert len(unset) - len(named) == 1

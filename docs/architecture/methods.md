@@ -145,6 +145,17 @@ The bridge decides the pinned spatial artifact and colour, and stops there. What
 part of the method: `efficientad_nets.imagenet_normalize` applies ImageNet statistics inside `forward`, and
 that is not a second preprocessing, it is the network's first layer.
 
+**`expand_planes` sits on the same side of the seam**, for the same reason. How many planes a backbone's first
+convolution wants is a property of that backbone, not of the experiment. Under `color=grayscale`, `load_array`
+returns one plane and the five methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
+Putting the expansion in `load_array` instead would be worse than the duplication it removes: `grayscale` and
+`rgb` would then produce identical arrays for a mono file, so the experiment would record a colour choice that
+changed nothing, and `pixel_reference` — which genuinely consumes whatever it is given — would build its
+reference stack over three identical copies of every image.
+
+The same replication happens **inside the exported ONNX graph** rather than in the export harness, so a
+bundle's declared input really is `preprocessing.channels` and the host is not left with a shape to fix up.
+
 The seam matters because **the two libraries put it in different places**, and one of them is invisible when
 it is wrong. anomalib's EfficientAD normalizes inside the model, so the wrapper hands it `load_array`'s
 `[0, 1]` array unchanged. anomalib's PatchCore does **not** — `Patchcore.configure_pre_processor` puts the
@@ -321,10 +332,22 @@ architecture tree, on-demand entries and deletion — is on its own page:
 > **Models emit per-image scores. Cross-channel aggregation belongs to the evaluation layer ([the evaluation layer](evaluation.md)).**
 
 This is the seam that keeps evaluation model-independent. A model *may* use channel metadata internally —
-`ImageRecord.channel` is provided, and the classical baseline relies on it to keep one reference statistic per
-channel (ADR-0010) — but it still returns one `Prediction` per input image. No model decides how a part's
-three views combine into a sample-level verdict; that policy lives in one place and is applied identically
-to every method.
+`ImageRecord.channel` is provided — but it still returns one `Prediction` per input image. No model decides
+how a part's three views combine into a sample-level verdict; that policy lives in one place and is applied
+identically to every method.
+
+`pixel_reference` is the first method to declare `channel_aware` and to mean it. Its
+`reference_scope` defaults to `channel`, fitting one per-pixel median and MAD per illumination. That is a
+correctness fix rather than a refinement: a single reference pooled over several illuminations has a
+per-pixel MAD dominated by the difference *between* the channels, so every deviation is divided by an inflated
+scale and a real defect is flattened towards the same z-value as ordinary noise. The baseline still runs,
+still produces maps, and quietly stops being able to tell them apart. `dataset` scope is the old behaviour and
+is what single-view data wants, where the two are identical anyway.
+
+Scoring a channel that was never fitted **raises, naming the channel**. Falling back to another channel's
+reference would produce a confident-looking map of nothing but the difference between two illuminations. And
+because one static graph carries one reference tensor, `export_onnx` refuses a multi-reference bank by name —
+refused inside the plugin, so no route has to branch on a method's own configuration.
 
 ## Anomaly map storage
 

@@ -1,0 +1,21 @@
+-- A run may narrow itself to a subset of a dataset's acquisition channels.
+--
+-- Until now the only way to ask "how well does bright-field alone do?" was to import the
+-- bright-field images as their own dataset. That answers the question and destroys the
+-- comparison: three datasets over the same physical parts get three independent splits, so
+-- one part's bright view can train while its dark view is tested, and `eval/aggregate.py`
+-- has nothing to aggregate. Making the channel selection a property of the *experiment*
+-- keeps one dataset, one split and one region build underneath every such comparison, so a
+-- difference between two runs is the channel and not the import.
+--
+-- Names rather than channel ids. `upsert_channel` matches on (dataset_id, name), so ids do
+-- survive a re-import — the argument is legibility, not stability. An experiment is a
+-- frozen scientific record that has to stay readable in a job log, a stored manifest and an
+-- audit script, and `["bright"]` says what `[17]` does not. Every other frozen column
+-- already stores meaning this way: `model_type` is a registry key, and `ImageRecord.channel`
+-- — the plugin boundary itself — is already a name.
+--
+-- '[]' means every channel, which is exactly what every experiment created before this
+-- column meant. So there is no backfill, and unlike migration 010 nothing is discarded.
+
+ALTER TABLE experiment ADD COLUMN channels TEXT NOT NULL DEFAULT '[]';

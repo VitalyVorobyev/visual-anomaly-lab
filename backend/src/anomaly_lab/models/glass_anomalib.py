@@ -47,6 +47,7 @@ from anomaly_lab.models.preprocessing import (
     IMAGENET_STD,
     ColorMode,
     PreprocessingConfig,
+    expand_planes,
     load_array,
     to_chw,
 )
@@ -200,11 +201,7 @@ def planned_center_refreshes(start_step: int, steps: int, interval: int) -> int:
 
 
 def _normalised_chw(record: ImageRecord, ctx: TrainContext | InferContext) -> np.ndarray:
-    array = to_chw(load_array(record.path, ctx.preprocessing))
-    if array.shape[0] == 1:
-        array = np.repeat(array, 3, axis=0)
-    if array.shape[0] != 3:
-        raise ValueError(f"GLASS expects one or three channels; got {array.shape[0]}")
+    array = expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)
     mean = np.asarray(IMAGENET_MEAN, dtype=np.float32)[:, None, None]
     std = np.asarray(IMAGENET_STD, dtype=np.float32)[:, None, None]
     return np.ascontiguousarray((array - mean) / std, dtype=np.float32)

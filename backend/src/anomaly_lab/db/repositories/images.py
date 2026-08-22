@@ -97,13 +97,23 @@ def list_images_for_split(
     *,
     subsets: Sequence[Subset],
     labels: Sequence[Label] | None = None,
+    channels: Sequence[str] | None = None,
 ) -> list[SplitImage]:
-    """Images whose *sample* is in one of these subsets, optionally by label.
+    """Images whose *sample* is in one of these subsets, optionally by label and channel.
 
     Selection is by sample and never by image, which is the mechanism that keeps a
     part's channels from straddling a subset (ADR-0005). The label filter is what a
     training run uses to take normals only; it is applied here rather than in the
     handler so the "which images" question has exactly one answer in the codebase.
+
+    The channel filter is what lets one experiment read bright-field alone while another
+    reads all three of the same split — the comparison that having three separate datasets
+    made impossible. Empty or `None` means every channel, matching the "empty means unset"
+    contract the frozen configs use.
+
+    **An image with no channel is excluded by a non-empty filter**, because it belongs to
+    no named channel and "unassigned" is not a synonym for "all of them". A single-view
+    dataset has nothing to select and is therefore only ever read with no filter.
     """
     if not subsets:
         return []
@@ -116,6 +126,11 @@ def list_images_for_split(
     if labels:
         clauses.append(f"sample.label IN ({','.join('?' * len(labels))})")
         params.extend(label.value for label in labels)
+    if channels:
+        # The LEFT JOIN keeps unassigned images in the result set generally; comparing
+        # `channel.name` against a list drops them here, which is the intent.
+        clauses.append(f"channel.name IN ({','.join('?' * len(channels))})")
+        params.extend(channels)
 
     rows = conn.execute(
         f"""

@@ -39,9 +39,9 @@ the detail is in the git history and the ADRs.
 
 ### E18 — Dataset-first workbench + lifecycle (M8)
 
-- [x] **Make scroll ownership a route contract** (S): `ReadingLayout` scrolls, `WorkspaceLayout`
-      and `CanvasLayout` do not. Move dataset filters into a supporting rail and make the virtual
-      grid the one data scroller. Validate at 1440×900 and 1024×768.
+- [x] **Make scroll ownership a route contract** (S): `ReadingLayout` scrolls, the dataset
+      workspace layout and `CanvasLayout` do not. Move dataset filters into a supporting rail and
+      make the virtual grid the one data scroller. Validate at 1440×900 and 1024×768.
 - [x] **Create the dataset-local navigation foundation** (M): Browse, Splits and Experiments now sit
       under one dataset while the global shell stays `Datasets / Experiments / Compare`. Annotate
       joins this strip when E19 supplies a real route rather than a dead destination.

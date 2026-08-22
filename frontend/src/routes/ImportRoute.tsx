@@ -17,7 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../api/client";
-import { Badge, Button, Checkbox, CountRun, Empty, ErrorBox, Field, Input, PageHeader, Panel, SchemaForm, Section, Select, cn, describeFields, initialValues, jsonErrors, missingRequired, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
 import type {
   AdapterInfo,
   ChannelMapping,
@@ -128,6 +128,7 @@ export function ImportRoute() {
 function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
   const [rootPath, setRootPath] = useState("");
   const [datasetName, setDatasetName] = useState("");
+  const [datasetRoot, setDatasetRoot] = useState("");
   const [adapter, setAdapter] = useState("folder_classes");
   const [options, setOptions] = useState<RawValues>({});
 
@@ -165,6 +166,7 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
             dataset_name: datasetName.trim(),
             adapter,
             options: toOptions(fields, options),
+            ...(datasetRoot.trim() ? { dataset_root: datasetRoot.trim() } : {}),
           },
         }),
         "a scan job",
@@ -218,6 +220,28 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
             onChange={(event) => setDatasetName(event.target.value)}
           />
         </Field>
+
+        {/* Folded away because it is empty by default and the scan root is the right answer
+            almost always — the same rule the adapter's own option form follows. */}
+        <Disclosure summary="This tree holds more than one dataset">
+          <Field
+            label="Dataset root"
+            description={
+              "The path recorded as this dataset's identity. It is unique, and a re-import " +
+              "resolves against it, so two datasets scanned from one tree need two of them. " +
+              "Pair it with the adapter's exclude patterns: scan the whole tree, exclude " +
+              "everything but one product variant, and record that variant's directory here. " +
+              "Must be the scan root or a directory inside it; blank means the scan root."
+            }
+          >
+            <Input
+              className="font-mono"
+              placeholder={rootPath.trim() || "/absolute/path/to/images"}
+              value={datasetRoot}
+              onChange={(event) => setDatasetRoot(event.target.value)}
+            />
+          </Field>
+        </Disclosure>
 
         <Field as="group" label="Adapter" description={chosen?.summary}>
           <Select

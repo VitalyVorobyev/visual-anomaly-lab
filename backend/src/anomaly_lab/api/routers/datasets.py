@@ -22,7 +22,9 @@ from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
+from anomaly_lab.datasets.reference_packs import PackMembership, pack_membership
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -31,7 +33,17 @@ from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.db.repositories.samples import SampleFilter
-from anomaly_lab.domain.entities import Channel, Dataset, Image, Label, LabelSource, Sample, Subset
+from anomaly_lab.domain.entities import (
+    AnnotationScope,
+    AnnotationState,
+    Channel,
+    Dataset,
+    Image,
+    Label,
+    LabelSource,
+    Sample,
+    Subset,
+)
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentWorker
 from anomaly_lab.media.cache import TIERS, cache_path
@@ -74,6 +86,7 @@ class SampleSummary(BaseModel):
     label_source: LabelSource
     notes: str | None = None
     images: list[ImageSummary] = Field(default_factory=list)
+    annotation: AnnotationState = AnnotationState.NONE
 
 
 class SamplePage(BaseModel):
@@ -97,6 +110,13 @@ class DatasetSummary(BaseModel):
     samples: int
     images: int
     label_counts: dict[Label, int] = Field(default_factory=dict)
+    # The three fields the catalogue reads. `collection` and `description` are *effective*
+    # values -- the stored override if there is one, otherwise what the dataset's reference
+    # pack supplies -- while `notes` above stays the raw override, because an editor has to
+    # be able to tell "nothing written here" from "written, and identical to the default".
+    collection: str | None = None
+    description: str | None = None
+    cover_image_id: int | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -104,6 +124,30 @@ class DatasetDetail(DatasetSummary):
     channels: list[Channel] = Field(default_factory=list)
     group_keys: list[str] = Field(default_factory=list)
     splits: int = 0
+    # Carried on the detail rather than the summary: the annotation editor already reads
+    # the detail, and the catalogue grid has no use for it.
+    annotation_scope: AnnotationScope = AnnotationScope.IMAGE
+
+
+class DatasetUpdate(BaseModel):
+    """The editable part of a dataset: what it is, and what it belongs with.
+
+    Both fields are optional in the strong sense -- omitting one leaves the stored value
+    alone, and sending `null` clears it. Name and root path are deliberately absent: they
+    are the dataset's identity, unique in the schema, and the key a re-import resolves
+    against (ADR-0013).
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    notes: str | None = Field(
+        default=None,
+        description="A sentence or two describing the dataset. Blank restores the default.",
+    )
+    collection: str | None = Field(
+        default=None,
+        description="The group this dataset is filed under. Blank restores the default.",
+    )
 
 
 class LabelUpdate(BaseModel):
@@ -216,7 +260,11 @@ class _DeletionInventory:
     manual_labels: int
 
 
-def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSummary:
+def _dataset_summary(
+    conn: sqlite3.Connection,
+    dataset: Dataset,
+    membership: PackMembership | None = None,
+) -> DatasetSummary:
     return DatasetSummary(
         id=dataset.id,
         name=dataset.name,
@@ -227,7 +275,21 @@ def _dataset_summary(conn: sqlite3.Connection, dataset: Dataset) -> DatasetSumma
         samples=samples_repo.count_samples(conn, dataset.id),
         images=datasets_repo.count_images(conn, dataset.id),
         label_counts=datasets_repo.label_counts(conn, dataset.id),
+        collection=_effective(dataset.collection, membership.collection if membership else None),
+        description=_effective(dataset.notes, membership.description if membership else None),
+        cover_image_id=datasets_repo.cover_image_id(conn, dataset.id),
     )
+
+
+def _effective(override: str | None, derived: str | None) -> str | None:
+    """The override if it says anything, else the derived value, else nothing.
+
+    Blank is treated as absent so that clearing a field in the editor returns the derived
+    value rather than leaving a dataset with an empty description where a real one exists.
+    """
+    if override is not None and override.strip():
+        return override
+    return derived or None
 
 
 def _image_summary(image: Image, channel_names: dict[int, str]) -> ImageSummary:
@@ -244,7 +306,10 @@ def _image_summary(image: Image, channel_names: dict[int, str]) -> ImageSummary:
 
 
 def _sample_summary(
-    sample: Sample, images: list[Image], channel_names: dict[int, str]
+    sample: Sample,
+    images: list[Image],
+    channel_names: dict[int, str],
+    annotation: AnnotationState = AnnotationState.NONE,
 ) -> SampleSummary:
     return SampleSummary(
         id=sample.id,
@@ -255,6 +320,7 @@ def _sample_summary(
         label_source=sample.label_source,
         notes=sample.notes,
         images=[_image_summary(image, channel_names) for image in images],
+        annotation=annotation,
     )
 
 
@@ -365,7 +431,12 @@ def list_datasets(request: Request) -> list[DatasetSummary]:
     """List the catalog."""
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        return [_dataset_summary(conn, dataset) for dataset in datasets_repo.list_datasets(conn)]
+        datasets = datasets_repo.list_datasets(conn)
+        # Resolved once for the whole list rather than once per dataset: the matcher walks
+        # every pack spec and resolves its roots on disk, which is cheap once and silly
+        # thirteen times.
+        membership = pack_membership(settings, datasets)
+        return [_dataset_summary(conn, dataset, membership.get(dataset.id)) for dataset in datasets]
 
 
 @router.get("/{dataset_id}", summary="One dataset, with its channels and capture groups")
@@ -373,14 +444,43 @@ def get_dataset(request: Request, dataset_id: int) -> DatasetDetail:
     """Everything the browser needs to build its filters."""
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        dataset = _require_dataset(conn, dataset_id)
-        return DatasetDetail(
-            **_dataset_summary(conn, dataset).model_dump(),
-            manifest_path=dataset.manifest_path,
-            channels=datasets_repo.list_channels(conn, dataset_id),
-            group_keys=samples_repo.list_group_keys(conn, dataset_id),
-            splits=len(splits_repo.list_splits(conn, dataset_id)),
-        )
+        return _dataset_detail(conn, settings, _require_dataset(conn, dataset_id))
+
+
+@router.patch("/{dataset_id}", summary="Edit a dataset's description and collection")
+def update_dataset(request: Request, dataset_id: int, body: DatasetUpdate) -> DatasetDetail:
+    """Write the fields the request actually named.
+
+    A field left out of the body is untouched; a field sent as `null` or blank clears the
+    override, which is how a dataset returns to the description and collection its
+    reference pack supplies. `exclude_unset` is what keeps those two cases apart -- with a
+    plain `is None` test, "do not change this" and "clear this" would arrive identically.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        _require_dataset(conn, dataset_id)
+        fields: dict[str, str | None] = {
+            name: (value.strip() or None) if isinstance(value, str) else None
+            for name, value in body.model_dump(exclude_unset=True).items()
+        }
+        updated = datasets_repo.update_dataset(conn, dataset_id, fields=fields)
+        if updated is None:  # pragma: no cover - existence was checked above
+            raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found")
+        return _dataset_detail(conn, settings, updated)
+
+
+def _dataset_detail(
+    conn: sqlite3.Connection, settings: Settings, dataset: Dataset
+) -> DatasetDetail:
+    membership = pack_membership(settings, [dataset]).get(dataset.id)
+    return DatasetDetail(
+        **_dataset_summary(conn, dataset, membership).model_dump(),
+        manifest_path=dataset.manifest_path,
+        channels=datasets_repo.list_channels(conn, dataset.id),
+        group_keys=samples_repo.list_group_keys(conn, dataset.id),
+        splits=len(splits_repo.list_splits(conn, dataset.id)),
+        annotation_scope=dataset.annotation_scope,
+    )
 
 
 @router.get(
@@ -488,6 +588,13 @@ def list_samples(
     subset: Subset | None = Query(
         default=None, description="Only meaningful together with `split_id`."
     ),
+    annotated: bool | None = Query(
+        default=None,
+        description=(
+            "`false` lists samples with at least one image still lacking ground truth — "
+            "what an annotation queue asks for. Omit for both."
+        ),
+    ),
     limit: int = Query(default=100, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> SamplePage:
@@ -498,21 +605,34 @@ def list_samples(
     inserted rows in the middle.
     """
     settings: Settings = request.app.state.settings
-    filters = SampleFilter(label=label, channel_id=channel_id, split_id=split_id, subset=subset)
+    filters = SampleFilter(
+        label=label,
+        channel_id=channel_id,
+        split_id=split_id,
+        subset=subset,
+        annotated=annotated,
+    )
 
     with connection(settings.db_path) as conn:
         _require_dataset(conn, dataset_id)
         total = samples_repo.count_samples(conn, dataset_id, filters)
         page = samples_repo.list_samples(conn, dataset_id, filters, limit=limit, offset=offset)
         names = _channel_names(conn, dataset_id)
-        # One query for the whole page rather than one per sample.
-        grouped = images_repo.list_images_for_samples(conn, [s.id for s in page])
+        # One query for the whole page rather than one per sample, for both reads.
+        sample_ids = [s.id for s in page]
+        grouped = images_repo.list_images_for_samples(conn, sample_ids)
+        annotation = annotations_repo.annotation_state_for_samples(conn, sample_ids)
 
     return SamplePage(
         total=total,
         limit=limit,
         offset=offset,
-        items=[_sample_summary(s, grouped.get(s.id, []), names) for s in page],
+        items=[
+            _sample_summary(
+                s, grouped.get(s.id, []), names, annotation.get(s.id, AnnotationState.NONE)
+            )
+            for s in page
+        ],
     )
 
 
@@ -529,8 +649,9 @@ def get_sample(request: Request, dataset_id: int, sample_id: int) -> SampleSumma
             )
         names = _channel_names(conn, dataset_id)
         images = images_repo.list_images_for_sample(conn, sample.id)
+        annotation = annotations_repo.annotation_state_for_samples(conn, [sample.id])
 
-    return _sample_summary(sample, images, names)
+    return _sample_summary(sample, images, names, annotation.get(sample.id, AnnotationState.NONE))
 
 
 @router.patch("/{dataset_id}/samples/{sample_id}", summary="Set a sample's label")
@@ -555,8 +676,9 @@ def update_label(
             raise HTTPException(status_code=404, detail=f"no sample {sample_id}")
         names = _channel_names(conn, dataset_id)
         images = images_repo.list_images_for_sample(conn, sample_id)
+        annotation = annotations_repo.annotation_state_for_samples(conn, [sample_id])
 
-    return _sample_summary(updated, images, names)
+    return _sample_summary(updated, images, names, annotation.get(sample_id, AnnotationState.NONE))
 
 
 @router.patch("/{dataset_id}/samples", summary="Label many samples at once")

@@ -79,7 +79,12 @@ from anomaly_lab.models.base import (
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import ModuleRecord, build_tree, collect
-from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array, to_chw
+from anomaly_lab.models.preprocessing import (
+    PreprocessingConfig,
+    expand_planes,
+    load_array,
+    to_chw,
+)
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 STATE_FILENAME = "efficientad_custom.pt"
@@ -456,7 +461,7 @@ class EfficientAdCustomModel(AnomalyModel):
         self._torch_generator = torch_module.Generator().manual_seed(self.config.seed)
 
     def _image(self, record: ImageRecord, ctx: Any, torch_module: Any) -> Any:
-        array = to_chw(load_array(record.path, ctx.preprocessing))[np.newaxis]
+        array = expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)[np.newaxis]
         return torch_module.from_numpy(array).to(ctx.device.value)
 
     # ---------------------------------------------------------------- training
@@ -778,7 +783,10 @@ class EfficientAdCustomModel(AnomalyModel):
                 ctx.raise_if_cancelled()
                 chunk = chosen[start : start + batch_size]
                 stacked = np.stack(
-                    [to_chw(load_array(record.path, ctx.preprocessing)) for record in chunk]
+                    [
+                        expand_planes(to_chw(load_array(record.path, ctx.preprocessing)), 3)
+                        for record in chunk
+                    ]
                 )
                 batch = torch_module.from_numpy(stacked).to(ctx.device.value)
                 features = net.teacher(batch)
@@ -1058,6 +1066,11 @@ class EfficientAdCustomModel(AnomalyModel):
                 self.net = net
 
             def forward(self, image: Any) -> Any:
+                # Replication inside the graph, for the reason `expand_planes` gives: the
+                # three-plane first layer belongs to this network, so the exported input
+                # stays whatever the experiment froze.
+                if image.shape[1] == 1:
+                    image = image.expand(-1, 3, -1, -1)
                 map_st, map_stae = self.net.maps(image, normalize=True)
                 return weight * map_st + (1.0 - weight) * map_stae
 
@@ -1109,7 +1122,12 @@ class EfficientAdCustomModel(AnomalyModel):
             raise ValueError("portable parity input shape does not match the fitted network")
         net = self._net.to("cpu").eval()
         with torch.no_grad():
-            map_st, map_stae = net.maps(torch.from_numpy(input_nchw), normalize=True)
+            # The same replication the exported graph performs. Parity is only meaningful
+            # if both sides are handed the same planes.
+            parity_input = torch.from_numpy(input_nchw)
+            if parity_input.shape[1] == 1:
+                parity_input = parity_input.expand(-1, 3, -1, -1)
+            map_st, map_stae = net.maps(parity_input, normalize=True)
             combined = (
                 self.config.student_teacher_weight * map_st
                 + (1.0 - self.config.student_teacher_weight) * map_stae

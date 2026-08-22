@@ -63,6 +63,19 @@ class WarningCode(StrEnum):
     MISSING_MASK = "missing_mask"
     """A mask was expected for this image and the file is not there."""
 
+    REDUNDANT_COLOUR_PLANES = "redundant_colour_planes"
+    """The images decode as colour, but one plane predicts the others almost exactly."""
+
+    MIXED_IMAGE_MODES = "mixed_image_modes"
+    """Not every file decodes to the same colour mode."""
+
+    CHANNEL_OFFSET = "channel_offset"
+    """A sample's channels are translated relative to one another rather than registered."""
+
+    CHANNEL_DIMENSIONS_DIFFER = "channel_dimensions_differ"
+    """A sample's channels do not share a width and height, so nothing can be read across
+    them pixel-for-pixel."""
+
 
 class ManifestWarning(BaseModel):
     model_config = API_MODEL_CONFIG
@@ -162,6 +175,15 @@ class Manifest(BaseModel):
     samples: list[ManifestSample] = Field(default_factory=list)
     warnings: list[ManifestWarning] = Field(default_factory=list)
     stats: ManifestStats = Field(default_factory=ManifestStats)
+    probe: dict[str, object] | None = Field(
+        default=None,
+        description=(
+            "What the scan measured about the pixels, as opposed to what the adapter read "
+            "from the paths: colour-plane redundancy and channel registration. A plain "
+            "mapping here rather than the typed model, because `probe` imports this module "
+            "and a manifest must stay readable without it."
+        ),
+    )
     scanned_at: str = Field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def label_counts(self) -> dict[Label, int]:

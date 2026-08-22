@@ -25,7 +25,14 @@ from pydantic import BaseModel, Field
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.annotations import GroundTruthMask
 from anomaly_lab.db.repositories.results import ScoredImage, ScoredSample
-from anomaly_lab.domain.entities import Aggregation, Experiment, Label, Subset
+from anomaly_lab.domain.entities import (
+    Aggregation,
+    ChannelNormalization,
+    Experiment,
+    Label,
+    Subset,
+)
+from anomaly_lab.eval.aggregate import build_sample_results
 from anomaly_lab.eval.ground_truth import digest as ground_truth_digest
 from anomaly_lab.eval.ground_truth import resolved_masks
 from anomaly_lab.eval.metrics import average_precision, roc_auc, timing_summary
@@ -45,6 +52,16 @@ class EvalConfig(BaseModel):
         description=(
             "How a part's per-channel scores become one score. 'max' treats a defect "
             "visible under any single view as a defective part."
+        ),
+    )
+    channel_normalization: ChannelNormalization = Field(
+        default=ChannelNormalization.NONE,
+        description=(
+            "Put a part's per-channel scores on one scale before combining them. Without "
+            "it, 'max' picks whichever illumination the method scores highest overall "
+            "rather than the one showing a defect. 'robust_z' centres each channel on its "
+            "median; 'rank' is scale-free but keeps only the ordering, so a dramatic "
+            "outlier and a marginal one score the same."
         ),
     )
     pixel_metrics: bool = Field(
@@ -182,6 +199,12 @@ def _subset_metrics(
 
     metrics: dict[str, Any] = {
         "aggregation": config.aggregation.value,
+        # Beside the aggregation, because it is the other half of the same decision and a
+        # sample-level number is uninterpretable without both. `image_roc_auc` below stays
+        # on **raw** scores deliberately: ADR-0011 keeps it as the measure that isolates
+        # model quality from how the channels were combined, and normalization is part of
+        # combining them.
+        "channel_normalization": config.channel_normalization.value,
         "samples": {
             "total": len(samples),
             "normal": sum(1 for s in samples if s.label is Label.NORMAL),
@@ -231,11 +254,35 @@ def evaluate_experiment(
     return computed
 
 
+def rebuild_sample_results(conn: sqlite3.Connection, experiment: Experiment) -> int:
+    """Re-derive every sample score from the stored per-image scores.
+
+    Owned here rather than by the `infer` handler, because it is not part of running a
+    model — it is the first half of reading the results, and `eval_config` is the one
+    configuration that may be reinterpreted without re-running anything. Keeping it in the
+    handler is what made `reevaluate` a half-truth: it refreshed the metrics from
+    `sample_result` while leaving `sample_result` itself at the aggregation of the original
+    run, so a changed aggregation appeared to apply and did not.
+    """
+    config = EvalConfig.model_validate(experiment.eval_config)
+    scored = results_repo.list_scored_images(conn, experiment.id)
+    rows = build_sample_results(
+        experiment.id, scored, config.aggregation, config.channel_normalization
+    )
+    return results_repo.replace_sample_results(conn, experiment.id, rows)
+
+
 def evaluate_and_store(
     conn: sqlite3.Connection,
     experiment: Experiment,
 ) -> dict[Subset, dict[str, Any]]:
-    """Compute and persist. The `infer` job's last act, and re-runnable on its own."""
+    """Compute and persist. The `infer` job's last act, and re-runnable on its own.
+
+    Sample scores are rebuilt first, so this really is "read the stored scores under the
+    current `eval_config`" rather than "recompute the metrics over whatever the last run
+    happened to reduce".
+    """
+    rebuild_sample_results(conn, experiment)
     computed, digests = _evaluate_with_digests(conn, experiment)
     results_repo.replace_metric_sets(conn, experiment.id, computed, ground_truth_digests=digests)
     return computed

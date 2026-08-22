@@ -51,6 +51,9 @@ class DatasetSpec:
     scan_root: Path
     adapter: str
     options: dict[str, Any]
+    # What the catalogue says about this dataset when nobody has written anything. A VisA
+    # class is named `candle` and nothing else on the card explains what that is.
+    description: str = ""
 
 
 @dataclass(frozen=True)
@@ -61,6 +64,13 @@ class PackSpec:
     required: tuple[Path, ...]
     datasets: tuple[DatasetSpec, ...]
     install_url: str
+    # What the catalogue files this pack's datasets under. Separate from `title` because a
+    # pack of one dataset otherwise heads a group with the same words as the single card
+    # inside it -- "GKN Blade Surface Defect" over "GKN Blade Surface Defect".
+    collection: str = ""
+
+    def collection_name(self) -> str:
+        return self.collection or self.title
 
 
 def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
@@ -79,6 +89,10 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
                 "filter_column": "object",
                 "filter_value": category,
             },
+            description=(
+                f"The {category} object class of the VisA benchmark, with pixel-level "
+                "masks for every anomaly and the published one-class split."
+            ),
         )
         for category in VISA_CLASSES
     )
@@ -92,6 +106,10 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
             "normal_dirs": ["Data_GKN/Good"],
             "defect_dirs": ["Data_GKN/Nick", "Data_GKN/Scratch"],
         },
+        description=(
+            "Surface photographs of turbine blades, labelled good against two defect "
+            "kinds -- nick and scratch -- by the directory they were published in."
+        ),
     )
     return (
         PackSpec(
@@ -105,6 +123,7 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
         PackSpec(
             key="gkn",
             title="GKN Blade Surface Defect",
+            collection="GKN",
             root=gkn,
             required=(
                 gkn / "Data_GKN" / "Good",
@@ -137,6 +156,35 @@ def registered_dataset_id(spec: DatasetSpec, datasets: list[Dataset]) -> int | N
         ):
             return dataset.id
     return None
+
+
+@dataclass(frozen=True)
+class PackMembership:
+    """What a dataset inherits from the reference pack it was registered from."""
+
+    collection: str
+    description: str
+
+
+def pack_membership(settings: Settings, datasets: list[Dataset]) -> dict[int, PackMembership]:
+    """Map dataset id to its pack, resolving each spec's roots once for the whole list.
+
+    Membership stays derived rather than written at registration. Storing it would make
+    every dataset that predates the column look unaffiliated until it was re-registered,
+    and would need a backfill that could only recompute exactly this. The stored
+    `dataset.collection` is therefore an *override*, not the record of where a dataset
+    came from.
+    """
+    found: dict[int, PackMembership] = {}
+    for pack in pack_specs(settings):
+        for spec in pack.datasets:
+            dataset_id = registered_dataset_id(spec, datasets)
+            if dataset_id is not None:
+                found[dataset_id] = PackMembership(
+                    collection=pack.collection_name(),
+                    description=spec.description,
+                )
+    return found
 
 
 def scan_spec(spec: DatasetSpec, progress: Any) -> Manifest:
