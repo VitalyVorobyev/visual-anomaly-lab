@@ -28,7 +28,7 @@ import {
   Field,
   Input,
   Textarea,
-} from "../../components/ui";
+} from "@vitavision/lab-ui";
 import { useUpdateDataset } from "../../hooks/useCatalog";
 
 export function DatasetEditDialog({

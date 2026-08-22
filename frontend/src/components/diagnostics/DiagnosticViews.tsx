@@ -11,7 +11,7 @@ import { useState } from "react";
 
 import type { DiagnosticEntry } from "../../api/client";
 import { diagnosticPayloadUrl, gridFrameCount } from "../../api/diagnostics";
-import { Empty } from "../ui";
+import { Empty } from "@vitavision/lab-ui";
 
 /** A `map` or an `image`: one server-rendered PNG, on a black field so it reads as data. */
 export function DiagnosticImage({

@@ -11,7 +11,7 @@
  */
 
 import type { ImageSummary } from "../api/client";
-import { Tabs } from "./Tabs";
+import { Tabs } from "@vitavision/lab-ui";
 
 export function ChannelTabs({
   images,

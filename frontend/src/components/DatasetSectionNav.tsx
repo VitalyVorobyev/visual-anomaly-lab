@@ -16,7 +16,7 @@
 
 import { NavLink } from "react-router";
 
-import { cn, focusRing } from "./ui/cn";
+import { cn, focusRing } from "@vitavision/lab-ui";
 
 export function DatasetSectionNav({ datasetId }: { datasetId: number }) {
   const items = [

@@ -13,7 +13,7 @@
 
 import type { ExperimentSummary } from "../../api/client";
 import { MAX_RUNS, refusalReason } from "../../api/compareState";
-import { Badge, Checkbox, Empty, SkeletonRows, cn } from "../../components/ui";
+import { Badge, Checkbox, Empty, SkeletonRows, cn } from "@vitavision/lab-ui";
 import { useSplitNames } from "../../hooks/useComparison";
 import { useDatasets } from "../../hooks/useCatalog";
 import { useExperiments } from "../../hooks/useExperiments";

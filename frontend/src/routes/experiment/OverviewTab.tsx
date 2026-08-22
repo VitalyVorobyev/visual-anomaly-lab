@@ -14,8 +14,7 @@ import type { MetricValue } from "../../api/metrics";
 import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { MetricSummary, Subset, TrainingState } from "../../api/client";
-import { Button, Callout, CountRun, Disclosure, Panel } from "../../components/ui";
-import type { Tone } from "../../components/ui";
+import { Button, Callout, CountRun, Disclosure, Panel, type Tone } from "@vitavision/lab-ui";
 import { useReevaluate } from "../../hooks/useExperiments";
 
 export function jobTone(status: string): Tone {

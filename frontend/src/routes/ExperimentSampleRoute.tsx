@@ -42,19 +42,8 @@ import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../api/imageUrl
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
-import { FULL_TIER_ZOOM, ZoomPanCanvas, RESET_VIEW } from "../components/ZoomPanCanvas";
-import type { View } from "../components/ZoomPanCanvas";
+import { Badge, Button, Disclosure, Empty, ErrorBox, FULL_TIER_ZOOM, RESET_VIEW, SkeletonRows, Tooltip, ZoomPanCanvas, cn, type View } from "@vitavision/lab-ui";
 import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
-import {
-  Badge,
-  Button,
-  Disclosure,
-  Empty,
-  ErrorBox,
-  SkeletonRows,
-  Tooltip,
-  cn,
-} from "../components/ui";
 import {
   useDiagnoseImage,
   useDiagnostics,

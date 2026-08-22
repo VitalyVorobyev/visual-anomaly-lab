@@ -6,14 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams } from "react-router";
 
 import { imageUrl, preparedImageUrl } from "../api/imageUrl";
-import {
-  describeFields,
-  initialValues,
-  jsonErrors,
-  outOfRange,
-  toOptions,
-} from "../api/schemaForm";
-import type { OptionsSchema, RawValues } from "../api/schemaForm";
+import { Badge, Button, Callout, ConfirmDialog, describeFields, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, NumberInput, outOfRange, Panel, ReadoutStrip, SchemaForm, SegmentedControl, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
 import type {
   JobDetail,
   RegionPreparationEntry,
@@ -22,22 +15,6 @@ import type {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { JobProgress } from "../components/JobProgress";
-import { SchemaForm } from "../components/SchemaForm";
-import {
-  Badge,
-  Button,
-  Callout,
-  ConfirmDialog,
-  Empty,
-  ErrorBox,
-  Field,
-  Input,
-  NumberInput,
-  Panel,
-  ReadoutStrip,
-  SegmentedControl,
-  Select,
-} from "../components/ui";
 import { useDataset } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import { isTerminal, useJob } from "../hooks/useJob";

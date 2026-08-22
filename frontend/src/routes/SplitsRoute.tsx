@@ -27,7 +27,7 @@ import {
   Slider,
   Table,
   type Column,
-} from "../components/ui";
+} from "@vitavision/lab-ui";
 import { useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 

@@ -63,6 +63,38 @@ over HTTP belongs in the sidecar, which both hosts reach identically.
 The cost, accepted: the contract is a hand-written global rather than a type-checked interface. A
 renamed Rust command fails at runtime, in the desktop build only, where the browser tests never look.
 
+## When the frontend crashes, it says so
+
+React 19 unmounts the entire root when anything throws during render, and `index.html`
+declares `color-scheme: dark` — so an unhandled error paints a **black window**, which is
+indistinguishable from a hung shell, a sidecar that never started, or a dev server that
+died. The desktop build has no console to check, so that failure mode has no next step.
+
+`components/CrashScreen.tsx` closes it, in two halves wired up in `main.tsx`:
+
+- **`CrashBoundary`** wraps everything, outside the router: a route that throws is caught,
+  and so is a router that fails to construct. It renders the error's message with the
+  component stack.
+- **`installCrashHandlers(container)`** runs *before* the first render and listens for
+  `error` and `unhandledrejection`, which is what catches a module that throws while being
+  evaluated or a lazily-imported chunk that never arrives — neither of which any boundary
+  can see. It paints the same panel straight into the DOM, and **only when the root is
+  empty**: a live UI reporting its own failed request must not be replaced by it.
+
+The file imports nothing — no `@vitavision/lab-ui`, no Tailwind class, no token, inline
+styles only. A crash screen that needs the stylesheet is another black window on the day
+the stylesheet is what failed.
+
+**The same panel reports a backend that never started.** The shell builds its window either
+way and injects `startupError` instead of the capabilities — on macOS its `setup` hook runs
+inside `did_finish_launching`, an Objective-C callback an unwind may not cross, so returning
+an error there aborts the process and shows nothing at all (that is exactly how an installed
+build died before `uv` was resolved by absolute path). `main.tsx` reads it through
+`shellStartupError()` **before** mounting anything and renders `CrashScreen` with its own
+headline; the router, the query client and every fetch against a port nothing is listening on
+are never constructed. A packaged app's stderr is written to nothing, so the panel carries the
+detail the shell collected — the paths searched, and the backend's own last output.
+
 ## Scroll and layout ownership
 
 **The document cannot scroll, by construction.** `html`, `body` and `#root` are pinned to `height:

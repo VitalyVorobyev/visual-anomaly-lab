@@ -24,7 +24,7 @@ import {
   timingRows,
 } from "../../api/metrics";
 import type { ComparisonRow } from "../../api/metrics";
-import { InfoHint, Panel, cn } from "../../components/ui";
+import { InfoHint, Panel, cn } from "@vitavision/lab-ui";
 
 export function MetricTable({ runs }: { runs: ComparedRun[] }) {
   const metrics = runs.map((run) => (run.metrics ?? {}) as MetricValue);

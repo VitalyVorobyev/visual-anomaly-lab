@@ -26,7 +26,7 @@ import {
   Input,
   PageHeader,
   SkeletonRows,
-} from "../../components/ui";
+} from "@vitavision/lab-ui";
 import {
   useDatasetDeletionPreview,
   useDatasets,

@@ -21,7 +21,7 @@
 import { useState } from "react";
 
 import type { DatasetSummary } from "../../api/client";
-import { Button, Checkbox, Dialog, DialogClose, ErrorBox, Field, Input } from "../../components/ui";
+import { Button, Checkbox, Dialog, DialogClose, ErrorBox, Field, Input } from "@vitavision/lab-ui";
 import { useMoveDatasets, type CollectionMove } from "../../hooks/useCatalog";
 import { inCatalogueOrder } from "./grouping";
 

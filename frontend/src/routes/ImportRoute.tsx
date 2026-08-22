@@ -17,15 +17,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router";
 
 import { api, unwrap } from "../api/client";
-import {
-  describeFields,
-  initialValues,
-  jsonErrors,
-  missingRequired,
-  toOptions,
-  type OptionsSchema,
-  type RawValues,
-} from "../api/schemaForm";
+import { Badge, Button, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
 import type {
   AdapterInfo,
   ChannelMapping,
@@ -38,24 +30,7 @@ import { queryKeys } from "../api/queryKeys";
 import { hasDirectoryPicker, pickDirectory } from "../api/shell";
 import { Check } from "lucide-react";
 
-import {
-  Badge,
-  Button,
-  Checkbox,
-  CountRun,
-  Disclosure,
-  Empty,
-  ErrorBox,
-  Field,
-  Input,
-  PageHeader,
-  Panel,
-  Section,
-  Select,
-  cn,
-} from "../components/ui";
 import { JobProgress } from "../components/JobProgress";
-import { SchemaForm } from "../components/SchemaForm";
 import { WarningsPanel, commitBlocked } from "../components/WarningsPanel";
 import { isTerminal, useJob } from "../hooks/useJob";
 

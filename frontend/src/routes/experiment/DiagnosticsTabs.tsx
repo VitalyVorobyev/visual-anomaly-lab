@@ -13,7 +13,7 @@
 import type { DiagnosticIndex } from "../../api/client";
 import { modelScoped, ofKinds } from "../../api/diagnostics";
 import { DiagnosticsPanel } from "../../components/diagnostics/DiagnosticsPanel";
-import { Empty, Panel } from "../../components/ui";
+import { Empty, Panel } from "@vitavision/lab-ui";
 
 /** Kinds that describe the model's own structure. */
 export const STRUCTURE_KINDS = ["graph", "table"];

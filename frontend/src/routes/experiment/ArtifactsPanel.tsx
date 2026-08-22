@@ -26,7 +26,7 @@ import {
   Panel,
   SkeletonRows,
   Tooltip,
-} from "../../components/ui";
+} from "@vitavision/lab-ui";
 import {
   useArtifacts,
   useClearDiagnostics,

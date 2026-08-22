@@ -119,7 +119,13 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
+      # @vitavision/lab-ui is a published npm package now, so this is an ordinary
+      # single-repo job. It used to be a `file:../../lab-ui` path dependency, which
+      # meant checking out *two* repos as siblings inside $GITHUB_WORKSPACE and
+      # building the package first, because it ships no dist/ in git.
       - uses: actions/checkout@v7
+        with:
+          path: visual-anomaly-lab
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -127,19 +133,19 @@ jobs:
 
       - name: Install
         run: bun install --frozen-lockfile
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Types
         run: bun run typecheck
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Tests
         run: bun run test
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - name: Build
         run: bunx vite build
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
   api-contract:
     name: API contract is in sync
@@ -233,7 +239,12 @@ jobs:
     name: Tauri shell
     runs-on: macos-latest
     steps:
+      # The nested `path:` is kept because the steps below address paths relative
+      # to it; nothing else needs checking out now that @vitavision/lab-ui comes
+      # from npm (see the Frontend job).
       - uses: actions/checkout@v7
+        with:
+          path: visual-anomaly-lab
 
       - uses: oven-sh/setup-bun@v2
         with:
@@ -244,16 +255,16 @@ jobs:
         run: |
           bun install --frozen-lockfile
           bunx vite build
-        working-directory: frontend
+        working-directory: visual-anomaly-lab/frontend
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: frontend/src-tauri
+          workspaces: visual-anomaly-lab/frontend/src-tauri
 
       - name: Format
         run: cargo fmt --check
-        working-directory: frontend/src-tauri
+        working-directory: visual-anomaly-lab/frontend/src-tauri
 
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-        working-directory: frontend/src-tauri
+        working-directory: visual-anomaly-lab/frontend/src-tauri
