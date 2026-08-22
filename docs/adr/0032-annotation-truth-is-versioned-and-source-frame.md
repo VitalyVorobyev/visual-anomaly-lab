@@ -53,3 +53,15 @@ materialised revisions.**
   must label provenance clearly and never present the derived mask as the imported original.
 - The document schema needs explicit versioning. Supporting a new shape without a reader for old documents
   would make historical revisions unreadable even though their materialised masks remain valid.
+
+## Changelog
+
+- **2026-08-14** — A draft is now created by the **first save**, not by opening the editor, and the
+  lifecycle gained the two verbs it was missing. `GET .../draft` is read-or-seed and never writes;
+  `POST` is create-only behind `If-None-Match: *`; `DELETE` discards, with `If-Match: *` as the
+  deliberate force. The original shape made the POST an idempotent open, which the editor reasonably
+  called from its read path — so browsing a queue persisted a row per image, completion recreated the
+  row it had just consumed, and "how many drafts are open" stopped meaning "how much work is
+  unfinished". Migration 016 cleared the residue. The concurrency contract is unchanged and now
+  reaches further: an upsert would hand a second window a currently-valid token for a document it
+  never read, which is a lost update no precondition could refuse.

@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 import numpy as np
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.regions.base import (
     RegionAvailability,
@@ -39,8 +39,50 @@ class MobileSamRegionConfig(BaseModel):
     )
     predicted_iou_threshold: float = Field(default=0.72, ge=0.0, le=1.0)
     stability_threshold: float = Field(default=0.82, ge=0.0, le=1.0)
-    min_area_fraction: float = Field(default=0.02, gt=0.0, le=0.5)
-    max_area_fraction: float = Field(default=0.98, ge=0.5, le=1.0)
+    # The two bounds are a window over the whole interval, not a partition of it.
+    #
+    # They used to meet at 0.5 — `min` capped there, `max` floored there — which is a
+    # reasonable-looking split that quietly decides what the extractor can be used for.
+    # Because the chosen mask is the *largest* one inside the window, a floor of 0.5 on the
+    # maximum means a near-full-frame mask always qualifies and therefore always wins. On a
+    # dataset where the part is smaller than its background, that made the extractor
+    # unable to select the part at all: the only setting that would have excluded the frame
+    # was the one the form refused to accept.
+    min_area_fraction: float = Field(
+        default=0.02,
+        gt=0.0,
+        lt=1.0,
+        description=(
+            "Ignore candidate masks smaller than this fraction of the image; "
+            "raises the floor when small speckle is being chosen."
+        ),
+    )
+    max_area_fraction: float = Field(
+        default=0.98,
+        gt=0.0,
+        le=1.0,
+        description=(
+            "Ignore candidate masks larger than this fraction of the image. "
+            "The largest surviving mask is chosen, so lower this to reject a "
+            "near-full-frame background mask and select the part instead."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _window_must_admit_something(self) -> MobileSamRegionConfig:
+        """The only relationship between the two that is real.
+
+        Both fields now span the interval independently, so nothing else stops a window
+        from being written inside out — and an empty window fails every image with
+        "found no mask within the configured area range", which describes the symptom and
+        not the typo.
+        """
+        if self.min_area_fraction >= self.max_area_fraction:
+            raise ValueError(
+                "min_area_fraction must be below max_area_fraction; "
+                f"got {self.min_area_fraction} and {self.max_area_fraction}"
+            )
+        return self
 
 
 class MobileSamRegionExtractor(RegionExtractor):

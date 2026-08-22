@@ -17,18 +17,17 @@ export function ChannelTabs({
   images,
   active,
   onSelect,
-  disabled = false,
-  disabledReason = "Save your changes before switching channel",
 }: {
   images: ImageSummary[];
   active: number;
   onSelect: (index: number) => void;
-  /** For the annotation editor, where switching image-scoped truth would drop an edit. */
-  disabled?: boolean;
-  disabledReason?: string;
 }) {
   // The position is the identity here, not the channel name: two images of one sample can
   // legitimately carry the same name, and an unassigned one carries none at all.
+  //
+  // There is deliberately no disabled state. The annotation editor used to lock the other
+  // channels while its draft was dirty, which read as a broken control: the work was one
+  // keystroke away from being safe and the editor knew it. It saves and then navigates.
   return (
     <Tabs
       label="Channels"
@@ -37,8 +36,6 @@ export function ChannelTabs({
       items={images.map((image, index) => ({
         id: String(index),
         label: image.channel ?? "unassigned",
-        disabled: disabled && index !== active,
-        ...(disabled && index !== active ? { title: disabledReason } : {}),
       }))}
     />
   );

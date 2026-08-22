@@ -46,12 +46,49 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the current editable annotation draft */
+        /**
+         * The draft in progress, or the document a new one would start from
+         * @description Read-or-seed, and never a write.
+         *
+         *     This used to 404, and the editor reached for the POST instead -- from a query function, so
+         *     opening an image persisted a row and completing one resurrected it. Every such row then
+         *     counted as unsaved work forever (see migration 016).
+         */
         get: operations["get_annotation_draft_api_images__image_id__annotations_draft_get"];
         /** Save a draft if the caller still owns the version it read */
         put: operations["save_annotation_draft_api_images__image_id__annotations_draft_put"];
-        /** Open an existing draft or start one from the latest truth */
-        post: operations["open_annotation_draft_api_images__image_id__annotations_draft_post"];
+        /** Create a draft from the first save, refusing if one already exists */
+        post: operations["create_annotation_draft_api_images__image_id__annotations_draft_post"];
+        /** Throw away a draft without completing it */
+        delete: operations["discard_annotation_draft_api_images__image_id__annotations_draft_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/annotations/copy-regions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Append this image's regions to other channels of the same sample
+         * @description Copy, never move and never replace.
+         *
+         *     Appending is what lets the targets go unguarded: an operation that only adds cannot lose
+         *     what is already there, so a target draft saved in another window survives intact. The
+         *     *source* still carries a precondition, because copying a stale document into three channels
+         *     is exactly the mistake an editor that has fallen behind would make.
+         *
+         *     Equal dimensions are a refusal rather than a rescale. An annotation is in source-image
+         *     pixels and never leaves that frame (ADR-0032); scaling one into a differently sized channel
+         *     would silently invent geometry nobody drew.
+         */
+        post: operations["copy_annotation_regions_api_images__image_id__annotations_copy_regions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -242,13 +279,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Read the sample's current shared draft */
+        /** The shared draft in progress, or the document a new one would start from */
         get: operations["get_sample_annotation_draft_api_samples__sample_id__annotations_draft_get"];
         /** Save the shared draft if the caller still owns the version it read */
         put: operations["save_sample_annotation_draft_api_samples__sample_id__annotations_draft_put"];
-        /** Open the sample's shared draft, or start one from its latest truth */
-        post: operations["open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post"];
-        delete?: never;
+        /** Create the shared draft from the first save, refusing if one already exists */
+        post: operations["create_sample_annotation_draft_api_samples__sample_id__annotations_draft_post"];
+        /** Throw away the shared draft without completing it */
+        delete: operations["discard_sample_annotation_draft_api_samples__sample_id__annotations_draft_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1372,7 +1410,19 @@ export interface paths {
         get: operations["get_region_profile_api_region_profiles__profile_id__get"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a region profile revision and its prepared pixels
+         * @description Remove the rows, then the directory — the order the experiment deletion uses.
+         *
+         *     The filesystem cannot join a database transaction, so the deletion that can be rolled
+         *     back goes first. A leftover directory is inert; a row pointing at deleted pixels is a
+         *     broken screen.
+         *
+         *     Removing a revision is not the in-place edit ADR-0033 forbids. The `BEFORE UPDATE`
+         *     trigger stays the guarantee that a published build is never rewritten, and a
+         *     replacement gets a fresh id — so nothing can be republished over what was deleted.
+         */
+        delete: operations["delete_region_profile_api_region_profiles__profile_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1407,6 +1457,23 @@ export interface paths {
         put?: never;
         /** Prepare a profile for every image */
         post: operations["build_region_profile_api_region_profiles__profile_id__build_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Preview the app-owned records and prepared pixels a profile deletion removes */
+        get: operations["preview_region_profile_deletion_api_region_profiles__profile_id__deletion_preview_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1600,6 +1667,34 @@ export interface components {
             /** Updated At */
             updated_at: string;
         };
+        /**
+         * AnnotationDraftState
+         * @description What the editor opens on: a persisted draft, or the seed one would start from.
+         *
+         *     `version` and `updated_at` are null exactly when `persisted` is false, and that null is the
+         *     domain fact rather than a placeholder -- it is how the client knows its first save has to
+         *     create the draft rather than update it. The write routes keep returning `AnnotationDraft`,
+         *     where both are always present.
+         */
+        AnnotationDraftState: {
+            /** Image Id */
+            image_id: number;
+            /** Persisted */
+            persisted: boolean;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
+            /** Base Revision Id */
+            base_revision_id: number | null;
+            /** Source Mask Id */
+            source_mask_id: number | null;
+            /** Source Mask Path */
+            source_mask_path: string | null;
+            /** Source Mask Sha256 */
+            source_mask_sha256: string | null;
+        };
         /** AnnotationLabel */
         AnnotationLabel: {
             /** Id */
@@ -1690,6 +1785,21 @@ export interface components {
             updated_at: string;
         };
         /**
+         * AnnotationSampleDraftState
+         * @description See `AnnotationDraftState`. Narrower, for the same reason `AnnotationSampleDraft` is.
+         */
+        AnnotationSampleDraftState: {
+            /** Sample Id */
+            sample_id: number;
+            /** Persisted */
+            persisted: boolean;
+            document: components["schemas"]["AnnotationDocument-Output"];
+            /** Version */
+            version: number | null;
+            /** Updated At */
+            updated_at: string | null;
+        };
+        /**
          * AnnotationScope
          * @description Whether a dataset's annotation truth is edited per image or per sample.
          *
@@ -1717,6 +1827,11 @@ export interface components {
              * @description Drafts open in the current scope. Any scope change requires zero.
              */
             open_drafts: number;
+            /**
+             * Open Draft Units
+             * @description Which units hold that work, so 'complete or discard them first' is reachable rather than merely true. Capped; `open_drafts` is the whole count.
+             */
+            open_draft_units: components["schemas"]["OpenDraftUnit"][];
             /** Can Use Sample Scope */
             can_use_sample_scope: boolean;
             /**
@@ -2264,6 +2379,33 @@ export interface components {
              * @default 0
              */
             false_negative: number;
+        };
+        /**
+         * CopiedChannel
+         * @description What one target holds afterwards, so the caller can say it rather than guess it.
+         */
+        CopiedChannel: {
+            /** Image Id */
+            image_id: number;
+            /** Version */
+            version: number;
+            /** Shape Count */
+            shape_count: number;
+        };
+        /**
+         * CopyRegionsRequest
+         * @description Which sibling channels receive a copy of this image's regions.
+         */
+        CopyRegionsRequest: {
+            /** Target Image Ids */
+            target_image_ids: number[];
+        };
+        /** CopyRegionsResult */
+        CopyRegionsResult: {
+            /** Copied */
+            copied: number;
+            /** Targets */
+            targets: components["schemas"]["CopiedChannel"][];
         };
         /** CreateExperimentRequest */
         CreateExperimentRequest: {
@@ -3475,6 +3617,20 @@ export interface components {
             };
         };
         /**
+         * OpenDraftUnit
+         * @description One unit standing between the dataset and a scope change, addressable.
+         */
+        OpenDraftUnit: {
+            /** Sample Id */
+            sample_id: number;
+            /** Sample Key */
+            sample_key: string;
+            /** Image Id */
+            image_id: number;
+            /** Channel */
+            channel: string | null;
+        };
+        /**
          * OperatingPoint
          * @description How each run's own threshold is chosen from its own scores.
          * @enum {string}
@@ -3722,6 +3878,61 @@ export interface components {
              * @default 17
              */
             seed: number;
+        };
+        /**
+         * RegionProfileDeletionPreview
+         * @description What deleting a profile revision will remove, and what currently blocks it.
+         */
+        RegionProfileDeletionPreview: {
+            /** Profile Id */
+            profile_id: number;
+            /** Name */
+            name: string;
+            /** Revision No */
+            revision_no: number;
+            /** Experiments */
+            experiments: components["schemas"]["RegionProfileHolder"][];
+            /** Generated Files */
+            generated_files: number;
+            /** Generated Bytes */
+            generated_bytes: number;
+            /** Active Jobs */
+            active_jobs: components["schemas"]["JobSummary"][];
+            /**
+             * Storage Location Safe
+             * @default true
+             */
+            storage_location_safe: boolean;
+            /** Can Delete */
+            can_delete: boolean;
+            /** Blocker */
+            blocker: string | null;
+        };
+        /**
+         * RegionProfileDeletionResult
+         * @description The completed database deletion and best-effort prepared-pixel cleanup.
+         */
+        RegionProfileDeletionResult: {
+            /** Deleted */
+            deleted: boolean;
+            /** Prepared Removed */
+            prepared_removed: boolean;
+            /** Freed Files */
+            freed_files: number;
+            /** Freed Bytes */
+            freed_bytes: number;
+            /** Prepared Error */
+            prepared_error: string | null;
+        };
+        /**
+         * RegionProfileHolder
+         * @description One experiment that pins this revision, named so a refusal can be acted on.
+         */
+        RegionProfileHolder: {
+            /** Experiment Id */
+            experiment_id: number;
+            /** Name */
+            name: string;
         };
         /**
          * RegionProfileRevision
@@ -4422,7 +4633,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationDraft"];
+                    "application/json": components["schemas"]["AnnotationDraftState"];
                 };
             };
             /** @description Validation Error */
@@ -4473,10 +4684,49 @@ export interface operations {
             };
         };
     };
-    open_annotation_draft_api_images__image_id__annotations_draft_post: {
+    create_annotation_draft_api_images__image_id__annotations_draft_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "If-None-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_annotation_draft_api_images__image_id__annotations_draft_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
             path: {
                 image_id: number;
             };
@@ -4485,12 +4735,47 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    copy_annotation_regions_api_images__image_id__annotations_copy_regions_post: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CopyRegionsRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationDraft"];
+                    "application/json": components["schemas"]["CopyRegionsResult"];
                 };
             };
             /** @description Validation Error */
@@ -4889,7 +5174,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                    "application/json": components["schemas"]["AnnotationSampleDraftState"];
                 };
             };
             /** @description Validation Error */
@@ -4940,10 +5225,49 @@ export interface operations {
             };
         };
     };
-    open_sample_annotation_draft_api_samples__sample_id__annotations_draft_post: {
+    create_sample_annotation_draft_api_samples__sample_id__annotations_draft_post: {
         parameters: {
             query?: never;
-            header?: never;
+            header?: {
+                "If-None-Match"?: string | null;
+            };
+            path: {
+                sample_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnnotationDocument-Input"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AnnotationSampleDraft"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discard_sample_annotation_draft_api_samples__sample_id__annotations_draft_delete: {
+        parameters: {
+            query?: never;
+            header?: {
+                "If-Match"?: string | null;
+            };
             path: {
                 sample_id: number;
             };
@@ -4952,13 +5276,11 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Successful Response */
-            200: {
+            204: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": components["schemas"]["AnnotationSampleDraft"];
-                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {
@@ -6834,6 +7156,37 @@ export interface operations {
             };
         };
     };
+    delete_region_profile_api_region_profiles__profile_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionProfileDeletionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     preview_region_profile_api_region_profiles__profile_id__preview_post: {
         parameters: {
             query?: never;
@@ -6914,6 +7267,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_region_profile_deletion_api_region_profiles__profile_id__deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionProfileDeletionPreview"];
                 };
             };
             /** @description Validation Error */

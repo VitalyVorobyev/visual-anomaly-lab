@@ -23,8 +23,14 @@ from .conftest import Fixture
 
 
 def _open_draft(client: TestClient, image_id: int) -> None:
-    response = client.post(f"/api/images/{image_id}/annotations/draft")
-    assert response.status_code == 200, response.text
+    seed = client.get(f"/api/images/{image_id}/annotations/draft")
+    assert seed.status_code == 200, seed.text
+    response = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert response.status_code == 201, response.text
 
 
 def test_capability_and_missing_asset_are_actionable(client: TestClient, seeded: Fixture) -> None:

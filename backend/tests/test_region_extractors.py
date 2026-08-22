@@ -128,6 +128,56 @@ def test_mobile_sam_chooses_the_largest_credible_mask_without_loading_in_the_reg
     assert result.metadata["coverage_fraction"] == 0.36
 
 
+def test_a_low_area_ceiling_selects_the_part_over_its_background() -> None:
+    """What the 0.5 floor on `max_area_fraction` made impossible.
+
+    The chosen mask is the largest one inside the window, so a near-full-frame mask always
+    qualified and always won while the ceiling could not go below 0.5. On a dataset whose
+    part is smaller than its background that ruled the extractor out entirely — the only
+    setting that would have worked was the one the bound refused.
+    """
+
+    class FakeGenerator:
+        def generate(self, _image: np.ndarray) -> list[dict[str, object]]:
+            return [
+                {
+                    "area": 9500,  # the frame: 0.95 of the image
+                    "bbox": [0, 0, 100, 100],
+                    "predicted_iou": 0.99,
+                    "stability_score": 0.99,
+                },
+                {
+                    "area": 1600,  # the part: 0.16 of the image
+                    "bbox": [30, 30, 40, 40],
+                    "predicted_iou": 0.91,
+                    "stability_score": 0.94,
+                },
+            ]
+
+    extractor = MobileSamRegionExtractor(MobileSamRegionConfig(max_area_fraction=0.2), assets={})
+    extractor._generator = FakeGenerator()
+
+    result = extractor.extract(np.zeros((100, 100, 3), dtype=np.uint8))
+
+    assert result.metadata["coverage_fraction"] == 0.16
+    assert result.bounds.model_dump() == {
+        "left": 30.0,
+        "top": 30.0,
+        "right": 70.0,
+        "bottom": 70.0,
+    }
+
+
+def test_an_inside_out_area_window_is_rejected_where_it_is_typed() -> None:
+    """Nothing else stops it now that the two bounds no longer partition the interval.
+
+    An empty window fails every image with "found no mask within the configured area
+    range", which names the symptom and not the typo that caused it.
+    """
+    with pytest.raises(ValidationError, match="must be below max_area_fraction"):
+        build("mobile_sam", {"min_area_fraction": 0.6, "max_area_fraction": 0.3})
+
+
 def test_mobile_sam_asset_absence_is_an_explicit_extraction_failure() -> None:
     extractor = MobileSamRegionExtractor(MobileSamRegionConfig(), assets={})
 

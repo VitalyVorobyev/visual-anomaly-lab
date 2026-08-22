@@ -63,6 +63,8 @@ export const queryKeys = {
     ["datasets", datasetId, "region-profiles"] as const,
   regionBuild: (profileId: number) =>
     ["region-profiles", profileId, "build"] as const,
+  regionProfileDeletion: (profileId: number) =>
+    ["region-profiles", profileId, "deletion-preview"] as const,
 
   splits: (datasetId: number) => ["datasets", datasetId, "splits"] as const,
 

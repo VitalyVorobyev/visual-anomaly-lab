@@ -28,6 +28,217 @@ make GKN datasets imported and available by default
 
 ## Resolved
 
+### 022
+
+Five things from a working session: two faults, two limits that had been written into a schema, and one
+missing control.
+
+**"In annotation, I need a thinner brush. Ideally, I would like to mark a single pixel."** The slider
+floor was `min={2}` on a value that was a *radius* while the label and the readout both said "Brush size
+… px" — so the smallest brush was four pixels wide, not two. Lowering the floor would not have delivered
+it either: strokes were antialiased Canvas2D paths at fractional coordinates, thresholded afterwards, and
+the three code paths applied three *different* coverage rules. A new region kept every touched pixel, a
+stroke continuing an existing region needed a quarter, and the eraser needed three quarters — so brush and
+eraser at the same setting did not undo each other, and the smallest possible mark was a blob about three
+pixels across. `rasterizeStroke` now walks the pointer samples into an 8-connected integer spine and
+stamps a disc of the given **diameter** on it, shared by all three paths. Size 1 marks exactly one pixel,
+the eraser removes exactly what the brush added, and the size is typeable as well as draggable because the
+useful values sit at the very bottom of the track. `,` and `.` adjust it from the keyboard; `[` and `]`
+remain channel navigation.
+
+**"In the Experiment view the progress bar is not updated online, only after component rebuild."**
+Correct, and the screenshot contained the diagnosis: `step 421/8000` in the top bar over `step 461/8000`
+in the job card below it. The bar read `ExperimentDetail.jobs[]`, and a `progress` frame deliberately does
+not invalidate that query — at four frames a second it would be a poll wearing an event's clothes — so it
+refreshed on window focus and terminal frames only. It reads the live job row now, which is already
+refreshed on every frame. Two neighbours on the same path went with it: `["jobs", id]` was invalidating by
+*prefix*, dragging `["jobs", id, "metrics"]` along and re-parsing the entire job log four times a second
+against ADR-0020's freeze rule; and a dropped socket had no `onclose`, so it stayed dropped until a
+remount — which is the same symptom by a different route.
+
+**"In MobileSAM auto segmentation there is min 0.5 area fraction. I need even less to work with can ends
+datasets."** The control is `max_area_fraction`, floored at `ge=0.5`, and the extractor keeps the
+*largest* mask inside the window — so a near-full-frame mask always qualified and always won. On a dataset
+whose part is smaller than its background that ruled the extractor out entirely: the only setting that
+would have excluded the frame was the one the form refused to accept. The two bounds were a partition of
+`(0, 1]` at 0.5 for no reason the extractor needs; they are now independent, with a validator enforcing
+the one relationship that is real, and both fields finally carry a description saying what the number does.
+
+**"I want to have the delete button for saved Prepare presets."** Added, following the dataset and
+experiment deletion idiom exactly — a preview naming the consequences, the queue's lifecycle guard,
+rows before files, and a 409 for anything unsafe. The interesting case is the refusal: experiments pin a
+revision with `ON DELETE RESTRICT`, so SQLite would have refused on its own, as an `IntegrityError` naming
+a constraint. The preview counts them first and the dialog prints their names, because "delete those
+first" is only actionable if you know which ones. Deleting is not the in-place edit ADR-0033 forbids —
+the `BEFORE UPDATE` trigger is still what guarantees a published build is never rewritten.
+
+**"Foreground threshold shows no images after I press Preview 24."** Neither the extractor nor the grid.
+The worker sends its result as one JSON line, and `split_output` flushes an unterminated fragment past
+16 KiB so that no library can wedge the queue with an endless tqdm bar. A 24-entry preview frame passes
+16 KiB once `foreground_threshold`'s six metadata keys per entry are in it, so the frame was cut mid-JSON,
+both halves failed to parse, no `DoneEvent` was seen, and the job finished **`succeeded` with
+`result = {}`** — leaving the Visual audit panel with nothing to draw beside a green badge. The live logs
+show it exactly: jobs 38, 39, 46, 47 and 48 cut at 16384 bytes with `"succeeded":24,"failed":0` visible in
+the surviving half. A protocol event now gets its own, much larger budget, told apart by the one thing
+that distinguishes it — it begins with `{`, and half a frame is not a frame, while half a progress bar is
+still a readable log line. MobileSAM sat at ~15.6 KiB and was one metadata key from the same fault. The
+screen also says so now when a succeeded preview reports nothing, rather than rendering no panel at all.
+
+### 021
+
+Five things from the first real session in the reworked editor, four of them faults and one of them a
+preference.
+
+**"Defect masks are only shown in the left half. The right one shows no mask and no new mask can be
+added."** The reference pane was handed `{...document, shapes: []}` under image scope — a deliberate
+refusal to draw the active channel's regions over a sibling, which is right, applied by blanking the
+document, which is not. It draws the reference channel's **own draft** now, prefetched with the rest of
+the part, so an already-annotated channel looks annotated. Drawing on it is answered by `Edit this
+channel`, which exchanges the panes: editing stays in one pane so a stroke never has an ambiguous
+destination, and the swap writes the outgoing channel into the reference preference so a three-channel
+part swaps rather than rotating.
+
+**"Eraser tool creates new defect. It doesn't make sense. It only should be able to delete."** Correct,
+and it was a decision taken for a reason that did not survive contact: with nothing selected the eraser
+appended a `subtract` layer, because cutting a hole through a *polygon* is the one thing erasing pixels
+cannot do. But a `subtract` layer is a region, so the tool for removing things added one and named it in
+the region list. The eraser now takes paint off whatever it passes over and never creates; a cut is an
+explicit Subtract region in the New region panel, where creating something is what the control says it
+does.
+
+**"Change the color of defect, please. Red looks not very pleasant."** The seeded class was `#ef4444`.
+It is magenta now, with migration 017 moving existing datasets — see the handbook for why that register
+is wrong for a mask somebody stares at for minutes, and why only untouched labels move.
+
+**"Blend slider is tiny after update."** A regression from giving `SegmentedControl` `shrink-0` and
+`whitespace-nowrap` so "Side by side" stopped wrapping onto three lines: that made the slider the only
+shrinkable item left in an over-subscribed row, and it collapsed to a few pixels of track. The channel
+tabs are now what gives way — they read fine half-scrolled — and every control to their right has a
+floor.
+
+**"I still see this: 2 images hold unsaved annotation work."** Down from eleven, so migration 016 did
+its job and these two are real. But the message was a wall: no way to find two images among several
+hundred. `AnnotationScopeState` now carries the units themselves and the queue renders each as a link
+into the editor, where Complete and Discard already are. Still no bulk discard — a draft means work now,
+and one click that destroys all of it is exactly what the lifecycle change was made to prevent. The
+prose also stopped saying *unsaved*: a draft row exists because somebody saved, and the word sent them
+looking for an unsaved editor.
+
+Reported as working and left alone: polygon vertex move, and mask drag and move.
+
+### 017
+
+"I always see a warning like that: *This dataset cannot share one annotation per part. 11 image
+drafts are open; complete or discard them first.*"
+
+**Cause: the editor's read path was a write.** `useEditorDraft` was a TanStack `useQuery` whose
+`queryFn` issued `POST .../annotations/draft`, and that route was an idempotent open — so rendering
+the editor on an image persisted an `annotation_draft` row, and browsing eleven images left eleven
+rows. Worse, `useCompleteDraft` invalidated the draft query while its observer was still mounted, so
+every completion refetched, re-POSTed, and **recreated the draft it had just consumed** — one orphan
+per unit of finished work. Nothing could remove a row but completing it: there was no `DELETE` route
+at all. `count_open_image_drafts` counts rows, so the blocker was permanent and truthful about the
+data while being nonsense about the work.
+
+A draft is now created by the first save (ADR-0032's changelog): the `GET` is read-or-seed, the
+`POST` is create-only behind `If-None-Match: *` — which also closes a lost-update hole an upsert
+cannot — and `DELETE` gives the blocker's own advice somewhere to land, with `If-Match: *` as an
+explicit force after a conflict. Migration 016 cleared the eleven. The count keeps no predicate,
+because counting rows is now exactly counting work.
+
+### 018
+
+"Defect is not shown — grey on grey. Would be nice to be able to change the colour of the defect
+mask." Also: "Side by side" wrapped onto three lines and was clipped by the strip.
+
+**Cause: the mask was drawn untinted, and the raster contract disagreed end to end.** A brush
+region is a white PNG, and `BitmapLayer` drew it at `opacity 0.34` with no colour applied at all
+— white on grey. Worse for anything the *backend* produced: `encode_png` writes an opaque mode-`L`
+PNG, so a MobileSAM candidate or an imported mask covered its entire crop rectangle in flat grey,
+and `traceBitmapShape` — which read the alpha byte rather than luminance — traced that rectangle
+instead of the region. The two sides agreed only because a brush stroke happens to be white on
+transparent *black*.
+
+Luminance is now the contract on both sides, alpha is derived at paint time, and regions are
+tinted with their label's colour. Cuts render in one fixed colour with a dashed outline, so an
+eraser layer no longer looks identical to a brush layer. The scene reads its colours from the
+design tokens instead of fifteen literals copied out of the dark palette, so the editor follows
+the light theme for the first time. Mask weight is a persisted slider; the label's colour is
+dataset taxonomy and now has a swatch, wired to a route that had existed without a caller.
+
+The wrap was `SegmentedControl` missing `whitespace-nowrap`, so a label's minimum width was its
+longest *word*, inside a fixed-height strip that then clipped the overflow.
+
+### 019
+
+"When I change the left channel I jump back to single-channel view." And: "when I label one channel
+there is no way to apply the same labelling to the others — this should be optional, but available."
+
+**Cause: the editor was keyed by the thing it was editing, and everything lived inside the key.**
+`EditorReady` is remounted on every `:imageId` so that the document, its history and its ETag cannot
+survive into another image's truth — which is right. But the pane mode, the second channel, the active
+tool, the brush size and the zoom were `useState` *inside* it, so choosing a different second channel
+navigated, remounted, and reset the workspace along with the document. Under sample scope the key is the
+sample, which is why it looked like a bug that only image-scoped datasets had.
+
+Presentation state now lives above the key, where it belongs: it describes how the reader is looking,
+not what they are looking at. The second pane is stored as a channel *position* so it follows onto the
+next part, and asking for the channel that is already active wraps to the next one rather than showing
+one photograph twice. Pan and zoom carry a frame stamp — they follow the reader across the channels of
+one part, and reset on a part that has nothing to do with them.
+
+The channel tab's disabled-while-dirty state went with it. It read as a broken control: the work was one
+keystroke away from being safe and the editor knew it, so switching channel saves and then navigates, and
+only a genuine conflict stops the move.
+
+Copying is a new route, `POST /api/images/{id}/annotations/copy-regions`. It **appends** with fresh ids,
+so a channel's own work survives and each copy stays independently editable — necessary rather than
+tidy, because the scan probe measures `dark` sitting about 9 px below `bright`, so a copy is a starting
+point that needs a nudge. Targets that are not siblings, or that do not share the source frame, are
+refused rather than rescaled; the source carries the precondition, because one stale click would
+otherwise spread a stale document across every channel at once. The dialog says how many regions each
+channel already holds, which the editor knows because it now reads every channel's draft ahead of time —
+affordable only because entry 017 made reading a draft a read.
+
+### 020
+
+"For the selected defect I want to move it with the mouse. There is no way to continue editing the
+current defect with the brush — I would expect to draw a defect in several touches. I also want to use
+the eraser on the current draft; if I understand correctly the eraser is not implemented at all, it looks
+exactly as a clone of the brush. When I move a polygon vertex the polygon itself remains the same. When
+the polygon tool comes back to the starting vertex it should close automatically; a double click should
+add a vertex and close; clicking the same place twice must not add a vertex."
+
+**Cause: every gesture minted a new shape, and the scene rendered only what had already been
+committed.** `bitmapStroke` always called `nextShapeId()`, so a defect painted in three touches was three
+regions, and the "eraser" differed from the brush by a preview colour and an `operation` flag — it
+appended a `subtract` layer and could not take paint off the thing under the cursor. The vertex handle was
+draggable but the outline read `shape.points` straight from the committed document, which only changes on
+`dragEnd`, so the handle moved and the polygon stayed put. `draggable` appeared exactly once in the whole
+scene, on that handle: a region could not be moved at all. And the pending-polygon group was
+`listening={false}`, so its first vertex could not be clicked and closing needed a button in a side panel.
+
+The reading of every observation was right, and each fix is in the handbook's *Direct manipulation*
+section. Three of them are worth naming here.
+
+A stroke now composites into the selected region and re-crops it, so the brush continues and the eraser
+erases; with nothing selected the eraser still cuts through the stack, because that is the only way to
+punch a hole in a *polygon*, which erasing pixels cannot do. A dragged vertex is held as transient scene
+state — the same kind of state a brush stroke in progress already was — so the outline follows the handle
+while undo still steps one drag at a time. And the click that closes a ring is decided by one pure
+function with three answers: close on the first vertex, **ignore** on the last, add otherwise. The ignore
+rule is what makes a double-click work at all — its second click is a duplicate and is dropped before
+`dblclick` closes the ring — and it is also the fix for "clicking the same place twice must not add a
+vertex", which is invisible on screen and awkward in every algorithm that reads the polygon afterwards.
+
+The offset a moved region takes is clamped once, against the shape's own extent, rather than per
+coordinate: clamping each vertex on its own would flatten a polygon against the edge it was pushed at, so
+a document that had merely been dragged too far would come back a different shape.
+
+Two smaller things went with it. Escape now cancels the current thing and only that, instead of also
+dropping back to Select, which made "escape and start a fresh region" cost a keystroke to get the brush
+back. And the polygon tool stays active after a ring closes, because most parts carry more than one defect.
+
 ### 013
 
 Let the annotation editor show every channel of a sample at once, and optionally share one

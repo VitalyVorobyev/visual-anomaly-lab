@@ -48,6 +48,7 @@ export type AnnotationDraft = Schemas["AnnotationDraft"];
 export type AnnotationSampleDraft = Schemas["AnnotationSampleDraft"];
 export type AnnotationScope = Schemas["AnnotationScope"];
 export type AnnotationScopeState = Schemas["AnnotationScopeState"];
+export type OpenDraftUnit = Schemas["OpenDraftUnit"];
 export type AnnotationState = Schemas["AnnotationState"];
 export type AnnotationDocument = Schemas["AnnotationDocument-Output"];
 export type AnnotationDocumentInput = Schemas["AnnotationDocument-Input"];
@@ -57,6 +58,7 @@ export type AnnotationPoint = Schemas["AnnotationPoint"];
 export type PolygonShape = Schemas["PolygonShape-Output"];
 export type BitmapShape = Schemas["BitmapShape-Output"];
 export type AnnotationShape = PolygonShape | BitmapShape;
+export type CopyRegionsResult = Schemas["CopyRegionsResult"];
 export type AssistPoint = Schemas["AssistPoint"];
 export type AssistBox = Schemas["AssistBox"];
 export type SegmentAssistRequest = Schemas["SegmentAssistRequest"];
@@ -70,6 +72,8 @@ export type ModelAssetInfo = Schemas["ModelAssetInfo"];
 export type RegionExtractorDescription = Schemas["RegionExtractorDescription"];
 export type RegionProfileCreate = Schemas["RegionProfileCreate"];
 export type RegionProfileRevision = Schemas["RegionProfileRevision"];
+export type RegionProfileDeletionPreview = Schemas["RegionProfileDeletionPreview"];
+export type RegionProfileDeletionResult = Schemas["RegionProfileDeletionResult"];
 export type RegionBuildSummary = Schemas["RegionBuildSummary"];
 export type RegionPreparationEntry = Schemas["RegionPreparationEntry"];
 export type SpatialTransform = Schemas["SpatialTransform"];
@@ -151,11 +155,45 @@ export type ConfusionCounts = Schemas["ConfusionCounts"];
  * and error states by whether the function threw. Every hook funnels through here so
  * that decision is made the same way once.
  */
-export function unwrap<T>(result: { data?: T; error?: unknown }, what: string): T {
+/**
+ * A failed request, carrying the status the caller may need to branch on.
+ *
+ * The message stays exactly what `describeError` produced, so anything matching on prose keeps
+ * working. The status is what lets a caller tell a precondition failure (412 — the draft moved,
+ * offer to reload or to force) from a missing one (428) or a vanished resource (404), none of
+ * which are distinguishable from the detail string alone.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
+export function unwrap<T>(
+  result: { data?: T; error?: unknown; response?: Response },
+  what: string,
+): T {
   if (result.error !== undefined || result.data === undefined) {
-    throw new Error(describeError(result.error, what));
+    throw apiError(result, what);
   }
   return result.data;
+}
+
+/**
+ * The exception `unwrap` would have thrown, for a route with no body to unwrap.
+ *
+ * A `204` carries nothing, so `unwrap` cannot speak for it — its "no data" test would treat
+ * success as failure.
+ */
+export function apiError(
+  result: { error?: unknown; response?: Response },
+  what: string,
+): ApiError {
+  return new ApiError(describeError(result.error, what), result.response?.status ?? 0);
 }
 
 function describeError(error: unknown, what: string): string {

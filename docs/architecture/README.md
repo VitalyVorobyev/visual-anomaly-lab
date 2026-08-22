@@ -190,7 +190,7 @@ a server-visible absolute directory path.
 | `import` | `/api/import` | `scan` (produce manifest) and `commit` (create rows); `verify` re-check |
 | `reference_packs` | `/api/reference-packs` | discover complete local VisA/GKN packs and register missing datasets atomically |
 | `splits` | `/api/splits` | create/list seeded or imported splits, per-subset counts, assignments |
-| `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build and prepared images |
+| `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build, prepared images and guarded revision deletion |
 | `segment_assist` | `/api/segment-assist`, `/api/images/…/segment-assist` | MobileSAM readiness and temporary prompt-guided mask suggestions |
 | `experiments` | `/api/experiments` | model catalogue/schema, search, create/detail/delete, train/infer/export, results and diagnostics |
 | `compare` | `/api/compare` | compatible multi-run metrics, operating points and per-sample agreement |

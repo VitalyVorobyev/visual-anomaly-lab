@@ -78,6 +78,27 @@ READ_CHUNK_BYTES = 64 * 1024
 # input a library can produce that stops the queue.
 MAX_LINE_BYTES = 16 * 1024
 
+# The same backstop for a fragment that is still a *candidate protocol event*, which needs
+# a far larger budget than chatter does.
+#
+# This exists because of a second real failure, and it is the more expensive kind: nothing
+# looked broken. A `region_prepare` preview reports 24 entries in one `done` frame, and
+# with `foreground_threshold`'s six metadata keys per entry that frame passes 16 KiB. The
+# fragment was flushed mid-JSON, `parse_line` rejected both halves, no `DoneEvent` was ever
+# observed, and the job finished `succeeded` carrying `result = {}`. The screen that reads
+# the result then had nothing to draw and drew nothing, beside a green badge.
+#
+# The two cases are told apart by the one thing that distinguishes them: a protocol event
+# is a single JSON object, so it starts with `{`. Chatter can be cut anywhere without
+# losing meaning — a half progress bar is still a readable log line — whereas half a frame
+# is not a frame at all and cannot be resumed once the buffer has moved on. Both budgets
+# are finite, so the anti-wedge guarantee above is unchanged: no output stops the queue.
+MAX_EVENT_BYTES = 8 * 1024 * 1024
+
+# How much of a fragment is inspected to decide which of the two budgets applies. A frame
+# carries no meaningful leading whitespace, so this only has to clear an indent.
+_HEAD_BYTES = 64
+
 
 class JobQueue:
     """Owns the worker child process and the fan-out of its events."""
@@ -530,8 +551,12 @@ def split_output(buffer: bytes, *, at_eof: bool = False) -> tuple[list[str], byt
     megabytes long — which is how it looked in a terminal all along, and which is the
     difference between a log tail that renders and one that does not.
 
-    An over-long fragment with no terminator at all is flushed once it passes
-    `MAX_LINE_BYTES`, so no amount of output can grow the buffer without bound.
+    An over-long fragment with no terminator at all is flushed once it passes its budget,
+    so no amount of output can grow the buffer without bound. Which budget applies depends
+    on whether the fragment could still become a protocol event: one that begins with `{`
+    gets `MAX_EVENT_BYTES`, anything else `MAX_LINE_BYTES`. Flushing a partial event would
+    destroy it — see the comment on `MAX_EVENT_BYTES` — while flushing partial chatter
+    costs a line break in a log.
     """
     lines: list[str] = []
     remainder = buffer
@@ -550,11 +575,25 @@ def split_output(buffer: bytes, *, at_eof: bool = False) -> tuple[list[str], byt
         lines.append(remainder[:index].decode("utf-8", errors="replace"))
         remainder = remainder[index + 1 :]
 
-    if len(remainder) >= MAX_LINE_BYTES or (at_eof and remainder):
+    if len(remainder) >= _fragment_budget(remainder) or (at_eof and remainder):
         lines.append(remainder.decode("utf-8", errors="replace"))
         remainder = b""
 
     return lines, remainder
+
+
+def _fragment_budget(fragment: bytes) -> int:
+    """How long an unterminated fragment may grow before it is flushed anyway.
+
+    A worker writes its events with `json.dumps`, so a candidate event is a fragment whose
+    first non-whitespace byte opens an object. That test is deliberately cheap and
+    permissive: chatter that happens to start with `{` costs only a larger buffer, while
+    misjudging a real event costs the event.
+
+    Only the head is examined. This runs once per 64 KiB read against a buffer that may be
+    megabytes long, and `bytes.lstrip` copies what it strips from.
+    """
+    return MAX_EVENT_BYTES if fragment[:_HEAD_BYTES].lstrip()[:1] == b"{" else MAX_LINE_BYTES
 
 
 async def _iter_lines(stream: asyncio.StreamReader) -> AsyncIterator[str]:

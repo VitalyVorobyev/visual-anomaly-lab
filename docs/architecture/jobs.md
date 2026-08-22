@@ -76,12 +76,44 @@ The parent does three things with each line:
    `data/jobs/logs/<job_id>.log`;
 3. **fans out** to subscribers of `WS /ws/jobs/{id}`.
 
+### Framing: two budgets, because a fragment is not a line
+
+`readline` is not used. It raises `ValueError` past asyncio's 64 KiB stream limit, and **a progress bar is
+one line** — tqdm separates frames with `\r`, never `\n` — so a 1.5 GB download once wedged the queue with
+no error recorded anywhere. Output is read in chunks and split by `split_output`, which flushes an
+unterminated fragment rather than buffering it without bound.
+
+That flush is right for chatter and destroys an event. A `region_prepare` preview reports 24 entries in one
+`done` frame, which for `foreground_threshold`'s six metadata keys per entry passes 16 KiB: the frame was
+cut mid-JSON, `parse_line` rejected both halves, no `DoneEvent` was observed, and the job finished
+**`succeeded` carrying `result = {}`**. The screen that reads the result then had nothing to draw and drew
+nothing, beside a green badge — a fault that survived because every symptom said the run was fine.
+
+So the budget depends on what the fragment could still be. A protocol event is a single JSON object and
+begins with `{`; chatter can be cut anywhere without losing meaning, while half a frame is not a frame and
+cannot be resumed once the buffer has moved on. `MAX_LINE_BYTES` (16 KiB) governs the second case,
+`MAX_EVENT_BYTES` (8 MiB) the first. Both are finite, so no output can stop the queue. Note the shape of
+the coverage gap this sat in: the preview handler is tested in-process, which bypasses the pipe entirely.
+
 ## Frontend reconnection
 
 WebSockets drop — on sleep, on network stack changes, on reload. The client rule is **snapshot then
 subscribe**: `GET /api/jobs/{id}` for current status, progress and recent log tail, *then* open the WebSocket
 for the live stream. This makes reconnection, first load and late-joining a running job all the same code
 path, with no missed-event reconciliation logic.
+
+A dropped socket now reopens on that same path — `onclose` refreshes the snapshot and re-subscribes after a
+short delay, unless the stream ended with an `end` frame, which is the one close not worth reopening.
+Without it a drop was permanent: no `end` arrives, so the console simply stopped at whatever step it had
+reached beside a badge still reading `running`, and only a remount recovered.
+
+**Progress belongs to the job row, and only there.** A `progress` frame invalidates `["jobs", id]`
+*exactly* — not the experiment, which at four frames a second would be a poll wearing an event's clothes,
+and not the key's own children, because `["jobs", id, "metrics"]` is a prefix match away and that snapshot
+is built by parsing the whole log file (**ADR-0020** also forbids re-reading it live). Anything drawing live
+progress must therefore read the job row: the experiment detail payload carries a copy of it that is
+refreshed on window focus and terminal frames alone, and a bar drawn from that copy stands still for the
+length of a run.
 
 ## Scalar series, after the fact
 

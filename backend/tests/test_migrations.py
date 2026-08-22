@@ -164,6 +164,87 @@ def test_annotation_migration_backfills_a_default_taxonomy(settings: Settings) -
         assert tuple(row) == ("defect", "Defect")
 
 
+def test_migration_016_clears_the_drafts_that_only_viewing_created(settings: Settings) -> None:
+    """`version = 1` means "never saved" only under the write path 016 replaced.
+
+    Before it, opening the editor on an image created a draft, so an untouched row and a
+    once-saved row were distinguishable. After it, creation *is* the first save and the two are
+    indistinguishable forever -- which is why this predicate is a migration and can never become
+    a runtime filter on `count_open_image_drafts`.
+    """
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 15:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/tmp/d')")
+        conn.execute(
+            "INSERT INTO sample (dataset_id, group_key, external_id, label) "
+            "VALUES (1, 'g', '1', 'defect')"
+        )
+        for image_id in (1, 2):
+            conn.execute(
+                "INSERT INTO image (sample_id, path, width, height, bit_depth, file_size, sha256) "
+                f"VALUES (1, '/tmp/d/{image_id}.png', 8, 8, 8, 1, 'x{image_id}')"
+            )
+        document = (
+            '{"schema_version":1,"image_width":8,"image_height":8,"base":"empty","shapes":[]}'
+        )
+        conn.execute(
+            "INSERT INTO annotation_draft (image_id, document, version) VALUES (1, ?, 1)",
+            (document,),
+        )
+        conn.execute(
+            "INSERT INTO annotation_draft (image_id, document, version) VALUES (2, ?, 2)",
+            (document,),
+        )
+        conn.execute(
+            "INSERT INTO annotation_sample_draft (sample_id, document, version) VALUES (1, ?, 1)",
+            (document,),
+        )
+
+        assert apply_migrations_to(conn) >= 16
+
+        surviving = conn.execute("SELECT image_id FROM annotation_draft").fetchall()
+        assert [int(row["image_id"]) for row in surviving] == [2]
+        assert conn.execute("SELECT COUNT(*) FROM annotation_sample_draft").fetchone()[0] == 0
+
+
+def test_migration_017_recolours_only_the_untouched_default(settings: Settings) -> None:
+    """A colour somebody chose is theirs, even when it happens to be the old default."""
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 16:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+
+        for name in ("seeded", "chosen"):
+            conn.execute("INSERT INTO dataset (name, root_path) VALUES (?, ?)", (name, f"/{name}"))
+            conn.execute(
+                "INSERT INTO annotation_label (dataset_id, key, name, color, position) "
+                "VALUES ((SELECT MAX(id) FROM dataset), 'defect', 'Defect', '#ef4444', 0)"
+            )
+        # Dataset 2 also has a class somebody deliberately made the same red.
+        conn.execute(
+            "INSERT INTO annotation_label (dataset_id, key, name, color, position) "
+            "VALUES (2, 'scratch', 'Scratch', '#ef4444', 1)"
+        )
+
+        assert apply_migrations_to(conn) >= 17
+
+        colours = dict(
+            conn.execute("SELECT key || ':' || dataset_id, color FROM annotation_label").fetchall()
+        )
+        assert colours["defect:1"] == "#c026d3"
+        assert colours["defect:2"] == "#c026d3"
+        assert colours["scratch:2"] == "#ef4444"
+
+
 def test_region_profile_revisions_are_dataset_owned_and_immutable(
     migrated_db: sqlite3.Connection,
 ) -> None:

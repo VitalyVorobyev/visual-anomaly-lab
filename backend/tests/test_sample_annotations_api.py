@@ -15,65 +15,10 @@ from fastapi.testclient import TestClient
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import annotations as annotations_repo
-from anomaly_lab.db.repositories import datasets, images, masks, samples
-from anomaly_lab.domain.entities import Label
+from anomaly_lab.db.repositories import datasets, masks
 from anomaly_lab.media.decode import sha256_of
 
-from .conftest import FIXTURE_SIZE, write_normal_image
-
-CHANNELS = ("bright", "dark", "dome")
-# The recorded frame is the generated file's real size, so a test that does reach for the
-# pixels finds the dimensions the catalogue promised.
-FRAME = (FIXTURE_SIZE, FIXTURE_SIZE)
-
-
-def _multishot_dataset(
-    settings: Settings,
-    root: Path,
-    *,
-    name: str = "multishot",
-    samples_count: int = 2,
-    channels: tuple[str, ...] = CHANNELS,
-) -> tuple[int, list[int], dict[int, list[int]]]:
-    """A dataset of multi-channel samples with no imported masks.
-
-    The `seeded` fixture cannot be used for these tests: it pins a source mask to every
-    defect image, which is exactly the condition sample scope refuses.
-    """
-    with connection(settings.db_path) as conn:
-        dataset = datasets.create_dataset(conn, name=name, root_path=str(root))
-        channel_ids = [
-            datasets.upsert_channel(conn, dataset.id, name=channel, position=index).id
-            for index, channel in enumerate(channels)
-        ]
-        sample_ids: list[int] = []
-        images_by_sample: dict[int, list[int]] = {}
-        for index in range(samples_count):
-            sample, _ = samples.upsert_sample(
-                conn,
-                dataset.id,
-                group_key="all",
-                external_id=f"part-{index}",
-                label=Label.DEFECT,
-            )
-            sample_ids.append(sample.id)
-            images_by_sample[sample.id] = []
-            for channel_id, channel in zip(channel_ids, channels, strict=True):
-                path = root / channel / f"{index}.png"
-                write_normal_image(path, index * 10 + channel_id)
-                image, _ = images.upsert_image(
-                    conn,
-                    sample.id,
-                    channel_id=channel_id,
-                    path=str(path),
-                    width=FRAME[0],
-                    height=FRAME[1],
-                    bit_depth=24,
-                    file_size=path.stat().st_size,
-                    sha256=f"sha-{index}-{channel}",
-                )
-                images_by_sample[sample.id].append(image.id)
-    return dataset.id, sample_ids, images_by_sample
+from .conftest import FRAME, multishot_dataset, write_normal_image
 
 
 def _use_sample_scope(client: TestClient, dataset_id: int) -> dict[str, Any]:
@@ -84,8 +29,14 @@ def _use_sample_scope(client: TestClient, dataset_id: int) -> dict[str, Any]:
 
 
 def _open_sample_draft(client: TestClient, sample_id: int) -> tuple[dict[str, Any], str]:
-    response = client.post(f"/api/samples/{sample_id}/annotations/draft")
-    assert response.status_code == 200, response.text
+    seed = client.get(f"/api/samples/{sample_id}/annotations/draft")
+    assert seed.status_code == 200, seed.text
+    response = client.post(
+        f"/api/samples/{sample_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert response.status_code == 201, response.text
     etag = response.headers["etag"]
     assert etag.startswith('"annotation-sample-draft-')
     payload: dict[str, Any] = response.json()
@@ -110,7 +61,7 @@ def _triangle(document: dict[str, Any]) -> dict[str, Any]:
 def test_scope_defaults_to_image_and_reports_what_sample_scope_would_gain(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, _, _ = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, _, _ = multishot_dataset(settings, tmp_path / "src")
 
     state = client.get(f"/api/datasets/{dataset_id}/annotation-scope")
 
@@ -126,7 +77,7 @@ def test_imported_masks_and_mixed_frames_are_reported_together_not_one_at_a_time
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
     root = tmp_path / "src"
-    dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, root)
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, root)
     with connection(settings.db_path) as conn:
         mask_path = root / "masks" / "0.png"
         write_normal_image(mask_path, 3)
@@ -150,10 +101,78 @@ def test_imported_masks_and_mixed_frames_are_reported_together_not_one_at_a_time
     assert "part-1" in refused.json()["detail"]
 
 
+def test_open_drafts_are_named_and_not_merely_counted(
+    client: TestClient, settings: Settings, tmp_path: Path
+) -> None:
+    """A blocker an operator cannot navigate to is a wall, not a message.
+
+    The count alone was accurate and useless: "2 images hold annotation work" over a dataset
+    of several hundred left nowhere to go, so the scope control stayed dead with no way to
+    revive it.
+    """
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
+    held = images_by_sample[sample_ids[1]][1]
+    seed = client.get(f"/api/images/{held}/annotations/draft")
+    assert (
+        client.post(
+            f"/api/images/{held}/annotations/draft",
+            json=seed.json()["document"],
+            headers={"If-None-Match": "*"},
+        ).status_code
+        == 201
+    )
+
+    state = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+
+    assert state["can_use_sample_scope"] is False
+    assert state["open_drafts"] == 1
+    assert state["open_draft_units"] == [
+        {
+            "sample_id": sample_ids[1],
+            "sample_key": "part-1",
+            "image_id": held,
+            "channel": "dark",
+        }
+    ]
+
+    # Discarding the work empties the desk, and the unit list empties with it.
+    etag = client.get(f"/api/images/{held}/annotations/draft").headers["etag"]
+    assert (
+        client.delete(
+            f"/api/images/{held}/annotations/draft", headers={"If-Match": etag}
+        ).status_code
+        == 204
+    )
+    cleared = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+    assert cleared["open_draft_units"] == []
+    assert cleared["can_use_sample_scope"] is True
+
+
+def test_a_sample_draft_is_named_through_an_image_so_the_editor_is_reachable(
+    client: TestClient, settings: Settings, tmp_path: Path
+) -> None:
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
+    _use_sample_scope(client, dataset_id)
+    _open_sample_draft(client, sample_ids[0])
+
+    state = client.get(f"/api/datasets/{dataset_id}/annotation-scope").json()
+
+    # The editor is addressed by the pair in either scope, so a sample draft still carries an
+    # image to open it with.
+    assert state["open_draft_units"] == [
+        {
+            "sample_id": sample_ids[0],
+            "sample_key": "part-0",
+            "image_id": images_by_sample[sample_ids[0]][0],
+            "channel": None,
+        }
+    ]
+
+
 def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     sample_id = sample_ids[0]
 
@@ -188,7 +207,9 @@ def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
         assert path.parent == settings.annotation_image_dir(revision["image_id"])
 
     # The draft is consumed, and the existing image-keyed resolver sees every channel.
-    assert client.get(f"/api/samples/{sample_id}/annotations/draft").status_code == 404
+    after = client.get(f"/api/samples/{sample_id}/annotations/draft")
+    assert after.status_code == 200
+    assert after.json()["persisted"] is False
     with connection(settings.db_path) as conn:
         resolved = annotations_repo.resolve_ground_truth_masks(
             conn, images_by_sample[sample_id], verify_bytes=True
@@ -200,7 +221,7 @@ def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
 def test_every_channel_exports_the_shared_truth_through_the_image_routes(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     sample_id = sample_ids[0]
     draft, etag = _open_sample_draft(client, sample_id)
@@ -226,7 +247,7 @@ def test_every_channel_exports_the_shared_truth_through_the_image_routes(
 def test_a_stale_token_is_refused_and_the_image_routes_point_at_the_sample_route(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     sample_id = sample_ids[0]
     draft, etag = _open_sample_draft(client, sample_id)
@@ -251,7 +272,7 @@ def test_a_stale_token_is_refused_and_the_image_routes_point_at_the_sample_route
     )
 
     image_id = images_by_sample[sample_id][0]
-    opened = client.post(f"/api/images/{image_id}/annotations/draft")
+    opened = client.get(f"/api/images/{image_id}/annotations/draft")
     assert opened.status_code == 409
     assert "/api/samples/" in opened.json()["detail"]
 
@@ -259,7 +280,7 @@ def test_a_stale_token_is_refused_and_the_image_routes_point_at_the_sample_route
 def test_a_sample_scoped_document_may_not_claim_a_base_layer_or_a_foreign_frame(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, _ = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, _ = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     sample_id = sample_ids[0]
     draft, etag = _open_sample_draft(client, sample_id)
@@ -282,7 +303,7 @@ def test_a_sample_scoped_document_may_not_claim_a_base_layer_or_a_foreign_frame(
 def test_reopening_a_draft_resumes_the_sample_s_completed_truth(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, _ = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, _ = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     sample_id = sample_ids[0]
     draft, etag = _open_sample_draft(client, sample_id)
@@ -313,16 +334,28 @@ def test_reopening_a_draft_resumes_the_sample_s_completed_truth(
 def test_scope_cannot_change_while_a_draft_is_open_in_either_direction(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, images_by_sample = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
 
-    client.post(f"/api/images/{images_by_sample[sample_ids[0]][0]}/annotations/draft")
+    image_id = images_by_sample[sample_ids[0]][0]
+    # Only a *save* opens a draft now, so this is what an operator with unfinished work has.
+    seed = client.get(f"/api/images/{image_id}/annotations/draft")
+    created = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json=seed.json()["document"],
+        headers={"If-None-Match": "*"},
+    )
+    assert created.status_code == 201, created.text
+
     blocked = client.put(f"/api/datasets/{dataset_id}/annotation-scope", json={"scope": "sample"})
     assert blocked.status_code == 409
     assert "drafts are open" in blocked.json()["detail"]
 
-    with connection(settings.db_path) as conn:
-        annotations_repo.get_draft(conn, images_by_sample[sample_ids[0]][0])
-        conn.execute("DELETE FROM annotation_draft")
+    # And the discard the blocker names is a route, not an invitation to edit the database.
+    discarded = client.delete(
+        f"/api/images/{image_id}/annotations/draft",
+        headers={"If-Match": created.headers["etag"]},
+    )
+    assert discarded.status_code == 204, discarded.text
     _use_sample_scope(client, dataset_id)
 
     _open_sample_draft(client, sample_ids[1])
@@ -340,7 +373,7 @@ def test_scope_cannot_change_while_a_draft_is_open_in_either_direction(
 def test_deleting_the_dataset_removes_its_shared_drafts(
     client: TestClient, settings: Settings, tmp_path: Path
 ) -> None:
-    dataset_id, sample_ids, _ = _multishot_dataset(settings, tmp_path / "src")
+    dataset_id, sample_ids, _ = multishot_dataset(settings, tmp_path / "src")
     _use_sample_scope(client, dataset_id)
     _open_sample_draft(client, sample_ids[0])
 

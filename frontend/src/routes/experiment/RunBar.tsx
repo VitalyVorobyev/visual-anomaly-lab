@@ -22,7 +22,7 @@ import {
   ProgressBar,
   StatusDot,
 } from "@vitavision/lab-ui";
-import type { ExperimentDetail, JobSummary } from "../../api/client";
+import type { ExperimentDetail, JobDetail, JobSummary } from "../../api/client";
 import { isTerminal } from "../../hooks/useJob";
 import { useCancelJob, useStartExport, useStartRun } from "../../hooks/useExperiments";
 import { jobTone } from "./OverviewTab";
@@ -31,6 +31,7 @@ export function RunBar({
   experimentId,
   detail,
   jobs,
+  liveJob,
   hasTrained,
   onFollow,
   onViewLog,
@@ -38,6 +39,20 @@ export function RunBar({
   experimentId: number;
   detail: ExperimentDetail;
   jobs: JobSummary[];
+  /**
+   * The followed job's own row, which is the only copy that moves during a run.
+   *
+   * `jobs` comes from `ExperimentDetail`, and a `progress` frame deliberately does not
+   * invalidate that query — at four frames a second it would be a poll wearing an event's
+   * clothes. So the bar drew a number that was refreshed on window focus and on terminal
+   * frames, and stood still for everything in between: the top of the screen read
+   * `step 421/8000` while the job card below it, reading `["jobs", id]`, read `step 461`.
+   * Whoever simplifies this back to `jobs` alone will reintroduce exactly that.
+   *
+   * Optional because it genuinely is: there is no row until the first snapshot lands, and
+   * the summary carries the same fields, one refresh behind.
+   */
+  liveJob?: JobDetail | undefined;
   hasTrained: boolean;
   onFollow: (jobId: number) => void;
   /** Take the reader to the tab where the chart and the console are. */
@@ -66,6 +81,9 @@ export function RunBar({
   // `jobs` arrives newest first, so the first unfinished one is the live one. The queue
   // runs a single job at a time (ADR-0009), so there is never more than one.
   const live = jobs.find((job) => !isTerminal(job.status));
+  // Identity from the experiment payload, progress from the live row — and only when the
+  // two are the same job, so a stale subscription cannot label another run's numbers.
+  const reading = liveJob !== undefined && liveJob.id === live?.id ? liveJob : live;
   const busy = live !== undefined || start.isPending || startExport.isPending;
   const canExportOnnx = detail.portable_formats.includes("onnx");
 
@@ -161,8 +179,8 @@ export function RunBar({
 
       {/* Only while something is live. A progress bar frozen at 100% after a run finished
           reads as a run that is still going. */}
-      {live !== undefined && (
-        <ProgressBar fraction={live.progress ?? 0} label={live.message ?? live.status} />
+      {live !== undefined && reading !== undefined && (
+        <ProgressBar fraction={reading.progress ?? 0} label={reading.message ?? reading.status} />
       )}
 
       {/* The consequence is surprising enough that it is printed before the run rather

@@ -23,8 +23,15 @@ from anomaly_lab.db.migrate import apply_migrations
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.handlers import supported_kinds
-from anomaly_lab.jobs.protocol import LogEvent, ProgressEvent
-from anomaly_lab.jobs.queue import MAX_LINE_BYTES, SUBSCRIBER_BUFFER, JobQueue, split_output
+from anomaly_lab.jobs.protocol import DoneEvent, LogEvent, ProgressEvent, parse_line
+from anomaly_lab.jobs.queue import (
+    MAX_EVENT_BYTES,
+    MAX_LINE_BYTES,
+    SUBSCRIBER_BUFFER,
+    JobQueue,
+    _iter_lines,
+    split_output,
+)
 
 TERMINAL_WAIT_SECONDS = 30.0
 
@@ -256,6 +263,66 @@ def test_output_with_no_terminator_at_all_is_flushed_rather_than_buffered() -> N
     assert lines != []
     assert remainder == b""
     assert sum(len(line) for line in lines) == len(flood)
+
+
+def test_an_event_larger_than_a_log_line_survives_the_split() -> None:
+    """A `done` frame over `MAX_LINE_BYTES` must arrive whole, not in two useless halves.
+
+    This is the fault that made a succeeded preview job carry `result = {}`: the frame was
+    flushed mid-JSON, `parse_line` rejected both pieces, and no `DoneEvent` was ever seen.
+    Nothing complained, because a partial line is a perfectly ordinary thing for a log to
+    hold — which is exactly why the split has to tell an event from chatter.
+    """
+    entries = [{"image_id": index, "status": "succeeded"} for index in range(24)]
+    frame = json.dumps({"ev": "done", "result": {"mode": "preview", "entries": entries}})
+    frame += " " * (MAX_LINE_BYTES * 2 - len(frame))
+    payload = frame.encode() + b"\n"
+    assert len(payload) > MAX_LINE_BYTES
+
+    # Delivered the way the pipe delivers it: in chunks that fall wherever they fall.
+    lines: list[str] = []
+    pending = b""
+    for offset in range(0, len(payload), 4096):
+        emitted, pending = split_output(pending + payload[offset : offset + 4096])
+        lines.extend(emitted)
+
+    assert pending == b""
+    assert [json.loads(line)["result"]["entries"] for line in lines] == [entries]
+
+
+def test_a_large_event_straddling_a_pipe_read_still_parses() -> None:
+    """The same frame over the real reader, positioned to break across a chunk boundary.
+
+    `split_output` is called once per `READ_CHUNK_BYTES`, so whether a frame survived used
+    to depend on where the pipe happened to cut it — which is why one `foreground_threshold`
+    preview kept its result and the next four did not. Padding the stream so the frame
+    starts just before the boundary makes that accident deterministic.
+    """
+    entries = [{"image_id": index, "status": "succeeded"} for index in range(24)]
+    frame = json.dumps({"ev": "done", "result": {"mode": "preview", "entries": entries}})
+    frame += " " * (MAX_LINE_BYTES * 2 - len(frame))
+    payload = b"chatter\n" * 100 + frame.encode() + b"\n"
+
+    async def collect() -> list[str]:
+        reader = asyncio.StreamReader()
+        reader.feed_data(payload)
+        reader.feed_eof()
+        return [line async for line in _iter_lines(reader)]
+
+    lines = asyncio.run(collect())
+    events = [parse_line(line) for line in lines]
+    done = [event for event in events if isinstance(event, DoneEvent)]
+    assert len(done) == 1
+    assert done[0].result["entries"] == entries
+
+
+def test_a_flood_that_only_looks_like_an_event_is_still_bounded() -> None:
+    """The larger budget is a budget, not an exemption — the queue must stay unstoppable."""
+    flood = b"{" + b"x" * (MAX_EVENT_BYTES + 1)
+    lines, remainder = split_output(flood)
+
+    assert lines != []
+    assert remainder == b""
 
 
 def test_the_tail_of_a_stream_is_not_lost_at_eof() -> None:

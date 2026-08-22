@@ -1,9 +1,103 @@
 import { describe, expect, it } from "vitest";
 
-import { strokeBounds, traceMask } from "./annotationBitmap";
+import type { BitmapShape, PolygonShape } from "./client";
+import {
+  maskBounds,
+  maskFromPixels,
+  paintRect,
+  rasterizeStroke,
+  strokeBounds,
+  strokeTargets,
+  traceMask,
+} from "./annotationBitmap";
+
+describe("rasterizeStroke", () => {
+  /** The filled pixels of a mask, as `x,y` pairs, for asserting a footprint exactly. */
+  const filled = (mask: Uint8Array, width: number) =>
+    [...mask].flatMap((value, index) =>
+      value ? [[index % width, Math.floor(index / width)] as [number, number]] : [],
+    );
+  const box = { minX: 0, minY: 0, width: 9, height: 9 };
+
+  it("marks exactly one pixel at size 1, the one under the pointer", () => {
+    /**
+     * The reported request, and the thing the old rasteriser could not do at any setting.
+     * Strokes were antialiased Canvas2D paths at fractional coordinates and then
+     * thresholded, so the smallest mark was a blob roughly three pixels across — and the
+     * slider would not go below a radius of 2 in any case, which was four pixels wide.
+     */
+    const mask = rasterizeStroke([{ x: 4.7, y: 3.2 }], 1, box);
+
+    expect(filled(mask, box.width)).toEqual([[4, 3]]);
+  });
+
+  it("grows one ring at a time and stays centred", () => {
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 1, box).reduce((a, b) => a + b, 0)).toBe(1);
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 2, box).reduce((a, b) => a + b, 0)).toBe(5);
+    expect(rasterizeStroke([{ x: 4.5, y: 4.5 }], 3, box).reduce((a, b) => a + b, 0)).toBe(9);
+  });
+
+  it("draws an unbroken one-pixel line between two pointer samples", () => {
+    /**
+     * `mousemove` fires far apart during a fast drag, and Canvas's `lineTo` used to be what
+     * joined the samples. At one pixel wide the join has to happen in integers or the
+     * stroke comes out as a row of dots with the gaps that lost work in them.
+     */
+    const mask = rasterizeStroke(
+      [
+        { x: 0.5, y: 0.5 },
+        { x: 8.5, y: 4.5 },
+      ],
+      1,
+      box,
+    );
+    const points = filled(mask, box.width);
+
+    expect(points[0]).toEqual([0, 0]);
+    expect(points.at(-1)).toEqual([8, 4]);
+    for (let index = 1; index < points.length; index += 1) {
+      const [x, y] = points[index]!;
+      const [previousX, previousY] = points[index - 1]!;
+      // 8-connected: every step touches the last, so the line has no hole in it.
+      expect(Math.max(Math.abs(x - previousX), Math.abs(y - previousY))).toBe(1);
+    }
+  });
+
+  it("covers the same pixels whichever tool asked for them", () => {
+    /**
+     * Brush and eraser are one rasteriser now, which is what makes retracing a stroke with
+     * the eraser remove it completely. Painting black over white did not: a pixel needed
+     * three quarters of its coverage gone to clear but only a quarter to fill, so the
+     * eraser's footprint was about a pixel smaller than the brush's at the same setting and
+     * every erased stroke left a fringe.
+     */
+    const points = [
+      { x: 2.5, y: 2.5 },
+      { x: 6.5, y: 5.5 },
+    ];
+    expect([...rasterizeStroke(points, 5, box)]).toEqual([...rasterizeStroke(points, 5, box)]);
+  });
+
+  it("writes nothing outside the box it was given", () => {
+    const mask = rasterizeStroke([{ x: 0, y: 0 }], 9, { minX: 0, minY: 0, width: 3, height: 3 });
+
+    expect(mask).toHaveLength(9);
+    expect(filled(mask, 3)).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [0, 1],
+      [1, 1],
+      [2, 1],
+      [0, 2],
+      [1, 2],
+      [2, 2],
+    ]);
+  });
+});
 
 describe("brush bitmap bounds", () => {
-  it("crops a stroke with its antialias margin and clamps it to the source frame", () => {
+  it("crops a stroke with its brush margin and clamps it to the source frame", () => {
     expect(
       strokeBounds(
         [
@@ -60,5 +154,120 @@ describe("traceMask", () => {
       operation: "subtract",
     });
     expect(polygons.map((polygon) => polygon.operation).sort()).toEqual(["add", "subtract"]);
+  });
+});
+
+describe("maskFromPixels", () => {
+  /** RGBA bytes for one row, from `[r, g, b, a]` tuples. */
+  const rgba = (...pixels: [number, number, number, number][]) =>
+    new Uint8ClampedArray(pixels.flat());
+
+  it("reads luminance, so an opaque backend mask is not one solid region", () => {
+    // This is exactly what `encode_png` writes: mode "L", fully opaque, black ground.
+    // Reading the alpha byte called every one of these pixels filled, which is why tracing an
+    // accepted MobileSAM candidate or an imported PNG produced its bounding box.
+    const opaque = rgba([0, 0, 0, 255], [255, 255, 255, 255], [0, 0, 0, 255]);
+    expect([...maskFromPixels(opaque, 3)]).toEqual([0, 1, 0]);
+  });
+
+  it("still reads a brush stroke, which is white on transparent black", () => {
+    const stroke = rgba([0, 0, 0, 0], [255, 255, 255, 255], [255, 255, 255, 180]);
+    expect([...maskFromPixels(stroke, 3)]).toEqual([0, 1, 1]);
+  });
+
+  it("never treats a fully transparent pixel as filled, whatever its colour says", () => {
+    // A canvas clears to transparent black, but a cleared region of a *tinted* canvas can hold
+    // stale colour bytes under a zero alpha. Those are not mask.
+    expect([...maskFromPixels(rgba([255, 255, 255, 0]), 1)]).toEqual([0]);
+  });
+});
+
+describe("paintRect", () => {
+  const region = { x: 10, y: 10, width: 20, height: 20 };
+
+  it("grows to cover a stroke that leaves the region", () => {
+    // The whole point of continuing a region: a defect drawn in three touches is one region,
+    // and each touch may reach past what the last one covered.
+    expect(paintRect(region, { minX: 4, minY: 12, maxX: 18, maxY: 40 }, false)).toEqual({
+      minX: 4,
+      minY: 10,
+      width: 26,
+      height: 30,
+    });
+  });
+
+  it("never grows for an eraser, whichever way the stroke ran", () => {
+    // Erasing cannot add a pixel, so a stroke that wanders far outside the region must not
+    // drag its crop along — the crop is what the selection outline and the copy dimension
+    // check both read.
+    expect(paintRect(region, { minX: 0, minY: 0, maxX: 200, maxY: 200 }, true)).toEqual({
+      minX: 10,
+      minY: 10,
+      width: 20,
+      height: 20,
+    });
+  });
+});
+
+describe("maskBounds", () => {
+  it("finds the tight box around what is painted", () => {
+    const mask = new Uint8Array([
+      0, 0, 0, 0,
+      0, 1, 1, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 0,
+    ]);
+    expect(maskBounds(mask, 4, 4)).toEqual({ minX: 1, minY: 1, width: 2, height: 2 });
+  });
+
+  it("reports nothing left, which is how the last of a region is erased", () => {
+    expect(maskBounds(new Uint8Array(16), 4, 4)).toBeNull();
+  });
+});
+
+describe("strokeTargets", () => {
+  const bitmap = (id: string, x: number, y: number): BitmapShape => ({
+    id,
+    label_key: "defect",
+    kind: "bitmap",
+    operation: "add",
+    x,
+    y,
+    width: 10,
+    height: 10,
+    png_base64: "",
+  });
+  const polygon: PolygonShape = {
+    id: "ring",
+    label_key: "defect",
+    kind: "polygon",
+    operation: "add",
+    points: [
+      { x: 0, y: 0 },
+      { x: 30, y: 0 },
+      { x: 0, y: 30 },
+    ],
+  };
+  const shapes = [bitmap("under", 0, 0), polygon, bitmap("over", 5, 5), bitmap("far", 60, 60)];
+
+  it("finds every painted region the stroke passes over, nearest first", () => {
+    // What makes the eraser an eraser with nothing selected: it takes paint off what is under
+    // the pointer instead of appending a `subtract` region, which is what it used to do.
+    expect(strokeTargets(shapes, { minX: 6, minY: 6, maxX: 8, maxY: 8 }).map((s) => s.id)).toEqual([
+      "over",
+      "under",
+    ]);
+  });
+
+  it("ignores regions the stroke misses and polygons it does not", () => {
+    // A polygon has no pixels to take away; the eraser says so rather than inventing a cut.
+    expect(strokeTargets(shapes, { minX: 20, minY: 20, maxX: 25, maxY: 25 })).toEqual([]);
+  });
+
+  it("treats a shared edge as a miss and one pixel inside as a hit", () => {
+    expect(strokeTargets(shapes, { minX: 10, minY: 0, maxX: 12, maxY: 2 })).toEqual([]);
+    expect(strokeTargets(shapes, { minX: 9, minY: 0, maxX: 12, maxY: 2 }).map((s) => s.id)).toEqual([
+      "under",
+    ]);
   });
 });

@@ -7,10 +7,12 @@
 
 import {
   ArrowLeft,
+  ArrowLeftRight,
   ArrowRight,
   Brush,
   Check,
   CircleDot,
+  Copy,
   Eraser,
   Maximize2,
   MousePointer2,
@@ -32,13 +34,22 @@ import {
   historyReducer,
   nextShapeId,
   replaceShape,
+  translateShape,
   withPolygonPoint,
   withShape,
   withoutShape,
 } from "../api/annotationState";
-import { bitmapStroke, traceBitmapShape } from "../api/annotationBitmap";
+import {
+  bitmapStroke,
+  paintStroke,
+  strokeBounds,
+  strokeTargets,
+  traceBitmapShape,
+} from "../api/annotationBitmap";
+import { paneFrame, resolveReference, type PaneMode } from "../api/annotationPanes";
 import { queueUnits } from "../api/annotationQueue";
 import type {
+  AnnotationDocument,
   AnnotationLabel,
   AnnotationPoint,
   AnnotationShape,
@@ -47,6 +58,7 @@ import type {
   PolygonShape,
   SampleSummary,
 } from "../api/client";
+import { ApiError } from "../api/client";
 import { ChannelTabs } from "../components/ChannelTabs";
 import {
   AnnotationCanvas,
@@ -58,8 +70,12 @@ import {
 import {
   Badge,
   Button,
+  Checkbox,
+  ConfirmDialog,
+  Dialog,
   Empty,
   ErrorBox,
+  NumberInput,
   ProgressBar,
   SegmentedControl,
   Select,
@@ -74,20 +90,100 @@ import {
   type DraftTarget,
   useAnnotationLabels,
   useCompleteDraft,
+  useCopyRegions,
+  useDiscardDraft,
   useEditorDraft,
   useSaveDraft,
+  useSiblingDrafts,
+  useUpdateAnnotationLabel,
   useSegmentAssist,
   useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
+import {
+  MAX_BRUSH_SIZE,
+  MIN_BRUSH_SIZE,
+  useBrushSize,
+} from "../hooks/useBrushSize";
+import { useMaskOpacity } from "../hooks/useMaskOpacity";
 import { useCancelJob } from "../hooks/useExperiments";
 import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 
 const QUEUE_PAGE = 120;
 
-/** How the whole channel column is shown at once. */
-type PaneMode = "single" | "compare" | "overlay";
+/**
+ * Presentation state: how the reader is looking, as opposed to what they are looking at.
+ *
+ * It lives above the keyed editor because it belongs to the person, not to the document.
+ * Everything used to sit inside `EditorReady`, which is keyed by the draft's target, so
+ * changing the second channel of a side-by-side comparison remounted the editor and reset
+ * the pane mode, the zoom and the active tool along with it — the reported "changing the
+ * left channel jumps back to a single channel". Per-target state (history, selection, the
+ * pending polygon) keeps the key and keeps resetting, which is the point of the key.
+ */
+interface Workspace {
+  paneMode: PaneMode;
+  setPaneMode: (mode: PaneMode) => void;
+  /** A channel position, not an image id — see `resolveReference`. */
+  referenceIndex: number | null;
+  setReferenceIndex: (index: number | null) => void;
+  overlayOpacity: number;
+  setOverlayOpacity: (value: number) => void;
+  maskOpacity: number;
+  setMaskOpacity: (value: number) => void;
+  tool: EditorTool;
+  setTool: (tool: EditorTool) => void;
+  brushSize: number;
+  setBrushSize: (radius: number) => void;
+  view: CanvasView;
+  setView: (view: CanvasView) => void;
+}
+
+function useWorkspace(frame: string): Workspace {
+  const [paneMode, setPaneMode] = useState<PaneMode>("single");
+  const [referenceIndex, setReferenceIndex] = useState<number | null>(null);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
+  const [maskOpacity, setMaskOpacity] = useMaskOpacity();
+  const [tool, setTool] = useState<EditorTool>("select");
+  const [brushSize, setBrushSize] = useBrushSize();
+  // The view is stamped with the frame it was expressed on and derived back out, so moving
+  // to another part resets it during render rather than in an effect that would first paint
+  // the previous part's zoom over the new photograph.
+  const [viewMemo, setViewMemo] = useState({ frame, view: INITIAL_CANVAS_VIEW });
+  const view = viewMemo.frame === frame ? viewMemo.view : INITIAL_CANVAS_VIEW;
+  const setView = useCallback((next: CanvasView) => setViewMemo({ frame, view: next }), [frame]);
+
+  return useMemo(
+    () => ({
+      paneMode,
+      setPaneMode,
+      referenceIndex,
+      setReferenceIndex,
+      overlayOpacity,
+      setOverlayOpacity,
+      maskOpacity,
+      setMaskOpacity,
+      tool,
+      setTool,
+      brushSize,
+      setBrushSize,
+      view,
+      setView,
+    }),
+    [
+      brushSize,
+      maskOpacity,
+      overlayOpacity,
+      paneMode,
+      referenceIndex,
+      setMaskOpacity,
+      setView,
+      tool,
+      view,
+    ],
+  );
+}
 
 export function AnnotationEditorRoute() {
   const params = useParams();
@@ -115,6 +211,17 @@ export function AnnotationEditorRoute() {
       : { scope: "image", imageId }
     : undefined;
   const draft = useEditorDraft(target);
+
+  const images = useMemo(() => sample.data?.images ?? [], [sample.data]);
+  const activeImage = images.find((image) => image.id === imageId);
+  const workspace = useWorkspace(
+    paneFrame(sampleId, activeImage?.width ?? 0, activeImage?.height ?? 0),
+  );
+  const siblingDrafts = useSiblingDrafts(
+    useMemo(() => images.map((image) => image.id), [images]),
+    // Sample scope has one document for the whole part, so there are no siblings to read.
+    !perSample && dataset.data !== undefined,
+  );
 
   const error = dataset.error ?? sample.error ?? queue.error ?? labels.error ?? draft.error;
   if (error) return <ErrorBox>{error.message}</ErrorBox>;
@@ -152,6 +259,8 @@ export function AnnotationEditorRoute() {
       queueOffset={offset}
       labels={labels.data}
       initial={draft.data}
+      workspace={workspace}
+      siblingDrafts={siblingDrafts}
       onReload={async () => {
         await draft.refetch();
         setReloadGeneration((generation) => generation + 1);
@@ -173,6 +282,8 @@ function EditorReady({
   queueOffset,
   labels,
   initial,
+  workspace,
+  siblingDrafts,
   onReload,
 }: {
   datasetId: number;
@@ -187,24 +298,35 @@ function EditorReady({
   queueOffset: number;
   labels: AnnotationLabel[];
   initial: DraftEnvelope;
+  workspace: Workspace;
+  /** What each channel already holds, so a copy is a decision and a reference pane is honest. */
+  siblingDrafts: Map<number, DraftEnvelope>;
   onReload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
   const perSample = target.scope === "sample";
+  const {
+    paneMode,
+    setPaneMode,
+    overlayOpacity,
+    setOverlayOpacity,
+    maskOpacity,
+    setMaskOpacity,
+    tool,
+    setTool,
+    brushSize,
+    setBrushSize,
+    view,
+    setView,
+  } = workspace;
   const [history, dispatch] = useReducer(historyReducer, initial.document, createHistory);
   const [etag, setEtag] = useState(initial.etag);
   const [draftVersion, setDraftVersion] = useState(initial.version);
   const [savedDocument, setSavedDocument] = useState(initial.document);
-  const [paneMode, setPaneMode] = useState<PaneMode>("single");
-  const [referenceId, setReferenceId] = useState<number | null>(null);
-  const [overlayOpacity, setOverlayOpacity] = useState(0.5);
-  const [tool, setTool] = useState<EditorTool>("select");
   const [operation, setOperation] = useState<"add" | "subtract">("add");
   const [labelKey, setLabelKey] = useState(labels[0]?.key ?? "defect");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [pendingPoints, setPendingPoints] = useState<AnnotationPoint[]>([]);
-  const [view, setView] = useState<CanvasView>(INITIAL_CANVAS_VIEW);
-  const [brushRadius, setBrushRadius] = useState(18);
   const [message, setMessage] = useState<string | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [tracing, setTracing] = useState(false);
@@ -213,10 +335,16 @@ function EditorReady({
   const [assistBox, setAssistBox] = useState<AssistBox | null>(null);
   const [candidateIndex, setCandidateIndex] = useState(0);
   const [assetJobId, setAssetJobId] = useState<number>();
+  const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [copyOpen, setCopyOpen] = useState(false);
+  const [copyTargets, setCopyTargets] = useState<number[]>([]);
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
+  const recolour = useUpdateAnnotationLabel(datasetId);
   const save = useSaveDraft(target);
+  const discard = useDiscardDraft(target);
+  const copyRegions = useCopyRegions(imageId);
   const complete = useCompleteDraft(
     target,
     useMemo(() => sample.images.map((image) => image.id), [sample.images]),
@@ -243,24 +371,47 @@ function EditorReady({
   const currentImage = sample.images.find((image) => image.id === imageId);
   const activeIndex = sample.images.findIndex((image) => image.id === imageId);
   const otherImages = sample.images.filter((image) => image.id !== imageId);
-  const reference =
-    otherImages.find((image) => image.id === referenceId) ?? otherImages[0] ?? null;
+  const referenceIndex = resolveReference(
+    sample.images.length,
+    activeIndex,
+    workspace.referenceIndex,
+  );
+  const reference = referenceIndex === null ? null : (sample.images[referenceIndex] ?? null);
+  // A copy keeps its source-pixel coordinates, so a channel of another size cannot take one.
+  const copyable = otherImages.filter(
+    (image) =>
+      currentImage === undefined ||
+      (image.width === currentImage.width && image.height === currentImage.height),
+  );
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
   const candidates = assist.data?.candidates ?? [];
   const candidate = candidates[candidateIndex] ?? null;
 
   /**
-   * Shapes are drawn on a pane only when the document is truth *for that pane's image*.
+   * A pane draws the document that is truth *for that pane's image* — its own, never a
+   * neighbour's.
    *
-   * Under sample scope it is, by construction — one completion writes the same mask to
-   * every channel. Under image scope the document belongs to the displayed photograph
-   * alone, so drawing it over a sibling channel would show truth that does not exist
-   * there. The reference pane then shows the bare photograph, which is still the thing
-   * worth seeing: "is the defect visible in dark field at all?"
+   * Under sample scope that is the edited document by construction: one completion writes the
+   * same mask to every channel. Under image scope it is the reference channel's **own draft**,
+   * prefetched with the rest of the part. Drawing the active channel's regions over a sibling
+   * would claim truth that does not exist there; drawing nothing, which is what this did until
+   * now, hid truth that does — a channel already annotated looked untouched, and the pane
+   * beside the one being worked in appeared to be broken.
+   *
+   * Until that draft arrives the pane shows the bare photograph rather than a wrong overlay.
    */
-  const referenceDocument = perSample
-    ? history.present
-    : { ...history.present, shapes: [] };
+  const referenceDocument: AnnotationDocument | null =
+    reference === null
+      ? null
+      : perSample
+        ? history.present
+        : (siblingDrafts.get(reference.id)?.document ?? {
+            ...history.present,
+            base: "empty",
+            image_width: reference.width,
+            image_height: reference.height,
+            shapes: [],
+          });
 
   const openQueueItem = useCallback(
     (index: number) => {
@@ -283,35 +434,109 @@ function EditorReady({
   );
 
   /**
+   * Ensure a persisted draft exists and return the token that owns it.
+   *
+   * Two things it must get right. A clean document still has to be materialised when nothing
+   * is persisted yet — completing an unedited seed is a real action, and accepting an imported
+   * source mask as truth verbatim is the common case. And concurrent callers must share one
+   * flight: the idle autosave and an explicit save would otherwise both start from the same
+   * token and the loser would collect a 412 it caused itself.
+   */
+  const inFlight = useRef<Promise<string> | null>(null);
+  const persist = useCallback((): Promise<string> => {
+    if (inFlight.current) return inFlight.current;
+    if (!dirty && etag !== null) return Promise.resolve(etag);
+    const flight = save
+      .mutateAsync({ document: history.present, etag })
+      .then((saved) => {
+        setEtag(saved.etag);
+        setDraftVersion(saved.version);
+        setSavedDocument(saved.document);
+        setMessage("Draft saved");
+        return saved.etag as string;
+      })
+      .finally(() => {
+        inFlight.current = null;
+      });
+    inFlight.current = flight;
+    return flight;
+  }, [dirty, etag, history.present, save]);
+
+  /**
    * Show a different channel of the same part.
    *
    * Under sample scope this is a pure display change: the document is the part's, so the
    * shapes stay on screen and visibly land — or fail to land — on the new illumination.
-   * Under image scope each channel owns its own truth, so this is real navigation and
-   * takes the same dirty guard as moving through the queue.
+   * Under image scope each channel owns its own truth, so this is real navigation, and it
+   * *saves first* rather than refusing. Disabling the tab while the draft was dirty was a
+   * dead end that read as a broken control: the work was a keystroke away from being safe,
+   * and the editor knew it. A 412 aborts the move and leaves the reload-or-keep choice on
+   * screen, which is the one case where losing the edit is still possible.
    */
   const openChannel = useCallback(
-    (index: number) => {
+    async (index: number): Promise<boolean> => {
       const image = sample.images[index];
-      if (!image || image.id === imageId) return;
-      if (!perSample && dirty) return;
-      navigate(
-        `/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`,
-        { replace: true },
-      );
+      if (!image || image.id === imageId) return false;
+      if (!perSample && dirty) {
+        try {
+          await persist();
+        } catch {
+          return false;
+        }
+      }
+      navigate(`/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`, {
+        replace: true,
+      });
+      return true;
     },
-    [datasetId, dirty, imageId, navigate, perSample, queueOffset, sample.id, sample.images],
+    [
+      datasetId,
+      dirty,
+      imageId,
+      navigate,
+      perSample,
+      persist,
+      queueOffset,
+      sample.id,
+      sample.images,
+    ],
   );
 
-  const persist = useCallback(async (): Promise<string> => {
-    if (!dirty) return etag;
-    const saved = await save.mutateAsync({ document: history.present, etag });
-    setEtag(saved.etag);
-    setDraftVersion(saved.version);
-    setSavedDocument(saved.document);
-    setMessage("Draft saved");
-    return saved.etag;
-  }, [dirty, etag, history.present, save]);
+  /**
+   * Exchange the two panes, so the channel being looked at becomes the channel being edited.
+   *
+   * The reference is stored as a preference rather than derived, so the outgoing channel has
+   * to be written into it: without that, a three-channel part would move the reference on to
+   * the *next* channel and the pair on screen would change under the hand.
+   */
+  const swapPanes = useCallback(async () => {
+    if (referenceIndex === null) return;
+    const outgoing = activeIndex;
+    if (await openChannel(referenceIndex)) workspace.setReferenceIndex(outgoing);
+  }, [activeIndex, openChannel, referenceIndex, workspace]);
+
+  const copyToChannels = useCallback(async () => {
+    if (copyTargets.length === 0) return;
+    try {
+      const currentEtag = await persist();
+      const result = await copyRegions.mutateAsync({
+        etag: currentEtag,
+        targetImageIds: copyTargets,
+      });
+      const names = result.targets
+        .map((item) => sample.images.find((image) => image.id === item.image_id)?.channel)
+        .filter((channel): channel is string => Boolean(channel));
+      setCopyOpen(false);
+      setCopyTargets([]);
+      setMessage(
+        `${result.copied} region${result.copied === 1 ? "" : "s"} copied to ${
+          names.length > 0 ? names.join(", ") : `${result.targets.length} channels`
+        }`,
+      );
+    } catch {
+      // The dialog stays open with the mutation's error under the list.
+    }
+  }, [copyRegions, copyTargets, persist, sample.images]);
 
   const finishPolygon = useCallback(() => {
     if (pendingPoints.length < 3) return;
@@ -325,8 +550,100 @@ function EditorReady({
     dispatch({ type: "commit", document: withShape(history.present, polygon) });
     setPendingPoints([]);
     setSelectedId(polygon.id);
-    setTool("select");
+    // The tool stays where it is. Most parts carry more than one defect, and dropping back to
+    // Select after every ring meant pressing P again for each of them.
   }, [history.present, labelKey, operation, pendingPoints]);
+
+  const moveShape = useCallback(
+    (shapeId: string, dx: number, dy: number) => {
+      dispatch({ type: "commit", document: translateShape(history.present, shapeId, dx, dy) });
+    },
+    [history.present],
+  );
+
+  /**
+   * One brush or eraser gesture.
+   *
+   * The rule, stated in the inspector so it is never a guess: **a stroke extends the selected
+   * region**, and with nothing selected the brush starts one. Every gesture used to mint a new
+   * shape, so a defect painted in three strokes was three regions.
+   *
+   * **The eraser never creates.** It takes paint off the selected region, or — with nothing
+   * selected — off every painted region it passes over. It used to append a `subtract` layer
+   * instead, which is a region: the tool for removing things added one, and said so in the
+   * region list. Cutting a hole through a *polygon* is still possible, but as an explicit
+   * Subtract region in the New region panel rather than as the eraser's side effect.
+   */
+  const applyStroke = useCallback(
+    async (points: AnnotationPoint[]) => {
+      const geometry = {
+        points,
+        size: brushSize,
+        imageWidth: history.present.image_width,
+        imageHeight: history.present.image_height,
+      };
+      const target = selected?.kind === "bitmap" ? selected : null;
+
+      if (tool === "eraser") {
+        // The selection scopes the eraser exactly as it scopes the brush; without one, the
+        // pointer itself is the scope.
+        const targets = target
+          ? [target]
+          : strokeTargets(
+              history.present.shapes,
+              strokeBounds(points, brushSize, geometry.imageWidth, geometry.imageHeight),
+            );
+        if (targets.length === 0) {
+          setMessage(
+            selected?.kind === "polygon"
+              ? "The eraser takes paint off painted regions. Reshape this polygon by its vertices, or delete it."
+              : "Nothing painted here to erase.",
+          );
+          return;
+        }
+        const painted = await Promise.all(
+          targets.map((shape) => paintStroke(shape, { ...geometry, erase: true })),
+        );
+        let next = history.present;
+        let removed = 0;
+        targets.forEach((shape, index) => {
+          const result = painted[index];
+          if (result === undefined) return;
+          if (result === null) {
+            next = withoutShape(next, shape.id);
+            removed += 1;
+            if (shape.id === selectedId) setSelectedId(null);
+            return;
+          }
+          next = replaceShape(next, shape.id, [result]);
+        });
+        dispatch({ type: "commit", document: next });
+        if (removed > 0) setMessage(removed === 1 ? "Region erased" : `${removed} regions erased`);
+        return;
+      }
+
+      if (target) {
+        const painted = await paintStroke(target, { ...geometry, erase: false });
+        // A brush cannot empty a region, but `paintStroke` promises `null` for an empty result
+        // and honouring it here keeps the one contract rather than two.
+        if (painted === null) {
+          dispatch({ type: "commit", document: withoutShape(history.present, target.id) });
+          setSelectedId(null);
+          return;
+        }
+        dispatch({
+          type: "commit",
+          document: replaceShape(history.present, target.id, [painted]),
+        });
+        return;
+      }
+      const shape = bitmapStroke({ ...geometry, labelKey, operation });
+      if (!shape) return;
+      dispatch({ type: "commit", document: withShape(history.present, shape) });
+      setSelectedId(shape.id);
+    },
+    [brushSize, history.present, labelKey, operation, selected, selectedId, tool],
+  );
 
   const completeCurrent = useCallback(async () => {
     try {
@@ -343,6 +660,21 @@ function EditorReady({
       // The mutations expose their errors in the inspector; keep the current image open.
     }
   }, [complete, openQueueItem, persist, queueIndex]);
+
+  const discardCurrent = useCallback(
+    async (force: boolean) => {
+      try {
+        await discard.mutateAsync({ etag, force });
+        setConfirmDiscard(false);
+        setMessage("Draft discarded");
+        await onReload();
+      } catch {
+        // A 412 keeps the dialog open and turns its button into the explicit force; the
+        // mutation's error is rendered inside it.
+      }
+    },
+    [discard, etag, onReload],
+  );
 
   const removeSelected = useCallback(() => {
     if (!selectedId) return;
@@ -485,10 +817,23 @@ function EditorReady({
         event.preventDefault();
         finishPolygon();
       } else if (event.key === "Escape") {
-        setPendingPoints([]);
-        setSelectedId(null);
-        clearAssist();
-        setTool("select");
+        // Cancel the current thing, and only that. Escape used to also drop back to Select,
+        // which made "escape to start a fresh region" cost a second keystroke to get the
+        // brush back — V is the way to Select, and it always was.
+        if (pendingPoints.length > 0) {
+          setPendingPoints([]);
+        } else {
+          setSelectedId(null);
+          clearAssist();
+        }
+      } else if (
+        (event.key === "Backspace" || event.key === "Delete") &&
+        pendingPoints.length > 0
+      ) {
+        // Undo does not reach a ring that has not been committed yet, so the only way back
+        // from a misplaced vertex used to be Escape and starting over.
+        event.preventDefault();
+        setPendingPoints((points) => points.slice(0, -1));
       } else if ((event.key === "Backspace" || event.key === "Delete") && selectedId) {
         event.preventDefault();
         removeSelected();
@@ -501,9 +846,15 @@ function EditorReady({
       } else if (key === "k" && !dirty) {
         openQueueItem(queueIndex - 1);
       } else if (event.key === "[") {
-        openChannel(activeIndex - 1);
+        void openChannel(activeIndex - 1);
       } else if (event.key === "]") {
-        openChannel(activeIndex + 1);
+        void openChannel(activeIndex + 1);
+      } else if (event.key === "," || event.key === "<") {
+        // Not `[` and `]`, the conventional pair — those are channel navigation here and
+        // have been longer. Shift jumps by ten so the whole range is a few keystrokes.
+        setBrushSize(brushSize - (event.shiftKey ? 10 : 1));
+      } else if (event.key === "." || event.key === ">") {
+        setBrushSize(brushSize + (event.shiftKey ? 10 : 1));
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
       } else if (key === "0") {
@@ -523,6 +874,9 @@ function EditorReady({
   }, [message]);
 
   const mutationError = save.error ?? complete.error;
+  // 412 rather than a substring of the detail: the status is the contract, the prose is not.
+  const isConflict = (error: Error | null | undefined) =>
+    error instanceof ApiError && error.status === 412;
 
   useBeforeUnload(
     useCallback(
@@ -586,6 +940,19 @@ function EditorReady({
             {message ?? (dirty ? "Unsaved changes" : `Draft v${draftVersion}`)}
           </span>
           <Button
+            variant="ghost"
+            icon={<Trash2 />}
+            disabled={etag === null || discard.isPending}
+            title={
+              etag === null
+                ? "Nothing is saved yet — there is no draft to discard"
+                : "Throw away this draft and reopen the newest completed truth"
+            }
+            onClick={() => setConfirmDiscard(true)}
+          >
+            Discard
+          </Button>
+          <Button
             icon={<Save />}
             disabled={!dirty || save.isPending}
             onClick={() => void persist()}
@@ -607,7 +974,7 @@ function EditorReady({
         <div className="shrink-0 border-b border-line bg-surface px-3 py-2">
           <div className="flex items-center justify-between gap-3">
             <ErrorBox>{mutationError.message}</ErrorBox>
-            {mutationError.message.includes("changed elsewhere") && (
+            {isConflict(mutationError) && (
               <Button onClick={() => void onReload()}>Reload server draft</Button>
             )}
           </div>
@@ -636,19 +1003,46 @@ function EditorReady({
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
           {sample.images.length > 1 && (
-            <div className="flex h-11 shrink-0 items-center gap-3 overflow-x-auto border-b border-line bg-surface px-3">
-              <ChannelTabs
-                images={sample.images}
-                active={activeIndex}
-                onSelect={openChannel}
-                disabled={!perSample && dirty}
-              />
-              <div className="ml-auto flex shrink-0 items-center gap-2">
+            <div className="flex h-11 shrink-0 items-center gap-3 border-b border-line bg-surface px-3">
+              {/* The tabs are what gives way when the strip is over-subscribed, because they
+                  are the one thing here that reads perfectly well half-scrolled. Everything to
+                  the right is a control with a usable minimum size, and the blend slider in
+                  particular collapsed to a few pixels of track once the view switch stopped
+                  wrapping — a slider narrower than its own thumb is a rendering fault, not a
+                  tight fit. */}
+              <div className="min-w-0 flex-1 overflow-x-auto">
+                <ChannelTabs
+                  images={sample.images}
+                  active={activeIndex}
+                  onSelect={(index) => void openChannel(index)}
+                />
+              </div>
+              <div className="flex shrink-0 items-center gap-2">
+                {!perSample && (
+                  <Button
+                    icon={<Copy />}
+                    disabled={history.present.shapes.length === 0 || copyable.length === 0}
+                    title={
+                      history.present.shapes.length === 0
+                        ? "Draw a region first"
+                        : copyable.length === 0
+                          ? "No other channel of this part shares this source frame"
+                          : "Put these regions on the other channels of this part"
+                    }
+                    onClick={() => {
+                      // Only the channels that can actually receive it. A sibling of another
+                      // size is shown, disabled, with its dimensions — pre-ticking it would
+                      // arm a button whose only outcome is a 409.
+                      setCopyTargets(copyable.map((image) => image.id));
+                      setCopyOpen(true);
+                    }}
+                  >
+                    Copy to…
+                  </Button>
+                )}
                 {paneMode === "overlay" && (
-                  <div className="flex w-40 items-center gap-2">
-                    <span className="shrink-0 font-mono text-[10px] text-fg-subtle">
-                      {Math.round(overlayOpacity * 100)}%
-                    </span>
+                  <div className="flex w-56 shrink-0 items-center gap-2">
+                    <span className="shrink-0 text-[11px] text-fg-muted">Blend</span>
                     <Slider
                       aria-label="Overlay opacity"
                       value={overlayOpacity}
@@ -656,19 +1050,25 @@ function EditorReady({
                       max={1}
                       step={0.02}
                       onValueChange={setOverlayOpacity}
+                      readout={`${Math.round(overlayOpacity * 100)}%`}
                     />
                   </div>
                 )}
-                {paneMode !== "single" && reference && (
-                  <Select
-                    aria-label="Second channel"
-                    value={String(reference.id)}
-                    options={otherImages.map((image) => ({
-                      value: String(image.id),
-                      label: image.channel ?? "unassigned",
-                    }))}
-                    onValueChange={(value) => setReferenceId(Number(value))}
-                  />
+                {paneMode !== "single" && referenceIndex !== null && (
+                  // A fixed box, because `Select`'s trigger is `w-full` and would otherwise
+                  // bid for the row against the slider beside it.
+                  <div className="w-36 shrink-0">
+                    <Select
+                      aria-label="Second channel"
+                      value={String(referenceIndex)}
+                      options={sample.images.flatMap((image, index) =>
+                        index === activeIndex
+                          ? []
+                          : [{ value: String(index), label: image.channel ?? "unassigned" }],
+                      )}
+                      onValueChange={(value) => workspace.setReferenceIndex(Number(value))}
+                    />
+                  </div>
                 )}
                 <SegmentedControl
                   aria-label="Channel view"
@@ -690,13 +1090,14 @@ function EditorReady({
           imageId={imageId}
           overlayImageId={paneMode === "overlay" ? reference?.id : undefined}
           overlayOpacity={overlayOpacity}
+          maskOpacity={maskOpacity}
           label={`Annotation canvas — ${currentImage?.channel ?? "the sample"}`}
           document={history.present}
           labels={labels}
           selectedId={selectedId}
           tool={tool}
           pendingPoints={pendingPoints}
-          brushRadius={brushRadius}
+          brushSize={brushSize}
           assistMode={assistMode}
           assistPoints={assistPoints}
           assistBox={assistBox}
@@ -711,19 +1112,8 @@ function EditorReady({
               document: withPolygonPoint(history.present, shapeId, pointIndex, point),
             })
           }
-          onBrush={(points) => {
-            const shape = bitmapStroke({
-              points,
-              radius: brushRadius,
-              imageWidth: history.present.image_width,
-              imageHeight: history.present.image_height,
-              labelKey,
-              operation: tool === "eraser" ? "subtract" : operation,
-            });
-            if (!shape) return;
-            dispatch({ type: "commit", document: withShape(history.present, shape) });
-            setSelectedId(shape.id);
-          }}
+          onMoveShape={moveShape}
+          onBrush={(points) => void applyStroke(points)}
           onFinishPolygon={finishPolygon}
           onAssistPoint={(point) => {
             assist.reset();
@@ -736,20 +1126,40 @@ function EditorReady({
             setAssistBox(box);
           }}
         />
-            {paneMode === "compare" && reference && (
+            {paneMode === "compare" && reference && referenceDocument && (
               // A peer pane, not a second editor: it shares the one controlled `view`, so
               // panning or zooming either keeps both showing the same source pixels — which
               // is the entire point of putting two illuminations of one part side by side.
-              <div className="flex min-h-0 min-w-0 flex-1 border-l border-line">
+              //
+              // Editing happens in one pane, always the left one, so there is never a question
+              // of which document a stroke lands in. Wanting to draw on the right is answered
+              // by making it the left: `Edit this channel` swaps the two.
+              <div className="relative flex min-h-0 min-w-0 flex-1 border-l border-line">
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-2 p-2">
+                  <span className="rounded-control border border-line bg-surface/90 px-2 py-1 text-[11px] text-fg-muted shadow-panel backdrop-blur-sm">
+                    {reference.channel ?? "unassigned"}
+                    {!perSample &&
+                      ` · ${referenceDocument.shapes.length} region${referenceDocument.shapes.length === 1 ? "" : "s"}`}
+                  </span>
+                  {!perSample && (
+                    <span className="pointer-events-auto">
+                      <Button icon={<ArrowLeftRight />} onClick={() => void swapPanes()}>
+                        Edit this channel
+                      </Button>
+                    </span>
+                  )}
+                </div>
                 <AnnotationCanvas
                   imageId={reference.id}
+                  maskOpacity={maskOpacity}
+                  editable={false}
                   label={`Reference channel — ${reference.channel ?? "unassigned"}`}
                   document={referenceDocument}
                   labels={labels}
                   selectedId={null}
                   tool="select"
                   pendingPoints={[]}
-                  brushRadius={brushRadius}
+                  brushSize={brushSize}
                   assistMode="point"
                   assistPoints={[]}
                   assistBox={null}
@@ -759,6 +1169,7 @@ function EditorReady({
                   onSelect={() => undefined}
                   onPoint={() => undefined}
                   onMovePoint={() => undefined}
+                  onMoveShape={() => undefined}
                   onBrush={() => undefined}
                   onFinishPolygon={() => undefined}
                   onAssistPoint={() => undefined}
@@ -792,27 +1203,63 @@ function EditorReady({
               />
             </div>
             {pendingPoints.length > 0 && (
-              <div className="mt-2 flex items-center justify-between rounded-control bg-raised px-2 py-1.5 text-xs">
-                <span>{pendingPoints.length} vertices · Enter closes</span>
-                <Button size="sm" disabled={pendingPoints.length < 3} onClick={finishPolygon}>
-                  Close
-                </Button>
-              </div>
+              // A readout, not a control. Closing is a click on the first vertex or a
+              // double-click anywhere; a "Close" button in a side panel is neither where the
+              // hand is nor what a polygon tool is expected to need.
+              <p className="mt-2 rounded-control bg-raised px-2 py-1.5 text-xs text-fg-muted">
+                {pendingPoints.length} vertex{pendingPoints.length === 1 ? "" : "es"} ·{" "}
+                {pendingPoints.length < 3
+                  ? "three closes a ring"
+                  : "click the first vertex, double-click, or Enter"}{" "}
+                · Backspace undoes one
+              </p>
             )}
             {(tool === "brush" || tool === "eraser") && (
-              <div className="mt-3">
-                <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
-                  <span>Brush size</span>
-                  <span className="font-mono">{brushRadius}px</span>
+              <div className="mt-3 flex flex-col gap-2">
+                <div>
+                  <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
+                    <span>Brush size</span>
+                    <span className="font-mono">
+                      {brushSize} px {brushSize === 1 ? "· one pixel" : ""}
+                    </span>
+                  </div>
+                  {/* Slider *and* a number box: the useful values for correcting a mask are
+                      at the very bottom of a 128-step track, where a drag cannot reliably
+                      land on 1 rather than 2. The `,` and `.` keys do the same job with the
+                      other hand still on the canvas. */}
+                  <div className="flex items-center gap-2">
+                    <Slider
+                      aria-label="Brush size"
+                      value={brushSize}
+                      min={MIN_BRUSH_SIZE}
+                      max={MAX_BRUSH_SIZE}
+                      step={1}
+                      onValueChange={setBrushSize}
+                    />
+                    <NumberInput
+                      className="w-16 shrink-0"
+                      aria-label="Brush size in pixels"
+                      min={MIN_BRUSH_SIZE}
+                      max={MAX_BRUSH_SIZE}
+                      step={1}
+                      value={brushSize}
+                      onChange={(event) => setBrushSize(Number(event.target.value))}
+                    />
+                  </div>
                 </div>
-                <Slider
-                  aria-label="Brush size"
-                  value={brushRadius}
-                  min={2}
-                  max={96}
-                  step={1}
-                  onValueChange={setBrushRadius}
-                />
+                {/* The rule, where the hand is, because it is the one thing about this tool
+                    nobody can infer from looking at it. */}
+                <p className="text-[11px] leading-4 text-fg-subtle">
+                  {selected?.kind === "bitmap"
+                    ? tool === "eraser"
+                      ? "Erasing region " +
+                        `${history.present.shapes.indexOf(selected) + 1} only. Escape to erase across all of them.`
+                      : "Painting into region " +
+                        `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new one.`
+                    : tool === "eraser"
+                      ? "Nothing selected: this takes paint off whatever it passes over, and never adds a region."
+                      : "Nothing selected: this starts a new region. Strokes after it extend that one."}
+                </p>
               </div>
             )}
           </section>
@@ -965,6 +1412,54 @@ function EditorReady({
               </h2>
               <Badge tone="neutral">{history.present.shapes.length}</Badge>
             </div>
+
+            {/* Appearance, beside the regions it governs. The right weight depends on the
+                imagery: heavy enough to see over a bright specular surface is heavy enough to
+                hide the texture of a dark field. */}
+            <div className="mb-3 flex flex-col gap-2 rounded-control bg-raised/60 p-2">
+              <div className="flex items-center gap-2">
+                <span className="shrink-0 text-[11px] text-fg-muted">Mask</span>
+                <Slider
+                  aria-label="Mask opacity"
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  value={maskOpacity}
+                  onValueChange={setMaskOpacity}
+                  readout={`${Math.round(maskOpacity * 100)}%`}
+                />
+              </div>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {labels.map((label) => (
+                  <Tooltip key={label.key} content={`Colour of ${label.name}`}>
+                    <label
+                      className={cn(
+                        "flex cursor-pointer items-center gap-1.5 rounded-control px-1.5 py-1 text-[11px] text-fg-muted hover:bg-raised",
+                        focusRing,
+                      )}
+                    >
+                      <span
+                        className="size-3 shrink-0 rounded-full border border-line-strong"
+                        style={{ backgroundColor: label.color }}
+                      />
+                      <span className="max-w-24 truncate">{label.name}</span>
+                      <input
+                        type="color"
+                        value={label.color}
+                        aria-label={`Colour of ${label.name}`}
+                        disabled={recolour.isPending}
+                        // Committed on `change`, not on `input`: a colour picker streams every
+                        // value the pointer passes over, and each one would be a PUT.
+                        onChange={(event) =>
+                          recolour.mutate({ ...label, color: event.target.value })
+                        }
+                        className="size-0 opacity-0"
+                      />
+                    </label>
+                  </Tooltip>
+                ))}
+              </div>
+            </div>
             {history.present.shapes.length === 0 ? (
               <Empty>No editable regions. Choose Polygon or press P.</Empty>
             ) : (
@@ -998,7 +1493,10 @@ function EditorReady({
               Selection
             </h2>
             {!selected ? (
-              <p className="text-xs leading-5 text-fg-subtle">Select a region to edit its class or operation.</p>
+              <p className="text-xs leading-5 text-fg-subtle">
+                Select a region to edit its class or operation, drag it with Select, or nudge it
+                with the arrow keys.
+              </p>
             ) : (
               <div className="flex flex-col gap-2">
                 <Select
@@ -1019,6 +1517,10 @@ function EditorReady({
                   />
                   <Button variant="danger" icon={<Trash2 />} onClick={removeSelected} aria-label="Delete selected region" />
                 </div>
+                <p className="text-[11px] leading-4 text-fg-subtle">
+                  Drag to move · arrows nudge 1 px, Shift 10 px
+                  {selected.kind === "polygon" ? " · drag a vertex to reshape" : " · brush extends it"}
+                </p>
                 {selected.kind === "bitmap" && (
                   <Button
                     icon={<WandSparkles />}
@@ -1056,6 +1558,95 @@ function EditorReady({
           </footer>
         </aside>
       </div>
+
+      <Dialog
+        open={copyOpen}
+        onOpenChange={(open) => {
+          setCopyOpen(open);
+          if (!open) copyRegions.reset();
+        }}
+        title="Copy regions to other channels"
+        description={
+          <>
+            The {history.present.shapes.length} region
+            {history.present.shapes.length === 1 ? "" : "s"} on{" "}
+            {currentImage?.channel ?? "this channel"} are <em>added</em> to each channel you
+            pick. Nothing already there is replaced, and each copy is editable on its own —
+            the exposures are milliseconds apart, so a copy usually needs a nudge.
+          </>
+        }
+        footer={
+          <>
+            <Button onClick={() => setCopyOpen(false)}>Cancel</Button>
+            <Button
+              variant="primary"
+              icon={<Copy />}
+              loading={copyRegions.isPending || save.isPending}
+              disabled={copyTargets.length === 0}
+              onClick={() => void copyToChannels()}
+            >
+              Copy to {copyTargets.length} channel{copyTargets.length === 1 ? "" : "s"}
+            </Button>
+          </>
+        }
+      >
+        <div className="mt-3 flex flex-col gap-2">
+          {otherImages.map((image) => {
+            const held = siblingDrafts.get(image.id)?.document.shapes.length;
+            const sized =
+              currentImage !== undefined &&
+              (image.width !== currentImage.width || image.height !== currentImage.height);
+            return (
+              <Checkbox
+                key={image.id}
+                checked={copyTargets.includes(image.id)}
+                disabled={sized}
+                label={image.channel ?? "unassigned"}
+                description={
+                  sized
+                    ? `${image.width} × ${image.height} — an annotation never leaves its source frame`
+                    : held === undefined
+                      ? "…"
+                      : `${held} region${held === 1 ? "" : "s"} here already`
+                }
+                onCheckedChange={(checked) =>
+                  setCopyTargets((targets) =>
+                    checked
+                      ? [...targets, image.id]
+                      : targets.filter((target) => target !== image.id),
+                  )
+                }
+              />
+            );
+          })}
+          {copyRegions.error && <ErrorBox>{copyRegions.error.message}</ErrorBox>}
+        </div>
+      </Dialog>
+
+      <ConfirmDialog
+        open={confirmDiscard}
+        onOpenChange={setConfirmDiscard}
+        destructive
+        title="Discard this draft?"
+        description={
+          <>
+            {perSample
+              ? "Every channel of this part reopens on its newest completed truth, or on a blank canvas if it has none."
+              : "This image reopens on its newest completed truth, or on a blank canvas if it has none."}{" "}
+            Completed revisions are immutable and are not affected.
+            {discard.error && (
+              <span className="mt-2 block text-defect">
+                {discard.error.message}
+                {isConflict(discard.error) &&
+                  " Discarding now throws away whatever the other window saved."}
+              </span>
+            )}
+          </>
+        }
+        confirmLabel={isConflict(discard.error) ? "Discard anyway" : "Discard draft"}
+        loading={discard.isPending}
+        onConfirm={() => void discardCurrent(isConflict(discard.error))}
+      />
     </div>
   );
 }

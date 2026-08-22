@@ -3,7 +3,7 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
-import type { ExperimentDetail, JobSummary, TrainingState } from "../../api/client";
+import type { ExperimentDetail, JobDetail, JobSummary, TrainingState } from "../../api/client";
 import { RunBar } from "./RunBar";
 
 function detail(overrides: Partial<ExperimentDetail> = {}): ExperimentDetail {
@@ -139,6 +139,52 @@ describe("RunBar", () => {
     expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("42");
     expect(screen.getByText(/step 1680\/4000/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+
+  it("draws the live job row's progress, not the experiment payload's copy", () => {
+    /**
+     * The reported fault. `jobs` comes from `ExperimentDetail`, which a `progress` frame
+     * deliberately leaves alone — so the bar stood at whatever the last full refresh had
+     * seen while the job card below it, reading `["jobs", id]`, moved four times a second.
+     * On screen that was `step 421/8000` above and `step 461/8000` below, and it looked
+     * like a bar that only updated on remount.
+     */
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail()}
+        jobs={[job({ id: 7, status: "running", progress: 0.14, message: "step 421/8000" })]}
+        liveJob={
+          job({ id: 7, status: "running", progress: 0.31, message: "step 461/8000" }) as JobDetail
+        }
+        hasTrained
+        onFollow={noop}
+        onViewLog={noop}
+      />,
+    );
+
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("31");
+    expect(screen.getByText(/step 461\/8000/)).toBeTruthy();
+  });
+
+  it("ignores a live row that belongs to a different job", () => {
+    /** A subscription lagging one run behind must not label this run with its numbers. */
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail()}
+        jobs={[job({ id: 7, status: "running", progress: 0.14, message: "step 421/8000" })]}
+        liveJob={
+          job({ id: 6, status: "running", progress: 0.99, message: "step 7900/8000" }) as JobDetail
+        }
+        hasTrained
+        onFollow={noop}
+        onViewLog={noop}
+      />,
+    );
+
+    expect(screen.getByRole("progressbar").getAttribute("aria-valuenow")).toBe("14");
+    expect(screen.getByText(/step 421\/8000/)).toBeTruthy();
   });
 
   it("blocks a second run while one is live, since the queue runs one at a time", () => {

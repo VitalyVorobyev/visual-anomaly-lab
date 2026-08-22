@@ -104,6 +104,74 @@ export function withPolygonPoint(
   };
 }
 
+/**
+ * Move one region without deforming it.
+ *
+ * The offset is clamped once, against the shape's own extent, rather than per coordinate.
+ * Clamping each point independently would let a polygon pushed against an edge collapse
+ * against it, one vertex at a time, and a document that had been merely dragged too far would
+ * come back a different shape.
+ *
+ * Moving a region is not a nicety here: a copy taken from another channel of the same part
+ * lands a few pixels out, because the exposures are milliseconds apart on a moving line.
+ */
+export function translateShape(
+  document: AnnotationDocument,
+  shapeId: string,
+  dx: number,
+  dy: number,
+): AnnotationDocument {
+  const shape = document.shapes.find((candidate) => candidate.id === shapeId);
+  if (!shape) return document;
+
+  const extent =
+    shape.kind === "polygon"
+      ? {
+          minX: Math.min(...shape.points.map((point) => point.x)),
+          minY: Math.min(...shape.points.map((point) => point.y)),
+          maxX: Math.max(...shape.points.map((point) => point.x)),
+          maxY: Math.max(...shape.points.map((point) => point.y)),
+        }
+      : {
+          minX: shape.x,
+          minY: shape.y,
+          maxX: shape.x + shape.width,
+          maxY: shape.y + shape.height,
+        };
+  const offsetX = clamp(dx, -extent.minX, document.image_width - extent.maxX);
+  const offsetY = clamp(dy, -extent.minY, document.image_height - extent.maxY);
+  if (offsetX === 0 && offsetY === 0) return document;
+
+  return {
+    ...document,
+    shapes: document.shapes.map((candidate) => {
+      if (candidate.id !== shapeId) return candidate;
+      if (candidate.kind === "polygon") {
+        return {
+          ...candidate,
+          points: candidate.points.map((point) => ({
+            x: point.x + offsetX,
+            y: point.y + offsetY,
+          })),
+        } satisfies PolygonShape;
+      }
+      // A bitmap's crop is integer source pixels, so the offset it can take is too.
+      return {
+        ...candidate,
+        x: candidate.x + Math.round(offsetX),
+        y: candidate.y + Math.round(offsetY),
+      };
+    }),
+  };
+}
+
+function clamp(value: number, min: number, max: number): number {
+  // A shape wider than the frame cannot satisfy both bounds; refusing to move it at all is
+  // better than picking one edge to snap it to.
+  if (min > max) return 0;
+  return Math.min(max, Math.max(min, value));
+}
+
 export function isPolygon(shape: AnnotationShape): shape is PolygonShape {
   return shape.kind === "polygon";
 }

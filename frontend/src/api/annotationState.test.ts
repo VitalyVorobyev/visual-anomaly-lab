@@ -5,6 +5,7 @@ import {
   createHistory,
   historyReducer,
   replaceShape,
+  translateShape,
   withPolygonPoint,
   withShape,
   withoutShape,
@@ -64,5 +65,62 @@ describe("annotation history", () => {
       "hole",
       "p2",
     ]);
+  });
+});
+
+describe("translateShape", () => {
+  const bitmap = {
+    id: "b1",
+    label_key: "defect",
+    kind: "bitmap" as const,
+    operation: "add" as const,
+    x: 4,
+    y: 2,
+    width: 6,
+    height: 4,
+    png_base64: "",
+  };
+
+  it("offsets every vertex of a polygon by the same amount", () => {
+    const moved = translateShape(withShape(empty, polygon), "p1", 3, 2);
+    expect((moved.shapes[0] as PolygonShape).points).toEqual([
+      { x: 4, y: 3 },
+      { x: 8, y: 3 },
+      { x: 6, y: 7 },
+    ]);
+  });
+
+  it("clamps the offset once, so a shape pushed at an edge keeps its shape", () => {
+    // The polygon spans x 1..5 in a 20 px frame, so the most it can move left is 1 px.
+    // Clamping each vertex on its own would flatten the left edge against x=0 and leave a
+    // different triangle behind.
+    const moved = translateShape(withShape(empty, polygon), "p1", -50, 0);
+    expect((moved.shapes[0] as PolygonShape).points).toEqual([
+      { x: 0, y: 1 },
+      { x: 4, y: 1 },
+      { x: 2, y: 5 },
+    ]);
+  });
+
+  it("keeps a bitmap crop on integer source pixels", () => {
+    const moved = translateShape({ ...empty, shapes: [bitmap] }, "b1", 2.6, -1.4);
+    expect(moved.shapes[0]).toMatchObject({ x: 7, y: 1 });
+  });
+
+  it("stops a bitmap at the far edge of the frame", () => {
+    const moved = translateShape({ ...empty, shapes: [bitmap] }, "b1", 100, 100);
+    expect(moved.shapes[0]).toMatchObject({ x: 14, y: 6 });
+  });
+
+  it("returns the same document for an unknown shape or a zero move", () => {
+    const document = withShape(empty, polygon);
+    expect(translateShape(document, "nope", 5, 5)).toBe(document);
+    expect(translateShape(document, "p1", 0, 0)).toBe(document);
+  });
+
+  it("refuses to move a shape that cannot fit rather than snapping it to an edge", () => {
+    const wide = { ...bitmap, x: 0, y: 0, width: 40, height: 40 };
+    const document = { ...empty, shapes: [wide] };
+    expect(translateShape(document, "b1", 5, 5)).toBe(document);
   });
 });

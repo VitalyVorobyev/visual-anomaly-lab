@@ -179,15 +179,19 @@ TEST_NORMALS = 3
 TEST_DEFECTS = 3
 
 
-def _gradient(seed: int) -> np.ndarray:
+def _gradient(seed: int, width: int = FIXTURE_SIZE, height: int = FIXTURE_SIZE) -> np.ndarray:
     generator = np.random.default_rng(seed)
-    base = np.linspace(40, 200, FIXTURE_SIZE * FIXTURE_SIZE).reshape(FIXTURE_SIZE, FIXTURE_SIZE)
-    return np.clip(base + generator.normal(0, 3, size=(FIXTURE_SIZE, FIXTURE_SIZE)), 0, 255)
+    base = np.linspace(40, 200, width * height).reshape(height, width)
+    return np.clip(base + generator.normal(0, 3, size=(height, width)), 0, 255)
 
 
-def write_normal_image(path: Path, seed: int) -> None:
+def write_normal_image(
+    path: Path, seed: int, *, size: tuple[int, int] = (FIXTURE_SIZE, FIXTURE_SIZE)
+) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    Image.fromarray(_gradient(seed).astype(np.uint8), mode="L").convert("RGB").save(path)
+    width, height = size
+    array = _gradient(seed, width, height).astype(np.uint8)
+    Image.fromarray(array, mode="L").convert("RGB").save(path)
 
 
 def write_defect_image(path: Path, mask_path: Path, seed: int) -> None:
@@ -200,6 +204,72 @@ def write_defect_image(path: Path, mask_path: Path, seed: int) -> None:
     mask[5:10, 5:10] = 255
     mask_path.parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(mask, mode="L").save(mask_path)
+
+
+# ------------------------------------------------------- a multi-shot capture group
+#
+# Shared for the same reason as the block above: sample-scoped editing and copying
+# regions between channels both need a part photographed more than once, and neither can
+# use `seeded`, whose samples hold a single image and whose defect images carry an
+# imported source mask.
+
+CHANNELS = ("bright", "dark", "dome")
+# The recorded frame is the generated file's real size, so a test that does reach for the
+# pixels finds the dimensions the catalogue promised.
+FRAME = (FIXTURE_SIZE, FIXTURE_SIZE)
+
+
+def multishot_dataset(
+    settings: Settings,
+    root: Path,
+    *,
+    name: str = "multishot",
+    samples_count: int = 2,
+    channels: tuple[str, ...] = CHANNELS,
+    frames: dict[str, tuple[int, int]] | None = None,
+) -> tuple[int, list[int], dict[int, list[int]]]:
+    """A dataset of multi-channel samples with no imported masks.
+
+    `frames` overrides one channel's dimensions, for the tests that need a capture group
+    whose exposures do *not* share a source frame — the condition both sample scope and
+    copying regions refuse.
+    """
+    sizes = frames or {}
+    with connection(settings.db_path) as conn:
+        dataset = datasets.create_dataset(conn, name=name, root_path=str(root))
+        channel_ids = [
+            datasets.upsert_channel(conn, dataset.id, name=channel, position=index).id
+            for index, channel in enumerate(channels)
+        ]
+        sample_ids: list[int] = []
+        images_by_sample: dict[int, list[int]] = {}
+        for index in range(samples_count):
+            sample, _ = samples.upsert_sample(
+                conn,
+                dataset.id,
+                group_key="all",
+                external_id=f"part-{index}",
+                label=Label.DEFECT,
+            )
+            sample_ids.append(sample.id)
+            images_by_sample[sample.id] = []
+            for channel_id, channel in zip(channel_ids, channels, strict=True):
+                width, height = sizes.get(channel, FRAME)
+                path = root / channel / f"{index}.png"
+                write_normal_image(path, index * 10 + channel_id, size=(width, height))
+                image, _ = images.upsert_image(
+                    conn,
+                    sample.id,
+                    channel_id=channel_id,
+                    path=str(path),
+                    width=width,
+                    height=height,
+                    bit_depth=24,
+                    file_size=path.stat().st_size,
+                    sha256=f"sha-{index}-{channel}",
+                )
+                images_by_sample[sample.id].append(image.id)
+    return dataset.id, sample_ids, images_by_sample
 
 
 @dataclass(frozen=True)
