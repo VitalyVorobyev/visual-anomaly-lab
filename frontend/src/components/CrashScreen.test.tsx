@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 
-import { CrashBoundary, installCrashHandlers } from "./CrashScreen";
+import { CrashBoundary, CrashScreen, installCrashHandlers } from "./CrashScreen";
 
 afterEach(() => {
   cleanup();
@@ -11,6 +11,29 @@ afterEach(() => {
 function Throws(): never {
   throw new Error("Failed to fetch dynamically imported module: AnnotationEditorRoute");
 }
+
+describe("CrashScreen", () => {
+  it("names the failure it is actually reporting, not always the window", () => {
+    render(
+      <CrashScreen
+        headline="The lab could not start its backend."
+        message="`uv` was not found, so the backend could not be started."
+        detail={"Searched:\n  /usr/bin/uv\n  /Users/someone/.local/bin/uv"}
+      />,
+    );
+
+    const panel = screen.getByRole("alert");
+    expect(panel.textContent).toContain("The lab could not start its backend.");
+    expect(panel.textContent).toContain("`uv` was not found");
+    expect(panel.textContent).toContain("/Users/someone/.local/bin/uv");
+  });
+
+  it("keeps the window headline when none is given", () => {
+    render(<CrashScreen message="something threw" />);
+
+    expect(screen.getByRole("alert").textContent).toContain("could not draw its window");
+  });
+});
 
 describe("CrashBoundary", () => {
   it("shows what was thrown, where React 19 would otherwise unmount the root", () => {

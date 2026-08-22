@@ -13,6 +13,12 @@
  * picker and the browser offers a text field, and neither is a special case of the other.
  */
 
+/** Why the shell has no backend to offer. Present only when startup failed. */
+export interface ShellStartupError {
+  message: string;
+  detail?: string;
+}
+
 declare global {
   interface Window {
     __ANOMALY_LAB__?: {
@@ -21,8 +27,23 @@ declare global {
       pickDirectory?: () => Promise<string | null>;
       /** Show a path in the OS file manager. Rejects for a path outside `data/`. */
       revealPath?: (path: string) => Promise<void>;
+      /** Set *instead of* the capabilities above when the backend could not be started. */
+      startupError?: ShellStartupError;
     };
   }
+}
+
+/**
+ * The backend never came up, and the window exists only to say so.
+ *
+ * The shell builds a window either way — on macOS its setup hook runs inside an
+ * Objective-C callback, where returning an error aborts the process and shows nothing at
+ * all. So a failed start arrives here, and `main.tsx` paints it instead of mounting a
+ * workbench that would fetch from a port nothing is listening on.
+ */
+export function shellStartupError(): ShellStartupError | null {
+  const failure = globalThis.window?.__ANOMALY_LAB__?.startupError;
+  return typeof failure?.message === "string" ? failure : null;
 }
 
 export function hasDirectoryPicker(): boolean {
