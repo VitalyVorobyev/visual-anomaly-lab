@@ -64,13 +64,16 @@ function asError(thrown: unknown): Error {
 export function CrashScreen({
   message,
   detail,
+  headline = HEADLINE,
 }: {
   message: string;
   detail?: string | null;
+  /** Overridden for a failure that is not the window's own — a backend that never started. */
+  headline?: string;
 }) {
   return (
     <div style={PANEL} role="alert">
-      <h1 style={TITLE}>{HEADLINE}</h1>
+      <h1 style={TITLE}>{headline}</h1>
       <p style={MESSAGE}>{message}</p>
       {detail != null && detail !== "" && <pre style={DETAIL}>{detail}</pre>}
     </div>

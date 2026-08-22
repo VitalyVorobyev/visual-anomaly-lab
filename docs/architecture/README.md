@@ -143,6 +143,13 @@ by the shell, falling back to a dev default (`http://127.0.0.1:8000`) so the sam
 
 **Tauri shell (Rust).** Thin desktop wrapper. Its entire job is process lifecycle (ADR-0003):
 
+- **find `uv` by absolute path, never by `PATH` alone.** An app launched from Finder is started by
+  launchd, and `launchctl getenv PATH` is empty on a stock machine: the process inherits
+  `/usr/bin:/bin:/usr/sbin:/sbin`, which contains no `uv`. The shell therefore tries
+  `ANOMALY_LAB_SIDECAR_CMD` first, then every `PATH` entry, then `~/.local/bin` (uv's own default)
+  and the Homebrew and MacPorts directories, and reports every path it tried when none holds an
+  executable. It also checks the checkout is still where the build recorded it, since that path is
+  baked in at compile time;
 - **spawn the FastAPI sidecar** as a child process with the data directory in its environment and
   `ANOMALY_LAB_PORT=0`, then **read the port back from the child**. The sidecar binds the socket itself and
   announces `{"ev":"ready","port":N,"pid":N}` as one JSON line on stdout, in the ADR-0009 event envelope.
@@ -152,6 +159,12 @@ by the shell, falling back to a dev default (`http://127.0.0.1:8000`) so the sam
 - **build the window only once the sidecar is ready**, injecting the base URL as `window.__ANOMALY_LAB__`
   before the page loads. The UI therefore never renders against a URL that does not exist yet and needs no
   retry-on-boot logic (ADR-0012);
+- **build the window anyway when the backend did not start**, injecting `startupError` — the cause, the
+  paths searched and the backend's own last lines of output — in place of the capabilities, for the page
+  to paint ([frontend](frontend.md)). Nothing in the setup hook may return an error: on macOS it runs
+  inside `did_finish_launching`, an Objective-C callback an unwind may not cross, so Tauri's `panic!` on
+  a setup failure becomes `abort()` — a crash report, no window, and a packaged app's stderr going
+  nowhere to explain it;
 - **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the sidecar
   in turn terminates any running job worker. Closing the last window quits the application, since macOS
   would otherwise keep it alive with a sidecar serving a window that no longer exists.

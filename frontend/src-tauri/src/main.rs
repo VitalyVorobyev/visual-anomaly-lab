@@ -9,7 +9,7 @@ use std::sync::Mutex;
 use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_dialog::DialogExt;
 
-use crate::sidecar::Sidecar;
+use crate::sidecar::{Sidecar, StartupError};
 
 struct SidecarState(Mutex<Option<Sidecar>>);
 
@@ -96,6 +96,39 @@ fn data_root() -> PathBuf {
     repo_root().join("data")
 }
 
+/// The globals a working shell injects.
+///
+/// Everything the shell offers is *injected*, never imported: that is what keeps
+/// `frontend/src/` free of any Tauri dependency, so the same bundle runs in a plain browser
+/// (§2, ADR-0014). The UI feature-detects `pickDirectory` and falls back to a text field
+/// when it is absent.
+fn ready_script(base_url: &str) -> String {
+    format!(
+        "window.__ANOMALY_LAB__ = {{ \
+           apiBaseUrl: {}, \
+           pickDirectory: () => window.__TAURI_INTERNALS__.invoke('pick_directory'), \
+           revealPath: (path) => \
+             window.__TAURI_INTERNALS__.invoke('reveal_path', {{ path }}) \
+         }};",
+        serde_json::Value::String(base_url.to_owned())
+    )
+}
+
+/// The globals a shell with no backend injects instead.
+///
+/// The window is built either way, and this is why: on macOS the setup hook runs inside
+/// `did_finish_launching`, an Objective-C callback an unwind may not cross, so Tauri's
+/// `panic!` on a setup `Err` becomes `abort()` — a crash report and no window at all. The
+/// page reads this and paints the reason instead of the workbench, which is the only way a
+/// packaged app can say anything: its stderr is written to nothing.
+fn failure_script(failure: &StartupError) -> String {
+    let payload = serde_json::json!({
+        "message": failure.message,
+        "detail": failure.detail,
+    });
+    format!("window.__ANOMALY_LAB__ = {{ startupError: {payload} }};")
+}
+
 fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
@@ -104,29 +137,34 @@ fn main() {
             // Start the backend first: the window is built only once the sidecar has
             // announced its port, so the UI never renders against a URL that does not
             // exist yet and needs no retry-on-boot logic.
-            let sidecar = Sidecar::spawn(&repo_root())?;
+            //
+            // Nothing in here may return `Err`. See `failure_script`.
+            let script = match Sidecar::spawn(&repo_root()) {
+                Ok(sidecar) => {
+                    let script = ready_script(&sidecar.base_url);
+                    // Managed before the window exists, so that a window that fails to
+                    // build still leaves the sidecar reachable by the teardown handler.
+                    app.manage(SidecarState(Mutex::new(Some(sidecar))));
+                    script
+                }
+                Err(failure) => {
+                    eprintln!("[shell] {}\n{}", failure.message, failure.detail);
+                    failure_script(&failure)
+                }
+            };
 
-            // Everything the shell offers is *injected*, never imported: that is what
-            // keeps `frontend/src/` free of any Tauri dependency, so the same bundle runs
-            // in a plain browser (§2, ADR-0014). The UI feature-detects `pickDirectory`
-            // and falls back to a text field when it is absent.
-            let script = format!(
-                "window.__ANOMALY_LAB__ = {{ \
-                   apiBaseUrl: {}, \
-                   pickDirectory: () => window.__TAURI_INTERNALS__.invoke('pick_directory'), \
-                   revealPath: (path) => \
-                     window.__TAURI_INTERNALS__.invoke('reveal_path', {{ path }}) \
-                 }};",
-                serde_json::to_string(&sidecar.base_url)?
-            );
-
-            WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
+            if let Err(error) = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
                 .title("visual-anomaly-lab")
                 .inner_size(1280.0, 860.0)
                 .initialization_script(&script)
-                .build()?;
+                .build()
+            {
+                // There is nothing left to show a message with, so exit rather than
+                // propagate: an `Err` from here aborts the process instead of ending it.
+                eprintln!("[shell] could not create the window: {error}");
+                app.handle().exit(1);
+            }
 
-            app.manage(SidecarState(Mutex::new(Some(sidecar))));
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -157,4 +195,45 @@ fn main() {
 
         _ => {}
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A malformed script is another black window: the page would die on a syntax error
+    /// before it could read the very thing that explains why it has no backend.
+    #[test]
+    fn a_failure_script_survives_quotes_newlines_and_backslashes() {
+        let failure = StartupError {
+            message: "`uv` was not found, so the backend could not be started.".to_owned(),
+            detail: "Searched:\n  C:\\uv\n  \"/usr/bin/uv\"\n</script>".to_owned(),
+        };
+
+        let script = failure_script(&failure);
+        let payload = script
+            .strip_prefix("window.__ANOMALY_LAB__ = { startupError: ")
+            .and_then(|rest| rest.strip_suffix(" };"))
+            .expect("the script assigns exactly one object");
+
+        let parsed: serde_json::Value =
+            serde_json::from_str(payload).expect("the payload is valid JSON");
+        assert_eq!(parsed["message"], failure.message.as_str());
+        assert_eq!(parsed["detail"], failure.detail.as_str());
+        assert!(
+            !script.contains('\n'),
+            "a raw newline would break the script"
+        );
+    }
+
+    #[test]
+    fn a_ready_script_quotes_the_base_url() {
+        let script = ready_script("http://127.0.0.1:54321");
+        assert!(
+            script.contains("apiBaseUrl: \"http://127.0.0.1:54321\""),
+            "{script}"
+        );
+        assert!(script.contains("pickDirectory"));
+        assert!(!script.contains("startupError"));
+    }
 }
