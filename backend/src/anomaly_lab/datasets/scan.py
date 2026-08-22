@@ -86,7 +86,7 @@ def run_scan_job(context: JobContext) -> dict[str, Any]:
     manifest = adapter.scan(root, options, dataset_name=params.dataset_name, progress=report)
     if identity != root:
         # `root_path` is the dataset's stable identity -- it is `UNIQUE`, and commit
-        # resolves against it to make a re-import idempotent (ADR-0013). One capture tree
+        # resolves against it to make a re-import idempotent (handbook import.md). One capture tree
         # can legitimately hold several datasets: VisA's twelve object classes already do
         # this internally, and a rig that photographs two product variants into one
         # channel-first tree needs exactly the same separation. Recording the walk root

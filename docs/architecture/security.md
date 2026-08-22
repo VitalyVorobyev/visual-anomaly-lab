@@ -8,7 +8,7 @@ This is a single-user, local research tool, and the security model is stated pla
   a loopback-only single-user process would add ceremony without changing the threat model. This is a
   deliberate, documented decision (ADR-0003) — the API must not be exposed beyond loopback without revisiting
   it.
-- **Private data contract (ADR-0022, superseding ADR-0001).** Source images never enter the repository
+- **Private data contract (ADR-0022).** Source images never enter the repository
   or leave the machine:
   - they live **outside the working tree**, so `git add -A` cannot reach them at all;
   - `*.bmp` / `*.BMP` are gitignored, as is `data/` — and `privatedata/` still is, in case the

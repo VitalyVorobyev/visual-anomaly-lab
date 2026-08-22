@@ -9,7 +9,7 @@ stays a transport.
 aggregation and every metric come from an inference job, and a browse request that quietly
 updated one row would put a number on the results screen that no run produced (ADR-0011).
 What survives a request is the diagnostics the model emitted, in the index, marked
-`on_demand` (ADR-0027).
+`on_demand` (handbook diagnostics.md).
 """
 
 from __future__ import annotations

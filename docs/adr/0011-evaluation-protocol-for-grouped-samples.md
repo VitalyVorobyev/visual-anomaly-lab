@@ -29,7 +29,7 @@ classical baseline, the anomalib wrappers, and any future method.
   worse. `mean` is available as a configuration option, and the choice is **recorded with the
   experiment** so results remain interpretable.
   **Caveat:** `max` assumes per-channel scores are comparable. That holds for the z-scored classical
-  baseline (ADR-0010), whose scores are normalized against per-channel references by construction.
+  baseline (handbook methods.md), whose scores are normalized against per-channel references by construction.
   It is *not* guaranteed for the deep-learning methods, where one channel's score distribution may
   simply sit higher and dominate every maximum. **Per-channel quantile normalization before
   aggregation is a backlog item**, not a shipped feature.

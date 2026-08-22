@@ -99,7 +99,7 @@ export function BenchmarkTab({
             {/* Stating the gap rather than leaving a reader to wonder where it went. */}
             Pixel-level curves are not drawn. The pixel metrics stream their histograms
             and discard them so memory stays constant in the number of test images
-            (ADR-0017); reconstructing the curve would mean re-reading every anomaly map.
+            (handbook evaluation.md); reconstructing the curve would mean re-reading every anomaly map.
             The pixel ROC-AUC and AU-PRO themselves are on the Overview tab.
           </p>
         )}

@@ -91,7 +91,7 @@ STATE_FILENAME = "efficientad_custom.pt"
 
 CHECKPOINT_FORMAT = 1
 """There is no format 0. This method owns its checkpoint from the first commit, so it can
-carry everything a continuation needs (**ADR-0025**) without a legacy shape to refuse."""
+carry everything a continuation needs (**handbook jobs.md**) without a legacy shape to refuse."""
 
 DEFAULT_MAX_STEPS = 4000
 """The paper trains for 70000, about two and a half hours here at the measured 123 ms/step.
@@ -263,7 +263,7 @@ class EfficientAdCustomModel(AnomalyModel):
         self._fitted_size: tuple[int, int] | None = None
         self._teacher: str | None = None
         """Which teacher this student was distilled against; None if it predates recording."""
-        # Everything below is what a continuation needs (ADR-0025), held on the instance
+        # Everything below is what a continuation needs (handbook jobs.md), held on the instance
         # because `save` runs after `fit` returns and has no other way to reach it.
         self._optimizer_state: Any = None
         self._scheduler_state: Any = None
@@ -499,7 +499,7 @@ class EfficientAdCustomModel(AnomalyModel):
         self._capture_resume_state(optimizer, scheduler, penalty, torch)
 
     def completed_steps(self) -> int:
-        """Steps trained so far, across every run (ADR-0025)."""
+        """Steps trained so far, across every run (handbook jobs.md)."""
         return self._completed
 
     def fit_more(
@@ -693,7 +693,7 @@ class EfficientAdCustomModel(AnomalyModel):
 
         **Steps reported to `ctx.metric` are absolute across the experiment's training**, so
         a continued run's curve is a continuation of the first rather than a second curve
-        starting at zero — no stitching in the chart and no extra log reads (**ADR-0020**).
+        starting at zero — no stitching in the chart and no extra log reads (**handbook jobs.md**).
         """
         import torch
 
@@ -903,7 +903,8 @@ class EfficientAdCustomModel(AnomalyModel):
 
         Every module is recorded through the shared helper in `models/introspect.py`, so
         this method contributes only *which roots to walk* and *how they are wired*
-        (**ADR-0024**). That this needed no change to the helper is the evidence for M6's
+        (**handbook diagnostics.md**). That this needed no change to the helper is the
+        evidence for M6's
         third exit criterion.
         """
         if not ctx.diagnostics.enabled:

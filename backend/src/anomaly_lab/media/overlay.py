@@ -244,7 +244,8 @@ def render_prediction_region(
     and disagreement reads as the two coming apart.
 
     `threshold` is in **map units** and is a *display* decision, not an evaluation one.
-    Nothing here feeds a metric: the pixel metrics integrate over every threshold (ADR-0017)
+    Nothing here feeds a metric: the pixel metrics integrate over every threshold
+    (handbook evaluation.md)
     and the sample-score threshold on the results screen classifies whole samples, not
     pixels. Keeping this parameter explicit and in the map's own units is what stops the
     three being confused for each other.

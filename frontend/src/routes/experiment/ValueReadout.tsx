@@ -8,7 +8,7 @@
  * transform so the pointer stays in source coordinates; outside the prepared crop there
  * is deliberately no value. For a multi-channel dataset every plane remains available.
  *
- * Both come from float32 planes fetched once per image and indexed locally (ADR-0023). No
+ * Both come from float32 planes fetched once per image and indexed locally (handbook diagnostics.md). No
  * colour is ever inverted: the colormap clips and quantizes, so the inverse is multi-valued
  * and would report a *display* quantity rather than a measurement.
  */

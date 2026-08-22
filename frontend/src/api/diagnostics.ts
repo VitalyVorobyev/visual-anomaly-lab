@@ -61,7 +61,7 @@ export function imageScoped(
  *
  * `origin` narrows it to one producer. The distinction is load-bearing rather than
  * cosmetic: the run's images are a *sample* whose size the budget explains, and the
- * on-demand ones are questions somebody asked (ADR-0027). Counting them together produces
+ * on-demand ones are questions somebody asked (handbook diagnostics.md). Counting them together produces
  * a number larger than the stated budget, which reads as a cap that does not work.
  */
 export function diagnosedImageIds(

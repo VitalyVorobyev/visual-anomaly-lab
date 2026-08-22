@@ -53,7 +53,7 @@ Negative consequences, accepted honestly:
   anomalib imports before doing any work. For a short inference on a handful of images, that
   overhead dominates the actual computation.
 - **Serialization is a real limit.** A queued job waits for a long training run to finish even when
-  it is a CPU-only classical baseline (ADR-0010) that would not have contended at all. There is no
+  it is a CPU-only classical baseline (handbook methods.md) that would not have contended at all. There is no
   priority lane and no way to jump the queue.
 - **stdout is a fragile channel.** Any library that prints to stdout — a progress bar, a warning,
   a `print` left in a model — corrupts the event stream. Workers must redirect stray output to

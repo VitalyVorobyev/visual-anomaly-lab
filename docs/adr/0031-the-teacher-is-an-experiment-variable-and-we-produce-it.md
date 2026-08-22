@@ -95,7 +95,7 @@ the better teacher was also six times more stable.
   the teacher becomes measurable, and that DINOv2 becomes reachable — not that the first one
   wins.
 - **Two teachers is a comparison axis that did not exist**, and it interacts with every other
-  hypothesis in `measurements-efficientad.md`. One result has already had to be withdrawn
+  hypothesis in `measurements.md`. One result has already had to be withdrawn
   because of it: the score-aggregation sweep found no effect under the weaker teacher and a
   0.125 effect under the better one. A null result is only evidence about the configuration it
   was measured in.

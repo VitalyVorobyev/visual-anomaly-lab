@@ -23,11 +23,11 @@ code does and the record is right about what was chosen** (ADR-0030).
 
 Sequencing of the work is in [`roadmap.md`](../roadmap.md); the task breakdown is in
 [`backlog.md`](../backlog.md); measurement logs are in
-[`measurements-efficientad.md`](../measurements-efficientad.md) and
-[`measurements-region-profiles.md`](../measurements-region-profiles.md);
+[`measurements.md`](../measurements.md) and
+[`measurements.md`](../measurements.md);
 M11's modern-method resource and benchmark evidence begins in
-[`measurements-dinomaly.md`](../measurements-dinomaly.md) and continues in
-[`measurements-glass.md`](../measurements-glass.md);
+[`measurements.md`](../measurements.md) and continues in
+[`measurements.md`](../measurements.md);
 producing an EfficientAD teacher rather than downloading one is in
 [`teacher-distillation.md`](../teacher-distillation.md).
 
@@ -59,7 +59,7 @@ The workbench supports one loop, end to end:
 The brief's scope constraints are binding. The system deliberately does **not** implement:
 
 - production-line integration or automatic accept/reject decisions,
-- authentication, user accounts or multi-user access (ADR-0001, [security and privacy](security.md)),
+- authentication, user accounts or multi-user access (ADR-0022, [security and privacy](security.md)),
 - cloud deployment or remote compute — everything runs on the local machine,
 - distributed or multi-node training,
 - real-time camera acquisition,
@@ -71,11 +71,11 @@ user, one machine, one job at a time.
 ## Design constraints that shape everything below
 
 1. **Dataset-agnostic core, dataset-specific baseline.** The classical baseline may exploit the part's
-   circular geometry (ADR-0010); the domain model, import layer, DL methods and evaluation layer must not. In
+   circular geometry (handbook methods.md); the domain model, import layer, DL methods and evaluation layer must not. In
    particular the number of acquisition channels is **never** hard-coded — it is per-dataset data (ADR-0005).
 2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images. Labels
    and split membership live on the *sample*, never on the image, so all views of a part always share a subset.
-3. **Private data never leaves the machine** (ADR-0022, superseding ADR-0001). Source images live
+3. **Private data never leaves the machine** (ADR-0022). Source images live
    **outside the repository working tree** and are referenced in place, read-only, never copied into
    tracked paths. Git cannot stage what is not under the working directory, so the commonest
    catastrophic mistake is structurally unavailable rather than guarded against.

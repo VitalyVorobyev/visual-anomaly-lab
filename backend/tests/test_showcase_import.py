@@ -124,7 +124,7 @@ def test_no_two_files_share_content(manifest: Manifest) -> None:
 
 
 def test_the_labelled_corpus_is_selected_by_an_exclude_option_alone() -> None:
-    """Narrowing scope is configuration, not a code path (ADR-0013).
+    """Narrowing scope is configuration, not a code path (handbook import.md).
 
     The unlabelled area has no clean defect / no-defect split, so experiments run on the
     labelled corpus only. That choice travels in the manifest, so a re-scan proposes the

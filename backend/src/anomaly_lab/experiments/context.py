@@ -4,7 +4,7 @@ The two handlers need the same five things — the experiment, its plugin, a res
 device, an artifact directory and a diagnostics writer — so the assembly lives here once
 rather than being copied into both.
 
-This module is also where the injection boundary of ADR-0014 is actually enforced: a
+This module is also where the injection boundary of handbook frontend.md is actually enforced: a
 `JobContext` goes in, a `ModelContext` comes out, and the plugin on the far side has no
 route back to settings, to SQLite, or to the queue.
 """

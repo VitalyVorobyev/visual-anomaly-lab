@@ -1,4 +1,4 @@
-"""Reading a run's scalar series back out of its log (ADR-0020).
+"""Reading a run's scalar series back out of its log (handbook jobs.md).
 
 `metric` events are streamed and tee'd, never stored in a column. That is enough for a
 live chart and not enough for a chart that survives a reload, so the history is recovered

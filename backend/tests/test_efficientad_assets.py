@@ -312,7 +312,7 @@ def test_the_penalty_stream_is_a_permutation_not_sampling_with_replacement(tmp_p
 def test_the_penalty_order_survives_a_checkpoint(tmp_path: Path) -> None:
     """The improvement over the wrapper, whose penalty sequence restarts on every resume.
 
-    ADR-0025 recorded that restart as an accepted cost. Recording the order costs four
+    handbook jobs.md recorded that restart as an accepted cost. Recording the order costs four
     numbers, so it is not a cost worth accepting here.
     """
     cache = tmp_path / "cache"

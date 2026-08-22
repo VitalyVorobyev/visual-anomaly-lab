@@ -56,7 +56,7 @@ commit and push. The guard rejects private/public dataset paths, model artifacts
 
 ## Evidence and docs
 
-Measurement logs under `docs/measurements-*.md` contain full protocols and limitations. Checked plot/table
+The evidence log at `docs/measurements.md` contains full protocols and limitations. Checked plot/table
 inputs live in `docs/benchmarks/results.json`. Run `scripts/build-book.py`; do not edit
 `docs/book/generated/` by hand. CI regenerates, rejects drift, and builds the mdBook.
 

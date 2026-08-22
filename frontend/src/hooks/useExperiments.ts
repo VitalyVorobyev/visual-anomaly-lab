@@ -133,7 +133,7 @@ export function useStartRun(experimentId: number) {
     }: {
       kind: "train" | "infer";
       subsets?: Subset[];
-      /** Continue the stored model instead of retraining it (ADR-0025). */
+      /** Continue the stored model instead of retraining it (handbook jobs.md). */
       additionalSteps?: number;
     }) => {
       const result =
@@ -394,7 +394,7 @@ export function useDeleteExperiment() {
  * Deliberately without an optimistic update: the honest thing on screen while this runs is
  * "the first request loads the model", not a pane that will appear. The whole index is
  * refetched on success because an on-demand emission can widen a key's display range
- * (ADR-0027), which changes how every *other* pane of that key is drawn.
+ * (handbook diagnostics.md), which changes how every *other* pane of that key is drawn.
  */
 export function useDiagnoseImage(experimentId: number) {
   const queryClient = useQueryClient();
@@ -414,7 +414,7 @@ export function useDiagnoseImage(experimentId: number) {
   });
 }
 
-/** Delete stored diagnostics to reclaim disk, and report what that freed (ADR-0027). */
+/** Delete stored diagnostics to reclaim disk, and report what that freed (handbook diagnostics.md). */
 export function useClearDiagnostics(experimentId: number) {
   const queryClient = useQueryClient();
   return useMutation<PruneResult, Error, PruneScope>({

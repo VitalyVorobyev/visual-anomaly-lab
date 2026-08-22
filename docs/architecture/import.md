@@ -47,7 +47,7 @@ vocabulary, and whatever is left becomes the group key. Prefix matching applies 
 whole components, because normalization strips separators — a directory named `"<Channel> <Group>"`
 normalizes to a string that *begins with* the channel name, and matching it whole would swallow the group
 name and silently merge that group into its parent. That case is not hypothetical; it is how one real
-capture group is laid out (ADR-0013).
+capture group is laid out.
 
 The adapter emits a **manifest JSON**: proposed samples `{group_key, label, images: [{path, channel}]}`, the
 channel mapping, and a `warnings` list. Warnings are deliberately non-fatal:
@@ -58,7 +58,7 @@ channel mapping, and a `warnings` list. Warnings are deliberately non-fatal:
 - images that matched no channel in a dataset that *has* channels are **surfaced for review**, together
   with the directory names that were not recognized, so the operator can add a mapping rather than
   discover a mis-import later. (The reference tree's machine-generated timestamped filenames were assumed
-  not to group; measurement shows they group perfectly — see ADR-0013. The path exists for datasets that
+  not to group; measurement shows they group perfectly. The path exists for datasets that
   genuinely do not.)
 - unreadable files, zero-byte files and duplicate hashes are reported with their paths.
 
@@ -90,7 +90,7 @@ batch and call it the dataset.
 ## One tree, several datasets
 
 `dataset.root_path` is unique and is what a commit resolves against, which is what makes a re-import
-idempotent (ADR-0013). A capture tree that holds more than one product therefore cannot become more
+idempotent. A capture tree that holds more than one product therefore cannot become more
 than one dataset by scanning it twice — both scans would record the same root and collide into one,
 mixing two different parts into a single normal-only training population.
 
@@ -109,13 +109,13 @@ Takes the (possibly edited) manifest, creates or updates `Dataset`, `Channel`, `
 one transaction, and **saves the committed manifest to `data/manifests/`**. It is **synchronous, not a
 job**: the walk and the hash already happened during the scan, so this is a few hundred inserts and
 measures in milliseconds. It is also idempotent, never downgrades a hand-made label, and reports rather
-than deletes a recorded file the manifest no longer mentions (ADR-0013). The stored manifest is the
+than deletes a recorded file the manifest no longer mentions. The stored manifest is the
 reproducibility record: it states exactly which files became which samples under which channel mapping, and
 re-importing the same tree can be diffed against it.
 
 ## Invariants
 
-- **Images are never copied.** Only absolute paths are stored (ADR-0001). The source tree stays read-only.
+- **Images are never copied.** Only absolute paths are stored (ADR-0022). The source tree stays read-only.
 - **`sha256` is recorded** for every image at scan time.
 - **`POST /api/import/verify`** re-checks existence and hashes as a job, reporting missing, modified or
   unreadable files. It detects drift and never repairs it. This is what keeps a reference-in-place catalog
@@ -123,7 +123,7 @@ re-importing the same tree can be diffed against it.
 
 ## Proving the abstraction
 
-Two further adapters ship, and between them they cover the public benchmarks (ADR-0016). Both produce **one
+Two further adapters ship, and between them they cover the public benchmarks. Both produce **one
 image per sample with `channel_id = NULL`**, which is what finally demonstrated that the domain model handles
 single-view datasets and that nothing downstream assumes grouping — a claim the design made from the start and
 nothing exercised until then.
@@ -177,7 +177,7 @@ disclosure, which is what keeps "where are the good images" from being the tenth
 This was specified from the beginning and **built late**: until then the import screen hardcoded a single
 option and relied on Python defaults for the rest, which was survivable only while one adapter existed whose
 defaults fitted the one dataset on hand. `csv_table` has a required option, and nothing in the UI could supply
-it. ADR-0016 records the gap.
+it. The gap is recorded above.
 
 ---
 

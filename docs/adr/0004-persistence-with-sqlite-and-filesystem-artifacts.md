@@ -22,7 +22,7 @@ second kind in a database buys nothing and makes the database unwieldy.
 - **The database** (`data/app.sqlite3`) holds every entity from the domain model (see ADR-0005):
   datasets, channels, samples, images, splits, split assignments, experiments, jobs, image results,
   sample results, metric sets. It stores scores and *paths*, never pixels.
-- **The filesystem** holds source images (referenced in place, never copied — see ADR-0001),
+- **The filesystem** holds source images (referenced in place, never copied — see ADR-0022),
   thumbnails, anomaly maps as **float32 `.npy`**, model checkpoints, and job logs, organized under
   `data/{thumbnails,artifacts,manifests,exports}/` with artifacts namespaced per experiment.
 - **Migrations are plain SQL files** named `NNN_description.sql`, applied in order and tracked with

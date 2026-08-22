@@ -4,7 +4,7 @@
  * The series come from `useJob`: a snapshot of everything the run has logged so far, then
  * the socket. Reload mid-run and the curves come back whole rather than restarting from
  * the moment the page opened — which is the difference between a chart and a decoration,
- * and the reason ADR-0020 exists.
+ * and the reason handbook jobs.md exists.
  *
  * The console lives here too, beside the chart it belongs to. It used to be on Overview,
  * one tab away from the curves describing the same run — so watching a training run meant

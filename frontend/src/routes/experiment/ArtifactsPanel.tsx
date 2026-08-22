@@ -5,9 +5,9 @@
  * app never said where it went — the path was on `ExperimentDetail` the whole time and no
  * screen showed it. This is that path, what is under it, and a way to open it.
  *
- * A listing, never a download. ADR-0019 ruled out mounting the artifact directory over
+ * A listing, never a download. handbook diagnostics.md ruled out mounting the artifact directory over
  * HTTP and named exposing the checkpoints as one of its reasons; nothing here changes
- * that. Opening the folder is the desktop shell's job (ADR-0014), and the browser gets the
+ * that. Opening the folder is the desktop shell's job (handbook frontend.md), and the browser gets the
  * path as selectable text — a different affordance, not a disabled button.
  */
 
@@ -151,7 +151,7 @@ function GroupRow({
 }
 
 /**
- * Reclaim the disk per-image diagnostics cost (ADR-0027).
+ * Reclaim the disk per-image diagnostics cost (handbook diagnostics.md).
  *
  * The default scope keeps the model-scoped entries, and the confirmation says so: the
  * architecture tree and the score-normalization table are kilobytes, and losing them here
@@ -167,7 +167,7 @@ function ClearDiagnostics({ experimentId }: { experimentId: number }) {
   const [freed, setFreed] = useState<string | null>(null);
 
   // Counted separately from the run's own sample, because they are a different fact: the
-  // run's count is explained by its budget, these are questions somebody asked (ADR-0027).
+  // run's count is explained by its budget, these are questions somebody asked (handbook diagnostics.md).
   const asked = onDemandNote(diagnostics.data);
 
   return (

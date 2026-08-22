@@ -127,7 +127,7 @@ def test_a_request_leaves_the_stored_map_and_the_scores_alone(
 def test_asking_again_replaces_its_own_answer_and_leaves_the_run_s(
     client: TestClient, scored: dict[str, Any], seeded: Fixture
 ) -> None:
-    """Both directions of ADR-0027's rule, on a real request rather than a writer.
+    """Both directions of handbook diagnostics.md's rule, on a real request rather than a writer.
 
     `scored` already sampled this image, so a run entry is there to be preserved — which
     is exactly the case a first draft of this test got wrong by counting entries without

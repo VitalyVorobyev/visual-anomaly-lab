@@ -135,7 +135,7 @@ class DatasetUpdate(BaseModel):
     Both fields are optional in the strong sense -- omitting one leaves the stored value
     alone, and sending `null` clears it. Name and root path are deliberately absent: they
     are the dataset's identity, unique in the schema, and the key a re-import resolves
-    against (ADR-0013).
+    against (handbook import.md).
     """
 
     model_config = API_MODEL_CONFIG
@@ -661,7 +661,7 @@ def update_label(
     """Record an operator's label.
 
     Marks the sample `manual`, which is what makes the correction survive the next import
-    of the same tree (ADR-0013).
+    of the same tree (handbook import.md).
     """
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -688,7 +688,7 @@ def update_labels(request: Request, dataset_id: int, body: BulkLabelRequest) -> 
     Labelling one sample at a time is fine for correcting a handful and hopeless for a
     directory that is entirely one class — which is the common case on import, and the
     reason this exists. Like the single-sample route it marks every row it touches
-    `manual`, so a re-import of the same tree cannot undo the work (ADR-0013).
+    `manual`, so a re-import of the same tree cannot undo the work (handbook import.md).
 
     The filter form is resolved server-side from the grid's own `_where` clause, so the
     set that gets labelled is provably the set whose count the UI displayed.

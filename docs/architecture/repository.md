@@ -4,15 +4,15 @@
 visual-anomaly-lab/
 ├── README.md                       # setup, dataset conventions, how to add a method
 ├── .gitignore                      # data/, *.bmp, venvs, build output (and privatedata/, belt and braces)
-├── scripts/check-repo-safety.sh    # pre-push guard: fails if private data is staged (ADR-0001)
+├── scripts/check-repo-safety.sh    # pre-push guard: fails if private data is staged (ADR-0022)
 ├── docs/
 │   ├── architecture/               # the handbook — how the system works now (this document)
 │   ├── adr/                        # decision records: why it is shaped this way
 │   ├── roadmap.md                  # milestones M0–M12
 │   ├── backlog.md                  # task breakdown by epic
-│   ├── measurements-efficientad.md # the append-only evidence log behind ADR-0029
-│   ├── measurements-region-profiles.md # the M10 localisation value gate behind ADR-0033
-│   ├── measurements-dinomaly.md    # the M11 Dinomaly resource and quality evidence
+│   ├── measurements.md # the append-only evidence log behind ADR-0029
+│   ├── measurements.md # the M10 localisation value gate behind ADR-0033
+│   ├── measurements.md    # the M11 Dinomaly resource and quality evidence
 │   ├── development.md              # how to run, test and check the thing
 │   └── papers.md                   # method references
 │

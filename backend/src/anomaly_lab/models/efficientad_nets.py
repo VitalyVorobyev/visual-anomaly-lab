@@ -371,7 +371,7 @@ def augment(image: torch.Tensor, generator: torch.Generator) -> torch.Tensor:
     library that draws a random number between two steps — silently changes the sequence.
     A workbench whose whole point is "did this change move the number?" cannot afford a
     stochastic input it does not control, and it is also what lets the training image
-    order, the augmentation and the penalty order all resume exactly (ADR-0025).
+    order, the augmentation and the penalty order all resume exactly (handbook jobs.md).
 
     Written out rather than taken from torchvision, which is then a dependency this method
     does not need — three scalar blends against an ITU-R 601-2 luma. `test_efficientad_
@@ -389,7 +389,7 @@ class EfficientAdNet(nn.Module):
 
     The three branches are wired together only here and in the losses — not in any module's
     `forward` — which is why `models/introspect.py` can record every node but the plugin
-    has to state the edges itself (ADR-0024).
+    has to state the edges itself (handbook diagnostics.md).
     """
 
     def __init__(

@@ -209,7 +209,7 @@ def read_anomaly_map(
     responses={200: {"content": {"application/octet-stream": {}}}},
 )
 def read_anomaly_map_values(request: Request, image_id: int, experiment_id: int) -> Response:
-    """The stored map as a float32 plane (ADR-0023).
+    """The stored map as a float32 plane (handbook diagnostics.md).
 
     Resolved through `image_result` exactly as the PNG above is, so this inherits the same
     property: no request can name a file. It exists to be **read**, never drawn — the
@@ -236,7 +236,7 @@ def read_anomaly_map_values(request: Request, image_id: int, experiment_id: int)
         content=encode_plane(array),
         media_type="application/octet-stream",
         # Weak, and revalidated: re-running inference overwrites this file in place, so the
-        # same reasoning as the PNG's ETag applies (ADR-0019).
+        # same reasoning as the PNG's ETag applies (handbook diagnostics.md).
         headers={
             "ETag": f'W/"values-{experiment_id}-{image.sha256[:16]}"',
             "Cache-Control": "no-cache",

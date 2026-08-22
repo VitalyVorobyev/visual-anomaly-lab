@@ -98,7 +98,7 @@ export function Configuration({
 
       {/* Above the fold of the disclosure, because without it the block below shows
           `max_steps: 4000` beside a model that has trained for 8000 — which is a lie in
-          the one record that is supposed to make a run reproducible (ADR-0025). */}
+          the one record that is supposed to make a run reproducible (handbook jobs.md). */}
       {state !== null && (
         <p className="mb-3 text-xs text-fg-muted">
           <span className="font-mono text-fg">{state.completed_steps}</span> steps completed

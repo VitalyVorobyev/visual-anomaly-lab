@@ -52,7 +52,8 @@ device by a lock rather than by a check.**
   an injected `before_spawn` hook immediately before it spawns a worker. A resident and a job worker
   therefore **cannot coexist** — not because anything tests for it, but because starting a job has to
   wait for the lock an in-flight request holds. The dependency is injected from `api/app.py` into
-  both, never queue→resident, which is ADR-0014's discipline applied to a second thing.
+  both, never queue→resident — the injection discipline of handbook frontend.md applied to a
+  second thing.
 - **A hook that fails fails the job.** "Freeing the device did not work, so we started training on
   top of whatever was holding it" is precisely the state the hook exists to prevent, so the job is
   finished as failed rather than spawned anyway.
@@ -72,7 +73,7 @@ device by a lock rather than by a check.**
   `maps/{image_id}.npy` under a `range.json` fitted by a different run, leaving that image's map a
   generation ahead of its own score row with nothing saying so.
 - **A request changes no score, no map and no metric.** Those come from a job and stay the run's
-  (ADR-0011). What persists is the diagnostics, marked `on_demand` in the index (**ADR-0027**).
+  (ADR-0011). What persists is the diagnostics, marked `on_demand` in the index (handbook diagnostics.md).
 - **Any deviation kills the process.** A timeout, a broken pipe, a mismatched `rid`, an unexpected
   frame: every one of these is a state in which the next answer might belong to a different question,
   and respawning costs one model load. There is no restart policy and no supervision — a crash is

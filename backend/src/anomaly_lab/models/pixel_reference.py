@@ -8,7 +8,7 @@ Its job is to be **beaten**. A deep method reporting 0.94 AUROC means one thing 
 scores 0.55 and quite another if it scores 0.93 — and without a floor there is no way to
 tell which. It is also what makes the results path testable before torch is involved.
 
-It is deliberately the geometry-free core of the classical baseline in ADR-0010: that
+It is deliberately the geometry-free core of the classical baseline in handbook methods.md: that
 method is this one with a circle fit and a polar unwrap in front. If `classical_circular`
 is ever revived (optional M8), it is built on top of this rather than beside it.
 

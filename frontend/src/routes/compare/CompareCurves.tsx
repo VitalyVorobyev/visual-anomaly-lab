@@ -12,7 +12,7 @@
  * costs exactly one.
  *
  * Pixel-level curves are absent, as they are on the single-run tab: the accumulator streams
- * its histograms and discards them (ADR-0017), so drawing one would mean re-reading every
+ * its histograms and discards them (handbook evaluation.md), so drawing one would mean re-reading every
  * map — the expensive pass this whole layer exists to avoid.
  */
 

@@ -1,4 +1,4 @@
-"""Clearing diagnostics to reclaim disk (ADR-0027).
+"""Clearing diagnostics to reclaim disk (handbook diagnostics.md).
 
 Torch-free. The interesting cases are all about what *survives*: a clear that also took
 the architecture tree would read as the Architecture tab breaking, and a clear that walked

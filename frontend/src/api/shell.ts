@@ -59,7 +59,7 @@ export async function pickDirectory(): Promise<string | null> {
 /**
  * Whether this host can show a path in a file manager.
  *
- * The second capability, and the shape ADR-0014 predicted: the desktop app opens Finder,
+ * The second capability, and the shape handbook frontend.md predicted: the desktop app opens Finder,
  * the browser shows the path as selectable text. Neither is a degraded version of the
  * other, and the browser must never see a disabled button whose only explanation is that
  * it is not the desktop app.

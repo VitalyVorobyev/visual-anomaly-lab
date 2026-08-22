@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Guard against committing private data. Run before every commit/push (ADR-0001).
+# Guard against committing private data. Run before every commit/push (ADR-0022).
 #
 # Inspects the index -- exactly what is about to be committed. Install it as a hook
 # with scripts/setup-hooks.sh so it runs whether or not anyone remembers to.

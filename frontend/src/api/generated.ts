@@ -432,7 +432,7 @@ export interface paths {
          *     Labelling one sample at a time is fine for correcting a handful and hopeless for a
          *     directory that is entirely one class — which is the common case on import, and the
          *     reason this exists. Like the single-sample route it marks every row it touches
-         *     `manual`, so a re-import of the same tree cannot undo the work (ADR-0013).
+         *     `manual`, so a re-import of the same tree cannot undo the work (handbook import.md).
          *
          *     The filter form is resolved server-side from the grid's own `_where` clause, so the
          *     set that gets labelled is provably the set whose count the UI displayed.
@@ -462,7 +462,7 @@ export interface paths {
          * @description Record an operator's label.
          *
          *     Marks the sample `manual`, which is what makes the correction survive the next import
-         *     of the same tree (ADR-0013).
+         *     of the same tree (handbook import.md).
          */
         patch: operations["update_label_api_datasets__dataset_id__samples__sample_id__patch"];
         trace?: never;
@@ -683,14 +683,14 @@ export interface paths {
          * What this run left on disk
          * @description Everything under the experiment's directory, grouped and sized.
          *
-         *     A *listing*, not a download and not a mount. ADR-0019 ruled out serving the artifact
-         *     directory statically, and one of its stated reasons was that doing so exposes the
-         *     checkpoints; nothing here changes that. What it fixes is the other half of the
+         *     A *listing*, not a download and not a mount. Serving the artifact directory
+         *     statically was ruled out (handbook diagnostics.md), one stated reason being that it
+         *     exposes the checkpoints; nothing here changes that. What it fixes is the other half of the
          *     problem, which is that a run could spend eleven minutes producing a 31 MB checkpoint
          *     and then not say where it was — the path was in `ExperimentDetail` all along and no
          *     screen showed it.
          *
-         *     Opening the directory is the desktop shell's job (ADR-0014), and a browser gets the
+         *     Opening the directory is the desktop shell's job (handbook frontend.md), and a browser gets the
          *     path as text, which is a different affordance rather than a broken one.
          */
         get: operations["get_artifacts_api_experiments__experiment_id__artifacts_get"];
@@ -747,7 +747,8 @@ export interface paths {
          *     threshold-dependent and nothing is written (ADR-0011).
          *
          *     Pixel-level curves are deliberately absent. The pixel accumulator streams its
-         *     histograms and discards them by design (ADR-0017), so drawing that curve would mean
+         *     histograms and discards them by design (handbook evaluation.md), so drawing that
+         *     curve would mean
          *     re-reading every anomaly map — the expensive pass this layer exists to avoid.
          */
         get: operations["get_curves_api_experiments__experiment_id__curves_get"];
@@ -798,7 +799,7 @@ export interface paths {
         post?: never;
         /**
          * Delete diagnostics to reclaim disk
-         * @description Remove stored diagnostics and report what it reclaimed (ADR-0027).
+         * @description Remove stored diagnostics and report what it reclaimed (handbook diagnostics.md).
          *
          *     **Anomaly maps are never touched.** They live in a sibling directory and each is
          *     referenced by an `ImageResult` row: deleting one orphans that row and silently breaks
@@ -836,7 +837,7 @@ export interface paths {
          *
          *     **It does not change this image's score, its map, or any metric.** Those come from a
          *     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
-         *     `on_demand` in the index (ADR-0027).
+         *     `on_demand` in the index (handbook diagnostics.md).
          *
          *     Refused with 409 while a job is running: one machine, one device, and a browse request
          *     must not queue behind a two-hour train.
@@ -857,7 +858,7 @@ export interface paths {
         };
         /**
          * The preprocessed pixels the model actually read
-         * @description The pinned prepared pixels as float32, every colour plane (ADR-0023).
+         * @description The pinned prepared pixels as float32, every colour plane (handbook diagnostics.md).
          *
          *     **The preprocessed array, not the display tier.** A readout taken from the rendered
          *     preview would report what the browser is showing — 8-bit, resampled for display — when
@@ -1004,7 +1005,7 @@ export interface paths {
         };
         /**
          * The anomaly map's own numbers, for a readout under the cursor
-         * @description The stored map as a float32 plane (ADR-0023).
+         * @description The stored map as a float32 plane (handbook diagnostics.md).
          *
          *     Resolved through `image_result` exactly as the PNG above is, so this inherits the same
          *     property: no request can name a file. It exists to be **read**, never drawn — the
@@ -2638,7 +2639,7 @@ export interface components {
          *     Both fields are optional in the strong sense -- omitting one leaves the stored value
          *     alone, and sending `null` clears it. Name and root path are deliberately absent: they
          *     are the dataset's identity, unique in the schema, and the key a re-import resolves
-         *     against (ADR-0013).
+         *     against (handbook import.md).
          */
         DatasetUpdate: {
             /**
@@ -2750,11 +2751,11 @@ export interface components {
          * DiagnosticOrigin
          * @description Whether an entry came from a run, or from someone asking about one image.
          *
-         *     Additive, so `INDEX_VERSION` does not move — the same argument ADR-0019 made for
+         *     Additive, so `INDEX_VERSION` does not move — the same argument handbook diagnostics.md made for
          *     `ranges`. It exists because the two have genuinely different lifetimes and different
          *     supersession rules: a run's per-image entries are a *sample* of that run and replace
          *     each other wholesale, while an on-demand entry is a question somebody asked and must
-         *     not be swept away by the next run of inference, nor sweep one away (ADR-0027).
+         *     not be swept away by the next run of inference, nor sweep one away (handbook diagnostics.md).
          * @enum {string}
          */
         DiagnosticOrigin: "run" | "on_demand";
@@ -3206,7 +3207,7 @@ export interface components {
         };
         /**
          * LabelSource
-         * @description Where a label came from, so hand corrections survive a re-import (ADR-0013).
+         * @description Where a label came from, so hand corrections survive a re-import (handbook import.md).
          * @enum {string}
          */
         LabelSource: "import" | "manual";
@@ -3477,7 +3478,7 @@ export interface components {
          *     Served as JSON because an `<img>` tag cannot read a response header, and the map
          *     endpoint exists to be an `img src`. Without these on screen, a map that is genuinely
          *     cold looks exactly like one that failed to render — which is what score-driven alpha
-         *     does to every low-scoring image (ADR-0019).
+         *     does to every low-scoring image (handbook diagnostics.md).
          */
         MapScale: {
             /** Low */
@@ -3638,7 +3639,7 @@ export interface components {
         OperatingPoint: "f1" | "recall";
         /**
          * PayloadFormat
-         * @description Whether a caller wants the picture or the numbers behind it (ADR-0023).
+         * @description Whether a caller wants the picture or the numbers behind it (handbook diagnostics.md).
          * @enum {string}
          */
         PayloadFormat: "png" | "raw";
@@ -3714,7 +3715,7 @@ export interface components {
         };
         /**
          * PruneScope
-         * @description How much of a run's diagnostics to delete (ADR-0027).
+         * @description How much of a run's diagnostics to delete (handbook diagnostics.md).
          * @enum {string}
          */
         PruneScope: "image" | "on_demand" | "all";
@@ -6320,7 +6321,7 @@ export interface operations {
                 image_id?: number | null;
                 /** @description Which cell of a `grid` payload. */
                 frame?: number;
-                /** @description `png` to draw it; `raw` for the float32 values behind it (ADR-0023). */
+                /** @description `png` to draw it; `raw` for the float32 values behind it (handbook diagnostics.md). */
                 format?: components["schemas"]["PayloadFormat"];
             };
             header?: never;

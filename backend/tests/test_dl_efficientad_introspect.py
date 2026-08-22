@@ -1,4 +1,4 @@
-"""`collect` against a real torch network (ADR-0024).
+"""`collect` against a real torch network (handbook diagnostics.md).
 
 **The first `dl`-gated test in this suite.** CI's main backend job installs without
 `--extra dl` and must stay that way — the torch-free boundary is measured rather than

@@ -1,4 +1,4 @@
-"""Stage two of import: turning an accepted manifest into rows (ADR-0006, ADR-0013).
+"""Stage two of import: turning an accepted manifest into rows (ADR-0006, handbook import.md).
 
 Commit is **synchronous**, not a job. It is a few hundred INSERTs in one transaction —
 milliseconds — because all the expensive work happened during the scan. Making it a job

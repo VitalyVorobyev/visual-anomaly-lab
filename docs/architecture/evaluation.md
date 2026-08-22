@@ -19,7 +19,7 @@ an option, and the method used is recorded in both `SampleResult.aggregation` an
 a stored result always says how it was produced.
 
 **`max` assumes per-channel scores are comparable in scale, and that is now a configured step rather than a
-footnote.** The assumption holds for a method whose scores are per-channel z-scores by construction (ADR-0010).
+footnote.** The assumption holds for a method whose scores are per-channel z-scores by construction (handbook methods.md).
 It is not automatic for a deep model: if one illumination's score distribution simply sits higher than
 another's, every maximum comes from that channel and the sample score measures which view the method finds
 noisiest, not which part is defective.
@@ -161,7 +161,7 @@ of normals only, a validation subset of held-out normals plus some defects for t
 remainder as test. What is right depends entirely on how many samples exist, which is why it is a form field
 and not a constant in the code.
 
-**Adopted from the source** (`imported`, ADR-0016): the partition the benchmark published, read out of the
+**Adopted from the source** (`imported`, handbook import.md): the partition the benchmark published, read out of the
 manifest the dataset was committed from. A number computed on a partition we drew ourselves is not comparable
 to a paper's number, so for any dataset that ships a split table this is the strategy that makes the
 comparison mean anything.
@@ -190,7 +190,7 @@ Read-only, numpy only, no torch and no GPU, so it can be pointed at a run from m
 no cost. That property is the point: it made a wrong conclusion cheap to overturn. The
 aggregation sweep first said the reducer did not matter, which was true of a run whose maps
 were not localized and false in general — see
-[the measurements](../measurements-efficientad.md).
+[the measurements](../measurements.md).
 
 Maps from a region-prepared experiment are stored in source coordinates. Pixels outside the selected
 source crop are `NaN`, not fabricated observations. Renderers make those pixels transparent. Evaluation keeps

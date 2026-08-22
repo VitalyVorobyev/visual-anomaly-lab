@@ -1,4 +1,4 @@
-"""Arranging module records into the architecture payload (ADR-0024).
+"""Arranging module records into the architecture payload (handbook diagnostics.md).
 
 **Torch-free on purpose.** `build_tree` takes plain records, which is what lets the
 hierarchy, the bounding and the truncation reporting be checked in CI — which installs

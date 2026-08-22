@@ -3,7 +3,8 @@
 **Status:** Accepted (2026-08-08)
 
 Extends **ADR-0011** (metrics come from a job; the evaluation layer is model-independent) and
-**ADR-0019** (a run-wide display range, so two images of one run are comparable by eye). Neither says
+the run-wide display range that makes two images of one run comparable by eye (handbook
+diagnostics.md). Neither says
 what happens when the two things being compared are two *runs*, and that turns out to be a different
 question.
 
@@ -29,8 +30,8 @@ Two consequences, both of which reach the screen:
   operating point and `pixel_reference` calls everything normal. A comparison table with one slider
   above it would print a confusion matrix per method, all of them true, describing operating points
   nobody chose — and it would look exactly like a fair comparison.
-- **A single display range applied to N maps is meaningless in the same way.** ADR-0019's run-wide
-  range exists so two *images* are comparable; stretching two *runs* over one range renders the
+- **A single display range applied to N maps is meaningless in the same way.** The run-wide range
+  (handbook diagnostics.md) exists so two *images* are comparable; stretching two *runs* over one range renders the
   lower-scaled method's map as flat background, which reads as "this method found nothing".
 
 The threshold-independent metrics have no such problem. ROC-AUC, average precision and AU-PRO are
@@ -110,7 +111,7 @@ numbers, unchosen operating points, and it looks fair); a shared colour scale ac
 the lower-scaled method blank); dropping the confusion matrix (honest and useless); and computing
 anything the comparison shows from the anomaly maps on disk — pixel-level *curves* stay absent here
 for the same reason they are absent from the benchmark tab, because the accumulator streams its
-histograms and discards them (ADR-0017), and reconstructing one would mean re-reading every map.
+histograms and discards them (handbook evaluation.md), and reconstructing one would mean re-reading every map.
 
 ## Consequences
 

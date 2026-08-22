@@ -79,7 +79,7 @@ export interface ResultsState {
  * Where the segmentation starts, as a fraction of the run's range.
  *
  * Below half deliberately. The run-wide high end is the maximum over every map's 99.9th
- * percentile (ADR-0019), so it is set by the single hottest image in the run — usually the
+ * percentile (handbook diagnostics.md), so it is set by the single hottest image in the run — usually the
  * worst false positive. Every other image's peak sits below it, often far below, and a cut
  * at half the range is therefore a much stronger claim on a typical image than it sounds.
  * Measured on the reference run: the defective sample's region is 148 px at 0.3 and 18 px
@@ -141,7 +141,7 @@ export function writeResultsState(state: ResultsState): URLSearchParams {
  * emits no map. A cut has to come from the run-wide range rather than the image on screen:
  * derived per image it would be a different cut on every image, and two samples' regions
  * would not be comparable. That is the same mistake the run-wide range exists to prevent
- * for the heatmap (ADR-0019).
+ * for the heatmap (handbook diagnostics.md).
  */
 export function cutValue(
   state: ResultsState,

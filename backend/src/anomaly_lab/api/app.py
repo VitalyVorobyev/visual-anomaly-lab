@@ -116,7 +116,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.started_at = datetime.now(UTC)
     # Wired here and nowhere else. The queue must not import the resident and the resident
     # must not import the queue's manager; the composition root points at both, which is
-    # the same discipline ADR-0014 applies to shell capabilities. The hook is what makes a
+    # the same discipline handbook frontend.md applies to shell capabilities. The hook is
+    # what makes a
     # resident and a job worker unable to coexist (ADR-0026).
     app.state.resident = ResidentWorker(settings)
     app.state.job_queue = JobQueue(settings, before_spawn=app.state.resident.evict)

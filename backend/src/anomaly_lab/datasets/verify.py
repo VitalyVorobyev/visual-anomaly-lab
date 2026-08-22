@@ -1,6 +1,6 @@
 """The verify job.
 
-Referencing images in place rather than copying them (ADR-0001) buys privacy and disk,
+Referencing images in place rather than copying them (ADR-0022) buys privacy and disk,
 and costs the guarantee that what the catalog points at is still what it pointed at. A
 renamed folder breaks every path; a re-exported file keeps its path and changes its
 bytes. Verify is what makes that discoverable rather than something you learn from a
