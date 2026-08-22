@@ -70,10 +70,12 @@ comparing them under one evaluation protocol.
   cited ~660 times in code and docs.
 - When the handbook and a record disagree, the **handbook is right about what the code does** and the
   **record is right about why it was chosen**.
-- `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
-  there and nowhere else. Components name `surface`, `line`, `fg-muted`, `signal`, `normal`,
-  `defect`, `warn` — **never a raw Tailwind ramp step** like `slate-500`. A raw colour will compile
-  and look almost right, and quietly ignore the theme.
+- **The design tokens live in `@vitavision/lab-ui` (ADR-0021)**, not in this repo: colour, type and
+  radius are defined once for every lab app and `frontend/src/styles.css` only imports them (plus the
+  one rule that is this app's own — `#root` is a mount point, not a design decision). Components name
+  `surface`, `line`, `fg-muted`, `signal`, `normal`, `defect`, `warn` — **never a raw Tailwind ramp
+  step** like `slate-500`. A raw colour will compile and look almost right, and quietly ignore the
+  theme.
 
 ## Current status and working discipline
 

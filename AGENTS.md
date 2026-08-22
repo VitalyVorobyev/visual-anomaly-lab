@@ -70,10 +70,12 @@ comparing them under one evaluation protocol.
   cited ~660 times in code and docs.
 - When the handbook and a record disagree, the **handbook is right about what the code does** and the
   **record is right about why it was chosen**.
-- `frontend/src/styles.css` — **the design tokens (ADR-0021)**. Colour, type and radius are defined
-  there and nowhere else. Components name `surface`, `line`, `fg-muted`, `signal`, `normal`,
-  `defect`, `warn` — **never a raw Tailwind ramp step** like `slate-500`. A raw colour will compile
-  and look almost right, and quietly ignore the theme.
+- **The design tokens live in `@vitavision/lab-ui` (ADR-0021)**, not in this repo: colour, type and
+  radius are defined once for every lab app and `frontend/src/styles.css` only imports them (plus the
+  one rule that is this app's own — `#root` is a mount point, not a design decision). Components name
+  `surface`, `line`, `fg-muted`, `signal`, `normal`, `defect`, `warn` — **never a raw Tailwind ramp
+  step** like `slate-500`. A raw colour will compile and look almost right, and quietly ignore the
+  theme.
 
 ## Current status and working discipline
 
@@ -113,13 +115,16 @@ comparing them under one evaluation protocol.
   through scikit-learn's numpy RNG, which `torch.manual_seed` does not touch, so its bank is not
   reproducible; M6 found the same shape in torch's global stream for weight init. When adding a
   method, assert reproducibility in *both* directions — same seed identical, different seed different.
-- **Controls come from `components/ui`.** There is an `Input`, `NumberInput`, `Textarea`, `Select`,
-  `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`, `Dialog`, `ConfirmDialog`, `Tooltip`,
-  `InfoHint`, `Disclosure`, `Field`, `Badge`, `CountRun`, `Empty`, `ErrorBox`, `Callout`,
-  `Skeleton`, `ToggleChip`, `PageHeader`, `Panel`, `Section` and `ReadoutStrip`. Reach for one before
-  writing a bare `<select>`, `<input type="range">`, `<input type="checkbox">` or `<table>` — those
-  are what the pass removed. A raw `<details>` in particular now renders **with no caret**, because
-  the base layer drops the UA marker; use `Disclosure`.
+- **Controls come from `@vitavision/lab-ui`** — the shared design system for every lab app, not a
+  helper extracted from this one; see its README for the consumer wiring. There is an `Input`,
+  `NumberInput`, `Textarea`, `Select`, `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`,
+  `Dialog`, `ConfirmDialog`, `Tooltip`, `InfoHint`, `Disclosure`, `Field`, `Badge`, `CountRun`,
+  `Empty`, `ErrorBox`, `Callout`, `Skeleton`, `ToggleChip`, `PageHeader`, `Panel`, `Section`,
+  `ReadoutStrip`, `Tabs`, `SchemaForm`, the chart set and `ImageStage`. Reach for one before writing
+  a bare `<select>`, `<input type="range">`, `<input type="checkbox">` or `<table>` — those are what
+  the pass removed. A raw `<details>` in particular renders **with no caret**, because the base layer
+  drops the UA marker; use `Disclosure`. **A primitive that needs improving is improved upstream in
+  lab-ui**, never patched locally — a local copy is how the apps stop agreeing with each other.
 - **One page-level scroller per screen, and the layout owns it.** Three route layouts —
   `ReadingLayout`, `DatasetLayout`, `CanvasLayout` — are marked with `data-layout`, `data-band` and
   `data-scroll` so the contract is assertable, and `frontend/src/routes/dataset/tabScroll.test.tsx`
