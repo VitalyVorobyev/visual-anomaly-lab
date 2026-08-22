@@ -20,6 +20,7 @@ from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import JobKind, RegionProfileRevision, SpatialResample
 from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.owned_storage import path_usage
 from anomaly_lab.regions.base import RegionExtractorDescription
 from anomaly_lab.regions.preparation import (
     RegionBuildSummary,
@@ -31,7 +32,6 @@ from anomaly_lab.regions.registry import (
     describe_all,
     validate_config,
 )
-from anomaly_lab.owned_storage import path_usage
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(tags=["region-profiles"])

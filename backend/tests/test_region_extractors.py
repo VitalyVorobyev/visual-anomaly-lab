@@ -136,6 +136,7 @@ def test_a_low_area_ceiling_selects_the_part_over_its_background() -> None:
     part is smaller than its background that ruled the extractor out entirely — the only
     setting that would have worked was the one the bound refused.
     """
+
     class FakeGenerator:
         def generate(self, _image: np.ndarray) -> list[dict[str, object]]:
             return [
