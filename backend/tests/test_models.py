@@ -38,6 +38,17 @@ from anomaly_lab.models.dino_backbone import (
     patch_grid,
 )
 from anomaly_lab.models.dino_backbone import validate_prepared_size as validate_dino_size
+from anomaly_lab.models.dino_memory import (
+    ChannelFusion,
+    DinoMemoryConfig,
+    MemoryPlan,
+    Scoring,
+    Shrinkage,
+    channel_order,
+    condition_covariance,
+    plan_memory,
+    precision_from_covariance,
+)
 from anomaly_lab.models.dinomaly_anomalib import (
     BASE_LR,
     FINAL_LR,
@@ -479,6 +490,7 @@ def test_every_registered_method_describes_itself_without_importing_torch() -> N
         "pixel_reference",
         "dinomaly_anomalib",
         "glass_anomalib",
+        "dino_memory",
     } <= keys
 
     for entry in described:
@@ -1018,6 +1030,273 @@ def test_pca_to_rgb_refuses_a_shape_it_cannot_reduce() -> None:
         pca_to_rgb(np.zeros((2, 4, 4), dtype=np.float32))
     with pytest.raises(ValueError, match="\\(C, H, W\\)"):
         pca_to_rgb(np.zeros((4, 4), dtype=np.float32))
+
+
+# ------------------------------------------------- dino_memory, torch-free parts
+
+# `plan_memory`, `channel_order` and the covariance conditioning are deliberately pure —
+# integers and numpy in, a plan or a matrix out. They live here rather than in
+# `test_dl_dino_memory.py` for `plan_bank`'s reason: what decides whether a fit exhausts the
+# machine, and whether a fitted Gaussian can be inverted at all, is checked by the CI job
+# that installs *without* the `dl` extra.
+
+
+def _memory_config(**overrides: object) -> DinoMemoryConfig:
+    return DinoMemoryConfig(**overrides)  # type: ignore[arg-type]
+
+
+def _visa_class_plan(**overrides: object) -> MemoryPlan:
+    """One VisA class through the encoder the plugin defaults to: 900 images, 32x32, 768."""
+    return plan_memory(
+        _memory_config(**overrides),
+        samples_available=900,
+        images_available=900,
+        grid=(32, 32),
+        embedding_dim=768,
+        channels=("",),
+    )
+
+
+def test_a_global_memory_is_bounded_by_both_caps_and_says_what_it_dropped() -> None:
+    """Exit criterion one is not "it fits", it is "it fits and says what it cost".
+
+    Both caps bind at once here: 900 images against a limit of 512, and 512x1024 patches
+    against a pool of 100 000. Images are dropped first and patches thinned second, because
+    two images differ by whatever the process varies while neighbouring transformer tokens
+    attend to overlapping context.
+    """
+    plan = _visa_class_plan(max_bank_images=512, max_candidate_vectors=100_000)
+
+    assert plan.units_used == 512 and plan.units_available == 900
+    assert plan.patches_kept_per_image == 195 and plan.patches_per_image == 1024
+    assert plan.candidates_kept == 512 * 195 <= 100_000
+    assert plan.coreset_size == 9_984
+    assert plan.images_dropped == 388 and plan.patches_dropped_per_image == 829
+    # 284 is the dimension anomalib's own projection picks at this pool size and eps 0.9.
+    assert plan.projection_dim == 284
+
+    described = plan.describe()
+    assert "uncapped this would have been 921,600 vectors" in described
+    assert "2.83 GB" in described
+    assert "388 of 900 images dropped" in described
+
+
+def test_a_memory_that_fits_under_every_cap_drops_nothing() -> None:
+    """The caps must be bounds, not a tax every run pays."""
+    plan = plan_memory(
+        _memory_config(max_bank_images=512, max_candidate_vectors=1_000_000),
+        samples_available=100,
+        images_available=100,
+        grid=(16, 16),
+        embedding_dim=384,
+        channels=("",),
+    )
+
+    assert plan.units_used == 100
+    assert plan.patches_kept_per_image == plan.patches_per_image == 256
+    assert plan.candidates_kept == 25_600
+    assert plan.images_dropped == 0 and plan.patches_dropped_per_image == 0
+    assert "nothing dropped" in plan.describe()
+
+
+def test_a_per_position_bank_is_bounded_by_its_own_cap() -> None:
+    """The local memory's cost is positions x K x width, and K is what bounds it."""
+    plan = _visa_class_plan(
+        scoring=Scoring.LOCAL_KNN,
+        max_bank_images=256,
+        per_position_images=64,
+        window_radius=1,
+    )
+
+    assert plan.per_position_images == 64, "capped by per_position_images, not by the units"
+    assert plan.samples_per_position == 64
+    assert plan.candidates_kept == 1024 * 64
+    assert plan.bank_bytes == 1024 * 64 * 768 * 4
+    # (2r+1)^2 x K: how many bank vectors one query position is compared against.
+    assert plan.window_candidates == 9 * 64
+    assert plan.coreset_size == 0 and plan.projection_dim == 0
+    assert "window radius 1 gives 576 candidates per position" in plan.describe()
+
+
+def test_an_unreduced_gaussian_names_the_footprint_mahalanobis_dims_avoids() -> None:
+    """The quadratic cost is why `mahalanobis_dims` exists, so the plan has to state it.
+
+    A 32x32 grid of 768x768 inverse covariances is 2.42 GB stored as float32 — and twice
+    that while the fit holds them in float64. A run that discovered this after the forward
+    pass would be a machine that had already started swapping.
+    """
+    plan = _visa_class_plan(scoring=Scoring.LOCAL_GAUSSIAN, mahalanobis_dims=0)
+
+    assert plan.reduced_dim == plan.fused_dim == 768
+    assert plan.precision_bytes == 1024 * 768 * 768 * 4
+    assert plan.precision_bytes / 1e9 == pytest.approx(2.42, abs=0.01)
+    assert "2.42 GB" in plan.describe()
+
+
+def test_the_gaussian_sample_deficit_is_a_field_not_a_sentence() -> None:
+    """A rank-deficient covariance inverted silently produces confident nonsense.
+
+    64 samples of 128 dimensions is 65 short of full rank, and that number is a field so a
+    test — and the diagnostics table — can assert it rather than parse it out of a log line.
+    """
+    plan = _visa_class_plan(
+        scoring=Scoring.LOCAL_GAUSSIAN, mahalanobis_dims=128, per_position_images=64
+    )
+
+    assert plan.reduced_dim == 128 and plan.samples_per_position == 64
+    assert plan.sample_deficit == 65
+    assert "sample deficit 65" in plan.describe()
+
+    ample = _visa_class_plan(
+        scoring=Scoring.LOCAL_GAUSSIAN, mahalanobis_dims=16, per_position_images=64
+    )
+    assert ample.sample_deficit == 0
+
+
+def test_a_fused_plan_scales_with_the_channel_count_and_names_no_number() -> None:
+    """Channel count is data, never schema: nothing here is a constant.
+
+    Three channels make a fused vector three times as wide and every footprint three times
+    as large, and the *unit* of banking becomes the sample — so one three-channel sample
+    reads three images while contributing one vector per position.
+    """
+
+    def fused(count: int) -> MemoryPlan:
+        return plan_memory(
+            _memory_config(channel_fusion=ChannelFusion.FEATURE_CONCAT, max_bank_images=50),
+            samples_available=100,
+            images_available=100 * count,
+            grid=(8, 8),
+            embedding_dim=384,
+            channels=tuple(f"channel-{index}" for index in range(count)),
+        )
+
+    one, three = fused(1), fused(3)
+
+    assert one.channels_fused == 1 and three.channels_fused == 3
+    assert one.fused_dim == 384 and three.fused_dim == 3 * 384
+    assert three.bank_bytes == 3 * one.bank_bytes
+    # The cap bounds samples; `images_used` reports the files the forward pass opens.
+    assert one.units_used == three.units_used == 50
+    assert one.images_used == 50 and three.images_used == 150
+    assert three.images_dropped == 150 and one.images_dropped == 50
+
+
+def test_per_image_fusion_keeps_a_vector_one_channel_wide() -> None:
+    """`per_image` scores each channel image on its own, so nothing is concatenated."""
+    plan = plan_memory(
+        _memory_config(channel_fusion=ChannelFusion.PER_IMAGE),
+        samples_available=100,
+        images_available=300,
+        grid=(8, 8),
+        embedding_dim=384,
+        channels=("a", "b", "c"),
+    )
+
+    assert plan.channels_fused == 1
+    assert plan.fused_dim == 384
+    assert plan.units_available == 300, "a unit is an image here, not a sample"
+
+
+def test_a_memory_plan_refuses_a_geometry_it_could_not_have_measured() -> None:
+    for grid, width, channels in (((0, 8), 384, ("",)), ((8, 8), 0, ("",)), ((8, 8), 384, ())):
+        with pytest.raises(ValueError):
+            plan_memory(
+                _memory_config(),
+                samples_available=4,
+                images_available=4,
+                grid=grid,
+                embedding_dim=width,
+                channels=channels,
+            )
+
+
+def test_the_channel_order_does_not_depend_on_the_order_records_arrive_in() -> None:
+    """A fused vector's meaning is positional, so its channel order has to be a property of
+    the dataset rather than of a query's row order — otherwise two runs of one dataset build
+    silently incomparable banks."""
+    records = [
+        ImageRecord(image_id=index, sample_id=index // 3, channel=name, path=Path("x.png"))
+        for index, name in enumerate(["dark", "bright", "dome", "bright", "dome", "dark"])
+    ]
+    shuffled = list(reversed(records))
+
+    assert channel_order(records) == ("bright", "dark", "dome")
+    assert channel_order(shuffled) == channel_order(records)
+    # No channel at all is a one-entry order rather than a special case.
+    assert channel_order([ImageRecord(image_id=1, sample_id=1, path=Path("x.png"))]) == ("",)
+
+
+def test_ledoit_wolf_conditions_a_covariance_that_has_no_inverse() -> None:
+    """The property the whole local_gaussian mode rests on.
+
+    A position sees fewer samples than dimensions — that is the ordinary case, not a
+    degenerate one — so its raw covariance is singular by construction and inverting it would
+    produce a confident, meaningless Mahalanobis distance. Shrinkage toward a scaled identity
+    is what makes the inverse exist, and Ledoit-Wolf derives how much from the samples.
+    """
+    rng = np.random.default_rng(0)
+    samples = rng.normal(size=(8, 32))
+    samples = samples - samples.mean(axis=0)
+
+    raw = samples.T @ samples / samples.shape[0]
+    assert np.linalg.matrix_rank(raw) < 32, "n < d, so the raw covariance is rank-deficient"
+    with pytest.raises(np.linalg.LinAlgError):
+        np.linalg.cholesky(raw)
+
+    conditioned, lam = condition_covariance(
+        samples, shrinkage=Shrinkage.LEDOIT_WOLF, ridge_epsilon=0.01
+    )
+
+    assert 0.0 < lam <= 1.0
+    precision = precision_from_covariance(conditioned)
+    assert np.allclose(precision @ conditioned, np.eye(32), atol=1e-8)
+
+
+def test_the_ridge_is_a_fraction_of_the_features_own_scale() -> None:
+    """An absolute ridge would swamp a unit-norm feature's covariance and say nothing.
+
+    These features are unit vectors, so a per-position covariance has entries orders of
+    magnitude below 0.01. `S + 0.01 I` would be the identity with a rounding error attached,
+    and the Mahalanobis distance would quietly become a Euclidean one that still runs.
+    Expressed relative to `tr(S)/d`, scaling the features scales the conditioned matrix by
+    exactly the same factor.
+    """
+    rng = np.random.default_rng(1)
+    samples = rng.normal(size=(12, 16)) * 1e-2
+    samples = samples - samples.mean(axis=0)
+
+    small, lam = condition_covariance(samples, shrinkage=Shrinkage.RIDGE, ridge_epsilon=0.01)
+    larger, _ = condition_covariance(samples * 5.0, shrinkage=Shrinkage.RIDGE, ridge_epsilon=0.01)
+
+    assert lam == pytest.approx(0.01)
+    assert np.allclose(larger, 25.0 * small)
+
+    # What an absolute ridge would have produced instead: a matrix whose condition number is
+    # 1.03, which is the identity with a rounding error attached. The scale-aware one is
+    # still shaped by the data it was fitted from, which is the whole point of fitting it.
+    absolute = samples.T @ samples / samples.shape[0] + 0.01 * np.eye(16)
+    assert np.linalg.cond(absolute) < 1.1
+    assert np.linalg.cond(small) > 100.0
+
+
+def test_the_dino_memory_schema_renders_its_choices_as_pickers() -> None:
+    """No frontend work: `SchemaForm` reads `enum` through `$defs` and bounds off the field."""
+    schema = DinoMemoryConfig.model_json_schema()
+    defs = schema["$defs"]
+
+    def choices(field: str) -> list[str]:
+        reference = str(schema["properties"][field]["$ref"]).rsplit("/", 1)[-1]
+        return [str(value) for value in defs[reference]["enum"]]
+
+    assert choices("scoring") == ["global_knn", "local_knn", "local_gaussian"]
+    assert "dinov2_vit_s14_reg4" in choices("backbone")
+    assert choices("shrinkage") == ["ledoit_wolf", "ridge"]
+    assert choices("channel_fusion") == ["per_image", "feature_concat"]
+    assert schema["properties"]["window_radius"]["maximum"] == 8
+    assert schema["properties"]["scoring"]["default"] == "global_knn"
+    for name, field in schema["properties"].items():
+        assert field.get("description"), f"{name} has no description, so the form has no help"
 
 
 # ------------------------------------------------ channel-aware reference (ADR-0007)

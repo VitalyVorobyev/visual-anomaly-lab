@@ -50,6 +50,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
     "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
     "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
+    "dino_memory":           _dino_memory,           # ours; frozen DINO patch memory, three scoring rules
     # "classical_circular":  M8, optional (ADR-0015)
 }
 ```
@@ -146,7 +147,7 @@ that is not a second preprocessing, it is the network's first layer.
 
 **`expand_planes` sits on the same side of the seam**, for the same reason. How many planes a backbone's first
 convolution wants is a property of that backbone, not of the experiment. Under `color=grayscale`, `load_array`
-returns one plane and the four methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
+returns one plane and the five methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
 Putting the expansion in `load_array` instead would be worse than the duplication it removes: `grayscale` and
 `rgb` would then produce identical arrays for a mono file, so the experiment would record a colour choice that
 changed nothing, and `pixel_reference` — which genuinely consumes whatever it is given — would build its
@@ -223,6 +224,98 @@ experiment form that does not control the result puts unattributable noise under
 it. `patchcore_anomalib` pins both streams, and a test asserts the bank is identical across two fits at one
 seed and different at another — both directions, because pinning a seed is only meaningful if changing it
 changes the answer.
+
+## A frozen backbone can be a bank, a window, or a distribution
+
+`dino_memory` is the second method whose cost is a memory footprint rather than a step budget, and the
+first in-house one built on the shared frozen-encoder table in `models/dino_backbone.py`. Nothing is
+trained. A frozen DINOv2 or DINOv3 encoder produces L2-normalized patch features for the training
+normals, those features become a memory, and a test patch is scored by how far it is from that memory.
+What is new is not the encoder — it is that **what the memory is** is a field.
+
+**Three scoring rules on one axis.** `scoring` is a single enum with three values:
+
+| value | the memory | what it can see |
+| --- | --- | --- |
+| `global_knn` | one coreset bank over every position of every image | position-blind: a pattern that is normal *somewhere* is normal everywhere. PatchCore's rule, over transformer features. |
+| `local_knn` | one small bank per patch position, searched over a `window_radius` neighbourhood | registration-aware: a pattern in the wrong place is an anomaly. |
+| `local_gaussian` | one shrunk Gaussian per patch position, scored by Mahalanobis distance | PaDiM's rule, over the same features: the memory is a distribution rather than a set of examples. |
+
+**One axis rather than a layout × distance product**, because that product has an invalid cell. A
+*global* Gaussian over every patch of every image is one distribution fitted to the union of everything
+the encoder ever sees, which is not a model of normality but a model of the dataset's marginal. Three
+named values say what can actually be run, and the picker generated from the schema shows exactly those
+three. The cost is stated in ADR-0037: a fourth genuine combination would need a new enum value rather
+than a new checkbox.
+
+`test_dl_dino_memory.py::test_a_per_position_bank_finds_what_a_global_bank_explains_away` is what keeps
+the axis honest. Every training image carries a dark square at one position and a bright square at
+another, so both appearances are in the memory; the test image has the bright square at the dark one's
+position. Nothing new has appeared — something has moved. The global bank finds the misplaced patch's
+twin elsewhere and reports 0.97× (the anomalous image scores slightly *lower* than a normal one); the
+per-position bank scores it about twenty times higher.
+
+**The window is an offset loop, not a gather.** `local_knn` iterates `(2r+1)²` offsets, taking aligned
+sub-rectangles of the query grid against the bank grid and running one `einsum("rcd,rckd->rck")` per
+offset, then an elementwise minimum. An `unfold` that materialized every window's neighbours at once
+would hold `(2r+1)²·P·K·D` floats — about 900 MB at r=1, P=1024, K=64 and a 384-wide feature, and 1.8 GB
+at 768 — where the loop holds one `(P, K, D)` view at a time and reuses the bank in place. Border
+positions have fewer valid offsets, so the result falls back to the `(0, 0)` offset: a border patch is
+scored against its own position, never against nothing.
+
+**The covariance fit is CPU float64**, and that is a smoke-test verdict rather than a preference
+(`scripts/dino-memory-smoke-test.py`, ADR-0008). Batched Cholesky is 16× slower on MPS where the kernel
+exists at all, and a covariance fitted from fewer samples than dimensions is exactly where float32 stops
+being enough. The same script places the rest: the encoder forward wants MPS (~2×); `topk` over a
+100 000-wide row is ~7× slower on MPS *and* breaks exact ties the other way, so neighbour selection is on
+the CPU and a neighbour index is never a cross-device identity; the distance/einsum kernels and the map
+post-processing run wherever their tensors already are. Since every bank is CPU-resident, everything
+after the forward pass is on the CPU by construction and needs no branch.
+
+A position sees `per_position_images` samples of `mahalanobis_dims` dimensions, so its raw covariance is
+singular **in the ordinary case, not a degenerate one**. `MemoryPlan.sample_deficit` is a field rather
+than a sentence in a log line, so both the plan table and a test can assert how far short of full rank a
+fit is. Shrinkage is what makes the inverse exist: `Σ = (1 − λ)S + λ(tr S/d)I`, with λ from the
+closed-form Ledoit-Wolf 2004 estimator or from `ridge_epsilon`. **The ridge is scale-aware on purpose.**
+These features are unit vectors, so a per-position covariance has entries orders of magnitude below
+0.01; an absolute `S + 0.01·I` would be the identity with a rounding error attached, and the Mahalanobis
+distance would quietly become a Euclidean one that still runs and still produces maps.
+
+**Bounded before it runs, with no probe.** `plan_memory` is pure and torch-free like `plan_bank`, and it
+goes one step further: the grid comes from `patch_grid`'s arithmetic and the feature width from the
+backbone table times the number of layers read, so `describe()` reaches the job log before the encoder is
+even constructed. The price is a check — the first real batch verifies the grid and the width and refuses
+a disagreement, so the announced footprint is a measurement rather than a hope. The caps compose in the
+same fixed order PatchCore uses: **units first, then patches within each surviving unit**.
+
+**Channel fusion is where "channel count is data, never schema" becomes a number.** `channel_fusion`
+has two values. `per_image` pools every channel image into one memory and scores each image on its own —
+which, unlike `pixel_reference`'s pooled median, is not a desensitization, because a dark-field patch
+simply finds dark-field neighbours rather than inflating a shared scale. `feature_concat` makes the
+**unit of banking a sample**: its per-channel vectors are concatenated in a stable order and the result
+is L2-normalized again, so each channel contributes `1/√C` and the squared distance between two fused
+vectors is the *average* of the per-channel squared distances rather than their sum. A four-channel
+sample therefore scores on the same scale as a two-channel one, and a one-channel group is *exactly*
+`per_image` — the same call with `C = 1`, where normalizing an already-unit vector is the identity.
+
+The channel order is `tuple(sorted(...))` over the dataset's channel names, computed by a pure
+`channel_order` function. A fused vector's meaning is positional, so an order that depended on a query's
+row order would make two runs of one dataset silently incomparable. Every sample must present exactly
+the fitted channel set; a missing or unseen channel **refuses by name**, naming the sample, what it
+presents and what was expected — `pixel_reference`'s voice one level up. There is no fallback, because a
+gap in a fused vector is not a shorter vector, it is a different one.
+
+**A known limitation, with a backlog item behind it.** `experiments/diagnose.py` scores a *single*
+record, so asking a multi-channel `feature_concat` model about one image lands in that same channel
+refusal rather than producing a diagnostic. The refusal is readable and names the sample, which is the
+part that matters until diagnose can pass a whole sample group.
+
+`portable_formats` is empty rather than conditional: `feature_concat` has no single-input graph at all,
+and the export offer is made from the registry before any configuration is read, so a format that is
+true for one configuration of a method is worse than an absent one. `capabilities().channel_aware` is
+`True` regardless of `channel_fusion`, because the flag says the model *may* consume channel metadata
+and the field decides whether it does. No public-data quality gate has been run yet; see
+[roadmap.md](../roadmap.md).
 
 ## A reconstruction method needs a fixed training horizon
 
@@ -312,6 +405,21 @@ either without a refetch. Two consequences worth stating:
 This is the general shape, not a special case: anything downloaded that a number depends on is an
 input to the experiment, and belongs in its configuration where the comparison screen can show it.
 
+**Some of those inputs are licensed, and a licence is not a config field.** `dino_memory`'s `backbone`
+menu holds five frozen encoders, and two of them — the DINOv3 entries — resolve to weights under Meta's
+DINOv3 licence: access must be requested on a Hugging Face model page and approved for an account before
+anything will download. That is a *permission the user already holds or does not*, so it reaches the
+method as an **ambient `HF_TOKEN`** and never as a field on a form. Putting a token in the experiment
+configuration would store a credential in the database, print it into job logs, and carry it into every
+comparison export — for a value that is not an input to the experiment at all.
+
+What the plugin owes instead is a readable failure. `dino_backbone._gated_failure_message` turns a 401
+into three sentences: which encoder resolves to which gated weights, where to request access, and which
+ungated Apache-2.0 encoders need no account at all. The token's value is never read, stored or printed —
+what the message says is that one is needed. The default is deliberately one of the ungated three, so a
+fresh machine gets a result rather than a 401, and `test_models.py` asserts which entries are ungated as
+a property of the table rather than as a note in a docstring.
+
 **PatchCore inherits the whole argument.** Its backbone is timm's pretrained `wide_resnet50_2`, resolved
 through the HuggingFace hub and equally somebody's training run, so `backbone` and `pretrained_backbone` are
 configuration and `allow_downloads` refuses a fetch by name. The difference is what gets stored: EfficientAD's
@@ -338,7 +446,9 @@ This is the seam that keeps evaluation model-independent. A model *may* use chan
 how a part's three views combine into a sample-level verdict; that policy lives in one place and is applied
 identically to every method.
 
-`pixel_reference` is the first method to declare `channel_aware` and to mean it. Its
+Two methods declare `channel_aware` and mean it, in two different ways.
+
+`pixel_reference` was the first. Its
 `reference_scope` defaults to `channel`, fitting one per-pixel median and MAD per illumination. That is a
 correctness fix rather than a refinement: a single reference pooled over several illuminations has a
 per-pixel MAD dominated by the difference *between* the channels, so every deviation is divided by an inflated
@@ -350,6 +460,12 @@ Scoring a channel that was never fitted **raises, naming the channel**. Falling 
 reference would produce a confident-looking map of nothing but the difference between two illuminations. And
 because one static graph carries one reference tensor, `export_onnx` refuses a multi-reference bank by name —
 refused inside the plugin, so no route has to branch on a method's own configuration.
+
+`dino_memory` is the second, and it reads the metadata rather than partitioning on it: under
+`channel_fusion=feature_concat` a sample's channel images become **one** fused vector per patch
+position, so a part is scored once across all its views — and the plugin still returns one `Prediction`
+per input image, with the sample's map written to each of them through its own projection. The seam
+holds either way: neither method decides how a part's views combine into a sample-level verdict.
 
 ## Anomaly map storage
 
@@ -370,6 +486,15 @@ prefers MPS and keeps its backbone there, and pins its coreset selection to the 
 three times faster, because a loop that does too little arithmetic per iteration is dominated by dispatch
 rather than by compute. The rule this generalizes to: `preferred_device` is where the *tensor work* goes, and
 a tight Python-driven loop over small kernels is a reason to measure rather than to inherit.
+
+`dino_memory` is the second instance and the one that shows the rule is not only about loops. Its
+encoder forward wants MPS, its neighbour selection is on the CPU (~7× faster, and the tie-break differs
+across devices, so a neighbour index is never a cross-device identity), and its covariance fit is CPU
+float64 — batched Cholesky is 16× slower on MPS where the kernel exists at all, and float32 is not
+enough for a covariance fitted from fewer samples than dimensions. Three stages, three placements, one
+`preferred_device`. All of it comes from `scripts/dino-memory-smoke-test.py`, which ran before the
+plugin was written (ADR-0008): nothing in the application would have revealed any of it, because a run
+finishes and the numbers are correct on whichever device it used.
 
 ## Classical baseline
 

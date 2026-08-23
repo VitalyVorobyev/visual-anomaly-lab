@@ -12,7 +12,7 @@ comparing them under one evaluation protocol.
   showcase dataset is one reference dataset, not the scope.
 - **Only** a `classical_circular` plugin — not built, and optional — may assume anything about the
   showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_custom`,
-  `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`), evaluation
+  `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`, `dino_memory`), evaluation
   layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
   secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
@@ -59,7 +59,7 @@ comparing them under one evaluation protocol.
 - `docs/backlog.md` — the open task list, and nothing that has shipped.
 - `docs/measurements.md` — **the numbers that still decide something**: each predeclared gate, its
   protocol and its verdict. Cite it rather than restating a figure.
-- `docs/adr/` — **24 records, every one of them live** (`docs/adr/README.md` is the index). A record
+- `docs/adr/` — **25 records, every one of them live** (`docs/adr/README.md` is the index). A record
   captures a choice **that had a live alternative**; the bar is *would a competent engineer plausibly
   have chosen otherwise, and would changing it now cost more than a refactor?* A contract detail, a
   helper, or a read path for something already decided is **handbook material, not a new ADR**.
@@ -84,10 +84,12 @@ comparing them under one evaluation protocol.
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
-  as a verified ONNX bundle. Five methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  as a verified ONNX bundle. Six methods ship: `pixel_reference` (numpy + Pillow, the floor),
   `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
-  bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction) and `glass_anomalib`
-  (learned anomaly synthesis). A grouped multi-view dataset is now *usable* and not merely
+  bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction), `glass_anomalib`
+  (learned anomaly synthesis) and `dino_memory` (ours; a frozen DINOv2/DINOv3 patch memory that is a
+  coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
+  complete and tested, with no public gate run against it yet). A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
   aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
   the registration the scan measured.

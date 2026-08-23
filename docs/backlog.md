@@ -29,9 +29,20 @@ until its output has been reviewed.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
       1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver
       memory. App-managed offline loading, plugin integration and the public quality gate remain.
-- [ ] **Evaluate SuperADD** (M): anomalib 2.6 ships it, but first expose and plan its hidden
-      100 000-vector database bound, test a smaller DINOv3 backbone, and measure CPU/MPS behaviour.
-      Keep it behind Dinomaly unless it adds value beyond the existing memory-bank family.
+- [ ] **Run the `dino_memory` VisA gate** (M): all three scoring rules against PatchCore on the
+      official one-class split, same prepared pixels, on the classes the earlier gates used. The
+      plugin ships with no public number beside it, and `local_knn`'s registration premise cannot be
+      tested on VisA at all — that class of evidence needs registered multi-view data (ADR-0037).
+- [ ] **Let `diagnose` pass a whole sample group** (S): `experiments/diagnose.py` scores a single
+      record, so asking a `feature_concat` `dino_memory` model about one image of a multi-channel
+      sample lands in the channel refusal instead of producing a diagnostic. The refusal is readable
+      and names the sample; the fix is to resolve the sample's group the way `infer` does.
+- [ ] **ONNX export for `dino_memory`'s single-image modes** (M): `per_image` fusion has a real
+      single-input graph — encoder, distance kernel, upsample, blur — and `portable_formats` is empty
+      today because `feature_concat` does not, and a format that is true for one configuration of a
+      method is worse than an absent one. Either the capability becomes configuration-aware at the
+      export seam, or the export refuses `feature_concat` by name the way `pixel_reference` refuses a
+      multi-reference bank.
 - [ ] **Give PatchCore the tuning EfficientAD got, then re-compare** (M): the first head-to-head is
       defaults against a tuned run, so the 0.047 sample ROC-AUC gap says nothing about the methods.
       `backbone`, `layer_set`, `coreset_ratio` and `max_candidate_vectors` are all fields, so each is

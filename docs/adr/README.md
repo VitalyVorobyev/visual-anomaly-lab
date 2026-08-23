@@ -46,6 +46,7 @@ citation can resolve to the wrong record.
 | [0034](0034-portable-models-are-verified-deployment-bundles.md) | Portable models are verified deployment bundles | Deployment |
 | [0035](0035-an-experiment-selects-its-channels-by-name.md) | An experiment selects its channels, by name | Evaluation |
 | [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
+| [0037](0037-a-frozen-dino-memory-is-ours-and-its-scoring-rule-is-one-axis.md) | A frozen DINO memory is ours, and its scoring rule is one axis | Methods |
 
 ## Conventions
 

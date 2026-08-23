@@ -45,7 +45,8 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 - **Object-region experiments.** Identity, classical localization, and MobileSAM-backed region profiles are
   versioned and pinned to experiments so preprocessing remains reproducible.
 - **Several method families.** A transparent statistical floor, EfficientAD implementations, a bounded
-  PatchCore memory bank, transformer reconstruction with Dinomaly, and experimental learned synthesis.
+  PatchCore memory bank, transformer reconstruction with Dinomaly, experimental learned synthesis, and a
+  frozen DINO patch memory whose scoring rule — global, per position, or per-position Gaussian — is a field.
 - **Evidence, not only scores.** Image and pixel metrics, source-frame maps, threshold exploration,
   false-positive/false-negative galleries, intermediate diagnostics, resource plans, and full job logs.
 - **Honest comparison.** Runs share dataset and split; threshold-independent metrics compare directly, while
@@ -64,6 +65,7 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 | Feature memory bank | `patchcore_anomalib` | Short bounded fit; bank and paper score export to ONNX |
 | Transformer reconstruction | `dinomaly_anomalib` | High-quality public-data reference; longer fit; ONNX export |
 | Learned anomaly synthesis | `glass_anomalib` | Experimental; public gate did not promote it; ONNX export |
+| Frozen-backbone patch memory | `dino_memory` | Ours; a DINOv2/DINOv3 patch memory scored globally, per position, or as a per-position Gaussian. Nothing is trained; no public gate run yet |
 
 See the generated [method catalogue](docs/book/generated/methods.md),
 [selection guide](docs/book/model-selection.md), and checked
@@ -115,3 +117,9 @@ validate source-image preparation, target execution provider, latency, memory, a
 Reference datasets remain under their authors' licences. Screenshots in this README use VisA imagery
 (CC BY 4.0). Model implementations build on the cited papers and, where named, Intel's
 [anomalib](https://github.com/open-edge-platform/anomalib).
+
+`dino_memory` can optionally use Meta's DINOv3 encoder weights, which are distributed under the
+[DINOv3 licence](https://huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m): the download is gated,
+access must be requested from Meta for your own Hugging Face account, and nothing is fetched unless you
+select one of those two backbones. The method's default is an ungated Apache-2.0 DINOv2 encoder that
+needs no account at all.
