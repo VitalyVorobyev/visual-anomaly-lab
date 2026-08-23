@@ -203,7 +203,10 @@ run finishes and the bank is correct, it is merely three times slower than it ne
 not before, so a job reports no progress and ignores cancellation for as long as it runs. Every other long
 operation here stops within one step. So the projection and the distance stay anomalib's, the iteration order
 is identical, and `test_dl_patchcore.py::test_the_greedy_selection_matches_anomalib` pins that the same
-features and the same starting point produce the same indices.
+features and the same starting point produce the same indices. The loop lives in `models/coreset.py`
+rather than in the plugin, because it is torch-only and an in-house method — which may not import
+anomalib at all — should be able to reuse it. `patchcore_anomalib` re-exports it under its own name, so
+nothing about the selection moved except the file it is written in.
 
 ### A seed only means something if it reaches every stream
 
