@@ -49,8 +49,6 @@ until its output has been reviewed.
 - [ ] **Make the custom autoencoder resolution-agnostic** (M): replace the hard-coded `//64 - 1`
       upsample ladder and the 8×8 bottleneck so the 256 px floor goes away. The guard refusing
       smaller inputs is honest, but it refuses a configuration the architecture could support.
-- [ ] **Give `efficientad_anomalib` the same input-size guard** (S): it currently fails inside
-      `conv2d` with a message about a padded input size.
 - [ ] **Batch inference for the deep methods** (M): one image per forward pass today. PatchCore's
       backbone forward is 7 ms of a ~22 ms image — worth it only once inference is the bottleneck in
       a comparison.

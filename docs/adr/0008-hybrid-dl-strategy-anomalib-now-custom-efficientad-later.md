@@ -59,3 +59,15 @@ Negative consequences, accepted honestly:
   interface must keep accommodating both.
 - **Wrapper leakage.** Config models risk becoming pass-throughs of anomalib's own options, which
   would couple our UI and stored experiment configs to a third-party schema.
+
+## Changelog
+
+**2026-08-23 — the EfficientAD leg of "wrappers first, custom later" is complete, and the
+wrapper is retired.** `efficientad_anomalib` shipped first, as this record set out to do;
+`efficientad_custom` then shipped behind the same interface and, per ADR-0029, became the
+implementation this workbench measures and improves rather than a second copy of a known
+number. With the in-house implementation established and preferred, the wrapper no longer earns
+its maintenance cost (API churn, Lightning coupling, a heavy dependency) and has been removed
+from the registry; its recorded numbers remain in `docs/measurements.md` as a historical
+baseline. `patchcore_anomalib`, `dinomaly_anomalib` and `glass_anomalib` are unaffected — the
+wrappers-first strategy stands for them.

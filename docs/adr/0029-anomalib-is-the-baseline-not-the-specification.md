@@ -102,3 +102,26 @@ Negative consequences, accepted honestly:
   controls. ADR-0007 predicted the capability flags would become "a growing, weakly-typed catalogue of
   exceptions"; the same pressure now applies one level down, to a method's own options, and the same
   discipline is owed — a field that never gets measured should be deleted, not kept.
+
+## Changelog
+
+**2026-08-23 — `efficientad_anomalib` is retired; two honest degradations follow.** The wrapper
+this record measures `efficientad_custom` against is removed from the registry (the roadmap's
+method count drops to five). Two things this record relied on change character rather than
+disappear:
+
+1. **The baseline leg becomes a recorded historical measurement, not a re-runnable in-app
+   comparison.** The numbers in `docs/measurements.md` stand; nothing new can be measured against
+   the wrapper without reinstalling code that is now deleted. A future comparison against
+   anomalib's EfficientAD would mean re-adding the wrapper, not flipping a flag.
+2. **The diagnostic-key contract is no longer read from the wrapper's source.** "The diagnostic
+   keys are the wrapper's, pinned by a test that reads them out of the wrapper's own source"
+   (Decision, above) described a live read of `efficientad_anomalib.py`; that file is gone, so the
+   keys are now a frozen literal set in
+   `test_dl_efficientad_custom.py::test_the_diagnostic_keys_are_the_ones_the_views_expect`. The
+   keys themselves are unchanged; the executable specification moved from a source file to a
+   written list.
+
+The rest of the record is unaffected: `efficientad_custom` is still our own implementation, still
+measured against a floor rather than cloning a specification, and the equivalence and divergence
+discipline still applies to it alone.

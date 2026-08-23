@@ -69,3 +69,10 @@ Negative consequences, accepted honestly:
 - **Progress and cancellation are cooperative.** A model that never calls the cancellation check
   cannot be stopped politely; enforcement lives entirely in ADR-0009's process boundary.
 - **Storage cost of raw maps** is significant (~5 MB per 1280x1024 float32 map).
+
+## Changelog
+
+**2026-08-23 — `efficientad_anomalib` retired from the registry.** The key list above named
+`efficientad_anomalib` among the stable registry keys; that method — the anomalib wrapper — is
+no longer registered (ADR-0029 changelog). The decision here (a stable-key registry, capability
+flags, no route or schema per method) is unchanged; only the roster is smaller.

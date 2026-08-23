@@ -1203,3 +1203,65 @@ def test_the_metric_set_records_how_the_channels_were_combined(
     for entry in metrics:
         assert entry["metrics"]["aggregation"] == "max"
         assert entry["metrics"]["channel_normalization"] == "none"
+
+
+# ------------------------------------------------------- a method that no longer exists
+
+
+def test_an_experiment_whose_method_was_removed_stays_readable(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """Retiring a method (e.g. `efficientad_anomalib`, ADR-0029) must not orphan its rows.
+
+    `model_type` carries no foreign key, so an experiment created under a key that used to
+    be registered stays in the database after the key is retired. This is what the five
+    `except UnknownModelError` sites in `api/routers/experiments.py` are for: capabilities
+    degrade to nothing rather than the request failing.
+
+    Creation-time refusal (`create_experiment`, ~line 577) is exercised by
+    `test_an_unknown_method_is_refused_by_name` instead — a *new* experiment cannot be
+    created under an unregistered key at all, so that site is unreachable for a row that
+    already exists, which is the case this test is about.
+
+    A plain `POST .../train` (no `additional_steps`) is not covered here either: it
+    enqueues a job unconditionally and only reads `model_type` inside the worker process,
+    not synchronously in the router — a retired method fails the *job*, not the request.
+    Only the resume path (`additional_steps` set) is checked synchronously, in
+    `_refuse_impossible_resume`.
+    """
+    retired = "a_retired_method"
+    with connection(settings.db_path) as conn:
+        experiment = experiments_repo.create_experiment(
+            conn,
+            name="orphaned",
+            dataset_id=seeded.dataset_id,
+            split_id=seeded.split_id,
+            region_profile_id=seeded.region_profile_id,
+            region_manifest_sha256="0" * 64,
+            model_type=retired,
+            model_config={},
+            preprocessing_config={},
+            eval_config={},
+            artifact_dir=str(settings.data_dir / "experiments" / "exp-retired"),
+        )
+
+    detail = client.get(f"/api/experiments/{experiment.id}").json()
+    assert detail["produces_anomaly_map"] is False
+    assert detail["produces_diagnostics"] is False
+    assert detail["supports_resume"] is False
+    assert detail["portable_formats"] == []
+
+    resumed = client.post(
+        f"/api/experiments/{experiment.id}/train",
+        json={"experiment_id": experiment.id, "additional_steps": 500},
+    )
+    assert resumed.status_code == 422
+    assert retired in resumed.text
+
+    diagnosed = client.post(f"/api/experiments/{experiment.id}/diagnose", json={"image_id": 1})
+    assert diagnosed.status_code == 422
+    assert retired in diagnosed.text
+
+    exported = client.post(f"/api/experiments/{experiment.id}/export")
+    assert exported.status_code == 422
+    assert retired in exported.text

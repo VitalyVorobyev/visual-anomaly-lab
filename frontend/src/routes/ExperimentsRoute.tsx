@@ -5,7 +5,7 @@
  * from schemas the backend serves (`useModelTypes`). Nothing in this file names a method,
  * knows a hyperparameter, or has an opinion about what EfficientAD needs — which is the
  * claim ADR-0007 makes, tested by the fact that `pixel_reference` and
- * `efficientad_anomalib` have nothing in common and both render here.
+ * `patchcore_anomalib` have nothing in common and both render here.
  *
  * The form is three numbered steps, and the numbering is not decoration: a split belongs to
  * a dataset, and a configuration belongs to a method, so each choice is only answerable

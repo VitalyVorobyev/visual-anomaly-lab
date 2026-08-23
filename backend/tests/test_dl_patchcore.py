@@ -579,8 +579,8 @@ def test_downloads_can_be_refused_by_name() -> None:
     """`allow_downloads=False` must fail naming the backbone, not reach for the network.
 
     A tool that claims to be local-only should not quietly fetch 260 MB, and the error has
-    to say which knob turns it back on — the same contract `efficientad_anomalib` keeps for
-    its teacher and penalty set.
+    to say which knob turns it back on — the same contract `dinomaly_anomalib` keeps for
+    its backbone weights.
     """
     model = PatchcoreAnomalibModel(
         _config(backbone="not_a_real_backbone_xyz", pretrained_backbone=True, allow_downloads=False)

@@ -116,3 +116,12 @@ wrapper the baseline this method is measured against; it is a baseline this meth
 behind rather than one it is tracked against run by run.
 
 Amended rather than superseded, per ADR-0030: the decision is unchanged, its scope is narrower.
+
+**2026-08-23 — the in-app head-to-head is gone; the ablation stays.** `efficientad_anomalib` is
+retired from the registry (ADR-0029 changelog), so "a head-to-head against
+`efficientad_anomalib` must pin `teacher_source="anomalib"`" (Consequences, above) no longer
+describes a request the application can make — there is no wrapper left to run beside it.
+`teacher_source="anomalib"` remains a valid value of `efficientad_custom`'s own config, usable as
+a deliberate ablation read against the recorded historical numbers in `docs/measurements.md`,
+rather than against a live wrapper run. The experiments already recorded against it (five, per
+the 2026-08-08 entry above) stay loadable for the same reason they always did.

@@ -411,9 +411,11 @@ def test_a_grayscale_experiment_scores_the_same_as_an_rgb_one(tmp_path: Path) ->
 def test_the_diagnostic_keys_are_the_ones_the_views_expect(tmp_path: Path) -> None:
     """ADR-0018 names key agreement as a coordination cost M6 has to pay. This pays it.
 
-    The keys are compared against `efficientad_anomalib`'s, read out of its source rather
-    than restated here — restating them would make this test agree with the plan instead of
-    with the thing the M4 views were written against.
+    These keys used to be read out of `efficientad_anomalib`'s source rather than
+    restated here, so this test agreed with the thing the M4 views were written against
+    rather than with the plan. That wrapper is retired (ADR-0029); its diagnostic keys are
+    now the contract itself, frozen here as a literal set instead of a live read of a file
+    that no longer exists.
     """
     train_ctx, infer_ctx = _contexts(tmp_path)
     model = EfficientAdCustomModel(_config(max_steps=10))
@@ -423,21 +425,16 @@ def test_the_diagnostic_keys_are_the_ones_the_views_expect(tmp_path: Path) -> No
     emitted = {entry.key for entry in train_ctx.diagnostics.flush().entries}
     emitted |= {entry.key for entry in infer_ctx.diagnostics.flush().entries}
 
-    wrapper = Path("src/anomaly_lab/models/efficientad_anomalib.py").read_text(encoding="utf-8")
     expected = {
-        key
-        for key in (
-            "architecture",
-            "teacher_features_pca",
-            "teacher_features_grid",
-            "teacher_magnitude",
-            "score_normalization",
-            "map_student_teacher",
-            "map_autoencoder",
-        )
-        if f'"{key}"' in wrapper
+        "architecture",
+        "teacher_features_pca",
+        "teacher_features_grid",
+        "teacher_magnitude",
+        "score_normalization",
+        "map_student_teacher",
+        "map_autoencoder",
     }
-    assert expected, "the wrapper's diagnostic keys could not be read; this test is not testing"
+    assert expected, "the diagnostic-key contract is not testing anything if it is empty"
     assert expected <= emitted
 
 

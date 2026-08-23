@@ -468,7 +468,6 @@ def test_every_registered_method_describes_itself_without_importing_torch() -> N
     keys = {entry.key for entry in described}
     assert {
         "pixel_reference",
-        "efficientad_anomalib",
         "dinomaly_anomalib",
         "glass_anomalib",
     } <= keys

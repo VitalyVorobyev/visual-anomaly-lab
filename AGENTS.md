@@ -11,8 +11,8 @@ comparing them under one evaluation protocol.
 - The target is a **universal anomaly-detection explorer for arbitrary image datasets**. The private
   showcase dataset is one reference dataset, not the scope.
 - **Only** a `classical_circular` plugin — not built, and optional — may assume anything about the
-  showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_anomalib`,
-  `efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`), evaluation
+  showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_custom`,
+  `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`), evaluation
   layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
   secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
@@ -84,15 +84,16 @@ comparing them under one evaluation protocol.
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
-  as a verified ONNX bundle. Six methods ship: `pixel_reference` (numpy + Pillow, the floor),
-  `efficientad_anomalib` and `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
+  as a verified ONNX bundle. Five methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
   bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction) and `glass_anomalib`
   (learned anomaly synthesis). A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
   aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
   the registration the scan measured.
 - **Nothing is compared in score units (ADR-0028).** A score has no meaning outside its own run —
-  `pixel_reference` operates around 14 and `efficientad_anomalib` around 0.065 on the same data.
+  `pixel_reference` operates around 14 and `efficientad_custom` reports its own
+  quantile-normalized scale, unrelated to it, on the same data.
   Threshold-independent metrics compare directly; anything threshold-dependent is resolved **per run
   by one shared rule** whose name and resolved value are printed on screen, and a cut carried between
   runs is a *fraction of each range*, never a value. A single slider over a comparison would be
