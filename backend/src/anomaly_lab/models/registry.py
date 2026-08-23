@@ -52,6 +52,12 @@ def _glass_anomalib() -> type[AnomalyModel]:
     return GlassAnomalibModel
 
 
+def _dino_memory() -> type[AnomalyModel]:
+    from anomaly_lab.models.dino_memory import DinoMemoryModel
+
+    return DinoMemoryModel
+
+
 # `efficientad_custom` cost exactly one entry and one module in M6 — no route, no schema, no
 # line of TypeScript — which is the prediction ADR-0007 made. It started as a second
 # implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
@@ -61,12 +67,16 @@ def _glass_anomalib() -> type[AnomalyModel]:
 # weights. Dinomaly adds reconstruction training and exact continuation without changing
 # the boundary. GLASS adds learned anomaly synthesis and a bounded reference-frame pass
 # under that same contract: each method still costs one module and one entry here.
+# `dino_memory` is the first in-house method built on the shared frozen-encoder table, and it
+# holds three different memories behind one `scoring` axis — a coreset bank, a per-position
+# bank and a per-position Gaussian — which still cost one module and this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
     "patchcore_anomalib": _patchcore_anomalib,
     "dinomaly_anomalib": _dinomaly_anomalib,
     "glass_anomalib": _glass_anomalib,
+    "dino_memory": _dino_memory,
 }
 
 

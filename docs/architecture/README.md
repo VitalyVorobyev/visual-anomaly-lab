@@ -201,7 +201,7 @@ a server-visible absolute directory path.
 
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
 identifiers persisted in `Experiment.model_type`: `pixel_reference`,
-`efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`. Adding a method means
+`efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`, `dino_memory`. Adding a method means
 adding a module and a registry entry — nothing else in the application changes.
 
 **SQLite** at `data/app.sqlite3` — metadata, configuration, scores, paths ([the domain model](domain-model.md)). **Artifact store** at

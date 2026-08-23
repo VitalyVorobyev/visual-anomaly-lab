@@ -5,7 +5,8 @@
     "efficientad_custom": {"family": "student–teacher + reconstruction", "maturity": "supported"},
     "patchcore_anomalib": {"family": "feature memory bank", "maturity": "supported"},
     "dinomaly_anomalib": {"family": "transformer feature reconstruction", "maturity": "supported"},
-    "glass_anomalib": {"family": "learned anomaly synthesis", "maturity": "experimental"}
+    "glass_anomalib": {"family": "learned anomaly synthesis", "maturity": "experimental"},
+    "dino_memory": {"family": "frozen-backbone patch memory", "maturity": "experimental"}
   },
   "quality_protocols": [
     {
