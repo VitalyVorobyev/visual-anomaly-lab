@@ -3,6 +3,7 @@ privatedata/
 *.bmp
 *.BMP
 docs/initial-prompt.md
+setenv.sh
 
 # ── Public reference datasets: too large to commit, freely available ───────
 # Anchored with a leading slash, and it matters: an unanchored `datasets` matches

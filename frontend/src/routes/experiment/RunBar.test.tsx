@@ -25,7 +25,7 @@ function trained(steps: number, runs = 1): TrainingState {
     completed_steps: steps,
     runs,
     last_run_steps: steps,
-    model_type: "efficientad_anomalib",
+    model_type: "efficientad_custom",
     written_at: "",
     resumable: true,
   };

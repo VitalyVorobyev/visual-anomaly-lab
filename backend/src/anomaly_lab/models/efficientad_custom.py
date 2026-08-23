@@ -1,10 +1,12 @@
 """`efficientad_custom` — EfficientAD (arXiv:2303.14535), ours.
 
-The second implementation of one method, behind the same interface as the first
-(**ADR-0007**, **ADR-0008**). `efficientad_anomalib` wraps Intel's library and is the
-**baseline this is measured against, not the specification it must match** (**ADR-0029**):
-everything that decides a number here is ours, and improving on the baseline on evidence is
-the point of having built the workbench.
+The in-house implementation of the method, behind the same `AnomalyModel` interface as
+every other one (**ADR-0007**, **ADR-0008**). It started as the second of two
+implementations, measured against `efficientad_anomalib` — a thin wrapper around Intel's
+anomalib — as **a baseline, not a specification to match** (**ADR-0029**): everything that
+decides a number here is ours. That wrapper is now retired, its head-to-head numbers kept
+only as a recorded historical comparison rather than something the workbench can re-run
+(**ADR-0029** changelog).
 
 The pieces live next door and are imported inside functions, so the registry stays lazy and
 opening the method picker costs nothing: `efficientad_nets` holds the architecture and the
@@ -17,8 +19,8 @@ workbench itself can run and put beside its own baseline on the comparison scree
 (**ADR-0028**). Their defaults reproduce the published *algorithm*, so an untouched run is
 the verified core that `test_dl_efficientad_equivalence.py` pins, and a change is one field.
 
-**One default is no longer the wrapper's, and it is the most important one.**
-`teacher_source` defaults to `nelson1425` rather than to the asset anomalib ships, because
+**One default departs from the retired wrapper's, and it is the most important one.**
+`teacher_source` defaults to `nelson1425` rather than to the asset anomalib shipped, because
 over three seeds on `candle` that teacher measured 0.889 sample ROC-AUC against 0.769, and
 0.914 AU-PRO against 0.539 — an effect larger than any other in this milestone and far
 outside either implementation's seed spread.
@@ -26,20 +28,18 @@ outside either implementation's seed spread.
 **New runs do not use the anomalib teacher at all.** It remains a value of `teacher_source`
 only so the runs already recorded against it stay reproducible — an experiment's
 configuration is the record of what it did, and removing the value would make five of them
-unloadable. The consequence to keep in view: an implementation-versus-implementation
-head-to-head against the wrapper would have to pin it, so **that comparison is now a
-deliberate exercise rather than something a default produces**. ADR-0029 still makes the
-wrapper the baseline; it is a baseline this method has left behind rather than one it is
-tracked against run by run.
+unloadable. `teacher_source="anomalib"` is now a deliberate ablation against those recorded
+numbers rather than something a default, or an in-app head-to-head, produces (**ADR-0029**,
+**ADR-0031**).
 
-**What differs from the wrapper, and why:**
+**What this implementation does differently from the retired wrapper, and why:**
 
   * **Guards.** The autoencoder's *encoder* has an 8x8 kernel after five stride-2
-    convolutions, so 256 px is a hard floor. Below it the wrapper fails inside `conv2d`
+    convolutions, so 256 px is a hard floor. The wrapper failed inside `conv2d` below it,
     with a message about a padded input size, several layers from anything actionable.
   * **Calibration can hold out its own normals.** EfficientAD fits its score normalization
     on held-out data, and VisA's official one-class protocol has no `val` subset, so the
-    wrapper falls back to the training normals and says so. `calibration_holdout` carves a
+    wrapper fell back to the training normals and said so. `calibration_holdout` carves a
     slice out of training instead. Off by default, because it is a hypothesis until it has
     been measured.
   * **The quantile fit is a bounded reservoir**, not every map held in memory. `torch.quantile`
@@ -95,8 +95,8 @@ carry everything a continuation needs (**handbook jobs.md**) without a legacy sh
 
 DEFAULT_MAX_STEPS = 4000
 """The paper trains for 70000, about two and a half hours here at the measured 123 ms/step.
-This default matches the wrapper's so a head-to-head is like-for-like at the same budget,
-and it costs accuracy against the published number — which the field description says."""
+This default matched the retired wrapper's, for a like-for-like head-to-head at the same
+budget, and it costs accuracy against the published number — which the field description says."""
 
 _LOSS_LOG_EVERY = 20
 _QUANTILE_LOW = 0.9
@@ -300,9 +300,9 @@ class EfficientAdCustomModel(AnomalyModel):
     def _check_preprocessing(self, ctx: TrainContext | InferContext) -> None:
         """Refuse a configuration this architecture cannot run, by name.
 
-        The wrapper does not, and the resulting failure is a `RuntimeError` from `conv2d`
-        naming a padded input size — true, and useless to anyone who has not read the
-        autoencoder. Both dimensions are checked: the encoder collapses each axis
+        The retired wrapper did not, and the resulting failure was a `RuntimeError` from
+        `conv2d` naming a padded input size — true, and useless to anyone who has not read
+        the autoencoder. Both dimensions are checked: the encoder collapses each axis
         independently, so a 256x128 input fails on one of them only.
         """
         from anomaly_lab.models.efficientad_nets import INPUT_MULTIPLE, MINIMUM_INPUT

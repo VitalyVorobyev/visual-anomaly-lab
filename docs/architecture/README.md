@@ -200,7 +200,7 @@ a server-visible absolute directory path.
 | `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
 
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
-identifiers persisted in `Experiment.model_type`: `pixel_reference`, `efficientad_anomalib`,
+identifiers persisted in `Experiment.model_type`: `pixel_reference`,
 `efficientad_custom`, `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`. Adding a method means
 adding a module and a registry entry — nothing else in the application changes.
 

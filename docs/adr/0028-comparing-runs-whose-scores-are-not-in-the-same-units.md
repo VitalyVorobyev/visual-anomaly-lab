@@ -141,3 +141,11 @@ Negative consequences, accepted honestly:
   that was retrained without being re-scored shows the older ones. `POST /reevaluate` is the fix and
   the screen names it, but nothing detects the staleness — the same gap ADR-0011 accepts for the
   single-run results screen, now visible in a table where one column can be stale beside a fresh one.
+
+## Changelog
+
+**2026-08-23 — the illustration named a retired method.** `efficientad_anomalib` is no longer
+registered (ADR-0029 changelog); the two-methods-two-scales point in Context above still holds
+verbatim for a surviving pair — `pixel_reference` around 8, and `efficientad_custom`'s own
+quantile-normalized sum on a scale unrelated to it. Nothing about the decision changes: a score
+still has no meaning outside its own run.

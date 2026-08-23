@@ -2,7 +2,6 @@
   "schema_version": 1,
   "methods": {
     "pixel_reference": {"family": "statistical reference", "maturity": "supported"},
-    "efficientad_anomalib": {"family": "student–teacher + reconstruction", "maturity": "supported"},
     "efficientad_custom": {"family": "student–teacher + reconstruction", "maturity": "supported"},
     "patchcore_anomalib": {"family": "feature memory bank", "maturity": "supported"},
     "dinomaly_anomalib": {"family": "transformer feature reconstruction", "maturity": "supported"},

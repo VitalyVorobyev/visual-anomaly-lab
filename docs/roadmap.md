@@ -25,8 +25,8 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible.
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
-- **Train and score** through one plugin interface. Six methods ship: `pixel_reference`
-  (numpy + Pillow, the floor), `efficientad_anomalib`, `efficientad_custom`, `patchcore_anomalib`,
+- **Train and score** through one plugin interface. Five methods ship: `pixel_reference`
+  (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
   `dinomaly_anomalib` and `glass_anomalib`. Jobs run as subprocesses with live progress,
   cancellation and a replayable log.
 - **Select channels per experiment** by name, with per-channel score normalization before

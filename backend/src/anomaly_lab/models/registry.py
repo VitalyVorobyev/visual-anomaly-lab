@@ -28,12 +28,6 @@ def _pixel_reference() -> type[AnomalyModel]:
     return PixelReferenceModel
 
 
-def _efficientad_anomalib() -> type[AnomalyModel]:
-    from anomaly_lab.models.efficientad_anomalib import EfficientAdAnomalibModel
-
-    return EfficientAdAnomalibModel
-
-
 def _efficientad_custom() -> type[AnomalyModel]:
     from anomaly_lab.models.efficientad_custom import EfficientAdCustomModel
 
@@ -59,15 +53,16 @@ def _glass_anomalib() -> type[AnomalyModel]:
 
 
 # `efficientad_custom` cost exactly one entry and one module in M6 — no route, no schema, no
-# line of TypeScript — which is the prediction ADR-0007 made. `patchcore_anomalib` cost the
-# same in M7, and it is the stronger test of the two: EfficientAD's second implementation
-# has the same shape as its first, while PatchCore trains nothing and holds a memory bank
-# instead of weights. Dinomaly adds reconstruction training and exact continuation without
-# changing the boundary. GLASS adds learned anomaly synthesis and a bounded reference-frame
-# pass under that same contract: each method still costs one module and one entry here.
+# line of TypeScript — which is the prediction ADR-0007 made. It started as a second
+# implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
+# since been retired now that the in-house implementation is the one the workbench carries
+# forward (ADR-0008, ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
+# stronger test of the two: PatchCore trains nothing and holds a memory bank instead of
+# weights. Dinomaly adds reconstruction training and exact continuation without changing
+# the boundary. GLASS adds learned anomaly synthesis and a bounded reference-frame pass
+# under that same contract: each method still costs one module and one entry here.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
-    "efficientad_anomalib": _efficientad_anomalib,
     "efficientad_custom": _efficientad_custom,
     "patchcore_anomalib": _patchcore_anomalib,
     "dinomaly_anomalib": _dinomaly_anomalib,

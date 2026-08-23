@@ -22,10 +22,9 @@ layers, and coreset budget as separate experiments.
 `efficientad_custom` combines local teacher/student disagreement with a reconstruction branch. It is much
 smaller at inference than transformer references and supports exact continuation. Teacher identity and
 calibration materially affect ranking. Use several seeds before claiming a small accuracy delta; the checked
-evidence currently supports a speed advantage over the wrapper, not a general accuracy win.
-
-`efficientad_anomalib` remains a useful independent baseline. Both EfficientAD variants have verified ONNX
-exports, so deployment constraints do not decide between them prematurely.
+evidence historically supported a speed advantage over the retired anomalib wrapper, not a general accuracy
+win — see `docs/measurements.md` for the recorded comparison, which is no longer a re-runnable in-app
+baseline (ADR-0029).
 
 ## Transformer reconstruction
 

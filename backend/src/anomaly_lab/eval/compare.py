@@ -1,9 +1,9 @@
 """Reading several runs against each other (ADR-0028).
 
 The premise of this module is one fact: **a score has no meaning outside its own run.**
-`pixel_reference` reports a robust z and peaks around 8; `efficientad_anomalib` reports a
-quantile-normalized sum and peaks around 1.3. Nothing relates the two, because there is no
-shared quantity underneath — so nothing here is ever compared in score units.
+`pixel_reference` reports a robust z and peaks around 8; `efficientad_custom` reports a
+quantile-normalized sum on its own, unrelated scale. Nothing relates the two, because there
+is no shared quantity underneath — so nothing here is ever compared in score units.
 
 What is shared across runs is a *rule*. Each run's threshold is derived by the same stated
 rule from its own distribution, and the caller is expected to print both the rule and the

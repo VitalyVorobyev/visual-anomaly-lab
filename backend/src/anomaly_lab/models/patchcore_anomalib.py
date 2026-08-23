@@ -12,9 +12,9 @@ generator, and `SparseRandomProjection`. Everything that decides a number is ano
 
 **What is ours:** the fit pass, the bounding, the greedy selection loop, and the reporting.
 
-The selection loop is ours for the same reason the EfficientAD training loop is
-(`efficientad_anomalib`): anomalib's `KCenterGreedy` is a `tqdm` loop that returns when it
-is finished and not before. At library defaults on a full VisA class that is 92 160
+The selection loop is ours for the same reason a training loop that drives its torch module
+directly instead of through anomalib's own runner is: `KCenterGreedy` is a `tqdm` loop that
+returns when it is finished and not before. At library defaults on a full VisA class that is 92 160
 iterations over a 5.66 GB store — ten minutes in which the job reports no progress and
 cancellation does nothing. Every other long operation in this workbench stops within one
 step, and a method that cannot is a hole in the application rather than a property of the
@@ -51,11 +51,13 @@ is correct, it is merely three times slower than it needed to be.
 
 **PatchCore's backbone needs ImageNet normalization and anomalib does not apply it inside
 the model.** `Patchcore.configure_pre_processor` puts it in the Lightning pre-processor,
-which this wrapper does not use for the reason `efficientad_anomalib` gives at length: the
-preprocessing bridge is what makes a comparison mean anything. EfficientAD normalizes in
-`forward` and can therefore be handed `load_array`'s `[0, 1]` array unchanged; PatchCore
-cannot, and feeding it unnormalized pixels runs, produces maps, and quietly scores an
-off-distribution backbone. So it is applied here, from the constants in `preprocessing.py`.
+which this wrapper does not use: the preprocessing bridge is what makes a comparison mean
+anything, and adopting anomalib's own pre-processor would mean adopting its own resize and
+normalization ahead of it, breaking the property that every method sees identical pixels
+(`preprocessing.py`). `efficientad_custom` normalizes in `forward` and can therefore be
+handed `load_array`'s `[0, 1]` array unchanged; PatchCore cannot, and feeding it unnormalized
+pixels runs, produces maps, and quietly scores an off-distribution backbone. So it is applied
+here, from the constants in `preprocessing.py`.
 
 **The backbone weights are an input to the experiment** (`docs/architecture/methods.md`).
 timm's pretrained `wide_resnet50_2` is the output of somebody's training run, resolved

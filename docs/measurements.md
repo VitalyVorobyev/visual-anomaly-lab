@@ -14,6 +14,10 @@ The comparison ADR-0029 exists to keep honest. The protocol is VisA's **publishe
 set, byte-identical, with the validation holdout carved from `train` only (810 normal train, 90 val,
 100 + 100 test) — so nothing here is a generated split.
 
+The baseline leg below was measured against `efficientad_anomalib`, the anomalib wrapper; that
+method is now retired from the registry (ADR-0029 changelog), so these numbers are a historical
+record rather than a comparison the workbench can re-run in-app.
+
 **The teacher is not one file, and that assumption cost a result.** Two public EfficientAD teachers
 disagree on the same data:
 

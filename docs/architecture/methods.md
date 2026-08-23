@@ -46,8 +46,7 @@ class AnomalyModel(Protocol):
 # torch. That only holds while each plugin keeps its heavy imports inside its functions.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference":       _pixel_reference,       # numpy + Pillow, the floor
-    "efficientad_anomalib":  _efficientad_anomalib,  # the wrapper, and the baseline (ADR-0029)
-    "efficientad_custom":    _efficientad_custom,    # ours, same interface (ADR-0008)
+    "efficientad_custom":    _efficientad_custom,    # ours; the anomalib wrapper baseline is retired (ADR-0029)
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
     "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
     "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
@@ -147,7 +146,7 @@ that is not a second preprocessing, it is the network's first layer.
 
 **`expand_planes` sits on the same side of the seam**, for the same reason. How many planes a backbone's first
 convolution wants is a property of that backbone, not of the experiment. Under `color=grayscale`, `load_array`
-returns one plane and the five methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
+returns one plane and the four methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
 Putting the expansion in `load_array` instead would be worse than the duplication it removes: `grayscale` and
 `rgb` would then produce identical arrays for a mono file, so the experiment would record a colour choice that
 changed nothing, and `pixel_reference` — which genuinely consumes whatever it is given — would build its
@@ -157,7 +156,7 @@ The same replication happens **inside the exported ONNX graph** rather than in t
 bundle's declared input really is `preprocessing.channels` and the host is not left with a shape to fix up.
 
 The seam matters because **the two libraries put it in different places**, and one of them is invisible when
-it is wrong. anomalib's EfficientAD normalizes inside the model, so the wrapper hands it `load_array`'s
+it is wrong. `efficientad_custom` normalizes inside the model, so it is handed `load_array`'s
 `[0, 1]` array unchanged. anomalib's PatchCore does **not** — `Patchcore.configure_pre_processor` puts the
 `Normalize` in the Lightning pre-processor, which none of these wrappers use — so `patchcore_anomalib`
 applies it itself, from `IMAGENET_MEAN` / `IMAGENET_STD` in `preprocessing.py`. Feeding an ImageNet backbone
