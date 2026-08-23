@@ -21,7 +21,9 @@ step, and a method that cannot is a hole in the application rather than a proper
 method. The greedy *rule* is not reimplemented so much as re-hosted: the projection and the
 distance are still anomalib's, the iteration order is identical, and
 `test_dl_patchcore.py::test_the_greedy_selection_matches_anomalib` pins that from the same
-starting point the two produce the same coreset.
+starting point the two produce the same coreset. The loop itself lives in `coreset.py`,
+unchanged: it is torch-only, and a method that may not import anomalib should still be able
+to reuse it.
 
 **The bank is bounded by two independent caps, and both are load-bearing.**
 
@@ -72,7 +74,7 @@ from __future__ import annotations
 import hashlib
 import os
 import time
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -97,6 +99,11 @@ from anomaly_lab.models.base import (
     evenly_spaced,
     module_available,
 )
+
+# Re-exported under its old name on purpose: the selection is still this method's, it merely
+# lives where a method that may not import anomalib can also reach it. The `as` form is what
+# makes that a deliberate part of this module's surface rather than an implicit leak.
+from anomaly_lab.models.coreset import greedy_select as greedy_select
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import build_tree, collect
@@ -387,55 +394,6 @@ def _downloads_refused(backbone: str) -> Iterator[None]:
             os.environ.pop("HF_HUB_OFFLINE", None)
         else:
             os.environ["HF_HUB_OFFLINE"] = previous
-
-
-def greedy_select(
-    features: Any,
-    size: int,
-    *,
-    start: int,
-    observe: Callable[[int, float], None] | None = None,
-) -> Any:
-    """k-center-greedy over already-projected features. Anomalib's rule, our loop.
-
-    Each step takes the point furthest from everything chosen so far, which is
-    `KCenterGreedy.select_coreset_idxs` exactly: update the running per-point minimum with
-    the newest centre, take the argmax of that minimum, zero the point just taken so it
-    cannot be taken twice, record it. Anomalib keeps its minima as `(n, 1)` and starts them
-    at `None`; this keeps them as `(n,)` starting at infinity, which is the same function.
-
-    `start` is a parameter rather than drawn here, for two reasons. The caller owns its
-    randomness — a seed in this workbench has to mean something (M6) — and the equivalence
-    test can then hand both implementations the same starting point, so what it compares is
-    the greedy rule rather than two draws from a shared global stream.
-
-    `observe` is called **once per iteration**, before the work. It is where cancellation
-    and progress live, and it is the entire reason this function exists rather than a call
-    to anomalib's: a selection that cannot be watched or stopped is a job that freezes.
-    """
-    import torch
-
-    count = int(features.shape[0])
-    if not 0 <= start < count:
-        msg = f"coreset start index {start} is outside the candidate pool of {count}"
-        raise ValueError(msg)
-    size = max(1, min(size, count))
-
-    minimum = torch.full((count,), float("inf"), dtype=features.dtype)
-    selected = torch.empty(size, dtype=torch.long)
-    index = start
-    selected[0] = index
-
-    for step in range(1, size):
-        if observe is not None:
-            observe(step, float(minimum.max()) if step > 1 else float("inf"))
-        distances = torch.linalg.norm(features - features[index], ord=2, dim=1)
-        minimum = torch.minimum(minimum, distances)
-        index = int(torch.argmax(minimum))
-        minimum[index] = 0.0
-        selected[step] = index
-
-    return selected
 
 
 def _fingerprint(state: dict[str, Any]) -> str:

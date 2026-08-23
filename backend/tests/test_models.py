@@ -21,6 +21,7 @@ from anomaly_lab.models.base import (
     TrainContext,
     evenly_spaced,
 )
+from anomaly_lab.models.coreset import johnson_lindenstrauss_dim
 from anomaly_lab.models.device import resolve_device
 from anomaly_lab.models.diagnostics import (
     DiagnosticError,
@@ -29,6 +30,14 @@ from anomaly_lab.models.diagnostics import (
     DiagnosticWriter,
     load_index,
 )
+from anomaly_lab.models.dino_backbone import (
+    ACCESS_REQUEST_URLS,
+    BACKBONES,
+    DinoBackbone,
+    FeatureLayers,
+    patch_grid,
+)
+from anomaly_lab.models.dino_backbone import validate_prepared_size as validate_dino_size
 from anomaly_lab.models.dinomaly_anomalib import (
     BASE_LR,
     FINAL_LR,
@@ -886,6 +895,103 @@ def test_a_plan_refuses_a_grid_it_could_not_have_measured() -> None:
             max_candidate_vectors=100,
             coreset_ratio=0.1,
         )
+
+
+# ------------------------------------------------- the DINO backbone, torch-free parts
+
+# The table, the size guard, the grid arithmetic and the projection bound are all pure. They
+# live here rather than in `test_dl_dino_backbone.py` for the reason `plan_bank` does: what
+# decides whether a run is legal, reproducible and affordable is checked by the CI job that
+# installs *without* the `dl` extra, and the modules that hold it must therefore import with
+# no torch present at all — which importing them at the top of this file is what asserts.
+
+
+def test_every_backbone_has_a_spec_and_the_spec_is_self_consistent() -> None:
+    assert set(BACKBONES) == set(DinoBackbone)
+    for backbone, spec in BACKBONES.items():
+        assert spec.timm_name
+        assert spec.patch_size in {14, 16}
+        assert spec.embedding_dim in {384, 768}
+        assert spec.depth == 12
+        assert spec.license_note
+        assert (backbone in ACCESS_REQUEST_URLS) is spec.gated
+
+
+def test_the_dinov2_entries_are_the_ungated_ones() -> None:
+    """The ungated-default promise, made checkable before anything depends on it.
+
+    A method that picks a gated encoder by default is a method that fails on a fresh machine
+    with a 401 rather than a result, so which entries need an approved account is a property
+    of the table rather than a note in a docstring.
+    """
+    ungated = {key for key, spec in BACKBONES.items() if not spec.gated}
+    assert ungated == {
+        DinoBackbone.DINOV2_VIT_S14,
+        DinoBackbone.DINOV2_VIT_S14_REG4,
+        DinoBackbone.DINOV2_VIT_B14,
+    }
+    for key in ungated:
+        assert "Apache-2.0" in BACKBONES[key].license_note
+
+
+def test_feature_layers_index_from_the_end_so_one_name_fits_every_depth() -> None:
+    """Negative indices are resolved against the model's own depth by timm."""
+    for layers in FeatureLayers:
+        indices = layers.indices
+        assert indices
+        assert all(-12 <= index <= -1 for index in indices)
+        assert list(indices) == sorted(indices)
+    assert FeatureLayers.LAST.indices == (-1,)
+    assert FeatureLayers.MID_LATE.indices == (-7, -4)
+    assert len(FeatureLayers.LAST_FOUR.indices) == 4
+
+
+def test_a_frame_that_does_not_divide_is_refused_by_name() -> None:
+    with pytest.raises(ValueError, match=r"dinov3_vit_s16.*divisible by 16.*450x448"):
+        validate_dino_size(DinoBackbone.DINOV3_VIT_S16, 450, 448)
+    with pytest.raises(ValueError, match=r"dinov2_vit_s14.*divisible by 14.*448x450"):
+        validate_dino_size(DinoBackbone.DINOV2_VIT_S14, 448, 450)
+
+
+def test_the_refusal_names_the_offending_dimension_and_the_sizes_that_work() -> None:
+    with pytest.raises(ValueError) as failure:
+        validate_dino_size(DinoBackbone.DINOV3_VIT_S16, 450, 448)
+    message = str(failure.value)
+    assert "width does not divide" in message
+    assert "448 or 464" in message
+
+
+def test_448_is_the_size_both_families_share() -> None:
+    """One prepared size that divides by 14 and by 16, so the two families see one resize."""
+    for backbone in DinoBackbone:
+        validate_dino_size(backbone, 448, 448)
+    assert patch_grid(DinoBackbone.DINOV2_VIT_S14_REG4, 448, 448) == (32, 32)
+    assert patch_grid(DinoBackbone.DINOV3_VIT_S16, 448, 448) == (28, 28)
+
+
+def test_a_grid_is_never_produced_for_a_size_that_would_not_run() -> None:
+    with pytest.raises(ValueError, match="divisible by 14"):
+        patch_grid(DinoBackbone.DINOV2_VIT_B14, 448, 450)
+
+
+def test_the_projection_bound_is_the_classical_one_and_grows_with_the_pool() -> None:
+    """284 at eps 0.9 and N=100 000 is the dimension anomalib's own projection picks."""
+    assert johnson_lindenstrauss_dim(100_000, eps=0.9) == 284
+
+    previous = 0
+    for count in (10, 1_000, 25_000, 100_000, 250_000):
+        current = johnson_lindenstrauss_dim(count, eps=0.9)
+        assert current >= previous
+        previous = current
+
+
+def test_the_projection_bound_never_collapses_to_zero_dimensions() -> None:
+    """A single point implies `ln(1) = 0`, and a zero-width projection is not a projection."""
+    assert johnson_lindenstrauss_dim(1, eps=0.9) == 1
+    with pytest.raises(ValueError, match="at least one point"):
+        johnson_lindenstrauss_dim(0, eps=0.9)
+    with pytest.raises(ValueError, match=r"eps must lie in \(0, 1\)"):
+        johnson_lindenstrauss_dim(100, eps=1.5)
 
 
 def test_pca_to_rgb_produces_a_renderable_image_payload() -> None:

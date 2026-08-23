@@ -23,6 +23,9 @@ dl = [
     # than relied on transitively, so removing anomalib some day does not silently remove
     # the custom method too.
     "mobile-sam",
+    # `model_assets.py` sets `huggingface_hub.constants` attributes directly, so the
+    # dependency is ours rather than timm's to carry transitively.
+    "huggingface-hub>=1.26",
     "timm>=1.0.24",
     "torch>=2.13",
     "torchvision>=0.28.0",
@@ -97,10 +100,11 @@ files = ["src", "tests"]
 # lazily inside functions, so the untyped surface is small and visible rather than
 # spread through the codebase.
 #
-# `torch` itself is listed for a different reason: it lives behind the optional `dl`
-# extra, so the environment CI type-checks in does not have it installed at all. Without
-# this, mypy fails on the two lazy `import torch` statements on any checkout that did not
-# opt into the extra — which is every checkout that follows the documented default.
+# `torch` and `timm` are listed for a different reason: they live behind the optional `dl`
+# extra, so the environment CI type-checks in does not have them installed at all. Without
+# this, mypy fails on the lazy `import torch` and `import timm` statements on any checkout
+# that did not opt into the extra — which is every checkout that follows the documented
+# default.
 # `onnxruntime` is a normal dependency but publishes no complete typed public surface;
 # deployment imports it lazily through `importlib` and narrows the returned numpy array.
 [[tool.mypy.overrides]]
@@ -110,6 +114,8 @@ module = [
     "mobile_sam.*",
     "onnxruntime",
     "onnxruntime.*",
+    "timm",
+    "timm.*",
     "torch",
     "torch.*",
     "torchvision.*",
