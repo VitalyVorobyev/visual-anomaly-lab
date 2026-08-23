@@ -632,13 +632,25 @@ def _channel_records(
     offsets: dict[str, float] | None = None,
     first_id: int = 0,
     defective: bool = False,
+    distinct: bool = False,
 ) -> list[ImageRecord]:
-    """One sample per index, one image per channel, optionally at different brightnesses."""
+    """One sample per index, one image per channel, optionally at different brightnesses.
+
+    `distinct=True` additionally rolls each channel's field by a channel-dependent amount,
+    so the three illuminations are structurally different scenes rather than one scene at
+    three brightnesses — a brightness offset alone can collapse to equal scores after
+    feature normalization, and whether it does depends on the torch backend. Tests that
+    assert score *separation* need `distinct`; tests that assert channel-count invariance
+    need identical pixels and must leave it off. The defect stamp lands after the roll,
+    at the same registered position in every channel.
+    """
     records: list[ImageRecord] = []
     shifts = offsets or {}
     for index in range(samples):
         for position, channel in enumerate(channels):
             values = _field(first_id + index) + shifts.get(channel, 0.0)
+            if distinct:
+                values = np.roll(values, shift=11 * position, axis=1)
             if defective:
                 values[STAMP, STAMP] = 255.0
             image_id = first_id + index * 16 + position
@@ -658,9 +670,15 @@ def test_per_image_fusion_scores_every_channel_image_on_its_own(tmp_path: Path) 
     channels = ("bright", "dark", "dome")
     offsets = {"bright": 60.0, "dark": -60.0, "dome": 0.0}
     train_ctx, infer_ctx = _contexts(tmp_path)
-    train = _channel_records(tmp_path / "t", channels, samples=6, offsets=offsets)
+    train = _channel_records(tmp_path / "t", channels, samples=6, offsets=offsets, distinct=True)
     probe = _channel_records(
-        tmp_path / "p", channels, samples=1, offsets=offsets, first_id=90, defective=True
+        tmp_path / "p",
+        channels,
+        samples=1,
+        offsets=offsets,
+        first_id=90,
+        defective=True,
+        distinct=True,
     )
 
     model = DinoMemoryModel(_config(channel_fusion=ChannelFusion.PER_IMAGE, max_bank_images=18))
@@ -684,9 +702,15 @@ def test_feature_concat_scores_a_sample_once_and_writes_it_to_every_channel(
     channels = ("bright", "dark", "dome")
     offsets = {"bright": 60.0, "dark": -60.0, "dome": 0.0}
     train_ctx, infer_ctx = _contexts(tmp_path)
-    train = _channel_records(tmp_path / "t", channels, samples=6, offsets=offsets)
+    train = _channel_records(tmp_path / "t", channels, samples=6, offsets=offsets, distinct=True)
     probe = _channel_records(
-        tmp_path / "p", channels, samples=1, offsets=offsets, first_id=90, defective=True
+        tmp_path / "p",
+        channels,
+        samples=1,
+        offsets=offsets,
+        first_id=90,
+        defective=True,
+        distinct=True,
     )
 
     model = DinoMemoryModel(_config(channel_fusion=ChannelFusion.FEATURE_CONCAT, max_bank_images=6))
