@@ -29,6 +29,19 @@ These are checked measurements from the repository's public-data gates, not upst
 | pcb1 | GLASS | 0.7583 | 0.8850 | 0.6598 | 1203.0 s | 14.8 s | 1.07 GiB |
 | pcb1 | PatchCore | 0.8654 | 0.9934 | 0.8058 | 16.7 s | 12.9 s | 1.62 GiB |
 
+## DINO patch memory promotion gate
+
+**Protocol:** VisA official one-class split; 448 × 448 RGB identity; seed `20260812`. Same prepared pixels within each class; 448 divides both patch sizes. dino_memory: DINOv2 ViT-S/14-reg4, global_knn, last_two layers, k=1, 256 images, 50,000 candidates, 10% coreset. PatchCore control: WRN-50, same caps. The DINOv3 and per-position ablation rows live in measurements.md; this block is the recorded, ungated pair. [Full evidence](../../measurements.md).
+
+![DINO patch memory promotion gate](dino-memory-gate.svg)
+
+| Class | Method | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | Train | Infer | Peak RSS |
+|---|---|---:|---:|---:|---:|---:|---:|
+| candle | DINO memory | 0.9085 | 0.9890 | 0.9378 | 20.8 s | 11.4 s | 0.98 GiB |
+| candle | PatchCore | 0.9377 | 0.9836 | 0.9505 | 14.0 s | 13.2 s | 1.65 GiB |
+| pcb1 | DINO memory | 0.8914 | 0.9952 | 0.9252 | 13.0 s | 13.4 s | 0.91 GiB |
+| pcb1 | PatchCore | 0.7754 | 0.9943 | 0.8987 | 15.0 s | 15.9 s | 1.62 GiB |
+
 ## Resource measurements
 
 ![MPS inference latency by method and prepared size](mps-inference.svg)

@@ -10,7 +10,7 @@ This page is generated from the live model registry and checked method metadata.
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
 | `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | onnx |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
-| `dino_memory` | DINO patch memory | frozen-backbone patch memory | experimental | no | — |
+| `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -86,7 +86,7 @@ A frozen WRN-50 feature extractor with learned global and local anomaly synthesi
 
 ## DINO patch memory
 
-`dino_memory` · **frozen-backbone patch memory** · experimental
+`dino_memory` · **frozen-backbone patch memory** · supported
 
 A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of normal images and scored globally, per position, or as a per-position Gaussian. Nothing is trained; the memory is the model.
 

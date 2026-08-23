@@ -116,3 +116,39 @@ choice.
 
 Source-frame float maps cost about 1.23 GB per 200-image run regardless of crop size. That is a
 storage problem ([backlog.md](backlog.md)), not a reason to change this verdict.
+
+## DINO patch memory — promoted
+
+A frozen DINO backbone whose patch features are the model (ADR-0037). Nothing is trained; the
+15.4 MB checkpoint is a 5 000-vector coreset over 50 000 bounded candidates, and the encoder
+travels as a fingerprint, not as weights. Paired public gate against a PatchCore control on the
+same immutable prepared pixels, VisA `candle` and `pcb1` at 448 × 448 (the one size divisible by
+both patch sizes, so every backbone row below saw identical pixels), seed 20260812, `global_knn`,
+`last_two` layers, k = 1.
+
+The recorded verdict is the **DINOv2 ViT-S/14-reg4** leg — its weights are ungated, so anyone can
+reproduce it without a licence:
+
+| Mean over both classes | DINO memory | PatchCore | Floor required |
+|---|---:|---:|---:|
+| Image ROC-AUC | **0.9000** | 0.8565 | 0.80 |
+| Pixel ROC-AUC | **0.9921** | 0.9889 | 0.85 |
+| AU-PRO | **0.9315** | 0.9246 | 0.60 |
+
+Cleared all three floors and beat its control on all three means. 13–21 s to fit, 42 ms per image
+and ≈ 1.0 GB peak RSS on MPS against PatchCore's 48 ms and 1.75 GB. Per class the split is honest:
+`pcb1` is a rout (0.891 vs 0.775 image ROC-AUC), `candle` a narrow image-level loss (0.909 vs
+0.938) with a pixel-level win.
+
+**DINOv3 ViT-S/16, same recipe, licence-gated weights** (`HF_TOKEN` required, not the recorded
+gate): means 0.8147 / 0.9850 / 0.8588 — clears the floors but trails DINOv2 on every metric, with
+the deficit concentrated on `candle` (0.725 image ROC-AUC). At 448 px a /14 backbone sees a
+32 × 32 grid where /16 sees 28 × 28; until a layer-selection sweep says otherwise, the ungated
+default is also the measured best.
+
+**Per-position ablation** (`local_knn`, r = 1, `pcb1` — the most registered class VisA offers):
+image 0.847 / pixel **0.9969** / AU-PRO **0.9510** against `global_knn`'s 0.891 / 0.9952 / 0.9252
+on the same pixels. Restricting the bank to positions sharpens *where* (both localisation metrics
+rise) and costs a little *whether* (image ranking dips). VisA is not a registered benchmark; the
+mode's real target is repeatably-fixtured data that cannot be published, and this row exists so
+that claim has at least one public anchor.
