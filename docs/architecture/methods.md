@@ -49,6 +49,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "efficientad_custom":    _efficientad_custom,    # ours; the anomalib wrapper baseline is retired (ADR-0029)
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
     "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
+    "dinomaly_custom":       _dinomaly_custom,       # ours; configurable encoder and decoder depth
     "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
     "dino_memory":           _dino_memory,           # ours; frozen DINO patch memory, three scoring rules
     # "classical_circular":  M8, optional (ADR-0015)
@@ -336,6 +337,88 @@ and completed step. The frozen encoder remains in the app-managed asset cache an
 name, exact tensor fingerprint and dependency versions. Reload refuses a changed encoder rather than
 silently attaching old decoder weights to a different feature space. Public VisA evidence and the exact
 resource protocol are recorded in [`measurements.md`](../measurements.md).
+
+## The same method again, ours, and what that buys
+
+`dinomaly_custom` is the in-house implementation of Dinomaly, and it sits **beside** the wrapper rather
+than instead of it. That is ADR-0029's pattern executed a second time: a wrapper establishes that a family
+is worth having and becomes the baseline; an implementation we own is what turns every decision inside it
+into a field on a form. The wrapper retires only if this reaches parity on the VisA gate, and until that
+verdict lands nothing about the wrapper changes. The gate itself has not been run — see
+[roadmap.md](../roadmap.md).
+
+`models/dinomaly_custom.py` holds the configuration, the plan, the bounded pass and the checkpoint;
+`models/dinomaly_nets.py` holds the `nn.Module`s, the hard-mined loss, StableAdamW and the map rule —
+the same split `efficientad_custom`/`efficientad_nets` established. **Neither file imports anomalib.**
+A second reading of one library is not a second implementation, so that boundary is what makes the
+head-to-head mean anything at all.
+
+**What is shared with the wrapper, deliberately.** The encoder table in `models/dino_backbone.py`, whose
+default entry is the registered DINOv2 anomalib pins — so an untouched run compares *methods*. The
+warm-cosine schedule: a 100-step linear warm-up to 2e-3 then a cosine to 2e-4 over a fixed 5,000-step
+horizon, which is the *same function* as the wrapper's rather than one that agrees at one setting. The
+image-score rule, including its wart: the map is resampled to a fixed 256², smoothed with a 5-tap
+Gaussian at σ = 4, and the hottest one percent is averaged. And the pass discipline — plan before the
+first forward, cancellation every step, absolute step numbering in the metric stream, exact continuation.
+
+**What is genuinely different, and it is two things.**
+
+| | `dinomaly_anomalib` | `dinomaly_custom` |
+| --- | --- | --- |
+| encoder | `vit_small_patch14_reg4_dinov2`, hard-coded | any entry in the shared `DinoBackbone` table, including the two DINOv3 ones |
+| decoder depth | fixed at 8 | `2 … 12`, and the fusion groups follow |
+| ONNX export | yes | not yet |
+
+Depth is the sharper of the two, because it is a bug the wrapper inherited rather than a feature it
+lacks. anomalib's constructor accepts a `decoder_depth` and then indexes the literal
+`[[0, 1, 2, 3], [4, 5, 6, 7]]` for both sides of the comparison, so any value but eight fails. Here
+`fuse_groups(count)` derives the split, so a four-block decoder fuses outputs 0-1 against 2-3 while the
+encoder keeps its own 0-3 / 4-7 halves — the encoder always contributes eight target layers whatever the
+decoder does. `test_a_four_block_decoder_trains_and_produces_maps` runs the claim rather than asserting it.
+
+The encoder field is run rather than asserted too. DINOv2 resolves to timm's `VisionTransformer` and
+DINOv3 to its `Eva` — a different class, a different patch size, a rotary position embedding and its own
+`forward_intermediates` — and `test_the_other_encoder_family_runs_on_the_same_pixels` trains and scores
+through the DINOv3 path with no branch anywhere in the plugin. It stays hermetic because
+`pretrained_encoder=False` builds the same architecture from the seed, so a licence-gated encoder is
+exercised structurally without an account or a download.
+
+**Three bring-up pins are the evidence the port landed**, and they are worth naming because they are
+unusual: all three demand **bit-exact** agreement, `atol=0`.
+
+- `test_our_encoder_path_is_the_shared_backbone_module_exactly` — `dino_backbone.extract_layer_tokens`
+  over `load_backbone` is identical to calling timm's `forward_intermediates` directly. The shared module
+  is the single source of encoder truth and this method carries no second one.
+- `test_one_training_step_matches_anomalib_exactly` — identical weights in, and the loss, every gradient
+  and every weight after one StableAdamW step come out identical. It imports anomalib, which the plugin
+  may not.
+- `test_the_map_and_the_score_match_anomalib_exactly` — the anomaly map and the top-one-percent score,
+  which also pins the separable Gaussian here against the kornia-backed blur upstream.
+
+**They are retirable by replacement only.** They exist to prove the port landed, not to freeze it: when a
+deliberate divergence is chosen the pin is *replaced* by a test of the new behaviour plus a measurement
+saying the change was worth it. Loosening a bit-exact pin into a tolerance is how a port stops being one.
+
+`extract_layer_tokens` is the one addition the shared backbone module needed, and it is the sibling of
+`extract_patch_features` rather than a flag on it: no final norm, prefix tokens kept, no per-layer L2
+normalisation. All three differences are load-bearing — a reconstruction *target* must not be normalised
+onto a sphere, the decoder attends over the class and register tokens, and the layers here are averaged
+in groups rather than concatenated. `BackboneSpec` also gained `num_heads`, so the plan can state the
+decoder's shape before torch is imported; `DinomalyNet` cross-checks the table against the constructed
+model rather than trusting it.
+
+**The export asymmetry is stated rather than hidden.** `portable_formats` is empty: the graph is not the
+hard part, the generic Python-versus-runtime parity gate is what has to be written and run, and an export
+offer is made from the registry before any configuration is read — so claiming a format that has not
+passed that gate is worse than an absent one. It is on [backlog.md](../backlog.md).
+
+One finding fell out of writing the pins, in the shape M6 and M7 both found. The wrapper builds its
+optimizer from `[p for p in model.parameters() if p.requires_grad]`, and anomalib's `TimmFeatureExtractor`
+never clears the encoder's flags — so that filter hands the optimizer the encoder's 22 million parameters
+as well. Harmless today, because the encoder runs under `no_grad` and StableAdamW skips a parameter with
+no gradient, and not harmless the first time somebody adds a global gradient clip.
+`DinomalyNet.trainable_parameters` takes the bottleneck and the decoder **by name** for that reason, and
+a test records the difference.
 
 ## A learned-synthesis method needs a bounded reference frame
 

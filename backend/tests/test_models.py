@@ -57,6 +57,16 @@ from anomaly_lab.models.dinomaly_anomalib import (
     plan_training,
     validate_prepared_size,
 )
+from anomaly_lab.models.dinomaly_custom import (
+    SCHEDULE_STEPS,
+    TARGET_LAYERS,
+    DinomalyCustomConfig,
+    DinomalyCustomModel,
+    fuse_groups,
+    trainable_parameter_count,
+)
+from anomaly_lab.models.dinomaly_custom import learning_rate as custom_learning_rate
+from anomaly_lab.models.dinomaly_custom import plan_training as plan_custom_training
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.glass_anomalib import GlassConfig, planned_center_refreshes
 from anomaly_lab.models.glass_anomalib import plan_training as plan_glass_training
@@ -442,6 +452,128 @@ def test_dinomaly_schedule_has_a_fixed_resume_safe_horizon() -> None:
     assert learning_rate(50_000) == pytest.approx(FINAL_LR)
 
 
+# ------------------------------------------------------- dinomaly_custom, torch-free
+#
+# Everything below decides whether a `dinomaly_custom` run is legal, reproducible and
+# affordable, and all of it is arithmetic. It lives here rather than in
+# `test_dl_dinomaly_custom.py` for the reason `plan_bank` does: the CI job that installs
+# *without* the `dl` extra is what measures the torch-free boundary, and importing the
+# plugin at the top of this file is what asserts the module stays on the right side of it.
+
+
+def test_dinomaly_custom_plan_is_bounded_and_torch_free() -> None:
+    plan = plan_custom_training(
+        DinomalyCustomConfig(max_steps=250, batch_size=4, decoder_depth=6), 40, 392, 196
+    )
+
+    assert plan.steps == 250
+    assert plan.images_available == 40
+    assert plan.images_seen == 1_000
+    assert (plan.grid_rows, plan.grid_cols) == (14, 28)
+    assert plan.positions == 392
+    assert plan.embedding_dim == 384
+    assert plan.num_heads == 6
+    assert plan.decoder_groups == ((0, 1, 2), (3, 4, 5))
+    assert plan.encoder_groups == ((0, 1, 2, 3), (4, 5, 6, 7))
+    assert plan.trainable_parameters == trainable_parameter_count(384, 6)
+    # Weights plus StableAdamW's three amsgrad moment buffers, in float32.
+    assert plan.estimated_checkpoint_bytes == plan.trainable_parameters * 16
+
+    described = plan.describe()
+    assert "250 steps at batch 4" in described
+    assert "dinov2_vit_s14_reg4" in described
+    assert "14x28 grid" in described
+    assert "6 blocks x 6 heads" in described
+    assert [row[0] for row in plan.table()["rows"]].count("decoder") == 1
+
+
+def test_dinomaly_custom_refuses_a_partial_patch_before_touching_torch() -> None:
+    with pytest.raises(ValueError, match=r"divisible by 14.*390x392"):
+        plan_custom_training(DinomalyCustomConfig(max_steps=1), 5, 390, 392)
+
+
+def test_dinomaly_custom_refuses_an_empty_training_set() -> None:
+    with pytest.raises(ValueError, match="at least one normal training image"):
+        plan_custom_training(DinomalyCustomConfig(max_steps=1), 0, 112, 112)
+
+
+def test_the_fusion_split_follows_the_decoder_depth() -> None:
+    """The claim `dinomaly_anomalib` cannot make, as arithmetic.
+
+    anomalib hard-codes `[[0, 1, 2, 3], [4, 5, 6, 7]]` for both sides, so its `decoder_depth`
+    argument only works at eight. Deriving the split is what makes depth a real field.
+    """
+    assert fuse_groups(8) == ((0, 1, 2, 3), (4, 5, 6, 7))
+    assert fuse_groups(4) == ((0, 1), (2, 3))
+    assert fuse_groups(2) == ((0,), (1,))
+    # An odd count puts the spare output in the second group, and never leaves one empty.
+    assert fuse_groups(5) == ((0, 1), (2, 3, 4))
+    for count in range(2, 13):
+        first, second = fuse_groups(count)
+        assert first and second
+        assert first + second == tuple(range(count))
+
+    with pytest.raises(ValueError, match="at least two layer outputs"):
+        fuse_groups(1)
+
+
+def test_the_dinomaly_custom_schedule_is_the_wrapper_s_function() -> None:
+    """The same warm-cosine curve as `dinomaly_anomalib`, so the promotion gate is like-for-like."""
+    for step in (0, 1, 37, 99, 100, 101, 2_500, 4_999, 5_000, 50_000):
+        assert custom_learning_rate(step, base=BASE_LR) == pytest.approx(
+            learning_rate(step), rel=1e-9, abs=1e-12
+        )
+    assert custom_learning_rate(0, base=2e-3) == 0.0
+    assert custom_learning_rate(SCHEDULE_STEPS, base=2e-3) == pytest.approx(2e-4)
+    with pytest.raises(ValueError, match="cannot be negative"):
+        custom_learning_rate(-1, base=2e-3)
+
+
+def test_the_dinomaly_custom_parameter_count_is_closed_form() -> None:
+    """8d² for the bottleneck and 12d² + 8d per decoder block.
+
+    `test_dl_dinomaly_custom.py` checks the same formula against a real network's `numel()`.
+    """
+    assert trainable_parameter_count(384, 8) == 8 * 384**2 + 8 * (12 * 384**2 + 8 * 384)
+    assert trainable_parameter_count(768, 8) > trainable_parameter_count(384, 8)
+    with pytest.raises(ValueError, match="positive width and depth"):
+        trainable_parameter_count(0, 8)
+
+
+def test_the_dinomaly_custom_form_offers_the_encoder_menu_and_the_depth() -> None:
+    """No frontend work: the picker and the bounds come from this schema alone (ADR-0007)."""
+    schema = DinomalyCustomModel.config_model().model_json_schema()
+    encoder = schema["properties"]["encoder"]
+    # A `$ref` into `$defs`, which is exactly the shape `SchemaForm` resolves into a picker.
+    resolved = schema["$defs"][encoder["$ref"].rsplit("/", 1)[-1]]
+    assert set(resolved["enum"]) == {backbone.value for backbone in DinoBackbone}
+    assert encoder["default"] == DinoBackbone.DINOV2_VIT_S14_REG4.value
+
+    depth = schema["properties"]["decoder_depth"]
+    assert (depth["default"], depth["minimum"], depth["maximum"]) == (8, 2, 12)
+    for name, field in schema["properties"].items():
+        assert field.get("description"), name
+
+
+def test_dinomaly_custom_availability_names_the_optional_extra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Greyed out with the command that fixes it, never offered and failing inside a worker."""
+    import importlib.util
+
+    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
+    availability = DinomalyCustomModel.availability()
+
+    assert availability.available is False
+    assert "--extra dl" in (availability.reason or "")
+
+
+def test_the_dinomaly_custom_target_layers_are_the_middle_of_the_stack() -> None:
+    assert TARGET_LAYERS == (2, 3, 4, 5, 6, 7, 8, 9)
+    assert len(TARGET_LAYERS) == 8
+    assert max(TARGET_LAYERS) < min(spec.depth for spec in BACKBONES.values())
+
+
 def test_glass_plan_bounds_and_announces_every_center_pass() -> None:
     plan = plan_glass_training(
         GlassConfig(
@@ -489,6 +621,7 @@ def test_every_registered_method_describes_itself_without_importing_torch() -> N
     assert {
         "pixel_reference",
         "dinomaly_anomalib",
+        "dinomaly_custom",
         "glass_anomalib",
         "dino_memory",
     } <= keys
@@ -925,6 +1058,10 @@ def test_every_backbone_has_a_spec_and_the_spec_is_self_consistent() -> None:
         assert spec.patch_size in {14, 16}
         assert spec.embedding_dim in {384, 768}
         assert spec.depth == 12
+        # A width splits evenly into its heads, or `dinomaly_custom`'s decoder cannot be
+        # built from the table at all.
+        assert spec.embedding_dim % spec.num_heads == 0
+        assert spec.embedding_dim // spec.num_heads == 64
         assert spec.license_note
         assert (backbone in ACCESS_REQUEST_URLS) is spec.gated
 

@@ -26,6 +26,25 @@ until its output has been reviewed.
 
 ## Methods
 
+- [ ] **Run `dinomaly_custom`'s VisA parity gate, and retire `dinomaly_anomalib` on parity** (M):
+      the in-house implementation is pinned bit-exact against the wrapper on one training step, on
+      the anomaly map and on the image score, which says the port landed and says nothing about
+      whether it reaches the same numbers over 5,000 steps on real data. Same classes, same prepared
+      pixels, same seed and same protocol as the recorded Dinomaly gate
+      ([measurements.md](measurements.md)) so the rows are directly comparable. On parity the wrapper
+      retires the way `efficientad_anomalib` did, with an ADR-0008 changelog entry and an ADR-0029
+      changelog entry recording the verdict; short of parity, both stay and the gap is the finding.
+- [ ] **ONNX export for `dinomaly_custom`** (S): the wrapper exports and this does not, which is the
+      one capability asymmetry between them. The graph is not the hard part — encoder, bottleneck,
+      decoder, cosine distance, upsample, blur, top-one-percent mean, all of it already traceable —
+      the generic Python-versus-portable parity gate is what has to be written and run.
+      `portable_formats` stays empty until it passes, because the export offer is made from the
+      registry before any configuration is read.
+- [ ] **Sweep `dinomaly_custom`'s encoder** (S): the reason the field exists. The default is the
+      encoder anomalib pins, so a run against `dinov2_vit_b14` or `dinov3_vit_s16` on identical
+      pixels answers whether Dinomaly's published result is about the method or about DINOv2 — a
+      question the wrapper cannot ask. Pair it with a `decoder_depth` ablation: depth 8 is the
+      published recipe and nothing here has measured whether it is the right one for this data.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
       1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver
       memory. App-managed offline loading, plugin integration and the public quality gate remain.
