@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="472" viewBox="0 0 920 472">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:system-ui,sans-serif;fill:#20252b}.small{font-size:12px}.label{font-size:13px;font-weight:600}.title{font-size:18px;font-weight:700}</style>
+<text x="16" y="28" class="title">DINO patch memory promotion gate</text>
+<line x1="175" y1="42" x2="875" y2="42" stroke="#d8dde3"/>
+<text x="16" y="74" class="small">candle · DINO memory · Image ROC-AUC</text>
+<rect x="175" y="58" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="58" width="617.8" height="20" rx="3" fill="#0f8fa8"/>
+<text x="799.8" y="73" class="label">0.9085</text>
+<text x="16" y="104" class="small">candle · DINO memory · Pixel ROC-AUC</text>
+<rect x="175" y="88" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="88" width="672.5" height="20" rx="3" fill="#0f8fa8"/>
+<text x="854.5" y="103" class="label">0.9890</text>
+<text x="16" y="134" class="small">candle · DINO memory · AU-PRO</text>
+<rect x="175" y="118" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="118" width="637.7" height="20" rx="3" fill="#0f8fa8"/>
+<text x="819.7" y="133" class="label">0.9378</text>
+<text x="16" y="164" class="small">candle · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="148" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="148" width="637.6" height="20" rx="3" fill="#8b6bb7"/>
+<text x="819.6" y="163" class="label">0.9377</text>
+<text x="16" y="194" class="small">candle · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="178" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="178" width="668.8" height="20" rx="3" fill="#8b6bb7"/>
+<text x="850.8" y="193" class="label">0.9836</text>
+<text x="16" y="224" class="small">candle · PatchCore · AU-PRO</text>
+<rect x="175" y="208" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="208" width="646.3" height="20" rx="3" fill="#8b6bb7"/>
+<text x="828.3" y="223" class="label">0.9505</text>
+<text x="16" y="254" class="small">pcb1 · DINO memory · Image ROC-AUC</text>
+<rect x="175" y="238" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="238" width="606.2" height="20" rx="3" fill="#0f8fa8"/>
+<text x="788.2" y="253" class="label">0.8914</text>
+<text x="16" y="284" class="small">pcb1 · DINO memory · Pixel ROC-AUC</text>
+<rect x="175" y="268" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="268" width="676.7" height="20" rx="3" fill="#0f8fa8"/>
+<text x="858.7" y="283" class="label">0.9952</text>
+<text x="16" y="314" class="small">pcb1 · DINO memory · AU-PRO</text>
+<rect x="175" y="298" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="298" width="629.1" height="20" rx="3" fill="#0f8fa8"/>
+<text x="811.1" y="313" class="label">0.9252</text>
+<text x="16" y="344" class="small">pcb1 · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="328" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="328" width="527.3" height="20" rx="3" fill="#8b6bb7"/>
+<text x="709.3" y="343" class="label">0.7754</text>
+<text x="16" y="374" class="small">pcb1 · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="358" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="358" width="676.1" height="20" rx="3" fill="#8b6bb7"/>
+<text x="858.1" y="373" class="label">0.9943</text>
+<text x="16" y="404" class="small">pcb1 · PatchCore · AU-PRO</text>
+<rect x="175" y="388" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="388" width="611.1" height="20" rx="3" fill="#8b6bb7"/>
+<text x="793.1" y="403" class="label">0.8987</text>
+</svg>

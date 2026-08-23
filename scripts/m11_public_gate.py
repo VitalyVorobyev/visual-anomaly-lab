@@ -89,6 +89,11 @@ class CandidateSpec:
     family: str
     prepared_size: int
     config: dict[str, Any]
+    # Which config field a `--steps` smoke override writes to, or None for a method with
+    # no step budget.  Without this the override would be silently ignored: the config
+    # models default to pydantic's extra="ignore", so an unknown "max_steps" key would
+    # validate cleanly and the smoke run would quietly be a full run.
+    step_field: str | None = "max_steps"
 
 
 CANDIDATES = {
@@ -118,6 +123,82 @@ CANDIDATES = {
             "allow_downloads": True,
             "seed": SEED,
         },
+    ),
+    # The DINO patch-memory legs share one prepared size, 448: the only size divisible by
+    # both patch sizes (14*32 = 16*28), so the DINOv2 and DINOv3 rows see identical pixels.
+    # The recorded promotion verdict is the DINOv2 leg — its weights are ungated, so anyone
+    # can reproduce it; the DINOv3 leg needs the Meta licence and an HF_TOKEN and is
+    # recorded as a second row, not as the gate.  global_knn is the gate mode: VisA is not
+    # a registered benchmark, so the per-position modes are measured as a separate ablation
+    # (dino_memory_local, pcb1) rather than asked a question VisA does not pose.
+    "dino_memory": CandidateSpec(
+        key="dino_memory",
+        label="DINO patch memory",
+        family="frozen-backbone patch memory",
+        prepared_size=448,
+        config={
+            "backbone": "dinov2_vit_s14_reg4",
+            "layers": "last_two",
+            "pretrained_backbone": True,
+            "allow_downloads": True,
+            "scoring": "global_knn",
+            "num_neighbors": 1,
+            "coreset_ratio": 0.1,
+            "max_bank_images": 256,
+            "max_candidate_vectors": 50_000,
+            "channel_fusion": "per_image",
+            "blur_sigma": 4.0,
+            "score_percentile": 100.0,
+            "feature_batch_size": 4,
+            "seed": SEED,
+        },
+        step_field=None,
+    ),
+    "dino_memory_v3": CandidateSpec(
+        key="dino_memory",
+        label="DINO patch memory (DINOv3)",
+        family="frozen-backbone patch memory",
+        prepared_size=448,
+        config={
+            "backbone": "dinov3_vit_s16",
+            "layers": "last_two",
+            "pretrained_backbone": True,
+            "allow_downloads": True,
+            "scoring": "global_knn",
+            "num_neighbors": 1,
+            "coreset_ratio": 0.1,
+            "max_bank_images": 256,
+            "max_candidate_vectors": 50_000,
+            "channel_fusion": "per_image",
+            "blur_sigma": 4.0,
+            "score_percentile": 100.0,
+            "feature_batch_size": 4,
+            "seed": SEED,
+        },
+        step_field=None,
+    ),
+    "dino_memory_local": CandidateSpec(
+        key="dino_memory",
+        label="DINO patch memory (per-position)",
+        family="frozen-backbone patch memory",
+        prepared_size=448,
+        config={
+            "backbone": "dinov2_vit_s14_reg4",
+            "layers": "last_two",
+            "pretrained_backbone": True,
+            "allow_downloads": True,
+            "scoring": "local_knn",
+            "window_radius": 1,
+            "num_neighbors": 1,
+            "max_bank_images": 256,
+            "per_position_images": 64,
+            "channel_fusion": "per_image",
+            "blur_sigma": 4.0,
+            "score_percentile": 100.0,
+            "feature_batch_size": 4,
+            "seed": SEED,
+        },
+        step_field=None,
     ),
 }
 
@@ -419,7 +500,10 @@ def _run(
     apply_migrations(settings.db_path)
     candidate_config = dict(candidate_spec.config)
     if steps is not None:
-        candidate_config["max_steps"] = steps
+        if candidate_spec.step_field is None:
+            msg = f"{candidate_spec.label} has no step budget; --steps does not apply"
+            raise ValueError(msg)
+        candidate_config[candidate_spec.step_field] = steps
     method_configs = {
         "patchcore_anomalib": dict(PATCHCORE_CONFIG),
         candidate_spec.key: candidate_config,
@@ -515,9 +599,15 @@ def main(
     if args._experiment_id is not None:
         return _child(args.data_dir, args._experiment_id)
     categories = tuple(args.categories or DEFAULT_CATEGORIES)
-    if len(categories) < 2 and args.steps is None:
+    candidate = CANDIDATES[args.candidate]
+    if args.steps is not None and candidate.step_field is None:
+        parser.error(f"--steps does not apply to {args.candidate}: it has no step budget")
+    # A recorded gate needs two classes; a smoke run is marked by --steps.  A candidate
+    # with no step budget has no smoke knob, so its single-class runs are ablation legs
+    # (e.g. the per-position mode on pcb1) rather than an under-declared gate.
+    if len(categories) < 2 and args.steps is None and candidate.step_field is not None:
         parser.error("the quality gate requires at least two VisA classes")
-    return _run(args.data_dir, categories, args.steps, CANDIDATES[args.candidate])
+    return _run(args.data_dir, categories, args.steps, candidate)
 
 
 if __name__ == "__main__":

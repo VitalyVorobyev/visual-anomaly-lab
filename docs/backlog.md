@@ -29,10 +29,11 @@ until its output has been reviewed.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
       1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver
       memory. App-managed offline loading, plugin integration and the public quality gate remain.
-- [ ] **Run the `dino_memory` VisA gate** (M): all three scoring rules against PatchCore on the
-      official one-class split, same prepared pixels, on the classes the earlier gates used. The
-      plugin ships with no public number beside it, and `local_knn`'s registration premise cannot be
-      tested on VisA at all — that class of evidence needs registered multi-view data (ADR-0037).
+- [ ] **Sweep `dino_memory`'s layer selection for the DINOv3 backbone** (S): at the shared 448 px
+      gate size DINOv3 ViT-S/16 cleared the floors but trailed DINOv2 ViT-S/14-reg4 on every
+      metric with `last_two` ([measurements.md](measurements.md)). Before concluding the
+      backbone is weaker for this task, sweep `layers` (and consider `mid_late`) on the same
+      pixels — the deficit may belong to the recipe, not the encoder.
 - [ ] **Let `diagnose` pass a whole sample group** (S): `experiments/diagnose.py` scores a single
       record, so asking a `feature_concat` `dino_memory` model about one image of a multi-channel
       sample lands in the channel refusal instead of producing a diagnostic. The refusal is readable

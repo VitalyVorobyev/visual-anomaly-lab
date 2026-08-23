@@ -29,9 +29,9 @@ application.
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
   `dinomaly_anomalib`, `glass_anomalib` and `dino_memory` — a frozen DINOv2/DINOv3 patch
   memory that is a coreset bank, a per-position bank or a per-position Gaussian depending on
-  one `scoring` field. It is complete and tested but **has not been through a public gate
-  yet**; the VisA run is the next item below. Jobs run as subprocesses with live progress,
-  cancellation and a replayable log.
+  one `scoring` field. It cleared the paired VisA gate and beat its PatchCore control on all
+  three floor metrics ([measurements.md](measurements.md)). Jobs run as subprocesses with live
+  progress, cancellation and a replayable log.
 - **Select channels per experiment** by name, with per-channel score normalization before
   aggregation, so "how well does bright-field alone do?" is one run rather than a second dataset.
 - **Read** image- and pixel-level metrics, browse every scored sample, filter to the model's
@@ -48,9 +48,6 @@ application.
   deployment-and-onboarding milestone that is not met.
 - **The large-catalogue experiment workflow** — id query, multi-select methods, date range, cursor
   pagination, sortable headers, compatible selection handed to Compare.
-- **`dino_memory` on VisA.** The plugin ships with no public number beside it: the three scoring
-  rules have to be run against PatchCore on the official one-class split before any of them is
-  described as better or worse than the memory bank it grew out of.
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
   passed; plugin integration and the public quality gate remain). SuperADD is no longer on this
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
