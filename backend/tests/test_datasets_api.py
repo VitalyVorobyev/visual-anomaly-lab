@@ -131,8 +131,9 @@ def test_editing_writes_only_the_fields_the_request_named(
     assert described.json()["collection"] is None
 
     # `collection` alone: the description it did not mention must survive.
-    filed = client.patch(f"/api/datasets/{dataset_id}", json={"collection": "Can ends"}).json()
-    assert filed["collection"] == "Can ends"
+    body = {"collection": "Circular parts"}
+    filed = client.patch(f"/api/datasets/{dataset_id}", json=body).json()
+    assert filed["collection"] == "Circular parts"
     assert filed["description"] == "Six parts under three illuminations."
 
 
@@ -150,6 +151,51 @@ def test_clearing_a_field_differs_from_leaving_it_out(client: TestClient, datase
     # Blank reads as cleared too: an editor emptied by hand submits "" rather than null.
     blanked = client.patch(f"/api/datasets/{dataset_id}", json={"collection": "   "}).json()
     assert blanked["collection"] is None
+
+
+def test_a_dataset_can_name_the_channel_it_is_read_in(client: TestClient, dataset_id: int) -> None:
+    """Stored raw, unlike `collection`: the fallback is per sample, so the client resolves it."""
+    assert client.get(f"/api/datasets/{dataset_id}").json()["default_channel"] is None
+
+    chosen = client.patch(f"/api/datasets/{dataset_id}", json={"default_channel": "dome"})
+    assert chosen.status_code == 200, chosen.text
+    assert chosen.json()["default_channel"] == "dome"
+    # It reaches the catalogue too, which is where a dataset is picked out by its picture.
+    assert client.get("/api/datasets").json()[0]["default_channel"] == "dome"
+
+    blanked = client.patch(f"/api/datasets/{dataset_id}", json={"default_channel": "  "}).json()
+    assert blanked["default_channel"] is None
+
+
+def test_a_default_channel_that_names_no_channel_is_refused(
+    client: TestClient, dataset_id: int
+) -> None:
+    """The one refusable field on this route, and the message has to be actionable."""
+    rejected = client.patch(f"/api/datasets/{dataset_id}", json={"default_channel": "domme"})
+    assert rejected.status_code == 422
+    detail = rejected.json()["detail"]
+    assert "domme" in detail
+    assert "bright, dark, dome" in detail
+
+    # Nothing was written, and the fields the same request did not name are untouched.
+    assert client.get(f"/api/datasets/{dataset_id}").json()["default_channel"] is None
+
+
+def test_the_default_channel_chooses_the_cover(client: TestClient, dataset_id: int) -> None:
+    """A card should show the view the dataset is actually read in."""
+    default_cover = client.get(f"/api/datasets/{dataset_id}").json()["cover_image_id"]
+
+    client.patch(f"/api/datasets/{dataset_id}", json={"default_channel": "dome"})
+    dome_cover = client.get(f"/api/datasets/{dataset_id}").json()["cover_image_id"]
+    assert dome_cover != default_cover
+
+    everything = _samples(client, dataset_id, limit=100)["items"]
+    by_id = {image["id"]: image for sample in everything for image in sample["images"]}
+    assert by_id[dome_cover]["channel"] == "dome"
+
+    # Clearing it puts the old picture back rather than leaving the card on a stale choice.
+    client.patch(f"/api/datasets/{dataset_id}", json={"default_channel": None})
+    assert client.get(f"/api/datasets/{dataset_id}").json()["cover_image_id"] == default_cover
 
 
 def test_an_unknown_dataset_is_a_404(client: TestClient) -> None:

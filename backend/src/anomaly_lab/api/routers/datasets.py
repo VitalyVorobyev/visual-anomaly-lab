@@ -117,6 +117,11 @@ class DatasetSummary(BaseModel):
     collection: str | None = None
     description: str | None = None
     cover_image_id: int | None = None
+    # The raw override, unlike the two above, because its fallback is not a value the server
+    # holds: "the first image this sample happens to have" is answered per sample by whoever
+    # is holding the images. On the summary rather than the detail because the browse grid's
+    # tiles need it and only ever read summaries.
+    default_channel: str | None = None
 
 
 class DatasetDetail(DatasetSummary):
@@ -130,9 +135,9 @@ class DatasetDetail(DatasetSummary):
 
 
 class DatasetUpdate(BaseModel):
-    """The editable part of a dataset: what it is, and what it belongs with.
+    """The editable part of a dataset: what it is, what it belongs with, how it is read.
 
-    Both fields are optional in the strong sense -- omitting one leaves the stored value
+    Every field is optional in the strong sense — omitting one leaves the stored value
     alone, and sending `null` clears it. Name and root path are deliberately absent: they
     are the dataset's identity, unique in the schema, and the key a re-import resolves
     against (handbook import.md).
@@ -147,6 +152,13 @@ class DatasetUpdate(BaseModel):
     collection: str | None = Field(
         default=None,
         description="The group this dataset is filed under. Blank restores the default.",
+    )
+    default_channel: str | None = Field(
+        default=None,
+        description=(
+            "The name of the channel this dataset opens on wherever one image stands for a "
+            "whole sample. Blank restores the first channel by position."
+        ),
     )
 
 
@@ -278,6 +290,7 @@ def _dataset_summary(
         collection=_effective(dataset.collection, membership.collection if membership else None),
         description=_effective(dataset.notes, membership.description if membership else None),
         cover_image_id=datasets_repo.cover_image_id(conn, dataset.id),
+        default_channel=dataset.default_channel,
     )
 
 
@@ -447,14 +460,21 @@ def get_dataset(request: Request, dataset_id: int) -> DatasetDetail:
         return _dataset_detail(conn, settings, _require_dataset(conn, dataset_id))
 
 
-@router.patch("/{dataset_id}", summary="Edit a dataset's description and collection")
+@router.patch(
+    "/{dataset_id}", summary="Edit a dataset's description, collection and default channel"
+)
 def update_dataset(request: Request, dataset_id: int, body: DatasetUpdate) -> DatasetDetail:
     """Write the fields the request actually named.
 
     A field left out of the body is untouched; a field sent as `null` or blank clears the
     override, which is how a dataset returns to the description and collection its
-    reference pack supplies. `exclude_unset` is what keeps those two cases apart -- with a
+    reference pack supplies. `exclude_unset` is what keeps those two cases apart — with a
     plain `is None` test, "do not change this" and "clear this" would arrive identically.
+
+    The one field that can be refused is `default_channel`, because it names a row rather
+    than saying something free-text. It is checked here rather than behind a route of its
+    own — the way `annotation_scope` is — because its precondition is one the caller can
+    already read: the channel dictionary is on the detail this endpoint returns.
     """
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -463,6 +483,19 @@ def update_dataset(request: Request, dataset_id: int, body: DatasetUpdate) -> Da
             name: (value.strip() or None) if isinstance(value, str) else None
             for name, value in body.model_dump(exclude_unset=True).items()
         }
+        wanted = fields.get("default_channel")
+        if wanted is not None:
+            known = [channel.name for channel in datasets_repo.list_channels(conn, dataset_id)]
+            if wanted not in known:
+                # Named, so the caller can fix it. A dataset with no channels at all says so
+                # rather than offering an empty list as if it were a menu.
+                available = ", ".join(known) if known else "none — this dataset has no channels"
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"dataset {dataset_id} has no channel {wanted!r}; available: {available}"
+                    ),
+                )
         updated = datasets_repo.update_dataset(conn, dataset_id, fields=fields)
         if updated is None:  # pragma: no cover - existence was checked above
             raise HTTPException(status_code=404, detail=f"dataset {dataset_id} not found")

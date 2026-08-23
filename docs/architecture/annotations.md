@@ -201,14 +201,38 @@ drag affordance that snaps back on release is an affordance that lies.
 The second pane is chosen by channel *position*, not by image id: the preference has to outlive the
 image it was expressed on, so that a reader who put `dark` beside `bright` still has a second pane on the
 next part. Choosing the channel that is already active wraps to the next one, which is what stops a
-two-channel sample from showing the same photograph twice. Under image scope the editor reads every
+two-channel sample from showing the same photograph twice.
+
+**Both channels are chosen with the same control**, because they are the same kind of choice. The
+second pane's picker was a dropdown for a while, a few centimetres from the strip of buttons that
+picks the first, and two unlike controls making one kind of decision in one toolbar row is a thing a
+reader has to learn rather than see. It is now the same strip, listing every channel in the same
+order, with the one already in the left pane **disabled and carrying its reason** rather than filtered
+out of the list: filtering it out would reshuffle the second strip every time the first changed, and
+disabling it is where the wrap above becomes visible instead of merely happening. It stays in the
+toolbar rather than moving over the right-hand pane, because Blend has a second channel and no second
+pane to hang a control on. Under image scope the editor reads every
 channel's draft ahead of being asked, so switching channel resolves from the cache, the reference pane is
 populated before it is looked at and the copy dialog can say what each channel already holds — affordable
 only because reading a draft no longer writes one.
 
-The channel strip's tabs are the one thing in it that gives way when the row is over-subscribed: they
+The *first* strip's tabs are the one thing in the row that gives way when it is over-subscribed: they
 read perfectly well half-scrolled, and everything to their right is a control with a usable minimum
 size. A slider narrower than its own thumb is a rendering fault, not a tight fit.
+
+**The overlay can be taken off, and that is not the opacity slider reaching zero.** `H` hides the drawn
+regions and shows them again; holding `H` shows the other state for as long as it is held, so checking
+whether a marked defect is really in the pixels is one key rather than a round trip through a control.
+An eye button beside the Mask weight does the same thing and is where "why is nothing drawn" has its
+answer, next to a region count still saying there are three of them. The weight and the visibility are
+separate for two reasons. A polygon's outline, its vertex handles and a bitmap's selection rectangle
+carry no opacity of their own, so at zero weight the photograph would still be under a wireframe — the
+slider dims fills, and hiding has to skip drawing. And the weight is a preference about the imagery,
+remembered between visits, while hiding is a moment of looking: an editor that opened with every
+annotation invisible because of a keystroke from a previous session would read as work that had been
+lost, so this one deliberately does not persist. What stays on screen while the overlay is off is what
+the reader is doing *now* — the live brush trail, the pending polygon, the assist points and their
+un-accepted suggestion.
 
 The dataset-local queue opens a full-height controlled Konva scene for polygon/vertex and brush/eraser
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
@@ -220,6 +244,37 @@ not claim the image-aware boundary refinement reserved for MobileSAM.
 Dirty drafts autosave after a short idle period; `412` keeps the local edit visible and offers an explicit
 server-draft reload rather than choosing a winner. Keyboard traversal prefetches adjacent queue pages so
 their boundary is not a dead end.
+
+## The label is edited where it is disproved
+
+**The editor sets the sample's label**, through the same `PATCH /api/datasets/{id}/samples/{sid}` the
+sample viewer uses, with the same `n` / `d` / `u` keys. It belongs here because this is the screen
+where somebody looks hardest at an image, and therefore the screen where an imported label is found to
+be wrong: a part marked `defect` whose defect is not there used to require leaving the editor, the
+queue and the browser to fix, and losing the queue position on the way. Nothing new was needed on the
+backend — `Sample.label` and the resolved masks are already hashed into one `ground_truth_digest`, so
+the system had always treated them as one fact and only the UI split them across two screens.
+
+The control sits in the header beside the part's identity, not beside the channel strip, because **the
+label describes the part and not the photograph** (ADR-0005): it covers every channel however many
+times the part was shot. The edit is recorded `manual`, so it survives the next import of the same
+tree, and the header prints which of the two the current label is — `imported` is the state that means
+nobody has checked this yet, which is worth as many characters as `hand-set`. Existing metric sets go
+visibly stale exactly as a revision change makes them, and reevaluation refreshes them from persisted
+scores.
+
+Relabelling is deliberately **not** blocked by unsaved work, unlike queue traversal: J/K are blocked
+because they navigate away from a draft, while this writes a different row entirely. The mutation
+invalidates the dataset's cache subtree and drafts live under their own, so the badge and the queue
+counts refresh while the open document, its undo history and a stroke in progress all survive.
+
+Where the label and the open document contradict each other, a quiet mark beside the control says so
+and blocks nothing — the reader who overrules the import is usually the one who is right. It names the
+measured consequence rather than the rule: pixel metrics skip a `defect` image that resolves to no
+truth and report how many they skipped, a `normal` sample's mask *is* read as ground truth, and an
+`unlabeled` sample is excluded from every metric with its regions. A document based on an imported
+mask counts as carrying truth even with nothing drawn on top of it, which over-reports rather than
+under-reports: the mark must never accuse somebody of leaving a defect undrawn when they have drawn it.
 
 ## Direct manipulation
 
@@ -248,9 +303,21 @@ every painted region the stroke passes over, in one commit so the gesture is one
 appended a `subtract` layer instead, on the reasoning that cutting a hole through a *polygon* is the one
 thing erasing pixels cannot do; but a `subtract` layer is a **region**, so the tool for removing things
 added one, named it in the region list, and left an operator holding a document with more shapes than
-before. Cutting a polygon is still available — as an explicit Subtract region in the New region panel,
-where creating something is what the control says it does. A stroke over nothing painted says so and
-changes nothing.
+before. Cutting a polygon is still available — draw the region and turn it into a Subtract in the
+Selection panel, where changing something that exists is what the control says it does. A stroke over
+nothing painted says so and changes nothing.
+
+**A new region's class and operation are not chosen in advance.** The inspector opened with two
+dropdowns that set them for the *next* shape, and both earned nothing. The operation duplicated a
+control already in Selection, on a shape that is already selected — every path that mints one selects
+it — so picking Subtract before drawing and flipping to Subtract after drawing produce the same
+document, and only one of them needs a permanent control. The class had exactly one option on every
+dataset this application can produce: the taxonomy is a real table and the API can add to it, but
+nothing in the UI does. So the class picker appears only where there is something to choose
+*between*, in the inspector and on a selected region alike — label count is data in the way channel
+count is — and what is left of that section is headed for the tool in hand: brush size while a brush
+is held, the vertex readout while a polygon is open. With none of them to show, the section is not
+drawn rather than standing empty.
 
 **A region moves.** Dragging with Select translates it and an arrow key nudges it — 1 px, or 10 with
 Shift. The offset is clamped once against the shape's own extent, never per coordinate, because clamping

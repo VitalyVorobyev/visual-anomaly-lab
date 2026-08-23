@@ -245,6 +245,23 @@ def test_migration_017_recolours_only_the_untouched_default(settings: Settings) 
         assert colours["scratch:2"] == "#ef4444"
 
 
+def test_migration_018_adds_a_default_channel_without_a_backfill(settings: Settings) -> None:
+    """Every existing dataset keeps opening on its first channel, which is what it did before."""
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 17:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('existing', '/existing')")
+
+        assert apply_migrations_to(conn) >= 18
+
+        row = conn.execute("SELECT default_channel FROM dataset WHERE name = 'existing'").fetchone()
+        assert row[0] is None
+
+
 def test_region_profile_revisions_are_dataset_owned_and_immutable(
     migrated_db: sqlite3.Connection,
 ) -> None:

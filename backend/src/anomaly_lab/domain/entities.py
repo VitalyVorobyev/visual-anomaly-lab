@@ -143,6 +143,10 @@ class Dataset(BaseModel):
     # itself. See `datasets.reference_packs.collection_for`.
     notes: str | None = None
     collection: str | None = None
+    # The channel this dataset is normally read in, by name. Also an override, but one whose
+    # fallback the server cannot compute: "the first image this sample happens to have" is a
+    # per-sample answer, so it is resolved by whoever is holding the images.
+    default_channel: str | None = None
     annotation_scope: AnnotationScope = AnnotationScope.IMAGE
 
 

@@ -376,13 +376,18 @@ export interface paths {
         options?: never;
         head?: never;
         /**
-         * Edit a dataset's description and collection
+         * Edit a dataset's description, collection and default channel
          * @description Write the fields the request actually named.
          *
          *     A field left out of the body is untouched; a field sent as `null` or blank clears the
          *     override, which is how a dataset returns to the description and collection its
-         *     reference pack supplies. `exclude_unset` is what keeps those two cases apart -- with a
+         *     reference pack supplies. `exclude_unset` is what keeps those two cases apart — with a
          *     plain `is None` test, "do not change this" and "clear this" would arrive identically.
+         *
+         *     The one field that can be refused is `default_channel`, because it names a row rather
+         *     than saying something free-text. It is checked here rather than behind a route of its
+         *     own — the way `annotation_scope` is — because its precondition is one the caller can
+         *     already read: the channel dictionary is on the detail this endpoint returns.
          */
         patch: operations["update_dataset_api_datasets__dataset_id__patch"];
         trace?: never;
@@ -2589,6 +2594,8 @@ export interface components {
             description: string | null;
             /** Cover Image Id */
             cover_image_id: number | null;
+            /** Default Channel */
+            default_channel: string | null;
             /** Manifest Path */
             manifest_path: string | null;
             /** Channels */
@@ -2631,12 +2638,14 @@ export interface components {
             description: string | null;
             /** Cover Image Id */
             cover_image_id: number | null;
+            /** Default Channel */
+            default_channel: string | null;
         };
         /**
          * DatasetUpdate
-         * @description The editable part of a dataset: what it is, and what it belongs with.
+         * @description The editable part of a dataset: what it is, what it belongs with, how it is read.
          *
-         *     Both fields are optional in the strong sense -- omitting one leaves the stored value
+         *     Every field is optional in the strong sense — omitting one leaves the stored value
          *     alone, and sending `null` clears it. Name and root path are deliberately absent: they
          *     are the dataset's identity, unique in the schema, and the key a re-import resolves
          *     against (handbook import.md).
@@ -2652,6 +2661,11 @@ export interface components {
              * @description The group this dataset is filed under. Blank restores the default.
              */
             collection?: string | null;
+            /**
+             * Default Channel
+             * @description The name of the channel this dataset opens on wherever one image stands for a whole sample. Blank restores the first channel by position.
+             */
+            default_channel?: string | null;
         };
         /**
          * Device

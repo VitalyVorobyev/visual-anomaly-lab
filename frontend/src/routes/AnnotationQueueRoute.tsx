@@ -49,7 +49,7 @@ export function AnnotationQueueRoute() {
 
   const perSample = dataset.data?.annotation_scope === "sample";
   const multiChannel = (scope.data?.multi_image_samples ?? 0) > 0;
-  const units = queueUnits(samples.data?.items ?? [], perSample);
+  const units = queueUnits(samples.data?.items ?? [], perSample, dataset.data?.default_channel);
   const first = units[0];
 
   /** Filters live in the URL so a queue position survives a reload and can be shared. */

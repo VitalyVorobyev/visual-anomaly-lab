@@ -25,8 +25,10 @@ import { useParams, useSearchParams } from "react-router";
 import type { ComparedRun, ComparedSample, ImageScore } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { cutFor, readCompareState, writeCompareState } from "../../api/compareState";
+import { preferredImageIndex } from "../../api/defaultChannel";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
 import { Badge, Empty, ErrorBox, FULL_TIER_ZOOM, PageHeader, RESET_VIEW, SkeletonRows, Slider, Tabs, ToggleChip, ZoomPanCanvas, cn, type View } from "@vitavision/lab-ui";
+import { useDataset } from "../../hooks/useCatalog";
 import { useComparison, useSampleImageSets } from "../../hooks/useComparison";
 import {
   HEATMAP_SWATCH,
@@ -52,7 +54,11 @@ export function CompareSampleRoute() {
     recallTarget: state.recallTarget,
   });
   const images = useSampleImageSets(state.ids, sampleId);
-  const [channel, setChannel] = useState(0);
+  // Read before the early returns below, because a hook cannot be called after one. It is
+  // idle until the report names its dataset, and then answers from the cache the rest of
+  // the app has already filled.
+  const dataset = useDataset(comparison.data?.dataset_id);
+  const [channel, setChannel] = useState<number | null>(null);
   // One view for every pane. The whole point of the screen is that the panes are aligned.
   const [view, setView] = useState<View>(RESET_VIEW);
 
@@ -70,7 +76,10 @@ export function CompareSampleRoute() {
      same images — one dataset, one split — so this is the sample's channel list, not a
      particular run's opinion of it. */
   const channels = images.find((query) => (query.data?.length ?? 0) > 0)?.data ?? [];
-  const image = channels[channel];
+  // Until the reader picks one, the dataset's own default answers — the same channel the
+  // grid, the viewer and the annotation queue open on, so a part looks like itself here too.
+  const active = channel ?? preferredImageIndex(channels, dataset.data?.default_channel);
+  const image = channels[active];
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
@@ -88,7 +97,7 @@ export function CompareSampleRoute() {
 
       <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
         {channels.length > 1 && (
-          <ChannelStrip images={channels} active={channel} onSelect={setChannel} />
+          <ChannelStrip images={channels} active={active} onSelect={setChannel} />
         )}
 
         <div className="flex flex-wrap items-center gap-1.5">
@@ -153,7 +162,7 @@ export function CompareSampleRoute() {
               run={run}
               row={row}
               index={index}
-              image={images[index]?.data?.[channel]}
+              image={images[index]?.data?.[active]}
               fallback={image}
               state={state}
               view={view}

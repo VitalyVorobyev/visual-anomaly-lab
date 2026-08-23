@@ -14,17 +14,21 @@ import {
   CircleDot,
   Copy,
   Eraser,
+  Eye,
+  EyeOff,
   Maximize2,
   MousePointer2,
   Redo2,
   Save,
   Shapes,
   Trash2,
+  TriangleAlert,
   Undo2,
   WandSparkles,
   ZoomIn,
   ZoomOut,
 } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { Link, useBeforeUnload, useNavigate, useParams, useSearchParams } from "react-router";
 
@@ -47,6 +51,7 @@ import {
   traceBitmapShape,
 } from "../api/annotationBitmap";
 import { paneFrame, resolveReference, type PaneMode } from "../api/annotationPanes";
+import { labelNote } from "../api/annotationLabelNote";
 import { queueUnits } from "../api/annotationQueue";
 import type {
   AnnotationDocument,
@@ -55,6 +60,7 @@ import type {
   AnnotationShape,
   AssistBox,
   AssistPoint,
+  Label,
   PolygonShape,
   SampleSummary,
 } from "../api/client";
@@ -75,6 +81,7 @@ import {
   Dialog,
   Empty,
   ErrorBox,
+  InfoHint,
   NumberInput,
   ProgressBar,
   SegmentedControl,
@@ -99,7 +106,7 @@ import {
   useSegmentAssist,
   useSegmentAssistCapability,
 } from "../hooks/useAnnotations";
-import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
+import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 import {
   MAX_BRUSH_SIZE,
   MIN_BRUSH_SIZE,
@@ -111,6 +118,23 @@ import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
 
 const QUEUE_PAGE = 120;
+/** Longer than this and an `H` press was somebody looking, not somebody switching. */
+const PEEK_MS = 250;
+
+/**
+ * The sample verdict, as a control and as three keystrokes.
+ *
+ * The same letters the sample viewer uses (`SampleRoute.tsx`), because a reader moves between
+ * the two screens and a labelling reflex should not have to be relearned. All three were free
+ * in this editor's keymap; the tools took `v`/`p`/`b`/`e`/`a`.
+ */
+const LABEL_OPTIONS: { value: Label; label: string }[] = [
+  { value: "normal", label: "normal" },
+  { value: "defect", label: "defect" },
+  { value: "unlabeled", label: "unlabeled" },
+];
+
+const LABEL_KEYS: Record<string, Label> = { n: "normal", d: "defect", u: "unlabeled" };
 
 /**
  * Presentation state: how the reader is looking, as opposed to what they are looking at.
@@ -132,6 +156,17 @@ interface Workspace {
   setOverlayOpacity: (value: number) => void;
   maskOpacity: number;
   setMaskOpacity: (value: number) => void;
+  /**
+   * Whether the drawn regions are on screen at all.
+   *
+   * Beside `maskOpacity` rather than inside it, and unlike it *not* remembered in
+   * `localStorage`: opacity is a preference about the imagery, while hiding is a moment of
+   * looking. An editor that opened with every annotation invisible, because of a keystroke
+   * from a previous session, reads as work that has been lost.
+   */
+  regionsHidden: boolean;
+  /** The raw dispatch, so `H` can flip it without reading a value out of a stale closure. */
+  setRegionsHidden: Dispatch<SetStateAction<boolean>>;
   tool: EditorTool;
   setTool: (tool: EditorTool) => void;
   brushSize: number;
@@ -145,6 +180,7 @@ function useWorkspace(frame: string): Workspace {
   const [referenceIndex, setReferenceIndex] = useState<number | null>(null);
   const [overlayOpacity, setOverlayOpacity] = useState(0.5);
   const [maskOpacity, setMaskOpacity] = useMaskOpacity();
+  const [regionsHidden, setRegionsHidden] = useState(false);
   const [tool, setTool] = useState<EditorTool>("select");
   const [brushSize, setBrushSize] = useBrushSize();
   // The view is stamped with the frame it was expressed on and derived back out, so moving
@@ -164,6 +200,8 @@ function useWorkspace(frame: string): Workspace {
       setOverlayOpacity,
       maskOpacity,
       setMaskOpacity,
+      regionsHidden,
+      setRegionsHidden,
       tool,
       setTool,
       brushSize,
@@ -177,6 +215,7 @@ function useWorkspace(frame: string): Workspace {
       overlayOpacity,
       paneMode,
       referenceIndex,
+      regionsHidden,
       setMaskOpacity,
       setView,
       tool,
@@ -251,6 +290,7 @@ export function AnnotationEditorRoute() {
       imageId={imageId}
       target={target}
       datasetName={dataset.data.name}
+      defaultChannel={dataset.data.default_channel}
       sample={sample.data}
       queue={queue.data.items}
       queueTotal={queue.data.total}
@@ -274,6 +314,7 @@ function EditorReady({
   imageId,
   target,
   datasetName,
+  defaultChannel,
   sample,
   queue,
   queueTotal,
@@ -290,6 +331,8 @@ function EditorReady({
   imageId: number;
   target: DraftTarget;
   datasetName: string;
+  /** The channel a part opens on under sample scope, so the queue agrees with the grid. */
+  defaultChannel: string | null;
   sample: SampleSummary;
   queue: SampleSummary[];
   queueTotal: number;
@@ -312,6 +355,8 @@ function EditorReady({
     setOverlayOpacity,
     maskOpacity,
     setMaskOpacity,
+    regionsHidden,
+    setRegionsHidden,
     tool,
     setTool,
     brushSize,
@@ -323,9 +368,16 @@ function EditorReady({
   const [etag, setEtag] = useState(initial.etag);
   const [draftVersion, setDraftVersion] = useState(initial.version);
   const [savedDocument, setSavedDocument] = useState(initial.document);
-  const [operation, setOperation] = useState<"add" | "subtract">("add");
+  // Every shape is minted as an addition. A cut is drawn and then turned into one in the
+  // Selection panel, on the shape that drawing it already selected — which is the same
+  // document, one control, and no state that has to be remembered between two strokes.
+  const operation = "add" as const;
   const [labelKey, setLabelKey] = useState(labels[0]?.key ?? "defect");
+  /** Whether this dataset has classes to choose *between*, rather than one class it has. */
+  const hasTaxonomy = labels.length > 1;
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  /** When the current `H` press began, or `null` when the key is not down. */
+  const peekStartedAt = useRef<number | null>(null);
   const [pendingPoints, setPendingPoints] = useState<AnnotationPoint[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [traceError, setTraceError] = useState<string | null>(null);
@@ -342,6 +394,7 @@ function EditorReady({
   const refreshedAssetJob = useRef<number | undefined>(undefined);
 
   const recolour = useUpdateAnnotationLabel(datasetId);
+  const setLabel = useSetLabel(datasetId);
   const save = useSaveDraft(target);
   const discard = useDiscardDraft(target);
   const copyRegions = useCopyRegions(imageId);
@@ -359,12 +412,42 @@ function EditorReady({
   const cancelAssetJob = useCancelJob();
   const dirty = canonical(history.present) !== canonical(savedDocument);
 
-  const flatQueue = useMemo(() => queueUnits(queue, perSample), [queue, perSample]);
-  const flatPrevious = useMemo(
-    () => queueUnits(previousQueue, perSample),
-    [previousQueue, perSample],
+  /**
+   * The part's verdict, edited where it is discovered to be wrong.
+   *
+   * **The label belongs to the sample, not the photograph** (ADR-0005), so this covers every
+   * channel of the part however many times it was shot — which is why it sits beside the
+   * sample's identity in the header rather than beside the channel strip.
+   *
+   * Deliberately *not* gated on `dirty`, unlike queue traversal. J/K are blocked with unsaved
+   * work because they navigate away from it; this writes a different row and leaves the draft
+   * alone. `useSetLabel` invalidates `["datasets", id]`, and drafts live under
+   * `["annotations", ...]`, so the badge and the queue counts refresh while the open document,
+   * its undo history and an unsaved stroke all survive.
+   */
+  const applyLabel = useCallback(
+    (label: Label) => {
+      if (setLabel.isPending || label === sample.label) return;
+      setLabel.mutate({ sampleId: sample.id, label });
+    },
+    [setLabel, sample.id, sample.label],
   );
-  const flatNext = useMemo(() => queueUnits(nextQueue, perSample), [nextQueue, perSample]);
+
+  /** What to say when the label and the document above it disagree. `null` most of the time. */
+  const disagreement = labelNote(sample.label, history.present);
+
+  const flatQueue = useMemo(
+    () => queueUnits(queue, perSample, defaultChannel),
+    [queue, perSample, defaultChannel],
+  );
+  const flatPrevious = useMemo(
+    () => queueUnits(previousQueue, perSample, defaultChannel),
+    [previousQueue, perSample, defaultChannel],
+  );
+  const flatNext = useMemo(
+    () => queueUnits(nextQueue, perSample, defaultChannel),
+    [nextQueue, perSample, defaultChannel],
+  );
   const queueIndex = flatQueue.findIndex((item) =>
     perSample ? item.sample.id === sample.id : item.image.id === imageId,
   );
@@ -571,8 +654,9 @@ function EditorReady({
    * **The eraser never creates.** It takes paint off the selected region, or — with nothing
    * selected — off every painted region it passes over. It used to append a `subtract` layer
    * instead, which is a region: the tool for removing things added one, and said so in the
-   * region list. Cutting a hole through a *polygon* is still possible, but as an explicit
-   * Subtract region in the New region panel rather than as the eraser's side effect.
+   * region list. Cutting a hole through a *polygon* is still possible, but by drawing the
+   * region and turning it into a Subtract in the Selection panel, rather than as the
+   * eraser's side effect.
    */
   const applyStroke = useCallback(
     async (points: AnnotationPoint[]) => {
@@ -791,12 +875,17 @@ function EditorReady({
       if (
         target instanceof HTMLInputElement ||
         target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement
+        target instanceof HTMLSelectElement ||
+        // Rich text was the gap. It did not matter while every shortcut here was a tool
+        // switch; `n`/`d`/`u` rewrite the part's verdict, which is exactly the keystroke that
+        // must never escape a field somebody is typing in.
+        (target instanceof HTMLElement && target.isContentEditable)
       ) {
         return;
       }
       const key = event.key.toLowerCase();
       const command = event.metaKey || event.ctrlKey;
+      const labelKeyed = command ? undefined : LABEL_KEYS[key];
       if (command && key === "s") {
         event.preventDefault();
         void persist();
@@ -857,15 +946,41 @@ function EditorReady({
         setBrushSize(brushSize + (event.shiftKey ? 10 : 1));
       } else if (key === "c" && !complete.isPending) {
         void completeCurrent();
+      } else if (key === "h") {
+        // Press flips, and a *long* press flips back on release: tapping toggles the mask,
+        // holding shows the other state for as long as you hold it. One key for both,
+        // because they are one intention at two durations — check this pixel, and work with
+        // it clear for a while. `repeat` is what makes the hold work at all; without it the
+        // browser's auto-repeat would deliver a stream of toggles.
+        if (!event.repeat) {
+          peekStartedAt.current = event.timeStamp;
+          setRegionsHidden((hidden) => !hidden);
+        }
       } else if (key === "0") {
         canvasRef.current?.fit();
+      } else if (labelKeyed) {
+        applyLabel(labelKeyed);
       } else if (key === "1") {
         canvasRef.current?.actualPixels();
       }
     };
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== "h") return;
+      const started = peekStartedAt.current;
+      peekStartedAt.current = null;
+      // `null` when the press began inside a text field, or in another window: only a press
+      // this handler actually saw is a press it may undo.
+      if (started !== null && event.timeStamp - started > PEEK_MS) {
+        setRegionsHidden((hidden) => !hidden);
+      }
+    };
     globalThis.addEventListener("keydown", onKey);
-    return () => globalThis.removeEventListener("keydown", onKey);
-  }, [activeIndex, clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openChannel, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId]);
+    globalThis.addEventListener("keyup", onKeyUp);
+    return () => {
+      globalThis.removeEventListener("keydown", onKey);
+      globalThis.removeEventListener("keyup", onKeyUp);
+    };
+  }, [activeIndex, applyLabel, clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openChannel, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId, setRegionsHidden]);
 
   useEffect(() => {
     if (!message) return;
@@ -873,7 +988,9 @@ function EditorReady({
     return () => globalThis.clearTimeout(timer);
   }, [message]);
 
-  const mutationError = save.error ?? complete.error;
+  // A label PATCH answers 404 or 500, never 412, so folding it in here cannot light up the
+  // "Reload server draft" button below — that stays gated on an actual draft conflict.
+  const mutationError = save.error ?? complete.error ?? setLabel.error;
   // 412 rather than a substring of the detail: the status is the contract, the prose is not.
   const isConflict = (error: Error | null | undefined) =>
     error instanceof ApiError && error.status === 412;
@@ -932,10 +1049,34 @@ function EditorReady({
             {currentImage?.width} × {currentImage?.height} ·{" "}
             {perSample ? "sample" : "image"} {queueIndex + 1} of {flatQueue.length}
             {perSample && sample.images.length > 1 && ` · ${sample.images.length} channels share one annotation`}
+            {/* `import` is the state that means nobody has checked this yet, so both halves are
+                worth printing rather than only flagging the corrected ones. */}
+            {` · ${sample.label_source === "manual" ? "hand-set" : "imported"} label`}
           </div>
         </div>
 
         <div className="ml-auto flex items-center gap-2">
+          {/* The verdict for the whole part. `SegmentedControl` treats `""` as unset and
+              highlights `defaultValue` in its place — so no `defaultValue` here: every label
+              is a real value, `unlabeled` included, and `""` is not one of them. */}
+          <span className="flex items-center gap-1">
+            <SegmentedControl
+              aria-label={
+                sample.images.length > 1
+                  ? `Sample label — applies to all ${sample.images.length} channels of this part`
+                  : "Sample label"
+              }
+              value={sample.label}
+              options={LABEL_OPTIONS}
+              disabled={setLabel.isPending}
+              onValueChange={(value) => applyLabel(value as Label)}
+            />
+            {disagreement && (
+              <InfoHint icon={TriangleAlert} label="The label and the drawn regions disagree">
+                {disagreement}
+              </InfoHint>
+            )}
+          </span>
           <span className="hidden text-xs text-fg-muted sm:inline">
             {message ?? (dirty ? "Unsaved changes" : `Draft v${draftVersion}`)}
           </span>
@@ -1055,18 +1196,23 @@ function EditorReady({
                   </div>
                 )}
                 {paneMode !== "single" && referenceIndex !== null && (
-                  // A fixed box, because `Select`'s trigger is `w-full` and would otherwise
-                  // bid for the row against the slider beside it.
-                  <div className="w-36 shrink-0">
-                    <Select
-                      aria-label="Second channel"
-                      value={String(referenceIndex)}
-                      options={sample.images.flatMap((image, index) =>
-                        index === activeIndex
-                          ? []
-                          : [{ value: String(index), label: image.channel ?? "unassigned" }],
-                      )}
-                      onValueChange={(value) => workspace.setReferenceIndex(Number(value))}
+                  // The same control as the strip on the left, because it makes the same
+                  // kind of choice. It was a dropdown, which put two unlike controls a few
+                  // centimetres apart in one row for no reason a reader could see.
+                  //
+                  // Every channel is listed, with the one already in the left pane disabled
+                  // rather than filtered out: the two strips then hold the same channels in
+                  // the same order, and the second does not reshuffle itself every time the
+                  // first changes. What the disabled tab shows is `resolveReference`'s wrap
+                  // made visible — the reason a two-channel part cannot put the same
+                  // photograph in both panes.
+                  <div className="shrink-0">
+                    <ChannelTabs
+                      label="Second channel"
+                      images={sample.images}
+                      active={referenceIndex}
+                      onSelect={(index) => workspace.setReferenceIndex(index)}
+                      unavailable={{ index: activeIndex, reason: "Already in the left pane" }}
                     />
                   </div>
                 )}
@@ -1091,6 +1237,7 @@ function EditorReady({
           overlayImageId={paneMode === "overlay" ? reference?.id : undefined}
           overlayOpacity={overlayOpacity}
           maskOpacity={maskOpacity}
+          showRegions={!regionsHidden}
           label={`Annotation canvas — ${currentImage?.channel ?? "the sample"}`}
           document={history.present}
           labels={labels}
@@ -1152,6 +1299,7 @@ function EditorReady({
                 <AnnotationCanvas
                   imageId={reference.id}
                   maskOpacity={maskOpacity}
+                  showRegions={!regionsHidden}
                   editable={false}
                   label={`Reference channel — ${reference.channel ?? "unassigned"}`}
                   document={referenceDocument}
@@ -1181,88 +1329,94 @@ function EditorReady({
         </div>
 
         <aside className="flex w-72 shrink-0 flex-col border-l border-line bg-surface" aria-label="Annotation inspector">
-          <section className="border-b border-line p-3">
-            <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-              New region
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
-              <Select
-                aria-label="New region label"
-                value={labelKey}
-                options={labels.map((label) => ({ value: label.key, label: label.name }))}
-                onValueChange={setLabelKey}
-              />
-              <Select
-                aria-label="New region operation"
-                value={operation}
-                options={[
-                  { value: "add", label: "Add defect" },
-                  { value: "subtract", label: "Subtract" },
-                ]}
-                onValueChange={(value) => setOperation(value as "add" | "subtract")}
-              />
-            </div>
-            {pendingPoints.length > 0 && (
-              // A readout, not a control. Closing is a click on the first vertex or a
-              // double-click anywhere; a "Close" button in a side panel is neither where the
-              // hand is nor what a polygon tool is expected to need.
-              <p className="mt-2 rounded-control bg-raised px-2 py-1.5 text-xs text-fg-muted">
-                {pendingPoints.length} vertex{pendingPoints.length === 1 ? "" : "es"} ·{" "}
-                {pendingPoints.length < 3
-                  ? "three closes a ring"
-                  : "click the first vertex, double-click, or Enter"}{" "}
-                · Backspace undoes one
-              </p>
-            )}
-            {(tool === "brush" || tool === "eraser") && (
-              <div className="mt-3 flex flex-col gap-2">
-                <div>
-                  <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
-                    <span>Brush size</span>
-                    <span className="font-mono">
-                      {brushSize} px {brushSize === 1 ? "· one pixel" : ""}
-                    </span>
-                  </div>
-                  {/* Slider *and* a number box: the useful values for correcting a mask are
-                      at the very bottom of a 128-step track, where a drag cannot reliably
-                      land on 1 rather than 2. The `,` and `.` keys do the same job with the
-                      other hand still on the canvas. */}
-                  <div className="flex items-center gap-2">
-                    <Slider
-                      aria-label="Brush size"
-                      value={brushSize}
-                      min={MIN_BRUSH_SIZE}
-                      max={MAX_BRUSH_SIZE}
-                      step={1}
-                      onValueChange={setBrushSize}
-                    />
-                    <NumberInput
-                      className="w-16 shrink-0"
-                      aria-label="Brush size in pixels"
-                      min={MIN_BRUSH_SIZE}
-                      max={MAX_BRUSH_SIZE}
-                      step={1}
-                      value={brushSize}
-                      onChange={(event) => setBrushSize(Number(event.target.value))}
-                    />
-                  </div>
-                </div>
-                {/* The rule, where the hand is, because it is the one thing about this tool
-                    nobody can infer from looking at it. */}
-                <p className="text-[11px] leading-4 text-fg-subtle">
-                  {selected?.kind === "bitmap"
-                    ? tool === "eraser"
-                      ? "Erasing region " +
-                        `${history.present.shapes.indexOf(selected) + 1} only. Escape to erase across all of them.`
-                      : "Painting into region " +
-                        `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new one.`
-                    : tool === "eraser"
-                      ? "Nothing selected: this takes paint off whatever it passes over, and never adds a region."
-                      : "Nothing selected: this starts a new region. Strokes after it extend that one."}
+          {/* What the tool in hand needs, and nothing else.
+
+              This section used to be headed "New region" and opened with two dropdowns that
+              set the class and the operation of the *next* shape. Both are gone. The class
+              picker had one option on every dataset this application can produce — there is
+              a taxonomy table but no way to add to it — and the operation picker duplicated
+              a control that already sits in Selection below, on a shape that is already
+              selected, because every path that mints one selects it. Choosing Subtract
+              before drawing and flipping to Subtract after drawing produce the same
+              document, and only one of them needed a permanent dropdown. */}
+          {(hasTaxonomy || pendingPoints.length > 0 || tool === "brush" || tool === "eraser") && (
+            <section className="border-b border-line p-3">
+              <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
+                Tool
+              </h2>
+              {hasTaxonomy && (
+                // Only where there is something to choose between. A dataset with one class
+                // gets no picker, and one with four gets a real one: label count is data in
+                // exactly the way channel count is (ADR-0005).
+                <Select
+                  aria-label="New region label"
+                  value={labelKey}
+                  options={labels.map((label) => ({ value: label.key, label: label.name }))}
+                  onValueChange={setLabelKey}
+                />
+              )}
+              {pendingPoints.length > 0 && (
+                // A readout, not a control. Closing is a click on the first vertex or a
+                // double-click anywhere; a "Close" button in a side panel is neither where the
+                // hand is nor what a polygon tool is expected to need.
+                <p className="mt-2 rounded-control bg-raised px-2 py-1.5 text-xs text-fg-muted">
+                  {pendingPoints.length} vertex{pendingPoints.length === 1 ? "" : "es"} ·{" "}
+                  {pendingPoints.length < 3
+                    ? "three closes a ring"
+                    : "click the first vertex, double-click, or Enter"}{" "}
+                  · Backspace undoes one
                 </p>
-              </div>
-            )}
-          </section>
+              )}
+              {(tool === "brush" || tool === "eraser") && (
+                <div className="mt-3 flex flex-col gap-2">
+                  <div>
+                    <div className="mb-1 flex items-center justify-between text-xs text-fg-muted">
+                      <span>Brush size</span>
+                      <span className="font-mono">
+                        {brushSize} px {brushSize === 1 ? "· one pixel" : ""}
+                      </span>
+                    </div>
+                    {/* Slider *and* a number box: the useful values for correcting a mask are
+                        at the very bottom of a 128-step track, where a drag cannot reliably
+                        land on 1 rather than 2. The `,` and `.` keys do the same job with the
+                        other hand still on the canvas. */}
+                    <div className="flex items-center gap-2">
+                      <Slider
+                        aria-label="Brush size"
+                        value={brushSize}
+                        min={MIN_BRUSH_SIZE}
+                        max={MAX_BRUSH_SIZE}
+                        step={1}
+                        onValueChange={setBrushSize}
+                      />
+                      <NumberInput
+                        className="w-16 shrink-0"
+                        aria-label="Brush size in pixels"
+                        min={MIN_BRUSH_SIZE}
+                        max={MAX_BRUSH_SIZE}
+                        step={1}
+                        value={brushSize}
+                        onChange={(event) => setBrushSize(Number(event.target.value))}
+                      />
+                    </div>
+                  </div>
+                  {/* The rule, where the hand is, because it is the one thing about this tool
+                      nobody can infer from looking at it. */}
+                  <p className="text-[11px] leading-4 text-fg-subtle">
+                    {selected?.kind === "bitmap"
+                      ? tool === "eraser"
+                        ? "Erasing region " +
+                          `${history.present.shapes.indexOf(selected) + 1} only. Escape to erase across all of them.`
+                        : "Painting into region " +
+                          `${history.present.shapes.indexOf(selected) + 1}. Escape starts a new one.`
+                      : tool === "eraser"
+                        ? "Nothing selected: this takes paint off whatever it passes over, and never adds a region."
+                        : "Nothing selected: this starts a new region. Strokes after it extend that one."}
+                  </p>
+                </div>
+              )}
+            </section>
+          )}
 
           {tool === "assist" && (
             <section className="border-b border-line p-3">
@@ -1415,9 +1569,28 @@ function EditorReady({
 
             {/* Appearance, beside the regions it governs. The right weight depends on the
                 imagery: heavy enough to see over a bright specular surface is heavy enough to
-                hide the texture of a dark field. */}
+                hide the texture of a dark field.
+
+                The eye is a separate question from the weight, and it lives here rather than
+                on the canvas so that "why is nothing drawn" has its answer next to the region
+                count that is still saying there are three of them. */}
             <div className="mb-3 flex flex-col gap-2 rounded-control bg-raised/60 p-2">
               <div className="flex items-center gap-2">
+                <Tooltip content={regionsHidden ? "Show the mask (H)" : "Hide the mask (H)"}>
+                  <button
+                    type="button"
+                    aria-label={regionsHidden ? "Show the mask" : "Hide the mask"}
+                    aria-pressed={regionsHidden}
+                    className={cn(
+                      "shrink-0 rounded-control p-1 text-fg-muted hover:bg-raised hover:text-fg",
+                      focusRing,
+                      regionsHidden && "bg-raised text-signal",
+                    )}
+                    onClick={() => setRegionsHidden(!regionsHidden)}
+                  >
+                    {regionsHidden ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                  </button>
+                </Tooltip>
                 <span className="shrink-0 text-[11px] text-fg-muted">Mask</span>
                 <Slider
                   aria-label="Mask opacity"
@@ -1425,8 +1598,9 @@ function EditorReady({
                   max={1}
                   step={0.05}
                   value={maskOpacity}
+                  disabled={regionsHidden}
                   onValueChange={setMaskOpacity}
-                  readout={`${Math.round(maskOpacity * 100)}%`}
+                  readout={regionsHidden ? "hidden" : `${Math.round(maskOpacity * 100)}%`}
                 />
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
@@ -1494,17 +1668,19 @@ function EditorReady({
             </h2>
             {!selected ? (
               <p className="text-xs leading-5 text-fg-subtle">
-                Select a region to edit its class or operation, drag it with Select, or nudge it
-                with the arrow keys.
+                Select a region to {hasTaxonomy ? "edit its class or operation" : "make it a cut"},
+                drag it with Select, or nudge it with the arrow keys.
               </p>
             ) : (
               <div className="flex flex-col gap-2">
-                <Select
-                  aria-label="Selected region label"
-                  value={selected.label_key}
-                  options={labels.map((label) => ({ value: label.key, label: label.name }))}
-                  onValueChange={(value) => updateSelected({ label_key: value })}
-                />
+                {hasTaxonomy && (
+                  <Select
+                    aria-label="Selected region label"
+                    value={selected.label_key}
+                    options={labels.map((label) => ({ value: label.key, label: label.name }))}
+                    onValueChange={(value) => updateSelected({ label_key: value })}
+                  />
+                )}
                 <div className="flex gap-2">
                   <Select
                     aria-label="Selected region operation"
@@ -1543,7 +1719,8 @@ function EditorReady({
               aria-label="Previous image"
             />
             <span className="text-center font-mono text-[10px] text-fg-subtle">
-              J/K after save · C completes{sample.images.length > 1 ? " · [ ] channel" : ""}
+              J/K after save · C completes{sample.images.length > 1 ? " · [ ] channel" : ""} ·
+              H mask · N/D/U label
             </span>
             <Button
               icon={<ArrowRight />}

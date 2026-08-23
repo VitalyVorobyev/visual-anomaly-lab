@@ -17,7 +17,8 @@ application.
   copied; the import is idempotent and leaves a reviewable manifest.
 - **Browse and label** the result as a catalogue that groups — a collection is a dataset's stored
   override or the reference pack it came from — with a virtualised grid, channel filters and an
-  image-first sample viewer.
+  image-first sample viewer. A dataset names the channel it is read in, and every screen that has
+  room for one photograph of a part opens on it.
 - **Annotate** at pixel level: polygon and brush with editable contour tracing, undo/redo, autosave
   with conflict detection, and a keyboard queue. Truth is versioned and lives in the source frame.
   One annotation covers every channel of a part, while revisions stay per image.

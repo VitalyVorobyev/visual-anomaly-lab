@@ -68,4 +68,16 @@ describe("what one unit of annotation work is", () => {
     expect(queueUnits([sample(3, [])], true)).toEqual([]);
     expect(queueUnits([sample(3, [])], false)).toEqual([]);
   });
+
+  it("opens on the dataset's default channel under sample scope", () => {
+    const units = queueUnits([THREE, TWO], true, "dome");
+
+    // The three-channel part opens on `dome`; the two-channel one has none and falls back
+    // to its first image rather than dropping out of the queue.
+    expect(units.map((unit) => unit.image.id)).toEqual([13, 21]);
+  });
+
+  it("ignores the default under image scope, where every channel is already its own card", () => {
+    expect(queueUnits([THREE], false, "dome").map((unit) => unit.image.id)).toEqual([11, 12, 13]);
+  });
 });
