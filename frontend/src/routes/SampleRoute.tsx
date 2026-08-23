@@ -26,6 +26,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { PAGE_SIZE, readBrowseState, toSampleQuery, writeBrowseState } from "../api/browseState";
 import type { ImageSummary, Label, SampleSummary } from "../api/client";
+import { preferredImageIndex } from "../api/defaultChannel";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, FULL_TIER_ZOOM, RESET_VIEW, Skeleton, Switch, Tooltip, ZoomPanCanvas, type View } from "@vitavision/lab-ui";
@@ -144,11 +145,24 @@ export function SampleRoute() {
 
   const current = sample.data;
   const images = current?.images ?? [];
+  // The rail's channel filter wins, because the reader asked for it on the way in and a
+  // viewer that ignored it made the filter look inert. With no filter the dataset's own
+  // default answers instead, and only then the first image.
+  //
+  // `undefined` rather than `null`: `BrowseState` is required-but-nullable on `undefined`,
+  // and the old `=== null` test could never be true — the unfiltered case was reaching a
+  // `findIndex` against `undefined`, landing on `-1`, and being rescued by the `Math.max`.
+  // It gave the right answer for the wrong reason, and there is now a third case to tell
+  // apart from it.
   const filteredChannel =
-    browse.channelId === null
+    browse.channelId === undefined
       ? -1
       : images.findIndex((image) => image.channel_id === browse.channelId);
-  const activeIndex = active ?? Math.max(0, filteredChannel);
+  const activeIndex =
+    active ??
+    (filteredChannel === -1
+      ? preferredImageIndex(images, dataset.data?.default_channel)
+      : filteredChannel);
   const shown = images[Math.min(activeIndex, images.length - 1)];
 
   /** The next preview, fetched before it is asked for, so paging feels instant. */

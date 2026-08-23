@@ -18,6 +18,7 @@
 import { Link } from "react-router";
 
 import type { SampleSummary } from "../../api/client";
+import { preferredImageIndex } from "../../api/defaultChannel";
 import { imageUrl } from "../../api/imageUrl";
 import { Badge, Checkbox, cn, focusRing } from "@vitavision/lab-ui";
 import type { Label } from "../../api/client";
@@ -36,6 +37,7 @@ export function SampleTile({
   sample,
   search,
   channelId,
+  defaultChannel,
   selected,
   onSelect,
 }: {
@@ -44,6 +46,8 @@ export function SampleTile({
   search: string;
   /** The channel the grid is filtered to, if any. */
   channelId?: number | undefined;
+  /** The channel the dataset says it is read in, when the rail is not filtering. */
+  defaultChannel?: string | null | undefined;
   selected: boolean;
   onSelect: (event: SelectModifiers) => void;
 }) {
@@ -52,7 +56,9 @@ export function SampleTile({
   // instead made the filter look inert: the same bright-field thumbnails came back however
   // the rail was set. Falling back to the first image keeps a sample whose channel dropped
   // out of a re-import visible rather than blank.
-  const cover = sample.images.find((image) => image.channel_id === channelId) ?? sample.images[0];
+  const cover =
+    sample.images.find((image) => image.channel_id === channelId) ??
+    sample.images[preferredImageIndex(sample.images, defaultChannel)];
 
   return (
     <div className="relative">

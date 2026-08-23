@@ -88,7 +88,7 @@ def update_dataset(
     derived value takes over again. A signature of optional parameters could not express
     the difference -- "not mentioned" and "set to null" would arrive identically.
     """
-    editable = {"notes", "collection"}
+    editable = {"notes", "collection", "default_channel"}
     unknown = set(fields) - editable
     if unknown:  # pragma: no cover - the API model already constrains the keys
         msg = f"dataset has no editable column {sorted(unknown)!r}"
@@ -234,18 +234,29 @@ def label_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[Label, int]:
 def cover_image_id(conn: sqlite3.Connection, dataset_id: int) -> int | None:
     """One image that stands for the dataset in the catalogue, or `None` if it has none.
 
-    A normal sample is preferred over a defective one: the cover answers "what am I looking
-    at", and the healthy part is the better answer to that. Within a label the order is the
-    insertion order, so the same image comes back on every read and a card does not change
-    picture between visits.
+    The dataset's own default channel is preferred first, so a card shows the view the
+    dataset is actually read in rather than whichever illumination was scanned first. A
+    normal sample is preferred next: the cover answers "what am I looking at", and the
+    healthy part is the better answer to that. Within a label the order is the insertion
+    order, so the same image comes back on every read and a card does not change picture
+    between visits.
+
+    A dataset with no default, or one naming a channel a later import renamed away, sorts
+    every row equally on that first term and falls back to exactly the order above.
     """
     row = conn.execute(
         """
         SELECT image.id AS id
           FROM image
           JOIN sample ON sample.id = image.sample_id
+          LEFT JOIN channel ON channel.id = image.channel_id
+          JOIN dataset ON dataset.id = sample.dataset_id
          WHERE sample.dataset_id = ?
-         ORDER BY (sample.label = 'normal') DESC, sample.id, image.id
+         ORDER BY (dataset.default_channel IS NOT NULL
+                   AND channel.name = dataset.default_channel) DESC,
+                  (sample.label = 'normal') DESC,
+                  sample.id,
+                  image.id
          LIMIT 1
         """,
         (dataset_id,),

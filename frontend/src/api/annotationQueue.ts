@@ -13,6 +13,7 @@
  */
 
 import type { ImageSummary, SampleSummary } from "./client";
+import { preferredImageIndex } from "./defaultChannel";
 
 export interface QueueUnit {
   sample: SampleSummary;
@@ -20,10 +21,19 @@ export interface QueueUnit {
   image: ImageSummary;
 }
 
-export function queueUnits(items: SampleSummary[], perSample: boolean): QueueUnit[] {
-  return items.flatMap((sample) =>
+export function queueUnits(
+  items: SampleSummary[],
+  perSample: boolean,
+  defaultChannel?: string | null,
+): QueueUnit[] {
+  return items.flatMap((sample) => {
+    // Under sample scope the part is one unit of work, so which photograph represents it is
+    // a real choice and the dataset gets to make it. Under image scope every channel is
+    // already its own card and there is nothing to choose.
+    const at = preferredImageIndex(sample.images, defaultChannel);
     // A sample with no images contributes nothing under either scope, which is why this is
     // a slice rather than an index: there is no unit of work without something to look at.
-    (perSample ? sample.images.slice(0, 1) : sample.images).map((image) => ({ sample, image })),
-  );
+    const images = perSample ? sample.images.slice(at, at + 1) : sample.images;
+    return images.map((image) => ({ sample, image }));
+  });
 }

@@ -61,6 +61,20 @@ interface Props {
   overlayOpacity?: number;
   /** How strongly annotated regions are painted over the photograph. */
   maskOpacity?: number;
+  /**
+   * Whether the annotated regions are drawn at all.
+   *
+   * Not the same question as `maskOpacity`, and not reachable through it. The opacity dims
+   * *fills*; a polygon's outline, its vertex handles and a bitmap's selection rectangle are
+   * siblings that carry no opacity of their own, so even at zero the photograph would be
+   * under a wireframe. Deciding whether a marked defect is really there means seeing the
+   * pixels with nothing on them.
+   *
+   * What is still drawn while this is off is what the reader is doing *now*: the live brush
+   * trail, the pending polygon, the assist points and their un-accepted suggestion, and the
+   * keyboard cursor. Those are not the overlay.
+   */
+  showRegions?: boolean;
   /** What a screen reader calls this surface. Panes beside the editor are not the editor. */
   label?: string;
   /**
@@ -99,6 +113,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   overlayImageId,
   overlayOpacity = 0.5,
   maskOpacity = 0.45,
+  showRegions = true,
   label = "Annotation canvas",
   editable = true,
   document,
@@ -494,7 +509,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
                 listening={false}
               />
             )}
-            {baseMask && (
+            {showRegions && baseMask && (
               // The imported base, at half the weight of the editable regions above it: it is
               // context for what is being edited, not one of the things being edited.
               <KonvaImage
@@ -506,124 +521,125 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
               />
             )}
 
-            {document.shapes.map((shape) => {
-              if (shape.kind === "bitmap") {
+            {showRegions &&
+              document.shapes.map((shape) => {
+                if (shape.kind === "bitmap") {
+                  return (
+                    <BitmapLayer
+                      key={shape.id}
+                      shape={shape}
+                      color={colors.get(shape.label_key) ?? palette.unknownLabel}
+                      palette={palette}
+                      opacity={maskOpacity}
+                      scale={scale}
+                      selected={shape.id === selectedId}
+                      onSelect={() => onSelect(shape.id)}
+                      onMove={(dx, dy) => onMoveShape(shape.id, dx, dy)}
+                      selectable={interactive}
+                    />
+                  );
+                }
+                const color = colors.get(shape.label_key) ?? palette.unknownLabel;
+                const selected = shape.id === selectedId;
+                // The dragged vertex is applied here rather than committed on every mouse move:
+                // the outline follows the handle, and undo still steps one drag at a time.
+                const points =
+                  vertexDrag?.shapeId === shape.id
+                    ? shape.points.map((point, index) =>
+                        index === vertexDrag.index ? vertexDrag.point : point,
+                      )
+                    : shape.points;
                 return (
-                  <BitmapLayer
+                  <Group
                     key={shape.id}
-                    shape={shape}
-                    color={colors.get(shape.label_key) ?? palette.unknownLabel}
-                    palette={palette}
-                    opacity={maskOpacity}
-                    scale={scale}
-                    selected={shape.id === selectedId}
-                    onSelect={() => onSelect(shape.id)}
-                    onMove={(dx, dy) => onMoveShape(shape.id, dx, dy)}
-                    selectable={interactive}
-                  />
-                );
-              }
-              const color = colors.get(shape.label_key) ?? palette.unknownLabel;
-              const selected = shape.id === selectedId;
-              // The dragged vertex is applied here rather than committed on every mouse move:
-              // the outline follows the handle, and undo still steps one drag at a time.
-              const points =
-                vertexDrag?.shapeId === shape.id
-                  ? shape.points.map((point, index) =>
-                      index === vertexDrag.index ? vertexDrag.point : point,
-                    )
-                  : shape.points;
-              return (
-                <Group
-                  key={shape.id}
-                  draggable={interactive}
-                  // A click has to survive a shaking hand, or selecting a region would drag it
-                  // a pixel and land in undo history.
-                  dragDistance={4}
-                  // Selection is claimed *here*, on the draggable node, and not on the line
-                  // inside it. Konva starts a drag from a `mousedown` listener on the
-                  // draggable node itself, reached by bubbling — so cancelling the bubble on
-                  // the line would have selected the region and then silently refused to move
-                  // it. Cancelling here still stops the stage's pan gesture, which is the only
-                  // thing that had to stop.
-                  onMouseDown={(event) => {
-                    if (event.evt.button === 2) return;
-                    event.cancelBubble = true;
-                    onSelect(shape.id);
-                  }}
-                  onTap={(event) => {
-                    event.cancelBubble = true;
-                    onSelect(shape.id);
-                  }}
-                  onDragEnd={(event) => {
-                    // `dragend` bubbles, and a selected polygon's vertices are draggable
-                    // children — without this, dragging a vertex would also read the
-                    // *vertex's* position as a whole-region offset and fling the shape across
-                    // the frame.
-                    if (event.target !== event.currentTarget) return;
-                    const node = event.target;
-                    const dx = node.x();
-                    const dy = node.y();
-                    // Konva moving the group *is* the live feedback; the committed document
-                    // then carries the offset, so the node has to go back to the origin or it
-                    // would be applied twice.
-                    node.position({ x: 0, y: 0 });
-                    onMoveShape(shape.id, dx, dy);
-                  }}
-                >
-                  <Line
-                    points={points.flatMap((point) => [point.x, point.y])}
-                    closed
-                    fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
-                    stroke={shape.operation === "add" ? color : palette.cut}
-                    strokeWidth={(selected ? 2.5 : 1.5) / scale}
-                    hitStrokeWidth={10 / scale}
-                    listening={interactive}
-                  />
-                  {selected &&
-                    points.map((point, index) => (
-                      <Circle
-                        key={`${shape.id}-${index}`}
-                        x={point.x}
-                        y={point.y}
-                        radius={4.5 / scale}
-                        fill={palette.frame}
-                        stroke={color}
-                        strokeWidth={1.5 / scale}
-                        hitStrokeWidth={12 / scale}
-                        // Silent under every other tool. A selected polygon stays on screen
-                        // while brushing, and a vertex that still took the click swallowed the
-                        // start of the stroke.
-                        listening={interactive}
-                        draggable={interactive}
-                        onDragMove={(event) =>
-                          setVertexDrag({
-                            shapeId: shape.id,
-                            index,
-                            point: {
+                    draggable={interactive}
+                    // A click has to survive a shaking hand, or selecting a region would drag it
+                    // a pixel and land in undo history.
+                    dragDistance={4}
+                    // Selection is claimed *here*, on the draggable node, and not on the line
+                    // inside it. Konva starts a drag from a `mousedown` listener on the
+                    // draggable node itself, reached by bubbling — so cancelling the bubble on
+                    // the line would have selected the region and then silently refused to move
+                    // it. Cancelling here still stops the stage's pan gesture, which is the only
+                    // thing that had to stop.
+                    onMouseDown={(event) => {
+                      if (event.evt.button === 2) return;
+                      event.cancelBubble = true;
+                      onSelect(shape.id);
+                    }}
+                    onTap={(event) => {
+                      event.cancelBubble = true;
+                      onSelect(shape.id);
+                    }}
+                    onDragEnd={(event) => {
+                      // `dragend` bubbles, and a selected polygon's vertices are draggable
+                      // children — without this, dragging a vertex would also read the
+                      // *vertex's* position as a whole-region offset and fling the shape across
+                      // the frame.
+                      if (event.target !== event.currentTarget) return;
+                      const node = event.target;
+                      const dx = node.x();
+                      const dy = node.y();
+                      // Konva moving the group *is* the live feedback; the committed document
+                      // then carries the offset, so the node has to go back to the origin or it
+                      // would be applied twice.
+                      node.position({ x: 0, y: 0 });
+                      onMoveShape(shape.id, dx, dy);
+                    }}
+                  >
+                    <Line
+                      points={points.flatMap((point) => [point.x, point.y])}
+                      closed
+                      fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
+                      stroke={shape.operation === "add" ? color : palette.cut}
+                      strokeWidth={(selected ? 2.5 : 1.5) / scale}
+                      hitStrokeWidth={10 / scale}
+                      listening={interactive}
+                    />
+                    {selected &&
+                      points.map((point, index) => (
+                        <Circle
+                          key={`${shape.id}-${index}`}
+                          x={point.x}
+                          y={point.y}
+                          radius={4.5 / scale}
+                          fill={palette.frame}
+                          stroke={color}
+                          strokeWidth={1.5 / scale}
+                          hitStrokeWidth={12 / scale}
+                          // Silent under every other tool. A selected polygon stays on screen
+                          // while brushing, and a vertex that still took the click swallowed the
+                          // start of the stroke.
+                          listening={interactive}
+                          draggable={interactive}
+                          onDragMove={(event) =>
+                            setVertexDrag({
+                              shapeId: shape.id,
+                              index,
+                              point: {
+                                x: clamp(event.target.x(), 0, document.image_width),
+                                y: clamp(event.target.y(), 0, document.image_height),
+                              },
+                            })
+                          }
+                          onDragEnd={(event) => {
+                            event.cancelBubble = true;
+                            setVertexDrag(null);
+                            onMovePoint(shape.id, index, {
                               x: clamp(event.target.x(), 0, document.image_width),
                               y: clamp(event.target.y(), 0, document.image_height),
-                            },
-                          })
-                        }
-                        onDragEnd={(event) => {
-                          event.cancelBubble = true;
-                          setVertexDrag(null);
-                          onMovePoint(shape.id, index, {
-                            x: clamp(event.target.x(), 0, document.image_width),
-                            y: clamp(event.target.y(), 0, document.image_height),
-                          });
-                        }}
-                        onMouseDown={(event) => {
-                          // The vertex owns this gesture: without cancelling, the group under
-                          // it would drag the whole region at the same time.
-                          event.cancelBubble = true;
-                        }}
-                      />
-                    ))}
-                </Group>
-              );
-            })}
+                            });
+                          }}
+                          onMouseDown={(event) => {
+                            // The vertex owns this gesture: without cancelling, the group under
+                            // it would drag the whole region at the same time.
+                            event.cancelBubble = true;
+                          }}
+                        />
+                      ))}
+                  </Group>
+                );
+              })}
 
             {pendingPoints.length > 0 && (
               <Group listening={false}>

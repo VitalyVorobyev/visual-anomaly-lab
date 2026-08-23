@@ -58,17 +58,40 @@ part; it is stored per image either way (ADR-0036). It is written only by
 masks, has samples whose images differ in size, or has any draft open — see
 [annotations](annotations.md).
 
-`notes` and `collection` are the two editable columns, written only by `PATCH /api/datasets/{id}` and
-read only by the catalogue. Both are **overrides, not records**: the API returns an *effective*
-`description` and `collection` that fall back to the reference pack a dataset was registered from when
-the column is null or blank. Membership in a pack stays derived — `registered_dataset_id` recomputes it
-from `(name, adapter, resolved root_path)` on every read — so a dataset registered long before either
+`notes`, `collection` and `default_channel` are the three editable columns, written only by
+`PATCH /api/datasets/{id}`. All three are **overrides, not records** — each is null until somebody
+says otherwise, and null means something derived answers instead. For the first two the API does the
+deriving: it returns an *effective* `description` and `collection` that fall back to the reference
+pack a dataset was registered from when the column is null or blank. Membership in a pack stays
+derived — `registered_dataset_id` recomputes it from `(name, adapter, resolved root_path)` on every
+read — so a dataset registered long before either
 column existed still groups and describes itself, and nothing needed a backfill. Grouping is **one
 level deep and free text**: a collection has no attributes of its own, so it is a string on the dataset
 rather than a table, and there is no nesting below it. It follows that **a collection exists for
 exactly as long as some dataset names it** — there is no empty collection to create and none to
 delete, so the UI names one and fills it in a single step, and clearing the last member is what
-dissolves it. `name` and `root_path` are deliberately not editable; they are identity.
+dissolves it.
+
+`default_channel` is the same kind of override with a different fallback. It names, by channel
+**name**, the view this dataset is read in wherever one photograph has to stand for a whole part — a
+grid tile, a queue card, the tab the sample viewer opens on. Until it existed that was always the
+sample's first image, and "first" means the lowest `Channel.position`, which is the order the channel
+folders happened to be scanned in at import: a fact about the source tree rather than about which
+illumination the part is judged under. A name rather than a channel id for the reason
+`Experiment.channels` gives — `upsert_channel` matches on `(dataset_id, name)`, so a name survives a
+re-import that renumbers the dictionary.
+
+Its fallback is the one thing the server cannot compute, because "the sample's first image" is a
+per-sample answer and the dataset row does not know which channels any given part was photographed
+in. So unlike `description` and `collection` the API returns the **raw** value and the client resolves
+it, falling back to the first image both when a part lacks that channel — the reference data's
+two-channel capture group — and when a later import renamed the channel away. **Validated on write,
+forgiving on read**: `PATCH` refuses a name the dataset has no channel for and says which names it
+does have, so a stored preference is never quietly wrong, and a screen never goes blank over one.
+The catalogue cover is the exception that is server-side: `cover_image_id` prefers the default
+channel before it prefers a normal sample, so a card shows the dataset the way the dataset is read.
+
+`name` and `root_path` are deliberately not editable; they are identity.
 
 **`Channel`** — `id`, `dataset_id`, `name`, `position`.
 The per-dataset acquisition-channel dictionary, created **at import time** from canonicalized source folder
