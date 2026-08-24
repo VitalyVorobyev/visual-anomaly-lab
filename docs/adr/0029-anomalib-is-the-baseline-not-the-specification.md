@@ -125,3 +125,27 @@ disappear:
 The rest of the record is unaffected: `efficientad_custom` is still our own implementation, still
 measured against a floor rather than cloning a specification, and the equivalence and divergence
 discipline still applies to it alone.
+
+**2026-08-24 — `dinomaly_anomalib` is retired; the pattern this record set for
+`efficientad_custom` reached its second verdict.** `dinomaly_custom`, ADR-0037's sibling record
+extending this one to the frozen-backbone memory family notwithstanding, is the second in-house
+implementation measured against an anomalib wrapper under this record's discipline. The VisA
+gate ran on the wrapper's exact protocol — 392×392, the registered DINOv2 encoder, 5,000 steps,
+seed 20260812, paired PatchCore control — and the two implementations' means matched to the
+third decimal on image ROC-AUC, pixel ROC-AUC and AU-PRO (`docs/measurements.md`). That is
+parity under the predeclared rule, so `dinomaly_anomalib` is removed from the registry the way
+`efficientad_anomalib` was:
+
+1. **The baseline leg becomes a recorded historical measurement, not a re-runnable in-app
+   comparison.** The numbers in `docs/measurements.md` stand; nothing new can be measured
+   against the wrapper without reinstalling code that is now deleted.
+2. **The bring-up pins in `test_dl_dinomaly_custom.py` keep anomalib as a test-time reference
+   only.** `test_one_training_step_matches_anomalib_exactly` and its inference sibling import
+   `anomalib.models.image.dinomaly` directly, not the retired `dinomaly_anomalib` module — they
+   were never a read of our own wrapper's source, so nothing about them changes here. They
+   remain retirable by replacement only, per this record's decision above.
+
+`dinomaly_custom` is still our own implementation, still measured against a floor rather than
+cloning a specification, and it now carries the configurability the wrapper could not offer —
+the encoder and the decoder depth are both fields — with the export asymmetry (no ONNX yet)
+tracked in `docs/backlog.md`.

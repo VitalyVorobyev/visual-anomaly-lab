@@ -26,21 +26,16 @@ until its output has been reviewed.
 
 ## Methods
 
-- [ ] **Retire `dinomaly_anomalib`** (S): the parity gate ran and the verdict is in — means match
-      the wrapper's recorded run to the third decimal on all three metrics
-      ([measurements.md](measurements.md)), so under the predeclared rule the wrapper goes. The
-      removal mirrors `efficientad_anomalib`'s: module, tests, registry entry, docs, and dated
-      ADR-0008 and ADR-0029 changelog entries recording the verdict.
-- [ ] **ONNX export for `dinomaly_custom`** (S): the wrapper exports and this does not, which is the
-      one capability asymmetry between them. The graph is not the hard part — encoder, bottleneck,
-      decoder, cosine distance, upsample, blur, top-one-percent mean, all of it already traceable —
-      the generic Python-versus-portable parity gate is what has to be written and run.
-      `portable_formats` stays empty until it passes, because the export offer is made from the
-      registry before any configuration is read.
+- [ ] **ONNX export for `dinomaly_custom`** (S): the retired anomalib wrapper exported and this does
+      not, which is the one capability asymmetry between them. The graph is not the hard part —
+      encoder, bottleneck, decoder, cosine distance, upsample, blur, top-one-percent mean, all of it
+      already traceable — the generic Python-versus-portable parity gate is what has to be written
+      and run. `portable_formats` stays empty until it passes, because the export offer is made from
+      the registry before any configuration is read.
 - [ ] **Sweep `dinomaly_custom`'s encoder** (S): the reason the field exists. The default is the
       encoder anomalib pins, so a run against `dinov2_vit_b14` or `dinov3_vit_s16` on identical
       pixels answers whether Dinomaly's published result is about the method or about DINOv2 — a
-      question the wrapper cannot ask. Pair it with a `decoder_depth` ablation: depth 8 is the
+      question the retired wrapper could not ask. Pair it with a `decoder_depth` ablation: depth 8 is the
       published recipe and nothing here has measured whether it is the right one for this data.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
       1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver

@@ -28,10 +28,13 @@ baseline (ADR-0029).
 
 ## Transformer reconstruction
 
-`dinomaly_anomalib` reconstructs frozen DINOv2 features with a trainable decoder. On the checked two-class
-VisA gate it achieved the strongest mean quality among the measured candidates, at roughly ten minutes of
-training per class. Choose it when a high-quality semantic reference is worth the fitting and checkpoint
-cost. Its verified graph embeds normalization and emits the method's smoothed top-one-percent score.
+`dinomaly_custom` reconstructs frozen DINOv2 (or DINOv3) features with a trainable decoder, with the
+encoder and the decoder depth as configuration fields. On the checked two-class VisA gate it achieved the
+strongest mean quality among the measured candidates, at roughly ten minutes of training per class —
+matching the anomalib-wrapped `dinomaly_anomalib` it was measured against to the third decimal on every
+metric, so that wrapper has since retired (`docs/measurements.md`, ADR-0029). Choose it when a
+high-quality semantic reference is worth the fitting and checkpoint cost. It does not export to ONNX yet
+(`docs/backlog.md`).
 
 ## Learned synthesis
 
@@ -71,7 +74,7 @@ planning. “Runs once” is not the same as “fits the workbench contract.”
 | Fast data/geometry sanity check | `pixel_reference` | identity vs localized region |
 | No gradient training | `patchcore_anomalib` | different backbone/layer/bank budget |
 | Compact deployable deep model | `efficientad_custom` | PatchCore |
-| High-quality semantic reference | `dinomaly_anomalib` | PatchCore under same pixels |
+| High-quality semantic reference | `dinomaly_custom` | PatchCore under same pixels |
 | Study learned synthetic anomalies | `glass_anomalib` | PatchCore and Dinomaly |
 | Position matters on registered capture | `dino_memory` (`local_knn`) | the same fit at `global_knn` |
 

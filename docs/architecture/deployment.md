@@ -61,11 +61,13 @@ because production systems may own their source geometry independently.
 An operating point is resolved from one named subset rather than a mixture: test first, then validation,
 then train as an explicit last resort. The chosen subset and rule travel with the value.
 
-All five registered methods across five families have proven exporters: `pixel_reference` (explicit
+Four registered methods across four families have proven exporters: `pixel_reference` (explicit
 statistics and a percentile host reducer), `efficientad_custom` (a deep graph and max/top-k host reducer),
-`patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score),
-`dinomaly_anomalib` (transformer reconstruction map and graph-produced smoothed top-one-percent score), and
-`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score). A future
+`patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score), and
+`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score). The
+retired `dinomaly_anomalib` wrapper had a proven exporter too (transformer reconstruction map and
+graph-produced smoothed top-one-percent score); `dinomaly_custom`, the in-house implementation that
+reached parity with it, does not export yet (`docs/backlog.md`). A future
 method truthfully reports no portable format until its graph or auxiliary-tensor representation and parity
 tolerance have been proven.
 The Rust reference runner validates the same manifest and hashes before using pinned `ort` 2.0.0-rc.13 and

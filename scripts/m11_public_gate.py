@@ -97,17 +97,6 @@ class CandidateSpec:
 
 
 CANDIDATES = {
-    "dinomaly_anomalib": CandidateSpec(
-        key="dinomaly_anomalib",
-        label="Dinomaly",
-        family="transformer-reconstruction",
-        prepared_size=392,
-        config={
-            "max_steps": 5_000,
-            "allow_downloads": True,
-            "seed": SEED,
-        },
-    ),
     "glass_anomalib": CandidateSpec(
         key="glass_anomalib",
         label="GLASS",
@@ -582,7 +571,7 @@ def _run(
 def main(
     argv: list[str] | None = None,
     *,
-    default_candidate: str = "dinomaly_anomalib",
+    default_candidate: str = "dinomaly_custom",
 ) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--data-dir", type=Path, required=True)

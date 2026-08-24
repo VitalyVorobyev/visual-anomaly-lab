@@ -63,7 +63,7 @@ Use a ladder that changes one principle at a time:
 1. `pixel_reference`—alignment-sensitive statistical floor;
 2. `patchcore_anomalib`—frozen feature memory bank;
 3. `efficientad_custom`—compact student–teacher plus reconstruction;
-4. `dinomaly_anomalib`—transformer feature reconstruction when quality justifies longer fitting.
+4. `dinomaly_custom`—transformer feature reconstruction when quality justifies longer fitting.
 
 Keep split and prepared pixels fixed. Record resource caps before running. Use at least two public-safe
 classes or subsets before promoting a method family; a single easy class can reward the wrong assumption.

@@ -1,31 +1,33 @@
 """`dinomaly_custom` — Dinomaly, ours.
 
-The seventh method, and the second in-house implementation of a method the workbench already
-carries through anomalib. `dinomaly_anomalib` is the **baseline this is measured against, not
-a specification to match** (**ADR-0029**): a wrapper establishes that a family is worth
-having, and an implementation we own is what lets every decision inside it become a field on
-a form. If this reaches parity on the VisA gate, the wrapper retires the way
-`efficientad_anomalib` did — and until that verdict lands, nothing about the wrapper changes.
+The seventh method, and the second in-house implementation of a method the workbench once also
+carried through anomalib. The anomalib-wrapped `dinomaly_anomalib` was the **baseline this was
+measured against, not a specification to match** (**ADR-0029**): a wrapper establishes that a
+family is worth having, and an implementation we own is what lets every decision inside it
+become a field on a form. This reached parity on the VisA gate, so the wrapper retired the way
+`efficientad_anomalib` did (**docs/measurements.md**) — nothing about the module below changed
+for that; it was always the implementation the workbench carries forward.
 
-**What is genuinely different, and it is not the arithmetic.** The mechanism is ported
-faithfully — `dinomaly_nets` says exactly what and cites where each shape comes from. Two
-things the wrapper cannot do are the reason this module exists:
+**What was genuinely different from the wrapper, and it is not the arithmetic.** The mechanism
+is ported faithfully — `dinomaly_nets` says exactly what and cites where each shape comes from.
+Two things the retired wrapper could not do are why this module exists:
 
-  * **The encoder is a field.** `dinomaly_anomalib` hard-codes `vit_small_patch14_reg4_dinov2`
-    because that is what anomalib's constructor resolves. Here the encoder comes from the
-    shared table in `dino_backbone.py`, so the two DINOv3 entries arrive for free and a
-    comparison can ask whether Dinomaly's result is about *Dinomaly* or about DINOv2. The
-    default is the encoder anomalib pins, so an untouched run is the like-for-like one.
+  * **The encoder is a field.** The wrapper hard-coded `vit_small_patch14_reg4_dinov2` because
+    that is what anomalib's constructor resolves. Here the encoder comes from the shared table
+    in `dino_backbone.py`, so the two DINOv3 entries arrive for free and a comparison can ask
+    whether Dinomaly's result is about *Dinomaly* or about DINOv2. The default is the encoder
+    anomalib pins, so an untouched run is the like-for-like one against the retired wrapper's
+    recorded numbers.
   * **Decoder depth is a field.** anomalib's constructor accepts a depth and then indexes a
     fixed eight-output fusion topology, so any value but eight fails; the wrapper's docstring
-    says so and fixes it at eight. Here the fusion groups are *derived* from the depth
+    said so and fixed it at eight. Here the fusion groups are *derived* from the depth
     (`fuse_groups`), so a four-block decoder trains and produces maps.
 
 **No anomalib import appears in this module or in `dinomaly_nets`**, which is the property
-that makes a head-to-head meaningful at all: a second reading of one library is not a second
+that made the head-to-head meaningful at all: a second reading of one library is not a second
 implementation.
 
-**One asymmetry is worth stating rather than hiding.** The wrapper exports ONNX and this does
+**One asymmetry is worth stating rather than hiding.** The wrapper exported ONNX and this does
 not yet, so `portable_formats` is empty. Nothing about the graph is hard — it is the parity
 gate that has to be written and run — and it is on the backlog. An export offer is made from
 the registry before any configuration is read, so claiming a format that has not passed the
@@ -105,7 +107,8 @@ WARMUP_STEPS = 100
 SCHEDULE_STEPS = 5_000
 """The cosine's horizon, and it is deliberately **not** `max_steps`.
 
-The published recipe's step budget, fixed here for the reason `dinomaly_anomalib` fixes it:
+The published recipe's step budget, fixed here for the reason the retired anomalib wrapper
+fixed it:
 a horizon that followed the configured budget would move under a continuation. A 1000-step
 run continued for 1000 more would then have annealed to the floor by step 1000 and spent its
 second thousand there, while one uninterrupted 2000-step run annealed across the whole
@@ -365,9 +368,9 @@ class DinomalyCustomConfig(BaseModel):
         default=DinoBackbone.DINOV2_VIT_S14_REG4,
         description=(
             "Frozen encoder the reconstructed features come from. The default is the "
-            "registered DINOv2 that anomalib pins for Dinomaly, so an untouched run compares "
-            "this implementation against dinomaly_anomalib rather than against a different "
-            "backbone. The two DINOv3 entries are licence-gated: access must be requested "
+            "registered DINOv2 that anomalib pins for Dinomaly, matching the retired anomalib "
+            "wrapper's protocol rather than a different backbone. The two DINOv3 entries are "
+            "licence-gated: access must be requested "
             "from Meta on Hugging Face and an approved HF_TOKEN must already be in the "
             "environment, which is why they are never the default."
         ),
@@ -378,9 +381,9 @@ class DinomalyCustomConfig(BaseModel):
         le=12,
         description=(
             "Transformer blocks in the trainable decoder. The published recipe uses 8. This "
-            "is genuinely configurable here and is not in dinomaly_anomalib, whose fusion "
-            "topology indexes exactly eight decoder outputs: the two comparison groups are "
-            "derived from the depth instead, so a 4-block decoder fuses outputs 0-1 against "
+            "is genuinely configurable here and is not in anomalib's own Dinomaly, whose "
+            "fusion topology indexes exactly eight decoder outputs: the two comparison groups "
+            "are derived from the depth instead, so a 4-block decoder fuses outputs 0-1 against "
             "2-3 while the encoder's eight target layers keep their own 0-3 / 4-7 split. "
             "Shallower is faster and has less capacity to reconstruct; a checkpoint records "
             "its depth and refuses to load into an experiment asking for another."
@@ -404,9 +407,9 @@ class DinomalyCustomConfig(BaseModel):
         le=64,
         description=(
             "Images per step, sampled with replacement from the training normals. The "
-            "default is 1 to match dinomaly_anomalib exactly, which is what makes the "
-            "promotion comparison like-for-like; larger batches are steadier per step and "
-            "proportionally more expensive."
+            "default is 1 to match the retired anomalib wrapper's fixed batch-1 training "
+            "exactly, which is what made the promotion comparison like-for-like; larger "
+            "batches are steadier per step and proportionally more expensive."
         ),
     )
     learning_rate: float = Field(
@@ -453,8 +456,9 @@ class DinomalyCustomConfig(BaseModel):
         le=32.0,
         description=(
             "Optional Gaussian smoothing of the stored anomaly map, in prepared pixels. The "
-            "default of 0 leaves the map exactly as dinomaly_anomalib produces it, so pixel "
-            "metrics compare implementations rather than post-processing. The image score is "
+            "default of 0 leaves the map unblurred, matching what the retired anomalib "
+            "wrapper produced, so pixel metrics compared implementations rather than "
+            "post-processing. The image score is "
             "unaffected either way: it has its own fixed smoothing, from the reference."
         ),
     )
@@ -545,10 +549,10 @@ class DinomalyCustomModel(AnomalyModel):
             # a part's channels into one verdict is the evaluation layer's job.
             channel_aware=False,
             dataset_specific=False,
-            # Empty, and the asymmetry with dinomaly_anomalib is deliberate rather than
-            # forgotten: the export offer is made from the registry before any configuration
-            # is read, so a format that has not passed the generic Python-versus-runtime
-            # parity gate must not be claimed. See docs/backlog.md.
+            # Empty, and the asymmetry with the retired anomalib wrapper (which exported ONNX)
+            # is deliberate rather than forgotten: the export offer is made from the registry
+            # before any configuration is read, so a format that has not passed the generic
+            # Python-versus-runtime parity gate must not be claimed. See docs/backlog.md.
             portable_formats=[],
             preferred_device=Device.MPS,
         )
@@ -833,8 +837,8 @@ class DinomalyCustomModel(AnomalyModel):
         """Put every stream back where the previous leg left it.
 
         The torch stream is global here rather than a private `Generator`, because dropout
-        draws from it and there is no per-module override. That is the same shape
-        `dinomaly_anomalib` has, and it means a continuation restores the process-wide state —
+        draws from it and there is no per-module override. That is the same shape the retired
+        anomalib wrapper had, and it means a continuation restores the process-wide state —
         acceptable because a training worker runs one job.
         """
         if self._torch_rng_state is not None:

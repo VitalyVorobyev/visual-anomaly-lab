@@ -48,8 +48,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference":       _pixel_reference,       # numpy + Pillow, the floor
     "efficientad_custom":    _efficientad_custom,    # ours; the anomalib wrapper baseline is retired (ADR-0029)
     "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
-    "dinomaly_anomalib":     _dinomaly_anomalib,     # transformer-reconstruction reference
-    "dinomaly_custom":       _dinomaly_custom,       # ours; configurable encoder and decoder depth
+    "dinomaly_custom":       _dinomaly_custom,       # ours; the anomalib wrapper baseline is retired (ADR-0029)
     "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
     "dino_memory":           _dino_memory,           # ours; frozen DINO patch memory, three scoring rules
     # "classical_circular":  M8, optional (ADR-0015)
@@ -320,32 +319,22 @@ and the field decides whether it does. No public-data quality gate has been run 
 
 ## A reconstruction method needs a fixed training horizon
 
-`dinomaly_anomalib` freezes a small registered DINOv2 encoder and trains anomalib's bottleneck and
-eight-layer decoder against normal feature maps. Its plugin owns the bounded batch-1 loop while anomalib
-owns the network, loss, optimizer and anomaly-map arithmetic. Prepared dimensions must be divisible by
-the encoder's 14-pixel patch size; the plugin rejects an incompatible experiment before allocating the
-model.
-
-The exposed controls are deliberately small: finite steps, seed and the first-download policy. Decoder
-depth is fixed at eight because anomalib's fusion topology indexes eight outputs even when its constructor
-accepts a shallower value. Learning rate follows one fixed 5,000-step warm-cosine schedule independent of
-where a run is paused. Consequently, 1,000 steps plus a 1,000-step continuation is the same experiment as
-2,000 uninterrupted steps, rather than a schedule whose past changes when the user resumes it.
-
-The checkpoint stores the bottleneck, decoder, optimizer, CPU/MPS random streams, NumPy image-order stream
-and completed step. The frozen encoder remains in the app-managed asset cache and is represented by its
-name, exact tensor fingerprint and dependency versions. Reload refuses a changed encoder rather than
-silently attaching old decoder weights to a different feature space. Public VisA evidence and the exact
-resource protocol are recorded in [`measurements.md`](../measurements.md).
+`dinomaly_anomalib` — a frozen registered DINOv2 encoder and anomalib's bottleneck and eight-layer
+decoder, trained through this plugin's bounded batch-1 loop — was measured against `dinomaly_custom`,
+the in-house implementation below, on the VisA gate. Means matched to the third decimal on all three
+metrics, so under the predeclared rule the wrapper retired the way `efficientad_anomalib` did
+(ADR-0008, ADR-0029) and the module is gone from the registry. Its recorded numbers stand as the
+historical baseline row in [`measurements.md`](../measurements.md); the design points it established —
+the fixed training horizon among them — live on in `dinomaly_custom`, described next.
 
 ## The same method again, ours, and what that buys
 
-`dinomaly_custom` is the in-house implementation of Dinomaly, and it sits **beside** the wrapper rather
-than instead of it. That is ADR-0029's pattern executed a second time: a wrapper establishes that a family
-is worth having and becomes the baseline; an implementation we own is what turns every decision inside it
-into a field on a form. The wrapper retires only if this reaches parity on the VisA gate, and until that
-verdict lands nothing about the wrapper changes. The gate itself has not been run — see
-[roadmap.md](../roadmap.md).
+`dinomaly_custom` is the in-house implementation of Dinomaly, and it was built **beside** the wrapper
+rather than instead of it. That is ADR-0029's pattern executed a second time: a wrapper establishes
+that a family is worth having and becomes the baseline; an implementation we own is what turns every
+decision inside it into a field on a form. This implementation reached parity on the wrapper's exact
+VisA protocol, so the wrapper retired under the predeclared rule — see
+[`measurements.md`](../measurements.md) for the verdict.
 
 `models/dinomaly_custom.py` holds the configuration, the plan, the bounded pass and the checkpoint;
 `models/dinomaly_nets.py` holds the `nn.Module`s, the hard-mined loss, StableAdamW and the map rule —
@@ -353,24 +342,25 @@ the same split `efficientad_custom`/`efficientad_nets` established. **Neither fi
 A second reading of one library is not a second implementation, so that boundary is what makes the
 head-to-head mean anything at all.
 
-**What is shared with the wrapper, deliberately.** The encoder table in `models/dino_backbone.py`, whose
-default entry is the registered DINOv2 anomalib pins — so an untouched run compares *methods*. The
-warm-cosine schedule: a 100-step linear warm-up to 2e-3 then a cosine to 2e-4 over a fixed 5,000-step
-horizon, which is the *same function* as the wrapper's rather than one that agrees at one setting. The
-image-score rule, including its wart: the map is resampled to a fixed 256², smoothed with a 5-tap
-Gaussian at σ = 4, and the hottest one percent is averaged. And the pass discipline — plan before the
-first forward, cancellation every step, absolute step numbering in the metric stream, exact continuation.
+**What was shared with the wrapper, deliberately.** The encoder table in `models/dino_backbone.py`,
+whose default entry is the registered DINOv2 anomalib pins — so an untouched run still matches the
+wrapper's recorded protocol. The warm-cosine schedule: a 100-step linear warm-up to 2e-3 then a cosine
+to 2e-4 over a fixed 5,000-step horizon, which was the *same function* as the wrapper's rather than one
+that agreed at one setting. The image-score rule, including its wart: the map is resampled to a fixed
+256², smoothed with a 5-tap Gaussian at σ = 4, and the hottest one percent is averaged. And the pass
+discipline — plan before the first forward, cancellation every step, absolute step numbering in the
+metric stream, exact continuation.
 
-**What is genuinely different, and it is two things.**
+**What was genuinely different, and it was two things.**
 
-| | `dinomaly_anomalib` | `dinomaly_custom` |
+| | anomalib wrapper (retired) | `dinomaly_custom` |
 | --- | --- | --- |
 | encoder | `vit_small_patch14_reg4_dinov2`, hard-coded | any entry in the shared `DinoBackbone` table, including the two DINOv3 ones |
 | decoder depth | fixed at 8 | `2 … 12`, and the fusion groups follow |
 | ONNX export | yes | not yet |
 
-Depth is the sharper of the two, because it is a bug the wrapper inherited rather than a feature it
-lacks. anomalib's constructor accepts a `decoder_depth` and then indexes the literal
+Depth was the sharper of the two, because it was a bug the wrapper inherited rather than a feature it
+lacked. anomalib's constructor accepts a `decoder_depth` and then indexes the literal
 `[[0, 1, 2, 3], [4, 5, 6, 7]]` for both sides of the comparison, so any value but eight fails. Here
 `fuse_groups(count)` derives the split, so a four-block decoder fuses outputs 0-1 against 2-3 while the
 encoder keeps its own 0-3 / 4-7 halves — the encoder always contributes eight target layers whatever the
@@ -412,7 +402,7 @@ hard part, the generic Python-versus-runtime parity gate is what has to be writt
 offer is made from the registry before any configuration is read — so claiming a format that has not
 passed that gate is worse than an absent one. It is on [backlog.md](../backlog.md).
 
-One finding fell out of writing the pins, in the shape M6 and M7 both found. The wrapper builds its
+One finding fell out of writing the pins, in the shape M6 and M7 both found. The wrapper built its
 optimizer from `[p for p in model.parameters() if p.requires_grad]`, and anomalib's `TimmFeatureExtractor`
 never clears the encoder's flags — so that filter hands the optimizer the encoder's 22 million parameters
 as well. Harmless today, because the encoder runs under `no_grad` and StableAdamW skips a parameter with

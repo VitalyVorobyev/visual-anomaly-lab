@@ -71,3 +71,13 @@ its maintenance cost (API churn, Lightning coupling, a heavy dependency) and has
 from the registry; its recorded numbers remain in `docs/measurements.md` as a historical
 baseline. `patchcore_anomalib`, `dinomaly_anomalib` and `glass_anomalib` are unaffected — the
 wrappers-first strategy stands for them.
+
+**2026-08-24 — the Dinomaly leg follows the same arc, and the second of the two anomalib
+wrappers this record shipped is now retired.** `dinomaly_anomalib` shipped first, as this
+record set out to do; `dinomaly_custom` then shipped behind the same interface and, per
+ADR-0029's pattern extended a second time, became the implementation this workbench measures
+and improves. It reached VisA parity with the wrapper's recorded run (means matching to the
+third decimal on all three metrics), so under the predeclared rule the wrapper has been
+removed from the registry; its recorded numbers remain in `docs/measurements.md` as a
+historical baseline. `patchcore_anomalib` and `glass_anomalib` are the two methods still wrapped
+through anomalib — the wrappers-first strategy stands for them.

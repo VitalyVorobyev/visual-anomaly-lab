@@ -49,23 +49,13 @@ from anomaly_lab.models.dino_memory import (
     plan_memory,
     precision_from_covariance,
 )
-from anomaly_lab.models.dinomaly_anomalib import (
-    BASE_LR,
-    FINAL_LR,
-    DinomalyConfig,
-    learning_rate,
-    plan_training,
-    validate_prepared_size,
-)
 from anomaly_lab.models.dinomaly_custom import (
-    SCHEDULE_STEPS,
     TARGET_LAYERS,
     DinomalyCustomConfig,
     DinomalyCustomModel,
     fuse_groups,
     trainable_parameter_count,
 )
-from anomaly_lab.models.dinomaly_custom import learning_rate as custom_learning_rate
 from anomaly_lab.models.dinomaly_custom import plan_training as plan_custom_training
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.glass_anomalib import GlassConfig, planned_center_refreshes
@@ -427,31 +417,6 @@ def test_an_index_written_before_ranges_existed_still_loads(tmp_path: Path) -> N
     assert load_index(root).ranges == {}
 
 
-# ----------------------------------------------------------------- registry
-
-
-def test_dinomaly_plan_is_bounded_and_torch_free() -> None:
-    plan = plan_training(DinomalyConfig(max_steps=123), 17, 392, 196)
-
-    assert plan.steps == 123
-    assert plan.images_available == 17
-    assert "123 batch-1 steps" in plan.describe()
-    assert "246 MB" in plan.describe()
-
-
-def test_dinomaly_refuses_a_partial_patch_before_training() -> None:
-    with pytest.raises(ValueError, match=r"divisible by 14.*390x392"):
-        validate_prepared_size(390, 392)
-
-
-def test_dinomaly_schedule_has_a_fixed_resume_safe_horizon() -> None:
-    assert learning_rate(0) == 0.0
-    assert learning_rate(99) == pytest.approx(BASE_LR)
-    assert learning_rate(100) == pytest.approx(BASE_LR)
-    assert learning_rate(5_000) == pytest.approx(FINAL_LR)
-    assert learning_rate(50_000) == pytest.approx(FINAL_LR)
-
-
 # ------------------------------------------------------- dinomaly_custom, torch-free
 #
 # Everything below decides whether a `dinomaly_custom` run is legal, reproducible and
@@ -498,7 +463,7 @@ def test_dinomaly_custom_refuses_an_empty_training_set() -> None:
 
 
 def test_the_fusion_split_follows_the_decoder_depth() -> None:
-    """The claim `dinomaly_anomalib` cannot make, as arithmetic.
+    """The claim the retired anomalib wrapper could not make, as arithmetic.
 
     anomalib hard-codes `[[0, 1, 2, 3], [4, 5, 6, 7]]` for both sides, so its `decoder_depth`
     argument only works at eight. Deriving the split is what makes depth a real field.
@@ -515,18 +480,6 @@ def test_the_fusion_split_follows_the_decoder_depth() -> None:
 
     with pytest.raises(ValueError, match="at least two layer outputs"):
         fuse_groups(1)
-
-
-def test_the_dinomaly_custom_schedule_is_the_wrapper_s_function() -> None:
-    """The same warm-cosine curve as `dinomaly_anomalib`, so the promotion gate is like-for-like."""
-    for step in (0, 1, 37, 99, 100, 101, 2_500, 4_999, 5_000, 50_000):
-        assert custom_learning_rate(step, base=BASE_LR) == pytest.approx(
-            learning_rate(step), rel=1e-9, abs=1e-12
-        )
-    assert custom_learning_rate(0, base=2e-3) == 0.0
-    assert custom_learning_rate(SCHEDULE_STEPS, base=2e-3) == pytest.approx(2e-4)
-    with pytest.raises(ValueError, match="cannot be negative"):
-        custom_learning_rate(-1, base=2e-3)
 
 
 def test_the_dinomaly_custom_parameter_count_is_closed_form() -> None:
@@ -620,7 +573,6 @@ def test_every_registered_method_describes_itself_without_importing_torch() -> N
     keys = {entry.key for entry in described}
     assert {
         "pixel_reference",
-        "dinomaly_anomalib",
         "dinomaly_custom",
         "glass_anomalib",
         "dino_memory",
