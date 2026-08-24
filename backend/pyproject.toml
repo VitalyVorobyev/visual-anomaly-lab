@@ -123,15 +123,23 @@ module = [
 ignore_missing_imports = true
 follow_untyped_imports = true
 
-# `efficientad_nets` is the one module that defines real `nn.Module` subclasses rather
-# than holding torch objects as `Any`. In the environment CI type-checks in, torch is not
-# installed, so `nn.Module` resolves to `Any` and `strict`'s `disallow_subclassing_any`
-# rejects every class in the file. The alternative — a `type: ignore` on each class
-# statement — puts five silencers in the source to work around a property of the checking
-# environment rather than of the code.
+# `efficientad_nets` and `dinomaly_nets` are the modules that define real `nn.Module`
+# subclasses rather than holding torch objects as `Any`. In the environment CI
+# type-checks in, torch is not installed, so `nn.Module` resolves to `Any` and `strict`'s
+# `disallow_subclassing_any` rejects every class in the file. The alternative — a
+# `type: ignore` on each class statement — puts silencers in the source to work around a
+# property of the checking environment rather than of the code.
 [[tool.mypy.overrides]]
-module = ["anomaly_lab.models.efficientad_nets"]
+module = ["anomaly_lab.models.efficientad_nets", "anomaly_lab.models.dinomaly_nets"]
 disallow_subclassing_any = false
+
+# `dinomaly_nets.StableAdamW.step` carries a `type: ignore[override]` that is exercised
+# only when torch's real stubs are present; in the torch-free environment the base class
+# is `Any` and the same comment reads as unused. One error code, two environments — the
+# code cannot satisfy both, so the unused-ignore check yields for this module.
+[[tool.mypy.overrides]]
+module = ["anomaly_lab.models.dinomaly_nets"]
+disable_error_code = ["unused-ignore"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
