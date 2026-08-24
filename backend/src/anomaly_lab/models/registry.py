@@ -40,12 +40,6 @@ def _patchcore_anomalib() -> type[AnomalyModel]:
     return PatchcoreAnomalibModel
 
 
-def _dinomaly_anomalib() -> type[AnomalyModel]:
-    from anomaly_lab.models.dinomaly_anomalib import DinomalyAnomalibModel
-
-    return DinomalyAnomalibModel
-
-
 def _glass_anomalib() -> type[AnomalyModel]:
     from anomaly_lab.models.glass_anomalib import GlassAnomalibModel
 
@@ -70,22 +64,21 @@ def _dinomaly_custom() -> type[AnomalyModel]:
 # since been retired now that the in-house implementation is the one the workbench carries
 # forward (ADR-0008, ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
 # stronger test of the two: PatchCore trains nothing and holds a memory bank instead of
-# weights. Dinomaly adds reconstruction training and exact continuation without changing
-# the boundary. GLASS adds learned anomaly synthesis and a bounded reference-frame pass
-# under that same contract: each method still costs one module and one entry here.
+# weights. `dinomaly_custom` adds reconstruction training and exact continuation without
+# changing the boundary — it started as a second implementation measured against the
+# anomalib-wrapped `dinomaly_anomalib`, which has since been retired the same way
+# `efficientad_anomalib` was, now that the in-house implementation reached VisA parity
+# (ADR-0008, ADR-0029) and is the one the workbench carries forward: a configurable encoder
+# and a configurable decoder depth, neither of which the wrapper could offer. GLASS adds
+# learned anomaly synthesis and a bounded reference-frame pass under that same contract: each
+# method still costs one module and one entry here.
 # `dino_memory` is the first in-house method built on the shared frozen-encoder table, and it
 # holds three different memories behind one `scoring` axis — a coreset bank, a per-position
 # bank and a per-position Gaussian — which still cost one module and this one line.
-# `dinomaly_custom` is the second in-house implementation of a method already wrapped here, and
-# it is listed beside its own baseline rather than instead of it: the wrapper stays until the
-# VisA parity verdict says otherwise (ADR-0008, ADR-0029). It is also the sharpest test of the
-# plugin boundary so far — a configurable encoder and a configurable decoder depth, neither of
-# which the wrapper can offer, and still one module plus this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
     "patchcore_anomalib": _patchcore_anomalib,
-    "dinomaly_anomalib": _dinomaly_anomalib,
     "dinomaly_custom": _dinomaly_custom,
     "glass_anomalib": _glass_anomalib,
     "dino_memory": _dino_memory,

@@ -13,10 +13,6 @@
    "family": "feature memory bank",
    "maturity": "supported"
   },
-  "dinomaly_anomalib": {
-   "family": "transformer feature reconstruction",
-   "maturity": "supported"
-  },
   "dinomaly_custom": {
    "family": "transformer feature reconstruction",
    "maturity": "supported"

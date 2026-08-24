@@ -8,7 +8,6 @@ This page is generated from the live model registry and checked method metadata.
 | `pixel_reference` | Pixel reference (baseline) | statistical reference | supported | no | onnx |
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
-| `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | onnx |
 | `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | — |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
@@ -54,20 +53,6 @@ A coreset memory bank of patch features from a frozen ImageNet backbone, scored 
 - Anomaly map: yes
 - Diagnostics: yes
 - Exact continuation: no
-- Dataset-specific: no
-- Portable formats: onnx
-
-## Dinomaly (anomalib)
-
-`dinomaly_anomalib` · **transformer feature reconstruction** · supported
-
-A frozen DINOv2 encoder with a trainable transformer decoder that reconstructs normal feature maps; reconstruction disagreement becomes the anomaly map.
-
-- Preferred device: `mps`
-- Requires fitting: yes
-- Anomaly map: yes
-- Diagnostics: no
-- Exact continuation: yes
 - Dataset-specific: no
 - Portable formats: onnx
 

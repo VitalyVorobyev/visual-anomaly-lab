@@ -25,15 +25,16 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible.
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
-- **Train and score** through one plugin interface. Seven methods ship: `pixel_reference`
+- **Train and score** through one plugin interface. Six methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
-  `dinomaly_anomalib`, `dinomaly_custom`, `glass_anomalib` and `dino_memory` — a frozen
+  `dinomaly_custom`, `glass_anomalib` and `dino_memory` — a frozen
   DINOv2/DINOv3 patch memory that is a coreset bank, a per-position bank or a per-position
   Gaussian depending on one `scoring` field. It cleared the paired VisA gate and beat its
   PatchCore control on all three floor metrics ([measurements.md](measurements.md)).
-  `dinomaly_custom` is the in-house Dinomaly, pinned bit-exact against the wrapper it is
-  measured against, with the encoder and the decoder depth as fields the wrapper cannot
-  offer. Jobs run as subprocesses with live progress, cancellation and a replayable log.
+  `dinomaly_custom` is the in-house Dinomaly, with the encoder and the decoder depth as
+  fields the anomalib wrapper it was measured against could not offer; that wrapper reached
+  VisA parity and retired ([measurements.md](measurements.md)). Jobs run as subprocesses with
+  live progress, cancellation and a replayable log.
 - **Select channels per experiment** by name, with per-channel score normalization before
   aggregation, so "how well does bright-field alone do?" is one run rather than a second dataset.
 - **Read** image- and pixel-level metrics, browse every scored sample, filter to the model's
@@ -50,12 +51,8 @@ application.
   deployment-and-onboarding milestone that is not met.
 - **The large-catalogue experiment workflow** — id query, multi-select methods, date range, cursor
   pagination, sortable headers, compatible selection handed to Compare.
-- **`dinomaly_anomalib`'s retirement.** `dinomaly_custom` reached parity on the wrapper's exact
-  VisA protocol — means matching to the third decimal on all three metrics
-  ([measurements.md](measurements.md)) — so under the predeclared rule the wrapper retires the
-  way `efficientad_anomalib` did, with ADR-0008 and ADR-0029 changelog entries recording the
-  verdict. The removal is in flight; `dinomaly_custom` also does not export ONNX yet, which the
-  wrapper does — that follow-up is in [backlog.md](backlog.md).
+- **`dinomaly_custom` does not export ONNX yet**, which the retired anomalib wrapper did — that
+  follow-up is in [backlog.md](backlog.md).
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
   passed; plugin integration and the public quality gate remain). SuperADD is no longer on this
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house

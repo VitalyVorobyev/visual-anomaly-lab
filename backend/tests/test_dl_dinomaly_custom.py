@@ -609,7 +609,8 @@ def test_the_capability_flag_and_the_resume_protocol_agree() -> None:
     assert isinstance(DinomalyCustomModel(_config()), SupportsResume)
     assert capabilities.produces_diagnostics is True
     assert capabilities.channel_aware is False
-    # The honest asymmetry with dinomaly_anomalib, asserted rather than left to a comment.
+    # The honest asymmetry with the retired anomalib wrapper, which exported ONNX and this
+    # does not yet — asserted rather than left to a comment.
     assert capabilities.portable_formats == []
 
 
@@ -787,9 +788,10 @@ def test_load_refuses_a_different_encoder_by_name(tmp_path: Path) -> None:
 def test_a_four_block_decoder_trains_and_produces_maps(tmp_path: Path) -> None:
     """The configurability claim, run rather than asserted.
 
-    `dinomaly_anomalib` cannot do this: anomalib's fusion topology indexes eight decoder
-    outputs whatever depth its constructor was given. Here the groups are derived, so a
-    four-block decoder fuses outputs 0-1 against 2-3 and the encoder keeps its own split.
+    anomalib's own Dinomaly cannot do this: its fusion topology indexes eight decoder
+    outputs whatever depth its constructor was given, which is what the retired wrapper
+    around it inherited too. Here the groups are derived, so a four-block decoder fuses
+    outputs 0-1 against 2-3 and the encoder keeps its own split.
     """
     recorder = _Recorder()
     train_ctx, infer_ctx = _contexts(tmp_path, reporter=recorder)
@@ -813,8 +815,8 @@ def test_a_four_block_decoder_trains_and_produces_maps(tmp_path: Path) -> None:
 def test_the_other_encoder_family_runs_on_the_same_pixels(tmp_path: Path) -> None:
     """The other half of the configurability claim: a DINOv3 encoder, end to end.
 
-    `dinomaly_anomalib` cannot reach one at all. It matters that this is a *different timm
-    class* — DINOv2 resolves to `VisionTransformer` and DINOv3 to `Eva`, with a different
+    The retired anomalib wrapper could not reach one at all. It matters that this is a *different
+    timm class* — DINOv2 resolves to `VisionTransformer` and DINOv3 to `Eva`, with a different
     patch size, a rotary position embedding and its own `forward_intermediates`. That one
     `extract_layer_tokens` call serves both without a branch is what makes the encoder a
     field rather than a two-way switch.

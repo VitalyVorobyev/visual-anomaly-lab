@@ -25,8 +25,8 @@ code is written here from that mechanism rather than wrapped:
 never uses it, because the ELU feature map is normalised by `z` instead; and the loss's
 scalar term is a cosine over each batch item's *entire flattened* feature map, while the
 per-point distances only ever reach the gradient through the hook. Both are the reference's,
-kept so that a later parity gate against `dinomaly_anomalib` measures the method rather than
-a divergence introduced here.
+kept so that the parity gate measured the method rather than a divergence introduced here —
+see `docs/measurements.md` for the verdict.
 
 Every symbol in this module needs torch. It is imported only from inside `dinomaly_custom`'s
 functions, so the registry stays lazy.

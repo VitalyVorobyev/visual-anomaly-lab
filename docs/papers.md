@@ -10,7 +10,7 @@ bounded resource planning, and produce source-frame maps under the shared evalua
 |---|---|---|
 | `efficientad_*` | student–teacher distillation + autoencoder | [EfficientAD](https://arxiv.org/abs/2303.14535) |
 | `patchcore_anomalib` | pretrained patch features + coreset memory bank | [PatchCore](https://arxiv.org/abs/2106.08265) |
-| `dinomaly_anomalib` | DINOv2 transformer feature reconstruction | [Dinomaly](https://arxiv.org/abs/2405.14325) |
+| `dinomaly_custom` | DINOv2/DINOv3 transformer feature reconstruction | [Dinomaly](https://arxiv.org/abs/2405.14325) |
 | `pixel_reference` | robust per-pixel classical reference | internal floor, intentionally simple |
 | `dino_memory` (`global_knn`) | frozen self-supervised patch features matched by nearest neighbour | [AnomalyDINO](https://arxiv.org/abs/2405.14529) (Damm et al., WACV 2025) — that a frozen DINOv2 patch bank plus a nearest-neighbour rule is a complete method, with no training and no adapter |
 | `dino_memory` (`local_gaussian`) | one shrunk Gaussian per patch position, scored by Mahalanobis distance | [PaDiM](https://arxiv.org/abs/2011.08785) (Defard et al., 2020) — the per-position distribution and the shrunk covariance; the encoder and the dimension reduction differ |

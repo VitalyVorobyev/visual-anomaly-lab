@@ -1,24 +1,23 @@
 """The frozen self-supervised encoder an in-house method builds on, and nothing else.
 
-`dinomaly_anomalib` reaches its DINOv2 encoder through anomalib, which pins one encoder and
-hides it inside a model. An in-house method cannot: importing anomalib to borrow a backbone
-would make every "ours" method partly a view of that library, which is exactly the property
-`efficientad_custom` exists to avoid. So the backbone is resolved here, from timm directly,
-and the methods that follow — a memory bank first, a Dinomaly port later — take it as an
-argument rather than owning one each.
+An in-house method cannot reach its encoder through anomalib: importing that library to borrow
+a backbone would make every "ours" method partly a view of it, which is exactly the property
+`efficientad_custom` exists to avoid. So the backbone is resolved here, from timm directly, and
+the methods that follow — a memory bank first, a Dinomaly port later — take it as an argument
+rather than owning one each.
 
 **Five encoders, and the shape of the menu is the point.** Two families, at two widths, with
-the registered DINOv2 variant that anomalib pins included so a comparison against
-`dinomaly_anomalib` measures the method rather than the encoder. Three of the five are
-ungated Apache-2.0 weights and are the default any new method should reach for; the two
-DINOv3 entries are behind Meta's DINOv3 licence and need an approved Hugging Face account,
-which `load_backbone` says in words rather than as a 401.
+the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
+ADR-0029) included so a comparison against its recorded numbers measures the method rather
+than the encoder. Three of the five are ungated Apache-2.0 weights and are the default any new
+method should reach for; the two DINOv3 entries are behind Meta's DINOv3 licence and need an
+approved Hugging Face account, which `load_backbone` says in words rather than as a 401.
 
 **The patch size is a hard boundary, not a resize.** DINOv2 strides by 14 and DINOv3 by 16,
 so a prepared frame that does not divide cleanly produces a token count that cannot be
 reshaped to a grid — timm fails several frames later, in a message about tensor shapes.
-`validate_prepared_size` refuses it at the plugin boundary instead, the way
-`dinomaly_anomalib.validate_prepared_size` does, and names the sizes that would work.
+`validate_prepared_size` refuses it at the plugin boundary instead, and names the sizes that
+would work.
 
 Heavy imports stay inside functions. This module is imported wherever a plan is made, and a
 plan must not cost three seconds of torch.
@@ -191,7 +190,7 @@ _LAYER_INDICES: dict[FeatureLayers, tuple[int, ...]] = {
 def validate_prepared_size(backbone: DinoBackbone, width: int, height: int) -> None:
     """Fail at the plugin boundary, before timm's token reshape fails downstream.
 
-    The same guard `dinomaly_anomalib` carries for its own fixed encoder, generalised to a
+    The same guard a fixed-encoder plugin would carry for itself, generalised to a
     divisor that the chosen backbone decides. A message that only says "shape mismatch" sends
     the reader into timm; this one names the encoder, the divisor, which dimension is wrong
     and the two sizes nearest to what was asked for.
@@ -249,7 +248,7 @@ def load_backbone(
 
     The seed is set **before** construction, not after. An unpretrained encoder draws its
     weights from torch's *global* stream, which is M6's finding and the reason
-    `dinomaly_anomalib._build_model` and `patchcore_anomalib._build_model` both seed on the
+    `dinomaly_custom._build` and `patchcore_anomalib._build_model` both seed on the
     line above the constructor: seeded afterwards, `seed` would control what the method does
     with the encoder while the encoder itself differed run to run — and the fingerprint
     written at save time would never match the one computed at load time.
