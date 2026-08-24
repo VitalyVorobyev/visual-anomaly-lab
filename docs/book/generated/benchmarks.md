@@ -42,6 +42,19 @@ These are checked measurements from the repository's public-data gates, not upst
 | pcb1 | DINO memory | 0.8914 | 0.9952 | 0.9252 | 13.0 s | 13.4 s | 0.91 GiB |
 | pcb1 | PatchCore | 0.7754 | 0.9943 | 0.8987 | 15.0 s | 15.9 s | 1.62 GiB |
 
+## Dinomaly (ours) parity gate
+
+**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. The wrapper's exact protocol: DINOv2 ViT-S/14-reg4 encoder, 5,000 steps, paired PatchCore control (WRN-50, 256 images, 50,000 candidates, 10% coreset). Means match the wrapper's recorded run to the third decimal; parity retires the wrapper. [Full evidence](../../measurements.md).
+
+![Dinomaly (ours) parity gate](dinomaly-custom-gate.svg)
+
+| Class | Method | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | Train | Infer | Peak RSS |
+|---|---|---:|---:|---:|---:|---:|---:|
+| candle | Dinomaly (ours) | 0.9624 | 0.9935 | 0.9534 | 573.0 s | 10.0 s | 0.91 GiB |
+| candle | PatchCore | 0.7082 | 0.9437 | 0.8452 | 14.0 s | 8.2 s | 1.65 GiB |
+| pcb1 | Dinomaly (ours) | 0.9648 | 0.9966 | 0.9488 | 566.0 s | 10.2 s | 0.90 GiB |
+| pcb1 | PatchCore | 0.6710 | 0.9816 | 0.7560 | 13.0 s | 8.2 s | 1.65 GiB |
+
 ## Resource measurements
 
 ![MPS inference latency by method and prepared size](mps-inference.svg)

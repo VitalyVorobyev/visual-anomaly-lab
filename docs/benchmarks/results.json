@@ -19,7 +19,7 @@
   },
   "dinomaly_custom": {
    "family": "transformer feature reconstruction",
-   "maturity": "experimental"
+   "maturity": "supported"
   },
   "glass_anomalib": {
    "family": "learned anomaly synthesis",
@@ -181,6 +181,57 @@
      "train_s": 15.0,
      "infer_s": 15.9,
      "peak_rss_gib": 1.62
+    }
+   ]
+  },
+  {
+   "id": "dinomaly-custom-gate",
+   "title": "Dinomaly (ours) parity gate",
+   "dataset": "VisA official one-class split",
+   "prepared": "392 × 392 RGB identity",
+   "seed": 20260812,
+   "source": "../../measurements.md",
+   "note": "The wrapper's exact protocol: DINOv2 ViT-S/14-reg4 encoder, 5,000 steps, paired PatchCore control (WRN-50, 256 images, 50,000 candidates, 10% coreset). Means match the wrapper's recorded run to the third decimal; parity retires the wrapper.",
+   "rows": [
+    {
+     "class": "candle",
+     "method": "Dinomaly (ours)",
+     "image_roc_auc": 0.9624,
+     "pixel_roc_auc": 0.9935,
+     "au_pro": 0.9534,
+     "train_s": 573.0,
+     "infer_s": 10.0,
+     "peak_rss_gib": 0.91
+    },
+    {
+     "class": "candle",
+     "method": "PatchCore",
+     "image_roc_auc": 0.7082,
+     "pixel_roc_auc": 0.9437,
+     "au_pro": 0.8452,
+     "train_s": 14.0,
+     "infer_s": 8.2,
+     "peak_rss_gib": 1.65
+    },
+    {
+     "class": "pcb1",
+     "method": "Dinomaly (ours)",
+     "image_roc_auc": 0.9648,
+     "pixel_roc_auc": 0.9966,
+     "au_pro": 0.9488,
+     "train_s": 566.0,
+     "infer_s": 10.2,
+     "peak_rss_gib": 0.9
+    },
+    {
+     "class": "pcb1",
+     "method": "PatchCore",
+     "image_roc_auc": 0.671,
+     "pixel_roc_auc": 0.9816,
+     "au_pro": 0.756,
+     "train_s": 13.0,
+     "infer_s": 8.2,
+     "peak_rss_gib": 1.65
     }
    ]
   }

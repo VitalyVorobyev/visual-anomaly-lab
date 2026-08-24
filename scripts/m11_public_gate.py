@@ -124,6 +124,21 @@ CANDIDATES = {
             "seed": SEED,
         },
     ),
+    # The wrapper's exact protocol row — 392 px, its pinned encoder, 5000 steps, the shared
+    # seed — so the custom implementation's gate reads directly against the wrapper's
+    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0008/0029).
+    "dinomaly_custom": CandidateSpec(
+        key="dinomaly_custom",
+        label="Dinomaly (ours)",
+        family="transformer-reconstruction",
+        prepared_size=392,
+        config={
+            "encoder": "dinov2_vit_s14_reg4",
+            "max_steps": 5_000,
+            "allow_downloads": True,
+            "seed": SEED,
+        },
+    ),
     # The DINO patch-memory legs share one prepared size, 448: the only size divisible by
     # both patch sizes (14*32 = 16*28), so the DINOv2 and DINOv3 rows see identical pixels.
     # The recorded promotion verdict is the DINOv2 leg — its weights are ungated, so anyone

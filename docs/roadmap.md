@@ -50,12 +50,12 @@ application.
   deployment-and-onboarding milestone that is not met.
 - **The large-catalogue experiment workflow** — id query, multi-select methods, date range, cursor
   pagination, sortable headers, compatible selection handed to Compare.
-- **`dinomaly_custom`'s VisA parity gate.** The in-house implementation ships and is pinned
-  bit-exact against `dinomaly_anomalib` on one training step, on the map and on the score, but
-  it has not been measured on public data. Until it is, both are listed and the wrapper is the
-  reference. On parity the wrapper retires the way `efficientad_anomalib` did, with an ADR-0008
-  changelog entry recording it. `dinomaly_custom` also does not export ONNX yet, which the
-  wrapper does.
+- **`dinomaly_anomalib`'s retirement.** `dinomaly_custom` reached parity on the wrapper's exact
+  VisA protocol — means matching to the third decimal on all three metrics
+  ([measurements.md](measurements.md)) — so under the predeclared rule the wrapper retires the
+  way `efficientad_anomalib` did, with ADR-0008 and ADR-0029 changelog entries recording the
+  verdict. The removal is in flight; `dinomaly_custom` also does not export ONNX yet, which the
+  wrapper does — that follow-up is in [backlog.md](backlog.md).
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
   passed; plugin integration and the public quality gate remain). SuperADD is no longer on this
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
