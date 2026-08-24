@@ -152,3 +152,24 @@ on the same pixels. Restricting the bank to positions sharpens *where* (both loc
 rise) and costs a little *whether* (image ranking dips). VisA is not a registered benchmark; the
 mode's real target is repeatably-fixtured data that cannot be published, and this row exists so
 that claim has at least one public anchor.
+
+## Dinomaly, ours — parity reached, wrapper retired
+
+The in-house port was pinned to anomalib at bring-up — one training step matches at atol = 0 for
+loss, every trainable gradient, the post-step weights, the eval map and the image score — so the
+gate measures nothing but the divergence that training order and RNG streams accumulate over
+5 000 steps. The wrapper's exact protocol: VisA `candle` and `pcb1` at 392 × 392, DINOv2
+ViT-S/14-reg4 encoder, seed 20260812, paired PatchCore control on the same immutable pixels.
+
+| Mean over both classes | Dinomaly (ours) | Wrapper's recorded run | PatchCore | Floor |
+|---|---:|---:|---:|---:|
+| Image ROC-AUC | **0.9636** | 0.9634 | 0.6896 | 0.80 |
+| Pixel ROC-AUC | **0.9951** | 0.9953 | 0.9626 | 0.85 |
+| AU-PRO | **0.9511** | 0.9514 | 0.8006 | 0.60 |
+
+Agreement to the third decimal on every metric — the bring-up pins predicted exactly this. All
+three floors cleared; ≈ 570 s per training leg against the wrapper's ≈ 610 s, 50 ms inference,
+0.98 GB peak RSS. That is parity under the predeclared rule, so `dinomaly_anomalib` retires: the
+implementation the workbench carries forward is the one whose encoder is configurable (any
+`DinoBackbone` entry, decoder depth included) and whose every trainable line is in this
+repository. The wrapper's numbers above stay as its recorded legacy row.

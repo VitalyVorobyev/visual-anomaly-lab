@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="472" viewBox="0 0 920 472">
+<rect width="100%" height="100%" fill="#ffffff"/>
+<style>text{font-family:system-ui,sans-serif;fill:#20252b}.small{font-size:12px}.label{font-size:13px;font-weight:600}.title{font-size:18px;font-weight:700}</style>
+<text x="16" y="28" class="title">Dinomaly (ours) parity gate</text>
+<line x1="175" y1="42" x2="875" y2="42" stroke="#d8dde3"/>
+<text x="16" y="74" class="small">candle · Dinomaly (ours) · Image ROC-AUC</text>
+<rect x="175" y="58" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="58" width="654.4" height="20" rx="3" fill="#0f8fa8"/>
+<text x="836.4" y="73" class="label">0.9624</text>
+<text x="16" y="104" class="small">candle · Dinomaly (ours) · Pixel ROC-AUC</text>
+<rect x="175" y="88" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="88" width="675.6" height="20" rx="3" fill="#0f8fa8"/>
+<text x="857.6" y="103" class="label">0.9935</text>
+<text x="16" y="134" class="small">candle · Dinomaly (ours) · AU-PRO</text>
+<rect x="175" y="118" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="118" width="648.3" height="20" rx="3" fill="#0f8fa8"/>
+<text x="830.3" y="133" class="label">0.9534</text>
+<text x="16" y="164" class="small">candle · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="148" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="148" width="481.6" height="20" rx="3" fill="#8b6bb7"/>
+<text x="663.6" y="163" class="label">0.7082</text>
+<text x="16" y="194" class="small">candle · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="178" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="178" width="641.7" height="20" rx="3" fill="#8b6bb7"/>
+<text x="823.7" y="193" class="label">0.9437</text>
+<text x="16" y="224" class="small">candle · PatchCore · AU-PRO</text>
+<rect x="175" y="208" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="208" width="574.7" height="20" rx="3" fill="#8b6bb7"/>
+<text x="756.7" y="223" class="label">0.8452</text>
+<text x="16" y="254" class="small">pcb1 · Dinomaly (ours) · Image ROC-AUC</text>
+<rect x="175" y="238" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="238" width="656.1" height="20" rx="3" fill="#0f8fa8"/>
+<text x="838.1" y="253" class="label">0.9648</text>
+<text x="16" y="284" class="small">pcb1 · Dinomaly (ours) · Pixel ROC-AUC</text>
+<rect x="175" y="268" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="268" width="677.7" height="20" rx="3" fill="#0f8fa8"/>
+<text x="859.7" y="283" class="label">0.9966</text>
+<text x="16" y="314" class="small">pcb1 · Dinomaly (ours) · AU-PRO</text>
+<rect x="175" y="298" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="298" width="645.2" height="20" rx="3" fill="#0f8fa8"/>
+<text x="827.2" y="313" class="label">0.9488</text>
+<text x="16" y="344" class="small">pcb1 · PatchCore · Image ROC-AUC</text>
+<rect x="175" y="328" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="328" width="456.3" height="20" rx="3" fill="#8b6bb7"/>
+<text x="638.3" y="343" class="label">0.6710</text>
+<text x="16" y="374" class="small">pcb1 · PatchCore · Pixel ROC-AUC</text>
+<rect x="175" y="358" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="358" width="667.5" height="20" rx="3" fill="#8b6bb7"/>
+<text x="849.5" y="373" class="label">0.9816</text>
+<text x="16" y="404" class="small">pcb1 · PatchCore · AU-PRO</text>
+<rect x="175" y="388" width="680" height="20" rx="3" fill="#edf0f3"/>
+<rect x="175" y="388" width="514.1" height="20" rx="3" fill="#8b6bb7"/>
+<text x="696.1" y="403" class="label">0.7560</text>
+</svg>

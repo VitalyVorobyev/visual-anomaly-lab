@@ -9,7 +9,7 @@ This page is generated from the live model registry and checked method metadata.
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
 | `dinomaly_anomalib` | Dinomaly (anomalib) | transformer feature reconstruction | supported | yes | onnx |
-| `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | experimental | yes | — |
+| `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | — |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
 
@@ -73,7 +73,7 @@ A frozen DINOv2 encoder with a trainable transformer decoder that reconstructs n
 
 ## Dinomaly (ours)
 
-`dinomaly_custom` · **transformer feature reconstruction** · experimental
+`dinomaly_custom` · **transformer feature reconstruction** · supported
 
 Our implementation of Dinomaly: a frozen DINOv2/DINOv3 encoder with a trainable bottleneck and linear-attention decoder that reconstructs normal feature maps. Reconstruction disagreement is the anomaly map.
 
