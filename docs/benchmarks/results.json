@@ -17,6 +17,10 @@
    "family": "transformer feature reconstruction",
    "maturity": "supported"
   },
+  "dinomaly_custom": {
+   "family": "transformer feature reconstruction",
+   "maturity": "experimental"
+  },
   "glass_anomalib": {
    "family": "learned anomaly synthesis",
    "maturity": "experimental"

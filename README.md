@@ -64,6 +64,7 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 | Student–teacher + reconstruction | `efficientad_custom` | Compact deep reference; exports to ONNX |
 | Feature memory bank | `patchcore_anomalib` | Short bounded fit; bank and paper score export to ONNX |
 | Transformer reconstruction | `dinomaly_anomalib` | High-quality public-data reference; longer fit; ONNX export |
+| Transformer reconstruction | `dinomaly_custom` | Ours; the same method with a choice of frozen encoder and a configurable decoder depth. Pinned bit-exact against the wrapper; the VisA parity gate has not been run, and it does not export yet |
 | Learned anomaly synthesis | `glass_anomalib` | Experimental; public gate did not promote it; ONNX export |
 | Frozen-backbone patch memory | `dino_memory` | Ours; a DINOv2/DINOv3 patch memory scored globally, per position, or as a per-position Gaussian. Nothing is trained; no public gate run yet |
 

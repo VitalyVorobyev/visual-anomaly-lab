@@ -58,6 +58,12 @@ def _dino_memory() -> type[AnomalyModel]:
     return DinoMemoryModel
 
 
+def _dinomaly_custom() -> type[AnomalyModel]:
+    from anomaly_lab.models.dinomaly_custom import DinomalyCustomModel
+
+    return DinomalyCustomModel
+
+
 # `efficientad_custom` cost exactly one entry and one module in M6 — no route, no schema, no
 # line of TypeScript — which is the prediction ADR-0007 made. It started as a second
 # implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
@@ -70,11 +76,17 @@ def _dino_memory() -> type[AnomalyModel]:
 # `dino_memory` is the first in-house method built on the shared frozen-encoder table, and it
 # holds three different memories behind one `scoring` axis — a coreset bank, a per-position
 # bank and a per-position Gaussian — which still cost one module and this one line.
+# `dinomaly_custom` is the second in-house implementation of a method already wrapped here, and
+# it is listed beside its own baseline rather than instead of it: the wrapper stays until the
+# VisA parity verdict says otherwise (ADR-0008, ADR-0029). It is also the sharpest test of the
+# plugin boundary so far — a configurable encoder and a configurable decoder depth, neither of
+# which the wrapper can offer, and still one module plus this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
     "patchcore_anomalib": _patchcore_anomalib,
     "dinomaly_anomalib": _dinomaly_anomalib,
+    "dinomaly_custom": _dinomaly_custom,
     "glass_anomalib": _glass_anomalib,
     "dino_memory": _dino_memory,
 }

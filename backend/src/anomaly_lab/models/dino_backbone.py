@@ -70,6 +70,16 @@ class BackboneSpec:
     patch_size: int
     embedding_dim: int
     depth: int
+    num_heads: int
+    """Attention heads in one encoder block.
+
+    Nothing that *reads* features needs this — `dino_memory` never asks. It is here because
+    `dinomaly_custom` builds a decoder whose head count follows the encoder's, the way the
+    Dinomaly recipe does, and its plan states that decoder's shape before torch is imported.
+    A ViT's head count is as stable a property of a published checkpoint as its width, and
+    `DinomalyNet` cross-checks the table against the constructed model rather than trusting
+    it, so a wrong entry is a refusal rather than a differently-shaped decoder.
+    """
     gated: bool
     license_note: str
 
@@ -80,6 +90,7 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         patch_size=14,
         embedding_dim=384,
         depth=12,
+        num_heads=6,
         gated=False,
         license_note="Apache-2.0; no Hugging Face account or token needed.",
     ),
@@ -88,6 +99,7 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         patch_size=14,
         embedding_dim=384,
         depth=12,
+        num_heads=6,
         gated=False,
         license_note=(
             "Apache-2.0; no Hugging Face account or token needed. This is the encoder "
@@ -100,6 +112,7 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         patch_size=14,
         embedding_dim=768,
         depth=12,
+        num_heads=12,
         gated=False,
         license_note="Apache-2.0; no Hugging Face account or token needed.",
     ),
@@ -108,6 +121,7 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         patch_size=16,
         embedding_dim=384,
         depth=12,
+        num_heads=6,
         gated=True,
         license_note=(
             "DINOv3 licence: access must be requested from Meta on Hugging Face and a "
@@ -119,6 +133,7 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         patch_size=16,
         embedding_dim=768,
         depth=12,
+        num_heads=12,
         gated=True,
         license_note=(
             "DINOv3 licence: access must be requested from Meta on Hugging Face and a "
@@ -317,6 +332,44 @@ def extract_patch_features(model: Any, batch: Any, indices: tuple[int, ...]) -> 
     )
     normalized = [torch.nn.functional.normalize(feature, p=2.0, dim=1) for feature in maps]
     return torch.cat(normalized, dim=1)
+
+
+def extract_layer_tokens(model: Any, batch: Any, indices: tuple[int, ...]) -> list[Any]:
+    """Raw `[prefix..., patch]` token sequences from the chosen blocks, one `(B, T, D)` each.
+
+    The sibling of `extract_patch_features`, and deliberately not a flag on it: the two
+    return different things for different reasons and collapsing them would give one function
+    three booleans and no obvious default.
+
+      * **No final norm.** `norm=False`, so what comes back is the block's own residual
+        output rather than the encoder's last `LayerNorm` applied to it. A reconstruction
+        method trains a decoder to reproduce these tensors, and normalising them first would
+        make every target lie on one sphere — which is exactly what a nearest-neighbour bank
+        wants and exactly what a reconstruction target must not be.
+      * **Prefix tokens kept.** The class and register tokens stay at the front of the
+        sequence, because the decoder attends over the whole sequence and dropping them
+        changes what every patch token is reconstructed from. `model.num_prefix_tokens` says
+        how many to strip once the reconstruction is done.
+      * **No per-layer L2 normalisation.** `extract_patch_features` normalises each layer so
+        a concatenation is an equal vote per layer; here the layers are *averaged* in groups
+        and rescaling one of them would silently reweight the group.
+
+    timm's `forward_intermediates` hands back `(patch_tokens, prefix_tokens)` pairs under
+    `return_prefix_tokens=True`; the concatenation here restores the `[CLS, reg..., patches]`
+    order both ViT families produce internally, so one call site serves `VisionTransformer`
+    (DINOv2) and `Eva` (DINOv3) without a branch.
+    """
+    import torch
+
+    pairs = model.forward_intermediates(
+        batch,
+        indices=list(indices),
+        norm=False,
+        return_prefix_tokens=True,
+        output_fmt="NLC",
+        intermediates_only=True,
+    )
+    return [torch.cat((prefix, patches), dim=1) for patches, prefix in pairs]
 
 
 def backbone_fingerprint(model: Any) -> str:

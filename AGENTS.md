@@ -12,8 +12,8 @@ comparing them under one evaluation protocol.
   showcase dataset is one reference dataset, not the scope.
 - **Only** a `classical_circular` plugin — not built, and optional — may assume anything about the
   showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_custom`,
-  `patchcore_anomalib`, `dinomaly_anomalib`, `glass_anomalib`, `dino_memory`), evaluation
-  layer, and UI must stay dataset-agnostic.
+  `patchcore_anomalib`, `dinomaly_anomalib`, `dinomaly_custom`, `glass_anomalib`, `dino_memory`),
+  evaluation layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
   secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
   current two. `check-repo-safety.sh` fails if anything under `datasets/` is staged. Note the leading
@@ -84,9 +84,11 @@ comparing them under one evaluation protocol.
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
-  as a verified ONNX bundle. Six methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  as a verified ONNX bundle. Seven methods ship: `pixel_reference` (numpy + Pillow, the floor),
   `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
-  bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction), `glass_anomalib`
+  bank; nothing is trained), `dinomaly_anomalib` (transformer reconstruction), `dinomaly_custom`
+  (ours; the same method with the encoder and the decoder depth as fields, pinned bit-exact against
+  the wrapper it is measured against and with no public gate run yet), `glass_anomalib`
   (learned anomaly synthesis) and `dino_memory` (ours; a frozen DINOv2/DINOv3 patch memory that is a
   coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
   complete and tested, with no public gate run against it yet). A grouped multi-view dataset is now *usable* and not merely
