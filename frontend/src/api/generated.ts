@@ -1038,6 +1038,11 @@ export interface paths {
          *
          *     An outline rather than a filled region: filling the mask hides the pixels the reader
          *     is trying to compare the model's map against.
+         *
+         *     The outline is computed **after** any projection, never before it. A boundary traced at
+         *     source resolution and then shrunk to a 448 px prepared grid is a two-pixel line
+         *     resampled down to less than one, which drops out in places; tracing the projected mask
+         *     gives an even line at the resolution it is actually drawn at.
          */
         get: operations["read_mask_api_images__image_id__mask_get"];
         put?: never;
@@ -3033,6 +3038,11 @@ export interface components {
              * @default 0
              */
             height: number;
+            peak: components["schemas"]["MapPeak"] | null;
+            /** Localized */
+            localized: boolean | null;
+            /** Tolerance Px */
+            tolerance_px: number | null;
             map_scale: components["schemas"]["MapScale"] | null;
         };
         /**
@@ -3476,6 +3486,22 @@ export interface components {
             paths: string[];
         };
         /**
+         * MapPeak
+         * @description Where one map's largest value sits, in source-frame pixels.
+         *
+         *     The **map's** peak, not the score's location. A stored map has been blurred, upsampled
+         *     from the patch grid and projected back into source coordinates, so its argmax is near
+         *     the cell that produced the score without being the same cell — and a method scoring at
+         *     a percentile below 100 is not reading a single cell at all. It marks the picture on
+         *     screen, which is the only thing a reviewer can check by eye.
+         */
+        MapPeak: {
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+        };
+        /**
          * MapRender
          * @description How an anomaly map should be drawn.
          *
@@ -3500,6 +3526,26 @@ export interface components {
             /** High */
             high: number;
         };
+        /**
+         * MaskFrame
+         * @description Which coordinate frame a ground-truth outline is drawn in.
+         *
+         *     `source` is the frame the sample page's overlay stack lives in: a stored anomaly map is
+         *     projected through the pinned transform *before* it is written, so every layer there is
+         *     already in source pixels.
+         *
+         *     `prepared` is the frame a **diagnostic** is in. A per-branch error map means what it
+         *     means on the grid the branch computed it on, so nothing projects it and the diagnostics
+         *     panes are drawn at the array's own size. A source-frame outline laid over one of those
+         *     is misregistered by exactly the pinned crop and letterbox. Rather than teach the
+         *     diagnostics layer to project, the mask is fetched in the frame it has to meet.
+         *
+         *     The two coincide in one case only — an identity extractor into a prepared size that
+         *     keeps the source's aspect ratio, where the frames differ by a uniform scale and both
+         *     pictures are stretched into the same box — which is why this went unnoticed.
+         * @enum {string}
+         */
+        MaskFrame: "source" | "prepared";
         /**
          * MethodCatalog
          * @description Everything the create screen needs, in one round trip.
@@ -4134,6 +4180,11 @@ export interface components {
              * @description tp, fp, tn, fn — or 'unlabeled' for a ranked-only row.
              */
             outcome: string;
+            /**
+             * Localized
+             * @description Whether this part's anomaly map peaked inside its annotated defect region. **Threshold-free**: it is copied through unchanged as the slider moves, because it compares the map against ground truth and never against a cut. Orthogonal to `outcome` rather than a fifth value of it — a `tp` that is `false` here is still a true positive, and is one that got the right answer from the wrong pixels. `null` is not applicable: a normal part, or a defect with no mask.
+             */
+            localized: boolean | null;
         };
         /** ScanRequest */
         ScanRequest: {
@@ -6504,7 +6555,12 @@ export interface operations {
     };
     read_mask_api_images__image_id__mask_get: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Which frame to draw the outline in. `prepared` projects the mask through one experiment's pinned region transform, so it can be laid over a diagnostic. */
+                frame?: components["schemas"]["MaskFrame"];
+                /** @description Whose pinned region build defines the prepared frame. Required by `frame=prepared`, and ignored otherwise. */
+                experiment_id?: number | null;
+            };
             header?: never;
             path: {
                 image_id: number;

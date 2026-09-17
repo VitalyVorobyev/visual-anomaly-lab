@@ -262,6 +262,62 @@ def test_migration_018_adds_a_default_channel_without_a_backfill(settings: Setti
         assert row[0] is None
 
 
+def test_migration_019_adds_three_valued_localization_columns(settings: Settings) -> None:
+    """A stored run keeps its scores and reads as 'not checked' — which is what it is."""
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 18:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/d')")
+        conn.execute("INSERT INTO sample (dataset_id, group_key, external_id) VALUES (1, 'g', '1')")
+        conn.execute(
+            "INSERT INTO image (sample_id, path, width, height, bit_depth, file_size, sha256) "
+            "VALUES (1, '/d/1.png', 8, 8, 24, 64, 'h')"
+        )
+        conn.execute(
+            "INSERT INTO split (dataset_id, name, strategy, seed, params) "
+            "VALUES (1, 's', 'imported', 0, '{}')"
+        )
+        conn.execute(
+            "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type, "
+            "extractor_config, prepared_width, prepared_height, seed) "
+            "VALUES (1, 'full frame', 1, 'identity', '{}', 8, 8, 17)"
+        )
+        conn.execute(
+            "INSERT INTO experiment (name, dataset_id, split_id, region_profile_id, "
+            "region_manifest_sha256, model_type, artifact_dir) "
+            "VALUES ('e', 1, 1, 1, 'sha', 'pixel_reference', '/artifacts/1')"
+        )
+        conn.execute(
+            "INSERT INTO image_result (experiment_id, image_id, score, inference_ms) "
+            "VALUES (1, 1, 0.5, 1.0)"
+        )
+        conn.execute(
+            "INSERT INTO sample_result (experiment_id, sample_id, agg_score, aggregation) "
+            "VALUES (1, 1, 0.5, 'max')"
+        )
+
+        assert apply_migrations_to(conn) >= 19
+
+        row = conn.execute("SELECT * FROM image_result WHERE image_id = 1").fetchone()
+        assert row["score"] == 0.5
+        # NULL, not 0: no run before this migration recorded a peak, so "not checked" is
+        # the only truthful reading and "the model missed" would be a fabrication.
+        assert row["peak_x"] is None
+        assert row["peak_y"] is None
+        assert row["localized"] is None
+        assert conn.execute("SELECT localized FROM sample_result").fetchone()[0] is None
+
+        # The column is a three-valued flag, closed here rather than in Python alone.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE image_result SET localized = 2 WHERE image_id = 1")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE sample_result SET localized = -1 WHERE sample_id = 1")
+
+
 def test_region_profile_revisions_are_dataset_owned_and_immutable(
     migrated_db: sqlite3.Connection,
 ) -> None:

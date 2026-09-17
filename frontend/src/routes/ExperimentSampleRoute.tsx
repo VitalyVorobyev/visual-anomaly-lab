@@ -16,9 +16,13 @@
  * run's own range, so nothing about colormap or threshold is baked into the stored map
  * (ADR-0007).
  *
- * Layers stack as absolutely-positioned `<img>` elements inside **one** zoom/pan transform,
- * so they cannot drift apart at the zoom level where a reader is judging whether the
- * prediction lands on the defect.
+ * Layers stack as absolutely-positioned `<img>` elements inside **one** `ImageStage`
+ * transform, so they cannot drift apart at the zoom level where a reader is judging whether
+ * the prediction lands on the defect. The stage is laid out at the image's own pixel size,
+ * which is what makes that registration structural rather than a matter of every layer
+ * being given the same aspect-ratio box: the predecessor's frame was clamped by
+ * `max-w-full` while its height stayed full, so a column narrower than the picture drew
+ * every layer squashed — identically squashed, and therefore invisible as a fault.
  *
  * Alignment is explicit. Every method sees the experiment's pinned prepared artifact, and
  * the shared inference boundary projects its map through that image's stored transform
@@ -38,11 +42,11 @@ import { ChevronLeft, ChevronRight, Microscope } from "lucide-react";
 
 import { imageScoped, isOnDemand, missingNote, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
-import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../api/imageUrl";
+import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl, tierFor } from "../api/imageUrl";
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
-import { Badge, Button, Disclosure, Empty, ErrorBox, FULL_TIER_ZOOM, RESET_VIEW, SkeletonRows, Tooltip, ZoomPanCanvas, cn, type View } from "@vitavision/lab-ui";
+import { Badge, Button, Disclosure, Empty, ErrorBox, ImageStage, SkeletonRows, StageReadout, StageToolbar, Tooltip, cn, type StageView } from "@vitavision/lab-ui";
 import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
 import {
   useDiagnoseImage,
@@ -51,9 +55,9 @@ import {
   useSampleImages,
 } from "../hooks/useExperiments";
 import { MapScaleReadout, OverlayControls } from "./experiment/OverlayControls";
+import { PeakMarker } from "./experiment/PeakMarker";
 import { ValueReadout } from "./experiment/ValueReadout";
-import type { HoverPosition } from "./experiment/ValueReadout";
-import { OUTCOME_LABEL, OUTCOME_TONE } from "./experiment/ResultsPanel";
+import { OUTCOME_LABEL, OUTCOME_TONE, localizationBadge } from "./experiment/ResultsPanel";
 import { useVerdicts } from "./experiment/useVerdicts";
 
 export function ExperimentSampleRoute() {
@@ -74,7 +78,9 @@ export function ExperimentSampleRoute() {
   // filter that is on screen* rather than in raw id order.
   const verdicts = useVerdicts(experimentId, state);
 
-  const [view, setView] = useState<View>(RESET_VIEW);
+  // `null` is not "no view": it is `ImageStage`'s own opening view — 1:1 where the picture
+  // fits, fit otherwise — resolved once the viewport has been measured.
+  const [view, setView] = useState<StageView | null>(null);
 
   const update = (next: Partial<ResultsState>) =>
     setParams(writeResultsState({ ...state, ...next }), { replace: true });
@@ -91,12 +97,13 @@ export function ExperimentSampleRoute() {
   // Reset the zoom on arrival: carrying a 6x pan onto a different part shows a corner of
   // it with no way to tell that is what happened.
   useEffect(() => {
-    setView(RESET_VIEW);
+    setView(null);
   }, [sampleId]);
 
   /*
    * Arrow keys step through the filtered set, matching the labelling keys the dataset
-   * browser already binds; `0` fits, matching its viewer.
+   * browser already binds. The zoom keys are the stage's own — `0`, `1`, `+`, `-` are bound
+   * by `ImageStage`, and `panKeys={false}` is what keeps the arrows for this list.
    *
    * The handler is held in a ref and the effect has an explicit empty dependency array.
    * Without one it re-subscribed a global listener on *every* render — which worked, but
@@ -110,7 +117,6 @@ export function ExperimentSampleRoute() {
     if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
     if (event.key === "ArrowLeft") goTo(neighbours.previous);
     if (event.key === "ArrowRight") goTo(neighbours.next);
-    if (event.key === "0") setView(RESET_VIEW);
   };
 
   useEffect(() => {
@@ -134,6 +140,9 @@ export function ExperimentSampleRoute() {
   const range = experiment.data?.map_range;
   const cut = cutValue(state, range);
   const verdict = verdicts.shown.find((entry) => entry.sample_id === sampleId);
+  // Beside the outcome rather than folded into it: "caught it, from the wrong pixels" is a
+  // different finding from "caught it", and only this badge can say so.
+  const localization = localizationBadge(verdict?.localized);
 
   return (
     // `min-h-0` all the way down, or the canvas's `flex-1` is computed against content
@@ -158,6 +167,7 @@ export function ExperimentSampleRoute() {
             <Badge tone={OUTCOME_TONE[verdict.outcome] ?? "neutral"}>
               {OUTCOME_LABEL[verdict.outcome] ?? verdict.outcome}
             </Badge>
+            {localization && <Badge tone={localization.tone}>{localization.label}</Badge>}
           </>
         )}
         <span className="font-mono text-xs text-fg-muted">
@@ -304,16 +314,21 @@ function ChannelView({
   state: ResultsState;
   cut: number | null;
   range: MapScale | null | undefined;
-  view: View;
-  onView: (view: View) => void;
+  view: StageView | null;
+  onView: (view: StageView) => void;
   single: boolean;
 }) {
   /*
    * Nothing is fetched until the pointer is actually over this canvas — `hovered` gates
    * both queries, so a reader who never hovers pays nothing, and one who does pays one
    * fetch per plane for the whole time the sample is open.
+   *
+   * The stage reports **image pixels**, which is what the readout beside it prints and what
+   * every number the backend returns is in. `valueAt` speaks fractions of the source frame,
+   * so the conversion happens at that one call rather than being carried around as a second
+   * coordinate system.
    */
-  const [hover, setHover] = useState<HoverPosition | null>(null);
+  const [hover, setHover] = useState<{ x: number; y: number } | null>(null);
   const mapValues = useAnomalyValues(experimentId, image.image_id, hover !== null && image.has_map);
   // Every colour plane in one payload, with the count in its header — a mono experiment
   // and an RGB one are the same code path, and neither is encoded here.
@@ -347,28 +362,31 @@ function ChannelView({
         </figcaption>
       )}
 
-      {/* The frame is shaped like the picture, not like the column. `object-contain` in a
-          full-width box centres the image between two black bars and spends the window on
-          them; an aspect-ratio box with `min-h-0` fits the image to whichever of height or
-          width runs out first and takes no more room than that. */}
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <ZoomPanCanvas
+      {/* The stage fills the column and lays its own content out at the image's pixel size,
+          so nothing here has to describe the picture's shape — which is what the previous
+          `max-w-full` plus `aspectRatio` box got wrong the moment the column was narrower
+          than the image. */}
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <ImageStage
+          image={{ width: image.width, height: image.height }}
           view={view}
           onView={onView}
-          className="max-h-full max-w-full"
-          style={{ aspectRatio: aspectOf(image), height: "100%" }}
-          label={`${image.channel ?? "single view"} · ${view.zoom.toFixed(1)}×`}
-          nativeWidth={image.width}
           onHover={setHover}
+          // The arrows step through the filtered sample list; the stage keeps 0/1/+/-.
+          panKeys={false}
+          label={`${image.channel ?? "single view"} canvas`}
+          toolbar={<StageToolbar />}
+          readout={<StageReadout cursor={hover} />}
         >
           <img
-            src={imageUrl(image.image_id, view.zoom > FULL_TIER_ZOOM ? "full" : "preview")}
+            src={imageUrl(image.image_id, tierFor(view))}
             alt={`Channel ${image.channel ?? "single view"}`}
             draggable={false}
-            className="absolute inset-0 h-full w-full object-fill"
+            className="absolute inset-0 h-full w-full"
           />
           {/* Every layer is already in source coordinates, projected by the backend through
-              this image's pinned region transform. Filling one box is therefore exact. */}
+              this image's pinned region transform, and the stage is laid out at exactly
+              those coordinates. Filling it is therefore exact. */}
           {layers.map((layer) => (
             <img
               key={layer.key}
@@ -377,19 +395,25 @@ function ChannelView({
               aria-hidden
               draggable={false}
               className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full object-fill",
+                "pointer-events-none absolute inset-0 h-full w-full",
                 layer.className,
               )}
             />
           ))}
-        </ZoomPanCanvas>
+          {/* A vector layer among the raster ones, and inside the same transform for the
+              same reason: a marker that drifts from the heatmap it marks is worse than no
+              marker. It draws itself in image coordinates. */}
+          {state.peak && <PeakMarker image={image} />}
+        </ImageStage>
       </div>
 
       <div className="flex flex-col gap-0.5">
         {/* The measurement, then the scale it sits on. Both are needed to read the map:
             one says what this pixel is, the other says what "hot" means for this run. */}
         <ValueReadout
-          position={hover}
+          position={
+            hover === null ? null : { u: hover.x / image.width, v: hover.y / image.height }
+          }
           map={mapValues.data}
           source={sourceValues.data}
           range={range}
@@ -456,18 +480,26 @@ function DiagnoseButton({
   );
 }
 
-/** The frame's shape, from the source's own pixels. Square until the API says otherwise. */
-function aspectOf(image: ImageScore): string {
-  if (image.width > 0 && image.height > 0) return `${image.width} / ${image.height}`;
-  return "1 / 1";
-}
-
 /**
  * One image's diagnostics, laid out beside the combined map they decompose.
  *
  * The combined map comes first deliberately: the question these panes answer is "which
  * branch produced that", and the comparison only works if the thing being decomposed is
  * on screen next to its parts.
+ *
+ * **Two frames live in this row, and each pane's ground truth is fetched in its own.** A
+ * diagnostic is a prepared-frame quantity by nature — `models/diagnostics.py` projects
+ * nothing, deliberately, because a per-branch error map means what it means on the grid the
+ * branch computed it on — and each pane is drawn at the array's own prepared or grid size.
+ * The source-frame outline the overlay above uses is therefore the wrong picture beside
+ * one, off by exactly the pinned crop and letterbox, so those panes ask the mask endpoint
+ * for `frame=prepared`. The combined map is the exception and keeps the source-frame
+ * outline, because the stored map was projected before it was written.
+ *
+ * It went unnoticed because of a coincidence: an identity extractor into a prepared size
+ * that keeps the source's aspect ratio differs from the source frame by a *uniform scale*
+ * alone, and both pictures are stretched into the same pane box, so they land on top of
+ * each other. Any real crop, or any letterbox, and they do not.
  */
 function DiagnosticRow({
   image,
@@ -502,6 +534,9 @@ function DiagnosticRow({
             // Opaque here, unlike the overlay above: beside an opaque per-branch map, an
             // alpha-scaled one puts the two panes on different scales and a clean image
             // renders as an empty box.
+            // Source-frame, unlike everything beside it: the stored map was projected
+            // through the pinned transform before it was written, and this route renders it
+            // at the source's own size. So this one pane wants the source-frame outline.
             src={anomalyMapUrl(image.image_id, experimentId, false)}
             maskSrc={showMask && image.has_mask ? maskUrl(image.image_id) : undefined}
           />
@@ -512,7 +547,11 @@ function DiagnosticRow({
             title={entry.title}
             description={entry.description ?? undefined}
             src={diagnosticPayloadUrl(experimentId, entry)}
-            maskSrc={showMask && image.has_mask ? maskUrl(image.image_id) : undefined}
+            maskSrc={
+              showMask && image.has_mask
+                ? maskUrl(image.image_id, { experimentId })
+                : undefined
+            }
           />
         ))}
       </div>

@@ -172,6 +172,22 @@ content digest of the subset's sample labels and resolved mask identities in eac
 or revision change therefore makes the old metrics visibly stale; reevaluation refreshes them from persisted
 scores without running the model again. Legacy metric rows have no digest and are intentionally stale.
 
+**What an annotation buys, beyond the pixel curves.** The same resolver decides whether a scored image can be
+asked the localization question — did the anomaly map's peak land inside the region somebody drew
+([evaluation](evaluation.md))? A defect that nobody has annotated yet answers `null`, rendered as a dash, and
+is **excluded from the numerator and from the denominator alike**: its defect pixels are somewhere, so
+counting the peak as off-target would reward the absence of ground truth exactly as assuming an all-zero mask
+would. The count of those samples is reported beside the verdicts, never folded into them. The stored
+verdicts are refreshed by the same reevaluation and go stale with the same `ground_truth_digest` as the pixel
+metrics — they were computed against the same resolved masks, so they cannot outlive them.
+
+**Sample-scope fan-out is why a part's verdict follows one channel and not the best one.** Under `sample`
+scope one document becomes an identical revision on every image of the part, so every channel resolves to the
+same truth and "does any channel's map land on it" would be answered yes as soon as one of them did. That
+would mask the case worth seeing: the channel the score actually came from firing on the background while a
+discarded channel found the defect. The part is therefore judged by the image that *produced* its aggregate
+score.
+
 The queue filters to one label and to samples still missing ground truth, and marks each card with
 whether every image of that sample resolves to truth, some do, or none — resolved by the same SQL
 predicate the filter uses, so the queue can never disagree with what evaluation will read. Under sample

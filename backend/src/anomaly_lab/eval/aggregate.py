@@ -29,6 +29,7 @@ histogram bins to a run's observed range.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -84,23 +85,89 @@ def normalize_by_channel(
     return normalized
 
 
+@dataclass(frozen=True)
+class SampleScore:
+    """One part's reduced score, and which image it came from.
+
+    `source_image_id` is the image that **produced** the number. Under `max` that is the
+    argmax after normalization; under `mean` no single image produced it, so the field is
+    `None` rather than an arbitrary member — a winner nominated by row order would be a
+    fact that reads as measured and is not.
+    """
+
+    score: float
+    source_image_id: int | None
+
+
+def aggregate_with_source(
+    images: Sequence[ScoredImage],
+    aggregation: Aggregation,
+    normalization: ChannelNormalization = ChannelNormalization.NONE,
+) -> dict[int, SampleScore]:
+    """Per-sample score *and* the image behind it, keyed by sample id.
+
+    The winner was always computed here and always discarded. It is kept now because the
+    localization verdict has to follow the evidence the score actually came from: asking
+    "did **any** channel's map land on the defect" would report a hit for a part whose
+    score came from a channel that fired on the background, which is exactly the failure
+    the verdict exists to expose.
+
+    Under `feature_concat`-style methods one map is computed per sample and written once per
+    image, so every channel carries the same peak and the argmax picks between identical
+    verdicts — arbitrary, and harmless for that reason.
+    """
+    scaled = normalize_by_channel(images, normalization)
+
+    grouped: dict[int, list[ScoredImage]] = {}
+    for image in images:
+        grouped.setdefault(image.sample_id, []).append(image)
+
+    reduced: dict[int, SampleScore] = {}
+    for sample_id, group in grouped.items():
+        values = np.asarray([scaled[image.image_id] for image in group], dtype=np.float64)
+        if aggregation is Aggregation.MAX:
+            winner = int(values.argmax())
+            reduced[sample_id] = SampleScore(
+                score=float(values[winner]), source_image_id=group[winner].image_id
+            )
+        else:
+            reduced[sample_id] = SampleScore(score=float(values.mean()), source_image_id=None)
+    return reduced
+
+
 def aggregate_scores(
     images: Sequence[ScoredImage],
     aggregation: Aggregation,
     normalization: ChannelNormalization = ChannelNormalization.NONE,
 ) -> dict[int, float]:
     """Per-sample score from per-image scores, keyed by sample id."""
-    scaled = normalize_by_channel(images, normalization)
+    return {
+        sample_id: found.score
+        for sample_id, found in aggregate_with_source(images, aggregation, normalization).items()
+    }
 
-    grouped: dict[int, list[float]] = {}
-    for image in images:
-        grouped.setdefault(image.sample_id, []).append(scaled[image.image_id])
 
-    def reduce(scores: list[float]) -> float:
-        values = np.asarray(scores, dtype=np.float64)
-        return float(values.max() if aggregation is Aggregation.MAX else values.mean())
+def sample_localization(
+    group: Sequence[ScoredImage],
+    source_image_id: int | None,
+) -> bool | None:
+    """One part's localization verdict from its images'.
 
-    return {sample_id: reduce(scores) for sample_id, scores in grouped.items()}
+    Two rules, because the two aggregations answer different questions. With a winning image
+    the verdict is *that image's*, whatever it is — including `None`, which truthfully says
+    the channel that decided this part carries no ground truth to check against. With no
+    winner (`mean`) every image contributed, so a hit anywhere is a hit; a miss is reported
+    only when something was actually checked and nothing landed.
+    """
+    if source_image_id is not None:
+        for image in group:
+            if image.image_id == source_image_id:
+                return image.localized
+        return None
+    verdicts = [image.localized for image in group if image.localized is not None]
+    if not verdicts:
+        return None
+    return any(verdicts)
 
 
 def build_sample_results(
@@ -113,14 +180,25 @@ def build_sample_results(
 
     Recorded per row rather than only in `eval_config` so that a stored result stays
     self-describing after the default changes (ADR-0011).
+
+    The localization verdict is carried up here too, from `ScoredImage.localized` — so a
+    caller that re-derives sample scores without re-reading a single map still writes a
+    sample verdict that agrees with its images.
     """
+    grouped: dict[int, list[ScoredImage]] = {}
+    for image in images:
+        grouped.setdefault(image.sample_id, []).append(image)
+
     return [
         SampleResult(
             experiment_id=experiment_id,
             sample_id=sample_id,
-            agg_score=score,
+            agg_score=found.score,
             aggregation=aggregation,
             normalization=normalization,
+            localized=sample_localization(grouped[sample_id], found.source_image_id),
         )
-        for sample_id, score in sorted(aggregate_scores(images, aggregation, normalization).items())
+        for sample_id, found in sorted(
+            aggregate_with_source(images, aggregation, normalization).items()
+        )
     ]

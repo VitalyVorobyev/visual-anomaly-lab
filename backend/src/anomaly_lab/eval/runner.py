@@ -5,6 +5,11 @@ The evaluation layer is **model-independent by construction** (ADR-0011): its in
 `Mask` rows and the float32 maps on disk. It never imports a model module and never
 re-runs inference, which is the precondition for the comparison view to mean anything.
 
+It writes three things back: the sample rows, the metric sets, and — since migration 019 —
+each image's map peak and localization verdict. All three are threshold-free, so persisting
+them leaves ADR-0011's line where it was: what moves with the slider is still computed on
+demand and still stored nowhere.
+
 Re-running this on a finished experiment is safe and cheap: it reads persisted scores and
 rewrites the metric sets. That is what makes changing the aggregation mode a re-read
 rather than a re-train.
@@ -14,7 +19,7 @@ from __future__ import annotations
 
 import math
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -35,6 +40,7 @@ from anomaly_lab.domain.entities import (
 from anomaly_lab.eval.aggregate import build_sample_results
 from anomaly_lab.eval.ground_truth import digest as ground_truth_digest
 from anomaly_lab.eval.ground_truth import resolved_masks
+from anomaly_lab.eval.localization import hits, peak_of, tolerance_px
 from anomaly_lab.eval.metrics import average_precision, roc_auc, timing_summary
 from anomaly_lab.eval.pixel import DEFAULT_BINS, PixelAccumulator
 from anomaly_lab.media.decode import UnreadableImageError
@@ -73,6 +79,18 @@ class EvalConfig(BaseModel):
         ge=256,
         le=1 << 20,
         description="Score-histogram resolution for the pixel curves.",
+    )
+    localization_tolerance: float = Field(
+        default=0.02,
+        ge=0.0,
+        le=0.25,
+        description=(
+            "How far the map's peak may sit from the annotated region and still count as "
+            "localized, as a fraction of the image diagonal. Resolved to a pixel radius per "
+            "image and reported beside the counts. A fraction rather than a pixel count "
+            "because a map's real resolution is its patch stride, which scales with the "
+            "frame."
+        ),
     )
 
 
@@ -179,6 +197,129 @@ def _pixel_metrics(
     return dict(summary)
 
 
+def ensure_peaks(
+    conn: sqlite3.Connection,
+    experiment_id: int,
+    images: Sequence[ScoredImage],
+) -> dict[int, tuple[int, int]]:
+    """Every scored map's peak, computing and persisting the ones not recorded yet.
+
+    A run written after migration 019 records its peaks as it writes each map, so this is a
+    no-op for it. A run from before has none, and re-evaluating is the backfill path — one
+    `np.load` per map, once, after which the column is filled forever. Idempotent by
+    construction: a row that already has a peak is never re-read, so the cost of the second
+    call is a dictionary comprehension.
+
+    A map that cannot be read is skipped rather than reported as absent evidence. It is
+    already counted by the pixel metrics as a missing map, and inventing a coordinate for it
+    would put a marker on a picture that does not exist.
+    """
+    resolved: dict[int, tuple[int, int]] = {}
+    for image in images:
+        if image.peak_x is not None and image.peak_y is not None:
+            resolved[image.image_id] = (image.peak_x, image.peak_y)
+
+    computed: dict[int, tuple[int, int]] = {}
+    for image in images:
+        if image.map_path is None or image.image_id in resolved:
+            continue
+        try:
+            array = np.load(image.map_path, allow_pickle=False)
+        except (OSError, ValueError):
+            continue
+        peak = peak_of(array)
+        if peak is not None:
+            computed[image.image_id] = peak
+
+    results_repo.update_image_peaks(conn, experiment_id, computed)
+    return {**resolved, **computed}
+
+
+def localization_verdicts(
+    images: Sequence[ScoredImage],
+    peaks: Mapping[int, tuple[int, int]],
+    masks: Mapping[int, GroundTruthMask],
+    tolerance: float,
+) -> dict[int, bool | None]:
+    """Per-image `localized`, for every scored image — `None` where it does not apply.
+
+    Which images qualify is the whole policy: a **defective** image, with a resolved ground-
+    truth mask, whose map produced a peak. A normal image has no region for the peak to be
+    inside of, so "localized" is not false for it, it is meaningless; an unannotated defect
+    is the case pixel metrics already refuse to guess at, and this refuses in the same way.
+
+    Every image gets an entry, hits and non-applicable alike, because the caller writes the
+    whole dictionary: a verdict that has *become* inapplicable — the annotation was deleted,
+    the label was corrected — must be cleared, not left behind.
+
+    The peak is stored in the map's frame, which projection makes the source frame, and the
+    mask is read at its own resolution. Where a published mask disagrees with the source
+    size the peak is scaled rather than the mask resampled: the argmax of a bilinearly
+    resized map is at the same place as the argmax of the original, so scaling the one
+    coordinate is exact where resampling the label map would invent labels.
+    """
+    verdicts: dict[int, bool | None] = {image.image_id: None for image in images}
+
+    for image in images:
+        truth = masks.get(image.image_id)
+        peak = peaks.get(image.image_id)
+        if image.label is not Label.DEFECT or truth is None or peak is None:
+            continue
+        try:
+            mask = load_mask(Path(truth.path))
+        except UnreadableImageError:
+            continue
+        if mask.ndim != 2 or mask.size == 0 or image.width <= 0 or image.height <= 0:
+            continue
+
+        mask_height, mask_width = mask.shape
+        x = min(mask_width - 1, peak[0] * mask_width // image.width)
+        y = min(mask_height - 1, peak[1] * mask_height // image.height)
+        radius = tolerance_px(mask_width, mask_height, tolerance)
+        verdicts[image.image_id] = hits(mask, (x, y), radius)
+
+    return verdicts
+
+
+def _localization_metrics(
+    images: Sequence[ScoredImage],
+    samples: Sequence[ScoredSample],
+    *,
+    tolerance: float,
+) -> dict[str, Any] | None:
+    """The subset's peak-on-target counts, or `None` when nothing was checked.
+
+    Absent rather than zeroed, exactly as `_pixel_metrics` is absent for a dataset with no
+    masks. A block reading `0 of 0` on a run whose defects are unannotated says "the method
+    never localized anything", which is a claim about the method made out of the absence of
+    ground truth.
+    """
+    defect_images = [image for image in images if image.label is Label.DEFECT]
+    tested_images = [image for image in defect_images if image.localized is not None]
+    defect_samples = [sample for sample in samples if sample.label is Label.DEFECT]
+    tested_samples = [sample for sample in defect_samples if sample.localized is not None]
+
+    if not tested_images and not tested_samples:
+        return None
+
+    # One number only when every scored image in the subset shares a frame; a mixed-size
+    # subset has a different radius per image and a single figure would name none of them.
+    frames = {(image.width, image.height) for image in images}
+    shared = frames.pop() if len(frames) == 1 else None
+
+    return {
+        "tolerance_fraction": tolerance,
+        "tolerance_pixels": (
+            None if shared is None else tolerance_px(shared[0], shared[1], tolerance)
+        ),
+        "defect_images_with_truth": len(tested_images),
+        "peak_on_target_images": sum(1 for image in tested_images if image.localized),
+        "defect_samples_with_truth": len(tested_samples),
+        "localized_samples": sum(1 for sample in tested_samples if sample.localized),
+        "unannotated_defect_samples": len(defect_samples) - len(tested_samples),
+    }
+
+
 def _label_array(labels: Sequence[Label]) -> np.ndarray:
     return np.array([label is Label.DEFECT for label in labels], dtype=bool)
 
@@ -224,24 +365,44 @@ def _subset_metrics(
         if pixel is not None:
             metrics["pixel"] = pixel
 
+    localization = _localization_metrics(images, samples, tolerance=config.localization_tolerance)
+    if localization is not None:
+        metrics["localization"] = localization
+
     return metrics
+
+
+def _scored_with_truth(
+    conn: sqlite3.Connection,
+    experiment: Experiment,
+) -> tuple[list[ScoredImage], dict[int, GroundTruthMask]]:
+    """Every scored image of a run, and the ground truth resolved for it — once.
+
+    Hoisted out of the per-subset loop it used to sit in. `resolved_masks` is keyed by image
+    id, so a superset is exactly as correct per subset as a per-subset resolution was, and
+    the byte verification that makes a changed pinned file a named failure now happens once
+    per run instead of once per subset.
+    """
+    images = results_repo.list_scored_images(conn, experiment.id)
+    return images, resolved_masks(conn, images, verify_bytes=True)
 
 
 def _evaluate_with_digests(
     conn: sqlite3.Connection,
     experiment: Experiment,
+    images: Sequence[ScoredImage],
+    masks: dict[int, GroundTruthMask],
 ) -> tuple[dict[Subset, dict[str, Any]], dict[Subset, str]]:
     config = EvalConfig.model_validate(experiment.eval_config)
     computed: dict[Subset, dict[str, Any]] = {}
     digests: dict[Subset, str] = {}
     for subset in results_repo.scored_subsets(conn, experiment.id):
-        images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+        in_subset = [image for image in images if image.subset is subset]
         samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
         if not samples:
             continue
-        masks = resolved_masks(conn, images, verify_bytes=True)
-        computed[subset] = _subset_metrics(images, samples, config, masks)
-        digests[subset] = ground_truth_digest(images, masks)
+        computed[subset] = _subset_metrics(in_subset, samples, config, masks)
+        digests[subset] = ground_truth_digest(in_subset, masks)
     return computed, digests
 
 
@@ -249,12 +410,22 @@ def evaluate_experiment(
     conn: sqlite3.Connection,
     experiment: Experiment,
 ) -> dict[Subset, dict[str, Any]]:
-    """Compute every subset's metrics from stored scores. Does not store metrics."""
-    computed, _ = _evaluate_with_digests(conn, experiment)
+    """Compute every subset's metrics from stored scores. Does not store metrics.
+
+    Reads the localization verdicts as persisted rather than recomputing them, which is what
+    "does not store" has to mean: a caller asking what the database currently says must not
+    be the caller that changes it.
+    """
+    images, masks = _scored_with_truth(conn, experiment)
+    computed, _ = _evaluate_with_digests(conn, experiment, images, masks)
     return computed
 
 
-def rebuild_sample_results(conn: sqlite3.Connection, experiment: Experiment) -> int:
+def rebuild_sample_results(
+    conn: sqlite3.Connection,
+    experiment: Experiment,
+    images: Sequence[ScoredImage] | None = None,
+) -> int:
     """Re-derive every sample score from the stored per-image scores.
 
     Owned here rather than by the `infer` handler, because it is not part of running a
@@ -263,9 +434,13 @@ def rebuild_sample_results(conn: sqlite3.Connection, experiment: Experiment) -> 
     handler is what made `reevaluate` a half-truth: it refreshed the metrics from
     `sample_result` while leaving `sample_result` itself at the aggregation of the original
     run, so a changed aggregation appeared to apply and did not.
+
+    `images` is accepted so a caller that has just refreshed them does not read them twice;
+    the sample's localization verdict is carried up from those rows, so it follows the
+    aggregation being applied here rather than the one the last run used.
     """
     config = EvalConfig.model_validate(experiment.eval_config)
-    scored = results_repo.list_scored_images(conn, experiment.id)
+    scored = results_repo.list_scored_images(conn, experiment.id) if images is None else images
     rows = build_sample_results(
         experiment.id, scored, config.aggregation, config.channel_normalization
     )
@@ -278,11 +453,29 @@ def evaluate_and_store(
 ) -> dict[Subset, dict[str, Any]]:
     """Compute and persist. The `infer` job's last act, and re-runnable on its own.
 
-    Sample scores are rebuilt first, so this really is "read the stored scores under the
-    current `eval_config`" rather than "recompute the metrics over whatever the last run
-    happened to reduce".
+    The order is the contract. Ground truth is resolved once for the whole run; peaks are
+    backfilled for any map that has none; the localization verdicts are computed against
+    that truth and written per image; sample rows are rebuilt from the refreshed image rows,
+    so a changed aggregation moves both the score and the verdict that explains it; and only
+    then are the metrics read. Doing this in any other order gives a metric set describing
+    an intermediate state of its own inputs.
+
+    Everything written here is threshold-free, which is why persisting it does not contradict
+    ADR-0011: the slider still recomputes every count it moves.
     """
-    rebuild_sample_results(conn, experiment)
-    computed, digests = _evaluate_with_digests(conn, experiment)
+    config = EvalConfig.model_validate(experiment.eval_config)
+    images, masks = _scored_with_truth(conn, experiment)
+
+    peaks = ensure_peaks(conn, experiment.id, images)
+    verdicts = localization_verdicts(images, peaks, masks, config.localization_tolerance)
+    results_repo.update_image_localization(conn, experiment.id, verdicts)
+
+    # Re-read rather than patch in memory: the rows the metrics are computed from are then
+    # the rows on disk, and a write that failed to land shows up as a wrong number here
+    # rather than as a right one over a stale database.
+    images = results_repo.list_scored_images(conn, experiment.id)
+    rebuild_sample_results(conn, experiment, images)
+
+    computed, digests = _evaluate_with_digests(conn, experiment, images, masks)
     results_repo.replace_metric_sets(conn, experiment.id, computed, ground_truth_digests=digests)
     return computed

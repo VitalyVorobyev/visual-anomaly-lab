@@ -206,15 +206,24 @@ an import job has no experiment and still needs its root path, adapter and optio
 carries what the job produced, from its `done` event. Input and output are kept apart so that re-reading a
 finished job never has to guess which is which.
 
-**`ImageResult`** — `(experiment_id, image_id)`, `score`, `map_path` (nullable), `inference_ms`.
+**`ImageResult`** — `(experiment_id, image_id)`, `score`, `map_path` (nullable), `inference_ms`,
+`peak_x` / `peak_y` / `localized` (all nullable).
 Per-image model output. `map_path` references a float32 `.npy` under the experiment's `maps/` directory;
 `NULL` when the model does not produce anomaly maps. `inference_ms` feeds per-sample timing statistics.
+`peak_x` / `peak_y` are where that map's largest value sits, in source-frame pixels — a property of the map
+alone, recorded as it is written and unaffected by any later annotation edit. `localized` is the
+threshold-free verdict on (map, ground truth) that migration 019 added: `1` the peak is inside the annotated
+region within tolerance, `0` outside, `NULL` **not applicable** — a normal image, a defect with no resolved
+mask, or a map that could not be read. `NULL` is never a miss ([evaluation](evaluation.md)).
 
-**`SampleResult`** — `(experiment_id, sample_id)`, `agg_score`, `aggregation`, `normalization` (nullable).
+**`SampleResult`** — `(experiment_id, sample_id)`, `agg_score`, `aggregation`, `normalization` (nullable),
+`localized` (nullable).
 The sample-level score derived by the evaluation layer from that sample's `ImageResult` rows. `aggregation`
 records the reduce used (`max` / `mean`) and `normalization` records how the per-channel scores were put on
 one scale before it (`none` / `robust_z` / `rank`), so a stored result stays self-describing after either
 default changes. `normalization` is `NULL` on rows written before migration 014, which meant `none`.
+`localized` carries the same three values as its image counterpart, resolved from the image that *produced*
+the aggregate score rather than from any image that happened to hit.
 
 These rows are **derived, not recorded**: `evaluate_and_store` rebuilds them from the stored `ImageResult`
 scores before computing metrics, which is what makes `POST /api/experiments/{id}/reevaluate` genuinely able to

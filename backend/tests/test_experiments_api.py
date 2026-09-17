@@ -28,6 +28,7 @@ from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
+from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import JobKind, JobStatus, Label
 from anomaly_lab.jobs.context import JobContext
@@ -319,6 +320,157 @@ def test_per_image_scores_are_available_for_the_viewer(
     assert rows[0]["has_map"] is True
     assert rows[0]["has_mask"] is True
     assert rows[0]["inference_ms"] > 0
+
+
+# ------------------------------------------------------------- localization
+#
+# The qualifier an image-level verdict cannot carry: a defective part whose map fired on
+# the background is still `tp` against its label, and reads as a working method until
+# somebody opens the picture. Every fixture defect here is a bright square at rows and
+# columns 5..9 of a 16x16 frame, with a mask to match.
+
+
+def _sample_of(settings: Settings, image_id: int) -> int:
+    with connection(settings.db_path) as conn:
+        image = images_repo.get_image(conn, image_id)
+    assert image is not None
+    return image.sample_id
+
+
+def _localization(client: TestClient, experiment_id: int) -> dict[str, Any] | None:
+    detail = client.get(f"/api/experiments/{experiment_id}").json()
+    metrics = next(e for e in detail["metrics"] if e["subset"] == "test")["metrics"]
+    block: dict[str, Any] | None = metrics.get("localization")
+    return block
+
+
+def test_a_map_that_peaks_on_the_annotated_region_is_localized(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    sample_id = _sample_of(settings, seeded.defect_image_ids[0])
+    row = client.get(f"/api/experiments/{scored['id']}/samples/{sample_id}/images").json()[0]
+
+    # The peak of the *stored* map — blurred, upsampled and projected — not the grid cell
+    # the score was read from, which is why it is reported as its own coordinate.
+    assert 5 <= row["peak"]["x"] <= 9
+    assert 5 <= row["peak"]["y"] <= 9
+    assert row["localized"] is True
+    # 0.02 of a 16x16 frame's diagonal rounds below one pixel and is floored there.
+    assert row["tolerance_px"] == 1
+
+    block = _localization(client, scored["id"])
+    assert block == {
+        "tolerance_fraction": 0.02,
+        "tolerance_pixels": 1,
+        "defect_images_with_truth": TEST_DEFECTS,
+        "peak_on_target_images": TEST_DEFECTS,
+        "defect_samples_with_truth": TEST_DEFECTS,
+        "localized_samples": TEST_DEFECTS,
+        "unannotated_defect_samples": 0,
+    }
+
+
+def test_a_peak_beside_the_defect_is_a_true_positive_that_found_nothing(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    """The failure this exists to expose: the label is right, the evidence is not — and the
+    outcome vocabulary does not change to say so."""
+    image_id = seeded.defect_image_ids[0]
+    with connection(settings.db_path) as conn:
+        results_repo.update_image_peaks(conn, scored["id"], {image_id: (0, 0)})
+    client.post(f"/api/experiments/{scored['id']}/reevaluate")
+
+    sample_id = _sample_of(settings, image_id)
+    row = client.get(f"/api/experiments/{scored['id']}/samples/{sample_id}/images").json()[0]
+    assert row["localized"] is False
+
+    page = client.get(f"/api/experiments/{scored['id']}/results?subset=test").json()
+    verdict = next(s for s in page["samples"] if s["sample_id"] == sample_id)
+    assert verdict["outcome"] == "tp"
+    assert verdict["localized"] is False
+
+    block = _localization(client, scored["id"])
+    assert block is not None
+    assert block["peak_on_target_images"] == TEST_DEFECTS - 1
+    assert block["defect_images_with_truth"] == TEST_DEFECTS
+    assert block["localized_samples"] == TEST_DEFECTS - 1
+
+
+def test_the_verdict_does_not_move_when_the_threshold_does(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    """Threshold-free by construction, which is what makes persisting it compatible with
+    ADR-0011 — and what makes the slider still cost no file read per tick."""
+    sample_id = _sample_of(settings, seeded.defect_image_ids[0])
+    page = client.get(f"/api/experiments/{scored['id']}/results?subset=test").json()
+
+    seen = set()
+    for value in (page["score_min"] - 1.0, page["suggested_threshold"], page["score_max"] + 1.0):
+        report = client.get(
+            f"/api/experiments/{scored['id']}/threshold",
+            params={"value": value, "subset": "test"},
+        ).json()
+        row = next(s for s in report["samples"] if s["sample_id"] == sample_id)
+        seen.add((row["outcome"], row["localized"]))
+
+    assert {localized for _, localized in seen} == {True}
+    assert {outcome for outcome, _ in seen} == {"tp", "fn"}
+
+
+def test_a_defect_with_no_mask_is_not_applicable_rather_than_a_miss(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    """Its defect pixels are somewhere. Counting the peak as off-target would reward the
+    absence of ground truth, the way `_pixel_metrics` refuses to for the same reason."""
+    image_id = seeded.defect_image_ids[0]
+    with connection(settings.db_path) as conn:
+        conn.execute("DELETE FROM mask WHERE image_id = ?", (image_id,))
+    client.post(f"/api/experiments/{scored['id']}/reevaluate")
+
+    sample_id = _sample_of(settings, image_id)
+    row = client.get(f"/api/experiments/{scored['id']}/samples/{sample_id}/images").json()[0]
+    assert row["localized"] is None
+    # The peak is a property of the map alone, so deleting an annotation cannot move it.
+    assert row["peak"] is not None
+
+    block = _localization(client, scored["id"])
+    assert block is not None
+    assert block["defect_samples_with_truth"] == TEST_DEFECTS - 1
+    assert block["localized_samples"] == TEST_DEFECTS - 1
+    # Excluded from the numerator *and* the denominator, and reported on its own.
+    assert block["unannotated_defect_samples"] == 1
+
+
+def test_the_localization_block_is_absent_rather_than_zeroed_without_truth(
+    client: TestClient, scored: dict[str, Any], settings: Settings
+) -> None:
+    """`0 of 0` would read as 'this method never localized anything', which is a claim about
+    the method made out of the absence of ground truth."""
+    with connection(settings.db_path) as conn:
+        conn.execute("DELETE FROM mask")
+    client.post(f"/api/experiments/{scored['id']}/reevaluate")
+
+    assert _localization(client, scored["id"]) is None
+
+
+def test_a_run_scored_before_the_column_existed_backfills_its_peaks(
+    client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
+) -> None:
+    """Re-evaluating is the backfill path — no re-inference, and the maps are already on
+    disk. A legacy run is otherwise a screen full of blank verdicts forever."""
+    with connection(settings.db_path) as conn:
+        conn.execute("UPDATE image_result SET peak_x = NULL, peak_y = NULL, localized = NULL")
+
+    sample_id = _sample_of(settings, seeded.defect_image_ids[0])
+    before = client.get(f"/api/experiments/{scored['id']}/samples/{sample_id}/images").json()[0]
+    assert before["peak"] is None
+    assert before["localized"] is None
+
+    client.post(f"/api/experiments/{scored['id']}/reevaluate")
+
+    after = client.get(f"/api/experiments/{scored['id']}/samples/{sample_id}/images").json()[0]
+    assert after["peak"] == {"x": 6, "y": 6}
+    assert after["localized"] is True
 
 
 # ----------------------------------------------------------------- rendering

@@ -381,6 +381,32 @@ class ImageResult(BaseModel):
     score: float
     map_path: str | None = None
     inference_ms: float
+    peak_x: int | None = Field(
+        default=None,
+        description=(
+            "Column of the stored map's largest value, in source-frame pixels. This is the "
+            "**map's** peak, not the score's location: the persisted map is blurred, "
+            "upsampled and projected back into source coordinates, so its argmax is near — "
+            "but not identical to — the grid cell that produced the score, and a method "
+            "scoring at a percentile below 100 diverges further still. `null` when no map "
+            "was written, or when the map holds no finite value."
+        ),
+    )
+    peak_y: int | None = Field(
+        default=None,
+        description="Row of the stored map's largest value, in source-frame pixels.",
+    )
+    localized: bool | None = Field(
+        default=None,
+        description=(
+            "Whether the map's peak falls inside this image's annotated defect region, "
+            "within `EvalConfig.localization_tolerance` of it. Threshold-free: it compares "
+            "the map against the ground truth and never against a cut, so it is the same at "
+            "every position of the results slider. `null` is 'not applicable' and never "
+            "'missed' — a normal image, a defect with no resolved mask, or a map that could "
+            "not be read."
+        ),
+    )
 
 
 class SampleResult(BaseModel):
@@ -399,6 +425,17 @@ class SampleResult(BaseModel):
             "row beside the aggregation, for the same reason: a stored result must stay "
             "self-describing after the default changes. `null` on rows written before the "
             "step existed, which meant `none`."
+        ),
+    )
+    localized: bool | None = Field(
+        default=None,
+        description=(
+            "Whether this part's anomaly evidence landed on its annotated defect. Resolved "
+            "from the image that **produced** the aggregate score — under `max` the winning "
+            "channel after normalization, because an 'any channel hit' rule would hide "
+            "exactly the off-target failure this records. Under `mean` no single image "
+            "produced the score, so any hit counts. `null` is 'not applicable' and never "
+            "'missed'."
         ),
     )
 

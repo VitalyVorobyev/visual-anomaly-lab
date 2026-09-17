@@ -77,6 +77,21 @@ export function OverlayControls({
         >
           ground truth
         </ToggleChip>
+        {/* No swatch, unlike its three neighbours: this layer is drawn in the colour of its
+            own verdict — green on target, amber off it, blue where nothing was checked — so
+            a single dot would name one of three and legend the other two wrongly. */}
+        <ToggleChip
+          checked={state.peak}
+          disabled={!hasMap}
+          onCheckedChange={(peak) => onChange({ peak })}
+          title={
+            hasMap
+              ? "Where the map peaked, in the tolerance window the localization verdict was decided in"
+              : "This run recorded no anomaly map"
+          }
+        >
+          peak
+        </ToggleChip>
       </div>
 
       {/* Only while it can do something. A cut with no segmentation on screen is a control

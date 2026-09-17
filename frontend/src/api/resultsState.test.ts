@@ -27,6 +27,14 @@ describe("reading the results view out of a URL", () => {
     expect(state.threshold).toBe(0.42);
   });
 
+  it("carries the peak marker, which is off until asked for", () => {
+    // Off by default, unlike the heatmap: it answers *why* a verdict says what it does, and
+    // a marker on every sample would compete with the layers that answer the first question.
+    expect(roundTrip("").peak).toBe(false);
+    expect(roundTrip("pk=1").peak).toBe(true);
+    expect(roundTrip("pk=nonsense").peak).toBe(false);
+  });
+
   it("refuses an outcome the server never emits", () => {
     // A hand-edited URL must not put an unknown value into a filter.
     expect(roundTrip("outcome=maybe").outcome).toBeUndefined();
@@ -72,6 +80,7 @@ describe("writing it back", () => {
       heatmap: false,
       region: true,
       truth: false,
+      peak: true,
       cut: 0.3,
     };
     expect(readResultsState(writeResultsState(state))).toEqual(state);

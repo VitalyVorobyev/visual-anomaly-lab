@@ -63,6 +63,28 @@ than by sanitising a query parameter — the same property the media routes have
   so the ETag covers the file's size and mtime **and the display range**, and the response is
   `Cache-Control: no-cache`.
 
+**A diagnostic is a prepared-frame quantity, and it is served in that frame deliberately.** A stored
+anomaly map is projected through the pinned region transform before it is written
+([methods](methods.md)), and every layer of the sample page's overlay stack is therefore in source
+coordinates. Nothing does that to a diagnostic: a per-branch error map means what it means on the grid
+the branch computed it on, and projecting it would be the read path inventing an interpretation of
+someone else's array. So the payload route renders at the array's own size, and the pane on screen is
+prepared-frame — or grid-frame, for a `grid` payload's own resolution.
+
+**What is projected instead is whatever has to meet it.** The ground-truth outline the panes can carry
+is fetched from `GET /api/images/{id}/mask?frame=prepared&experiment_id=…`, which loads that run's
+pinned build, applies `SpatialTransform.prepare_mask` and traces the contour **after** the projection —
+a boundary traced at source resolution and then shrunk to a 448 px grid is a two-pixel line resampled
+to less than one, which drops out in places. The ETag carries the frame and the manifest digest, so the
+two frames cannot collide in a cache and a rebuilt profile is a different response. Verification is
+`load_prepared_build`'s: a profile rebuilt underneath a finished run is a readable 409 rather than a
+silently different picture.
+
+The reason this went unnoticed is a coincidence worth naming, because it is the shape of every
+registration bug that survives review: an identity extractor into a prepared size that keeps the
+source's aspect ratio differs from the source frame by a **uniform scale alone**, and both pictures are
+stretched into the same pane, so they coincide. Any real crop, or any letterbox, and they do not.
+
 ## Reading a payload as numbers
 
 Reading *a number* is not drawing *a picture*, and the two were conflated once. The colormap, the

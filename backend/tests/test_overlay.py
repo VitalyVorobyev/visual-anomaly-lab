@@ -22,6 +22,7 @@ from anomaly_lab.media.overlay import (
     render_mask_contour,
     render_prediction_region,
 )
+from anomaly_lab.regions.transform import PixelBounds, SpatialTransform
 
 
 def decode(payload: bytes) -> np.ndarray:
@@ -144,6 +145,90 @@ class TestMaskContour:
 
         assert tuple(rgba[2, 2, :3]) == CONTOUR_RGB
         assert rgba[4, 4, 3] == 0, "the interior is left visible"
+
+
+class TestPreparedFrameMask:
+    """The ground truth, drawn in the frame a diagnostic pane is actually in.
+
+    A diagnostic is a prepared-frame quantity — nothing projects it, because a per-branch
+    error map means what it means on the grid the branch computed it on — so the pane is
+    drawn at the array's own size. The source-frame outline the sample overlay uses is
+    therefore off by the pinned crop and letterbox when laid over one of those, which is
+    invisible while a profile happens to be the identity and wrong as soon as it is not.
+
+    This is the composition `GET /api/images/{id}/mask?frame=prepared` performs: project the
+    mask through the pinned transform, *then* trace it.
+    """
+
+    def a_transform(self) -> SpatialTransform:
+        """A 64x32 source into a 32x32 prepared frame: a real crop and a real letterbox.
+
+        The numbers are chosen so the resolved geometry is a pure translation — the crop is
+        exactly 32x16 and lands at scale 1.0 with eight rows of padding above and below —
+        which makes every expectation below readable rather than a rounding argument.
+        """
+        transform = SpatialTransform.resolve(
+            source_size=(64, 32),
+            prepared_size=(32, 32),
+            region=PixelBounds(left=16, top=4, right=48, bottom=20),
+            padding_fraction=0.0,
+        )
+        assert (transform.scale_x, transform.scale_y) == (1.0, 1.0)
+        assert (transform.pad_top, transform.pad_left) == (8, 0)
+        return transform
+
+    def a_source_mask(self) -> np.ndarray:
+        """A block at source rows 6-13, columns 20-31 — comfortably inside the crop."""
+        mask = np.zeros((32, 64), dtype=bool)
+        mask[6:14, 20:32] = True
+        return mask
+
+    def test_the_png_is_the_prepared_size_rather_than_the_source_one(self) -> None:
+        transform = self.a_transform()
+        rgba = decode(
+            render_mask_contour(
+                transform.prepare_mask(self.a_source_mask()),
+                size=(transform.prepared_width, transform.prepared_height),
+            )
+        )
+
+        assert rgba.shape[:2] == (32, 32)
+
+    def test_a_mask_pixel_lands_where_source_to_prepared_says(self) -> None:
+        transform = self.a_transform()
+        projected = transform.prepare_mask(self.a_source_mask())
+
+        for source_point in [(20.0, 6.0), (31.0, 13.0), (25.0, 9.0)]:
+            x, y = transform.source_to_prepared(source_point)
+            assert projected[round(y), round(x)], f"{source_point} projected to {(x, y)}"
+
+        # And the letterbox stays empty: padding is not part of the annotated region.
+        assert not projected[: transform.pad_top].any()
+        assert not projected[transform.pad_top + transform.resized_height :].any()
+
+    def test_the_outline_is_traced_after_the_projection_and_is_still_hollow(self) -> None:
+        # Tracing first and shrinking after would resample a two-pixel line down to less
+        # than one and drop it out in places.
+        transform = self.a_transform()
+        rgba = decode(render_mask_contour(transform.prepare_mask(self.a_source_mask())))
+
+        assert tuple(rgba[10, 4, :3]) == CONTOUR_RGB, "the region's corner is on its boundary"
+        assert rgba[14, 10, 3] == 0, "the interior is left visible"
+
+    def test_the_two_frames_are_not_the_same_picture(self) -> None:
+        """The whole reason the parameter exists.
+
+        Under the identity profile these two agree, which is exactly why the
+        misregistration went unnoticed. Under any real crop they do not.
+        """
+        transform = self.a_transform()
+        mask = self.a_source_mask()
+        prepared = decode(render_mask_contour(transform.prepare_mask(mask)))
+        source = decode(render_mask_contour(mask, size=(64, 32)))
+
+        assert source.shape[:2] == (32, 64)
+        assert prepared[10, 4, 3] > 0
+        assert source[10, 4, 3] == 0, "nothing is annotated there in the source frame"
 
 
 @pytest.mark.parametrize("threshold", [0.0, 0.5, 1.0])
