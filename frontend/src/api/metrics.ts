@@ -144,6 +144,72 @@ export function pixelRows(metrics: MetricValue): MetricRow[] {
   ];
 }
 
+/**
+ * Localization rows, or an empty list when nothing was checked against an annotation.
+ *
+ * Absent rather than zeroed, exactly as the pixel block is: `0 of 0` on a run whose defects
+ * are unannotated reads as "this method never localized anything", which is a claim about
+ * the method assembled out of the absence of ground truth.
+ *
+ * The counts are **threshold-free**. They ask whether the map's peak landed on the annotated
+ * region, which is a comparison against the ground truth and never against a cut — so unlike
+ * a confusion matrix these belong beside ROC-AUC rather than beside a slider.
+ */
+export function localizationRows(metrics: MetricValue): MetricRow[] {
+  const block = metrics.localization;
+  if (block === null || typeof block !== "object") return [];
+  const values = block as MetricValue;
+
+  return [
+    {
+      key: "localized_samples",
+      label: "Localized detections",
+      value: formatOutOf(values.localized_samples, values.defect_samples_with_truth),
+      hint: "Annotated defects whose map peaked on the defect rather than somewhere else on the frame. Threshold-free.",
+    },
+    {
+      key: "localization_tolerance",
+      label: "Tolerance",
+      value: formatTolerance(values),
+      hint: "How far the peak may sit from the region and still count. A fraction of the image diagonal, resolved per frame.",
+    },
+  ];
+}
+
+/**
+ * The resolved tolerance radius in pixels, or `null` when there is no single one.
+ *
+ * `null` on a subset whose images are not all the same size: the radius is a fraction of
+ * each frame's own diagonal, so one number would name none of them.
+ */
+export function localizationTolerancePx(metrics: MetricValue): number | null {
+  const block = metrics.localization;
+  if (block === null || typeof block !== "object") return null;
+  return asNumber((block as MetricValue).tolerance_pixels);
+}
+
+/** `4 of 9`, or `null` when there was nothing to count. */
+function formatOutOf(part: unknown, whole: unknown): string | null {
+  const numerator = asNumber(part);
+  const denominator = asNumber(whole);
+  if (numerator === null || denominator === null || denominator <= 0) return null;
+  return `${Math.round(numerator)} of ${Math.round(denominator)}`;
+}
+
+/**
+ * The tolerance in the most concrete form this subset supports.
+ *
+ * Pixels where every image shares a frame, because that is the number a reader can check
+ * against the marker on screen; the configured fraction otherwise, which is what a
+ * mixed-size subset actually has in common.
+ */
+function formatTolerance(values: MetricValue): string | null {
+  const pixels = asNumber(values.tolerance_pixels);
+  if (pixels !== null) return `${Math.round(pixels)} px`;
+  const fraction = asNumber(values.tolerance_fraction);
+  return fraction === null ? null : `${(fraction * 100).toFixed(1)}% of diagonal`;
+}
+
 export function timingRows(metrics: MetricValue): MetricRow[] {
   const timing = metrics.timing;
   if (timing === null || typeof timing !== "object") return [];
@@ -224,6 +290,16 @@ export function caveats(metrics: MetricValue): string[] {
     }
     if (unreadable > 0) {
       notes.push(`${unreadable} mask file(s) could not be read.`);
+    }
+  }
+
+  const localization = metrics.localization;
+  if (localization !== null && typeof localization === "object") {
+    const unannotated = asNumber((localization as MetricValue).unannotated_defect_samples) ?? 0;
+    if (unannotated > 0) {
+      notes.push(
+        `${unannotated} defective sample(s) have no ground-truth region, so nothing could be said about where their map fired.`,
+      );
     }
   }
 

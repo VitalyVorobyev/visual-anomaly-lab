@@ -14,6 +14,7 @@ from anomaly_lab.db.repositories.results import ScoredImage, ScoredSample
 from anomaly_lab.domain.entities import Aggregation, ChannelNormalization, Label, Subset
 from anomaly_lab.eval.aggregate import (
     aggregate_scores,
+    aggregate_with_source,
     build_sample_results,
     normalize_by_channel,
 )
@@ -338,3 +339,104 @@ def test_the_normalization_is_recorded_on_every_stored_row() -> None:
 
     assert {row.normalization for row in rows} == {ChannelNormalization.ROBUST_Z}
     assert {row.aggregation for row in rows} == {Aggregation.MAX}
+
+
+# ------------------------------------- which image a part's localization verdict follows
+
+
+def _localized(
+    image_id: int, sample_id: int, channel: str, score: float, verdict: bool
+) -> ScoredImage:
+    return ScoredImage(
+        image_id=image_id,
+        sample_id=sample_id,
+        channel=channel,
+        path="/x.png",
+        width=8,
+        height=8,
+        score=score,
+        map_path=f"/maps/{image_id}.npy",
+        inference_ms=1.0,
+        label=Label.DEFECT,
+        subset=None,
+        localized=verdict,
+    )
+
+
+def test_max_reports_the_winning_channel_s_verdict_not_any_channel_s() -> None:
+    """The rule that makes the verdict worth having. `bright` decided this part's score and
+    fired on the background; `dark` found the defect and was discarded by the reduce. An
+    'any channel hit' rule would report a hit and hide exactly the failure being measured."""
+    images = [
+        _localized(1, 1, "bright", 9.0, verdict=False),
+        _localized(2, 1, "dark", 0.1, verdict=True),
+    ]
+
+    found = aggregate_with_source(images, Aggregation.MAX)
+    assert found[1].source_image_id == 1
+
+    rows = build_sample_results(7, images, Aggregation.MAX)
+    assert rows[0].localized is False
+
+
+def test_mean_has_no_winner_so_any_hit_counts() -> None:
+    """Every channel contributed to the number, so no single one can be held responsible."""
+    images = [
+        _localized(1, 1, "bright", 9.0, verdict=False),
+        _localized(2, 1, "dark", 0.1, verdict=True),
+    ]
+
+    assert aggregate_with_source(images, Aggregation.MEAN)[1].source_image_id is None
+    assert build_sample_results(7, images, Aggregation.MEAN)[0].localized is True
+
+
+def test_normalization_moves_the_winner_and_the_verdict_with_it() -> None:
+    """`channel_normalization` decides which channel produced the score, so it decides which
+    channel's map the part is judged by — the two cannot be allowed to disagree."""
+    images = [
+        _localized(1, 1, "bright", 0.10, verdict=True),
+        _localized(2, 1, "dark", 50.0, verdict=False),
+        _localized(3, 2, "bright", 0.90, verdict=True),
+        _localized(4, 2, "dark", 50.5, verdict=False),
+    ]
+
+    raw = build_sample_results(7, images, Aggregation.MAX)
+    assert [row.localized for row in raw] == [False, False]
+
+    scaled = build_sample_results(7, images, Aggregation.MAX, ChannelNormalization.ROBUST_Z)
+    assert [row.localized for row in scaled] == [True, True]
+
+
+def test_an_unannotated_winning_channel_leaves_the_part_unjudged() -> None:
+    """`None` is 'not checked' and never 'missed', even when a sibling channel has truth:
+    the channel that decided the score carries no region to have landed in."""
+    images = [
+        _localized(1, 1, "bright", 9.0, verdict=False),
+        _localized(2, 1, "dark", 0.1, verdict=True),
+    ]
+    unjudged = [
+        ScoredImage(
+            image_id=1,
+            sample_id=1,
+            channel="bright",
+            path="/x.png",
+            width=8,
+            height=8,
+            score=9.0,
+            map_path="/maps/1.npy",
+            inference_ms=1.0,
+            label=Label.DEFECT,
+            subset=None,
+        ),
+        images[1],
+    ]
+
+    assert build_sample_results(7, unjudged, Aggregation.MAX)[0].localized is None
+    # …and under `mean`, where nothing was discarded, the one verdict that exists stands.
+    assert build_sample_results(7, unjudged, Aggregation.MEAN)[0].localized is True
+
+
+def test_a_run_with_no_verdicts_at_all_leaves_every_sample_unjudged() -> None:
+    """Every existing caller — and every test above — passes rows with no verdict."""
+    rows = build_sample_results(7, _two_channel_run(), Aggregation.MAX)
+    assert {row.localized for row in rows} == {None}

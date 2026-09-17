@@ -6,8 +6,23 @@ import sqlite3
 
 import pytest
 
-from anomaly_lab.db.repositories import datasets, images, samples, splits
-from anomaly_lab.domain.entities import Label, LabelSource, Subset
+from anomaly_lab.db.repositories import (
+    datasets,
+    experiments,
+    images,
+    region_profiles,
+    results,
+    samples,
+    splits,
+)
+from anomaly_lab.domain.entities import (
+    Aggregation,
+    ImageResult,
+    Label,
+    LabelSource,
+    SampleResult,
+    Subset,
+)
 from tests.conftest import SeededCatalog
 
 
@@ -352,3 +367,171 @@ def test_selecting_every_channel_by_name_still_drops_the_unassigned_one(
     unset = images.list_images_for_split(migrated_db, split_id, subsets=[Subset.TEST])
 
     assert len(unset) - len(named) == 1
+
+
+# ------------------------------------------------- results: three-valued localization
+#
+# `localized` and the map peak are the only columns in this schema whose NULL means
+# something other than "unset" — it means *not applicable*, and it must not come back as
+# `False`. SQLite has no boolean, so every hop between the two is a place where three
+# values can silently become two.
+
+
+def _experiment_over(migrated_db: sqlite3.Connection, catalog: SeededCatalog) -> int:
+    profile = region_profiles.create_revision(
+        migrated_db,
+        dataset_id=catalog.dataset_id,
+        name="full frame",
+        extractor_type="identity",
+        extractor_config={},
+        prepared_width=8,
+        prepared_height=8,
+        padding_fraction=0.0,
+        seed=17,
+    )
+    experiment = experiments.create_experiment(
+        migrated_db,
+        name="run",
+        dataset_id=catalog.dataset_id,
+        split_id=_split_over_everything(migrated_db, catalog),
+        region_profile_id=profile.id,
+        region_manifest_sha256="sha",
+        model_type="pixel_reference",
+        model_config={},
+        preprocessing_config={},
+        eval_config={},
+        artifact_dir="/artifacts/run",
+    )
+    return experiment.id
+
+
+def test_a_peak_and_a_localization_verdict_round_trip_with_null_intact(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    experiment_id = _experiment_over(migrated_db, catalog)
+    hit, miss, unchecked = catalog.image_ids[0], catalog.image_ids[1], catalog.image_ids[2]
+
+    results.replace_image_results(
+        migrated_db,
+        experiment_id,
+        [
+            ImageResult(
+                experiment_id=experiment_id,
+                image_id=hit,
+                score=1.0,
+                inference_ms=1.0,
+                peak_x=3,
+                peak_y=4,
+                localized=True,
+            ),
+            ImageResult(
+                experiment_id=experiment_id,
+                image_id=miss,
+                score=2.0,
+                inference_ms=1.0,
+                peak_x=0,
+                peak_y=0,
+                localized=False,
+            ),
+            ImageResult(experiment_id=experiment_id, image_id=unchecked, score=3.0, inference_ms=1),
+        ],
+    )
+
+    by_id = {row.image_id: row for row in results.list_scored_images(migrated_db, experiment_id)}
+
+    assert (by_id[hit].peak_x, by_id[hit].peak_y) == (3, 4)
+    assert by_id[hit].localized is True
+    # A peak at the origin is a measurement, not a missing value.
+    assert (by_id[miss].peak_x, by_id[miss].peak_y) == (0, 0)
+    assert by_id[miss].localized is False
+    assert by_id[unchecked].peak_x is None
+    assert by_id[unchecked].localized is None
+
+    stored = results.get_image_result(migrated_db, experiment_id, unchecked)
+    assert stored is not None
+    assert stored.localized is None
+
+
+def test_the_localization_write_clears_a_verdict_that_no_longer_applies(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    """An annotation can be deleted after a run was scored. Writing only the hits would
+    leave a stale `1` on screen beside ground truth that no longer exists."""
+    experiment_id = _experiment_over(migrated_db, catalog)
+    image_id = catalog.image_ids[0]
+    results.replace_image_results(
+        migrated_db,
+        experiment_id,
+        [
+            ImageResult(
+                experiment_id=experiment_id,
+                image_id=image_id,
+                score=1.0,
+                inference_ms=1.0,
+                localized=True,
+            )
+        ],
+    )
+
+    results.update_image_localization(migrated_db, experiment_id, {image_id: None})
+
+    assert results.list_scored_images(migrated_db, experiment_id)[0].localized is None
+
+
+def test_peaks_are_backfilled_without_disturbing_the_scores(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    experiment_id = _experiment_over(migrated_db, catalog)
+    image_id = catalog.image_ids[0]
+    results.replace_image_results(
+        migrated_db,
+        experiment_id,
+        [ImageResult(experiment_id=experiment_id, image_id=image_id, score=7.5, inference_ms=2.0)],
+    )
+
+    results.update_image_peaks(migrated_db, experiment_id, {image_id: (11, 2)})
+
+    row = results.list_scored_images(migrated_db, experiment_id)[0]
+    assert (row.peak_x, row.peak_y) == (11, 2)
+    assert row.score == 7.5
+    assert row.localized is None
+
+
+def test_a_sample_s_localization_survives_the_sample_result_round_trip(
+    migrated_db: sqlite3.Connection, catalog: SeededCatalog
+) -> None:
+    experiment_id = _experiment_over(migrated_db, catalog)
+    identified = sorted(catalog.sample_ids.values())
+
+    results.replace_sample_results(
+        migrated_db,
+        experiment_id,
+        [
+            SampleResult(
+                experiment_id=experiment_id,
+                sample_id=identified[0],
+                agg_score=3.0,
+                aggregation=Aggregation.MAX,
+                localized=True,
+            ),
+            SampleResult(
+                experiment_id=experiment_id,
+                sample_id=identified[1],
+                agg_score=2.0,
+                aggregation=Aggregation.MAX,
+                localized=False,
+            ),
+            SampleResult(
+                experiment_id=experiment_id,
+                sample_id=identified[2],
+                agg_score=1.0,
+                aggregation=Aggregation.MAX,
+            ),
+        ],
+    )
+
+    by_id = {row.sample_id: row for row in results.list_scored_samples(migrated_db, experiment_id)}
+
+    assert by_id[identified[0]].localized is True
+    assert by_id[identified[1]].localized is False
+    assert by_id[identified[2]].localized is None

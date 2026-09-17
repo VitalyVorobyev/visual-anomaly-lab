@@ -11,7 +11,14 @@
  */
 
 import type { MetricValue } from "../../api/metrics";
-import { caveats, detectionRows, groupingNote, pixelRows, timingRows } from "../../api/metrics";
+import {
+  caveats,
+  detectionRows,
+  groupingNote,
+  localizationRows,
+  pixelRows,
+  timingRows,
+} from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { MetricSummary, Subset, TrainingState } from "../../api/client";
 import { Button, Callout, CountRun, Disclosure, Panel, type Tone } from "@vitavision/lab-ui";
@@ -218,6 +225,17 @@ function SubsetMetrics({ subset, metrics }: { subset: Subset; metrics: MetricVal
             Pixel level
           </h4>
           <MetricList rows={pixelRows(metrics)} />
+        </>
+      )}
+      {/* Its own section rather than a pixel row: pixel metrics measure the whole map
+          against the whole annotation, and this measures one coordinate against it. A run
+          can be strong at one and weak at the other. */}
+      {localizationRows(metrics).length > 0 && (
+        <>
+          <h4 className="mt-1 text-xs font-semibold text-fg">
+            Localization
+          </h4>
+          <MetricList rows={localizationRows(metrics)} />
         </>
       )}
       {timingRows(metrics).length > 0 && (

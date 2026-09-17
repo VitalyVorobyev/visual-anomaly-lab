@@ -310,6 +310,7 @@ function OverviewResults({
         subsets={subsets}
         subset={subset}
         onSubset={setSubset}
+        metrics={metrics}
       />
     </>
   );

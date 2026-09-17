@@ -35,6 +35,15 @@ so the WebView re-fetches nothing.
 and the tier renderer is bit-depth agnostic, so the mixed 24-bit / 8-bit reference data requires no special
 casing at any call site.
 
+**The ground-truth outline is served in two frames.** `GET /api/images/{image_id}/mask` draws the annotated
+region's contour as a transparent PNG at the source's own size — an outline rather than a fill, because
+filling it hides the pixels the reader is judging the model's map against. `frame=prepared&experiment_id=N`
+draws the same mask projected through that run's pinned region transform, at the prepared size, which is
+what a **diagnostics** pane needs: nothing projects a diagnostic, so those panes are prepared-frame and a
+source-frame outline over one is off by exactly the crop and letterbox ([diagnostics](diagnostics.md)). The
+contour is traced after the projection, and the `ETag` carries the frame and the pinned manifest digest so
+the two can never answer for each other out of a cache.
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

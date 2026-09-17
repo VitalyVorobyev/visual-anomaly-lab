@@ -67,6 +67,14 @@ export interface ResultsState {
   /** The ground-truth outline, where a mask exists. */
   truth: boolean;
   /**
+   * The map's peak, with the window the localization verdict was decided in.
+   *
+   * Off by default, unlike the heatmap and the outline. It answers a narrower question —
+   * *why* this image was judged localized or off target — and a marker drawn on every
+   * sample would compete with the layers that answer the first question.
+   */
+  peak: boolean;
+  /**
    * Where the segmentation cuts, as a fraction of the **run-wide** map range.
    *
    * A fraction rather than a raw value so it means the same thing on every image of the
@@ -100,6 +108,7 @@ export const EMPTY_RESULTS: ResultsState = {
   heatmap: true,
   region: false,
   truth: true,
+  peak: false,
   cut: DEFAULT_CUT,
 };
 
@@ -114,6 +123,7 @@ export function readResultsState(params: URLSearchParams): ResultsState {
     heatmap: readFlag(params.get("map"), EMPTY_RESULTS.heatmap),
     region: readFlag(params.get("seg"), EMPTY_RESULTS.region),
     truth: readFlag(params.get("gt"), EMPTY_RESULTS.truth),
+    peak: readFlag(params.get("pk"), EMPTY_RESULTS.peak),
     cut: readFraction(params.get("cut")) ?? DEFAULT_CUT,
   };
 }
@@ -130,6 +140,7 @@ export function writeResultsState(state: ResultsState): URLSearchParams {
   if (state.heatmap !== EMPTY_RESULTS.heatmap) params.set("map", state.heatmap ? "1" : "0");
   if (state.region !== EMPTY_RESULTS.region) params.set("seg", state.region ? "1" : "0");
   if (state.truth !== EMPTY_RESULTS.truth) params.set("gt", state.truth ? "1" : "0");
+  if (state.peak !== EMPTY_RESULTS.peak) params.set("pk", state.peak ? "1" : "0");
   if (state.cut !== DEFAULT_CUT) params.set("cut", String(state.cut));
   return params;
 }

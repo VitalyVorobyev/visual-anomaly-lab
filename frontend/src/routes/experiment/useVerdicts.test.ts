@@ -8,7 +8,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { EMPTY_RESULTS } from "../../api/resultsState";
+import { OUTCOMES, EMPTY_RESULTS } from "../../api/resultsState";
 import { matches } from "./useVerdicts";
 
 describe("the outcome filter", () => {
@@ -38,6 +38,29 @@ describe("the outcome filter", () => {
     const state = { ...EMPTY_RESULTS, mistakesOnly: true, outcome: "tp" as const };
     expect(matches("fp", state)).toBe(true);
     expect(matches("tp", state)).toBe(false);
+  });
+
+  it("gained no vocabulary from the localization verdict", () => {
+    /*
+     * `localized` is **orthogonal to the outcome, not a sixth value of it**: a true positive
+     * that fired off target is still a true positive. Folding it into this filter would make
+     * "false negative" and "off target" mutually exclusive buckets, which they are not, and
+     * would quietly change what the gallery's counts mean.
+     */
+    expect([...OUTCOMES]).toEqual(["tp", "fp", "tn", "fn", "unlabeled"]);
+    for (const outcome of ["localized", "off-target", "off target"]) {
+      expect(matches(outcome, { ...EMPTY_RESULTS, outcome: "tp" as const })).toBe(false);
+    }
+  });
+
+  it("filters the same whether or not the peak layer is on", () => {
+    // The new toggle is a display preference, like the heatmap. Nothing it does may reach
+    // the set of samples the arrows step through.
+    for (const outcome of OUTCOMES) {
+      expect(matches(outcome, { ...EMPTY_RESULTS, peak: true })).toBe(
+        matches(outcome, EMPTY_RESULTS),
+      );
+    }
   });
 });
 

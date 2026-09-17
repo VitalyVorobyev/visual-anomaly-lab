@@ -18,7 +18,7 @@ from anomaly_lab.regions.registry import (
 
 
 def test_registry_is_lazy_and_every_extractor_has_a_schema() -> None:
-    assert registered_keys() == ("identity", "foreground_threshold", "mobile_sam")
+    assert registered_keys() == ("identity", "center_crop", "foreground_threshold", "mobile_sam")
     descriptions = describe_all()
 
     assert [item.key for item in descriptions] == list(registered_keys())
@@ -37,6 +37,34 @@ def test_identity_returns_the_source_frame() -> None:
 
     assert result.bounds.model_dump() == {"left": 0.0, "top": 0.0, "right": 47.0, "bottom": 31.0}
     assert result.metadata["coverage_fraction"] == 1.0
+
+
+def test_center_crop_is_a_fixed_window_independent_of_content() -> None:
+    config = {"width_fraction": 0.5, "height_fraction": 0.25}
+    blank = build("center_crop", config).extract(np.zeros((100, 200, 3), dtype=np.uint8))
+    noisy = build("center_crop", config).extract(
+        np.random.default_rng(1).integers(0, 255, (100, 200, 3), dtype=np.uint8)
+    )
+
+    assert blank.bounds == noisy.bounds
+    assert blank.bounds.model_dump() == {"left": 50.0, "top": 38.0, "right": 150.0, "bottom": 63.0}
+    assert blank.metadata["coverage_fraction"] == pytest.approx(0.125)
+
+
+def test_center_crop_clamps_an_off_centre_window_into_the_frame() -> None:
+    result = build(
+        "center_crop",
+        {"width_fraction": 0.5, "height_fraction": 0.5, "center_x_fraction": 0.0},
+    ).extract(np.zeros((100, 200, 3), dtype=np.uint8))
+
+    assert result.bounds.model_dump() == {"left": 0.0, "top": 25.0, "right": 100.0, "bottom": 75.0}
+
+
+def test_center_crop_rejects_out_of_range_fractions() -> None:
+    with pytest.raises(ValidationError):
+        build("center_crop", {"width_fraction": 0.0})
+    with pytest.raises(ValidationError):
+        build("center_crop", {"center_x_fraction": 1.5})
 
 
 def test_threshold_finds_the_largest_contrasting_component() -> None:

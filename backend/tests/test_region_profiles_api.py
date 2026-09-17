@@ -26,6 +26,7 @@ def test_extractor_catalogue_exposes_schema_without_loading_a_checkpoint(
     items = response.json()
     assert [item["key"] for item in items] == [
         "identity",
+        "center_crop",
         "foreground_threshold",
         "mobile_sam",
     ]

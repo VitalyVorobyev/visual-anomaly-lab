@@ -51,6 +51,14 @@ export interface CompareState {
   region: boolean;
   truth: boolean;
   /**
+   * Each run's map peak, with the window its localization verdict was decided in.
+   *
+   * The one layer here that is *not* on the same scale question as the others: a peak is a
+   * coordinate and a tolerance is a fraction of the frame, so unlike the cut these mean the
+   * same thing in every pane without being resolved per run.
+   */
+  peak: boolean;
+  /**
    * Where every run's segmentation cuts, as a fraction of **that run's** range.
    *
    * The one number on this screen that is allowed to be shared, and only because it is not
@@ -71,6 +79,7 @@ export const EMPTY_COMPARE: CompareState = {
   heatmap: true,
   region: false,
   truth: true,
+  peak: false,
   cut: DEFAULT_CUT,
 };
 
@@ -99,6 +108,7 @@ export function readCompareState(params: URLSearchParams): CompareState {
     heatmap: readFlag(params.get("map"), EMPTY_COMPARE.heatmap),
     region: readFlag(params.get("seg"), EMPTY_COMPARE.region),
     truth: readFlag(params.get("gt"), EMPTY_COMPARE.truth),
+    peak: readFlag(params.get("pk"), EMPTY_COMPARE.peak),
     cut: readFraction(params.get("cut")) ?? DEFAULT_CUT,
   };
 }
@@ -116,6 +126,7 @@ export function writeCompareState(state: CompareState): URLSearchParams {
   if (state.heatmap !== EMPTY_COMPARE.heatmap) params.set("map", state.heatmap ? "1" : "0");
   if (state.region !== EMPTY_COMPARE.region) params.set("seg", state.region ? "1" : "0");
   if (state.truth !== EMPTY_COMPARE.truth) params.set("gt", state.truth ? "1" : "0");
+  if (state.peak !== EMPTY_COMPARE.peak) params.set("pk", state.peak ? "1" : "0");
   if (state.cut !== DEFAULT_CUT) params.set("cut", String(state.cut));
   return params;
 }

@@ -11,6 +11,7 @@ of fact rather than a hope: a client that has the bytes never needs to ask for t
 
 from __future__ import annotations
 
+import sqlite3
 from enum import StrEnum
 from pathlib import Path
 
@@ -24,7 +25,9 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Image, JobKind
 from anomaly_lab.jobs.queue import JobQueue
@@ -39,6 +42,8 @@ from anomaly_lab.media.overlay import (
 from anomaly_lab.media.prewarm import PrewarmParams
 from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.preprocessing import load_mask
+from anomaly_lab.regions.preparation import load_prepared_build
+from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 router = APIRouter(prefix="/api/images", tags=["images"])
@@ -59,6 +64,28 @@ class MapRender(StrEnum):
     HEATMAP = "heatmap"
     REGION = "region"
     CONTOUR = "contour"
+
+
+class MaskFrame(StrEnum):
+    """Which coordinate frame a ground-truth outline is drawn in.
+
+    `source` is the frame the sample page's overlay stack lives in: a stored anomaly map is
+    projected through the pinned transform *before* it is written, so every layer there is
+    already in source pixels.
+
+    `prepared` is the frame a **diagnostic** is in. A per-branch error map means what it
+    means on the grid the branch computed it on, so nothing projects it and the diagnostics
+    panes are drawn at the array's own size. A source-frame outline laid over one of those
+    is misregistered by exactly the pinned crop and letterbox. Rather than teach the
+    diagnostics layer to project, the mask is fetched in the frame it has to meet.
+
+    The two coincide in one case only — an identity extractor into a prepared size that
+    keeps the source's aspect ratio, where the frames differ by a uniform scale and both
+    pictures are stretched into the same box — which is why this went unnoticed.
+    """
+
+    SOURCE = "source"
+    PREPARED = "prepared"
 
 
 class PrewarmRequest(BaseModel):
@@ -250,13 +277,49 @@ def read_anomaly_map_values(request: Request, image_id: int, experiment_id: int)
     response_class=Response,
     responses={200: {"content": {"image/png": {}}}},
 )
-def read_mask(request: Request, image_id: int) -> Response:
+def read_mask(
+    request: Request,
+    image_id: int,
+    frame: MaskFrame = Query(
+        default=MaskFrame.SOURCE,
+        description=(
+            "Which frame to draw the outline in. `prepared` projects the mask through one "
+            "experiment's pinned region transform, so it can be laid over a diagnostic."
+        ),
+    ),
+    experiment_id: int | None = Query(
+        default=None,
+        description=(
+            "Whose pinned region build defines the prepared frame. Required by "
+            "`frame=prepared`, and ignored otherwise."
+        ),
+    ),
+) -> Response:
     """The ground-truth outline as a transparent PNG, ready to lay over the source.
 
     An outline rather than a filled region: filling the mask hides the pixels the reader
     is trying to compare the model's map against.
+
+    The outline is computed **after** any projection, never before it. A boundary traced at
+    source resolution and then shrunk to a 448 px prepared grid is a two-pixel line
+    resampled down to less than one, which drops out in places; tracing the projected mask
+    gives an even line at the resolution it is actually drawn at.
     """
+    prepared_for: int | None = None
+    if frame is MaskFrame.PREPARED:
+        if experiment_id is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    "frame=prepared needs an experiment_id: the prepared frame is a "
+                    "property of one run's pinned region build, not of the image"
+                ),
+            )
+        prepared_for = experiment_id
+
     image, settings = _load_image(request, image_id)
+    transform: SpatialTransform | None = None
+    manifest = ""
     with connection(settings.db_path) as conn:
         try:
             truth = annotations_repo.resolve_ground_truth_masks(
@@ -264,6 +327,8 @@ def read_mask(request: Request, image_id: int) -> Response:
             ).get(image_id)
         except annotations_repo.GroundTruthDriftError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if prepared_for is not None:
+            transform, manifest = _pinned_transform(conn, settings, prepared_for, image_id)
     if truth is None:
         raise HTTPException(status_code=404, detail=f"image {image_id} has no ground-truth mask")
 
@@ -272,12 +337,62 @@ def read_mask(request: Request, image_id: int) -> Response:
     except UnreadableImageError as exc:
         raise HTTPException(status_code=410, detail=str(exc)) from exc
 
-    payload = render_mask_contour(mask, size=(image.width, image.height))
-    return Response(
-        content=payload,
-        media_type="image/png",
-        headers=_headers(f'"ground-truth-{truth.sha256}"'),
-    )
+    if transform is None:
+        payload = render_mask_contour(mask, size=(image.width, image.height))
+        tag = f'"ground-truth-{truth.sha256}-{frame.value}"'
+    else:
+        try:
+            projected = transform.prepare_mask(mask)
+        except ValueError as exc:
+            # The stored mask is not the size the transform was resolved against — the
+            # source image changed after preparation, which is a conflict rather than a bug.
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        payload = render_mask_contour(
+            projected, size=(transform.prepared_width, transform.prepared_height)
+        )
+        # The manifest digest is what decides the geometry, so it belongs in the validator.
+        # Two runs pinning the same build produce identical bytes and may share the entry;
+        # a rebuilt profile is a different digest and therefore a different response.
+        tag = f'"ground-truth-{truth.sha256}-{frame.value}-{manifest[:16]}"'
+
+    return Response(content=payload, media_type="image/png", headers=_headers(tag))
+
+
+def _pinned_transform(
+    conn: sqlite3.Connection,
+    settings: Settings,
+    experiment_id: int,
+    image_id: int,
+) -> tuple[SpatialTransform, str]:
+    """The source→prepared geometry one experiment pinned for one image.
+
+    Verification is `load_prepared_build`'s, not this route's: it is the one place that
+    checks the manifest digest an experiment pins against the file on disk, so a profile
+    rebuilt underneath a finished run is a readable conflict here rather than a silently
+    different picture.
+    """
+    experiment = experiments_repo.get_experiment(conn, experiment_id)
+    if experiment is None:
+        raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
+    profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
+    if profile is None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"experiment {experiment_id} references missing region profile "
+                f"{experiment.region_profile_id}"
+            ),
+        )
+    try:
+        build = load_prepared_build(
+            settings, profile, manifest_sha256=experiment.region_manifest_sha256
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    try:
+        return build.transform_for(image_id), experiment.region_manifest_sha256
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get(

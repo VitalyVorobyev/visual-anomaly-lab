@@ -7,6 +7,12 @@ slider feel like a database write instead of an instant filter.
 Unlabeled samples appear in the ranked lists and in no count. Ranking them is one of the
 most useful things the workbench does — it turns a trained model into a labelling aid —
 but letting one into a reported number would be contamination.
+
+One field on a row here is *not* threshold-dependent and is carried through untouched:
+`localized` says whether the map peaked on the annotated defect, which is a fact about the
+map and the ground truth. It travels with the row so a client can read a verdict and its
+quality in one response, and it is read from a stored column, so the slider still costs no
+file I/O per tick.
 """
 
 from __future__ import annotations
@@ -46,6 +52,17 @@ class SampleVerdict(BaseModel):
     score: float
     predicted_defect: bool
     outcome: str = Field(description="tp, fp, tn, fn — or 'unlabeled' for a ranked-only row.")
+    localized: bool | None = Field(
+        default=None,
+        description=(
+            "Whether this part's anomaly map peaked inside its annotated defect region. "
+            "**Threshold-free**: it is copied through unchanged as the slider moves, because "
+            "it compares the map against ground truth and never against a cut. Orthogonal to "
+            "`outcome` rather than a fifth value of it — a `tp` that is `false` here is still "
+            "a true positive, and is one that got the right answer from the wrong pixels. "
+            "`null` is not applicable: a normal part, or a defect with no mask."
+        ),
+    )
 
 
 class ThresholdReport(BaseModel):
@@ -92,6 +109,7 @@ def classify(samples: Sequence[ScoredSample], threshold: float) -> list[SampleVe
             score=sample.agg_score,
             predicted_defect=sample.agg_score >= threshold,
             outcome=outcome_of(sample.label, sample.agg_score >= threshold),
+            localized=sample.localized,
         )
         for sample in samples
     ]
