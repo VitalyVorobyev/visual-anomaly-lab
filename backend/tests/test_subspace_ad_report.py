@@ -18,6 +18,7 @@ from research.subspace_ad.report import (
     load_rows,
     paired_difference,
     summarize,
+    table,
 )
 
 
@@ -196,3 +197,24 @@ def test_an_arm_that_reported_no_pixel_metric_summarizes_as_none_rather_than_zer
     assert summary.means["au_pro"] is None
     assert summary.errors["au_pro"] is None
     assert summary.worst("au_pro") is None
+
+
+def test_a_leaderboard_ranks_by_the_metric_it_prints() -> None:
+    """`summarize` orders by image AUROC; any other column must re-sort.
+
+    The arm that detects best is not always the arm that localizes best, so a table
+    printing `au_pro` in `summarize`'s order shows a smaller number above a larger one and
+    reads as a ranking that is not one.
+    """
+    rows = []
+    for view, auroc, pro in (("a-mean", 0.95, 0.80), ("b-mean", 0.90, 0.94)):
+        row = _row(category="candle", seed=0, image_auroc=auroc, view=view)
+        row["au_pro"] = pro
+        rows.append(row)
+
+    summaries = summarize(rows, benchmark="visa")
+    assert summaries[0].key[ARM_AXES.index("view")] == "a-mean"
+
+    printed = list(table(summaries, metric="au_pro"))
+    assert "b-mean" in printed[1]
+    assert "a-mean" in printed[2]

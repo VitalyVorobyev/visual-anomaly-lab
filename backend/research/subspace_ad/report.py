@@ -287,8 +287,18 @@ def table(
     limit: int = 20,
     metric: str = "image_auroc",
 ) -> Iterator[str]:
-    """A fixed-width leaderboard, widest column first."""
-    shown = [entry for entry in summaries if entry.means.get(metric) is not None][:limit]
+    """A fixed-width leaderboard of the best arms *by the metric it prints*.
+
+    `summarize` returns its list ordered by image AUROC, which is the right default and
+    the wrong order for any other column: a localization table sorted by a detection score
+    puts a 0.933 above a 0.945 and reads as a ranking. The sort happens here instead.
+    """
+    ranked = sorted(
+        (entry for entry in summaries if entry.means.get(metric) is not None),
+        key=lambda entry: entry.means[metric] or -1.0,
+        reverse=True,
+    )
+    shown = ranked[:limit]
     if not shown:
         yield f"no arm reported {metric}"
         return
