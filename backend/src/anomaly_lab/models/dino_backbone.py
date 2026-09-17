@@ -6,11 +6,11 @@ a backbone would make every "ours" method partly a view of it, which is exactly 
 the methods that follow — a memory bank first, a Dinomaly port later — take it as an argument
 rather than owning one each.
 
-**Five encoders, and the shape of the menu is the point.** Two families, at two widths, with
-the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
+**Seven encoders, and the shape of the menu is the point.** Two families, at three widths,
+with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
 ADR-0029) included so a comparison against its recorded numbers measures the method rather
-than the encoder. Three of the five are ungated Apache-2.0 weights and are the default any new
-method should reach for; the two DINOv3 entries are behind Meta's DINOv3 licence and need an
+than the encoder. Four of the seven are ungated Apache-2.0 weights and are the default any new
+method should reach for; the three DINOv3 entries are behind Meta's DINOv3 licence and need an
 approved Hugging Face account, which `load_backbone` says in words rather than as a 401.
 
 **The patch size is a hard boundary, not a resize.** DINOv2 strides by 14 and DINOv3 by 16,
@@ -45,16 +45,24 @@ class DinoBackbone(StrEnum):
     Deliberately excluded: every `_qkvb` DINOv3 variant and the `eupe` pretrainings. timm
     carries them, but they resolve to weights under a FAIR noncommercial research licence
     (`fair-noncommercial-research-license` in timm's own pretrained config), and a menu that
-    mixes a licence a user may not use with four they may is a menu that has to be read
-    rather than chosen from. The larger DINOv3 sizes are left out for a duller reason: at
-    ViT-L and above the encoder forward, not the method, is what a run measures.
+    mixes a licence a user may not use with six they may is a menu that has to be read
+    rather than chosen from.
+
+    **ViT-L was once excluded on the grounds that at that size the encoder forward, not the
+    method, is what a run measures.** That was a guess, and the SubspaceAD campaign is what
+    turned it into a measurement: ViT-L costs three times ViT-B per image on this hardware,
+    so the claim about *cost* holds, and whether the accuracy follows is what
+    `docs/measurements.md` now records. ViT-g/14 stays out -- it is another three-fold step
+    on top of ViT-L, on a workbench whose compute target is a laptop.
     """
 
     DINOV2_VIT_S14 = "dinov2_vit_s14"
     DINOV2_VIT_S14_REG4 = "dinov2_vit_s14_reg4"
     DINOV2_VIT_B14 = "dinov2_vit_b14"
+    DINOV2_VIT_L14 = "dinov2_vit_l14"
     DINOV3_VIT_S16 = "dinov3_vit_s16"
     DINOV3_VIT_B16 = "dinov3_vit_b16"
+    DINOV3_VIT_L16 = "dinov3_vit_l16"
 
 
 @dataclass(frozen=True)
@@ -115,6 +123,15 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         gated=False,
         license_note="Apache-2.0; no Hugging Face account or token needed.",
     ),
+    DinoBackbone.DINOV2_VIT_L14: BackboneSpec(
+        timm_name="vit_large_patch14_dinov2.lvd142m",
+        patch_size=14,
+        embedding_dim=1024,
+        depth=24,
+        num_heads=16,
+        gated=False,
+        license_note="Apache-2.0; no Hugging Face account or token needed.",
+    ),
     DinoBackbone.DINOV3_VIT_S16: BackboneSpec(
         timm_name="vit_small_patch16_dinov3.lvd1689m",
         patch_size=16,
@@ -139,6 +156,18 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
             "valid HF_TOKEN must be present before the weights will download."
         ),
     ),
+    DinoBackbone.DINOV3_VIT_L16: BackboneSpec(
+        timm_name="vit_large_patch16_dinov3.lvd1689m",
+        patch_size=16,
+        embedding_dim=1024,
+        depth=24,
+        num_heads=16,
+        gated=True,
+        license_note=(
+            "DINOv3 licence: access must be requested from Meta on Hugging Face and a "
+            "valid HF_TOKEN must be present before the weights will download."
+        ),
+    ),
 }
 
 ACCESS_REQUEST_URLS: dict[DinoBackbone, str] = {
@@ -148,10 +177,13 @@ ACCESS_REQUEST_URLS: dict[DinoBackbone, str] = {
     DinoBackbone.DINOV3_VIT_B16: (
         "https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m"
     ),
+    DinoBackbone.DINOV3_VIT_L16: (
+        "https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m"
+    ),
 }
 """Where a user goes to ask for the gated weights. Kept beside the table rather than in it
-because only two of the five entries have one, and a field that is `None` four times out of
-five is a field that gets read as optional rather than as licence-specific."""
+because only three of the seven entries have one, and a field that is `None` four times out
+of seven is a field that gets read as optional rather than as licence-specific."""
 
 
 class FeatureLayers(StrEnum):
