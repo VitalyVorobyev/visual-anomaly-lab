@@ -549,10 +549,12 @@ fn read_f32(path: &Path, expected: usize) -> Result<Vec<f32>> {
         bytes.len(),
         expected_bytes
     );
-    Ok(bytes
-        .chunks_exact(size_of::<f32>())
-        .map(|chunk| f32::from_le_bytes(chunk.try_into().expect("four-byte chunk")))
-        .collect())
+    let (words, remainder) = bytes.as_chunks::<{ size_of::<f32>() }>();
+    debug_assert!(
+        remainder.is_empty(),
+        "the length check above rules this out"
+    );
+    Ok(words.iter().copied().map(f32::from_le_bytes).collect())
 }
 
 #[allow(
