@@ -329,13 +329,20 @@ def run_category(
     log: TextIO,
 ) -> list[ArmRow]:
     """Every arm's row for one category, from one pass over its images."""
+    started = time.monotonic()
     fitted = _fit_arms(encoder, split, spec, log)
+    fit_seconds = time.monotonic() - started
+
     collected, masks, labels = _score_arms(encoder, split, spec, fitted, log)
     truth = np.asarray(labels, dtype=np.int64)
+
+    started = time.monotonic()
     regions = [connected_regions(mask) for mask in masks]
+    region_seconds = time.monotonic() - started
     dimensions = encoder.dimensions()
     blocks = {view.name: list(view.band.blocks(encoder.depth)) for view in spec.views}
 
+    started = time.monotonic()
     rows: list[ArmRow] = []
     for (name, shots, seed, tau), arm in sorted(collected.items()):
         pixel: dict[str, float | int | None] = {}
@@ -369,6 +376,12 @@ def run_category(
                     augmentations=spec.augmentations if split.rotation_safe else 0,
                 )
             )
+    print(
+        f"      {split.key} phases: fit {fit_seconds:.0f}s, "
+        f"regions {region_seconds:.0f}s, metrics {time.monotonic() - started:.0f}s",
+        file=log,
+        flush=True,
+    )
     return rows
 
 

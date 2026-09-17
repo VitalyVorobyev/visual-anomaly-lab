@@ -59,7 +59,7 @@ comparing them under one evaluation protocol.
 - `docs/backlog.md` — the open task list, and nothing that has shipped.
 - `docs/measurements.md` — **the numbers that still decide something**: each predeclared gate, its
   protocol and its verdict. Cite it rather than restating a figure.
-- `docs/adr/` — **25 records, every one of them live** (`docs/adr/README.md` is the index). A record
+- `docs/adr/` — **26 records, every one of them live** (`docs/adr/README.md` is the index). A record
   captures a choice **that had a live alternative**; the bar is *would a competent engineer plausibly
   have chosen otherwise, and would changing it now cost more than a refactor?* A contract detail, a
   helper, or a read path for something already decided is **handbook material, not a new ADR**.

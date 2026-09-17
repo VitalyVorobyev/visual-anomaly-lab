@@ -24,7 +24,12 @@ from research.subspace_ad.benchmarks import (
     mvtec_splits,
 )
 from research.subspace_ad.features import LAYER_BANDS, Aggregation, FeatureView, LayerBand
-from research.subspace_ad.maps import gaussian_blur, gaussian_kernel, pixel_map, upsample_bilinear
+from research.subspace_ad.maps import (
+    gaussian_blur,
+    gaussian_kernel,
+    pixel_map,
+    upsample_bilinear,
+)
 from research.subspace_ad.subspace import (
     CovarianceAccumulator,
     fit_subspace,
@@ -283,6 +288,27 @@ def test_pixel_map_upsamples_before_it_smooths() -> None:
     frame = pixel_map(grid, (112, 112), sigma=4.0)
     above_half = int((frame > 0.5 * frame.max()).sum())
     assert 100 < above_half < 600
+
+
+def test_the_factored_map_is_the_composition_it_replaced() -> None:
+    """`pixel_map` collapses blur-after-upsample into two matmuls; this is the equality.
+
+    It is the load-bearing test of that rewrite. Both halves are separable linear
+    operators, so `K(U g U') K'` regroups exactly as `(KU) g (KU)'` -- but "exactly" is a
+    statement about real arithmetic, and the point of writing it down is that a wrong
+    operator (a transposed axis, a resample built with `=` where the clipped right edge
+    needs `+=`) still produces a plausible blurred map. Only the naive composition can
+    say it is the *same* map.
+
+    float32 matrix products reassociate, so the agreement is to a few ulps of the peak
+    rather than bit-exact.
+    """
+    rng = np.random.default_rng(11)
+    grid = rng.normal(size=(9, 13)).astype(np.float32)
+    naive = gaussian_blur(upsample_bilinear(grid, (126, 168)), 4.0)
+    factored = pixel_map(grid, (126, 168), sigma=4.0)
+    assert factored.shape == naive.shape
+    assert np.abs(factored - naive).max() < 1e-5 * np.abs(naive).max()
 
 
 def test_gkn_reserves_its_fit_pool_so_no_arm_is_scored_on_what_it_was_fitted_to(

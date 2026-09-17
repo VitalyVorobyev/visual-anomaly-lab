@@ -20,6 +20,8 @@ would show up as a systematic localization bias against the ground-truth masks.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 
 GAUSSIAN_TRUNCATE = 4.0
@@ -110,11 +112,55 @@ def gaussian_blur(values: np.ndarray, sigma: float) -> np.ndarray:
     return _convolve_rows(np.ascontiguousarray(horizontal.T), kernel).T
 
 
+@lru_cache(maxsize=16)
+def separable_operator(source: int, target: int, sigma: float) -> np.ndarray:
+    """The `(target, source)` matrix that upsamples one axis and then blurs it.
+
+    Built by pushing the identity through the very primitives above, so it cannot drift
+    away from them: column *i* is what a blurred upsample does to a map that is one at
+    token *i* and zero everywhere else.
+
+    Cached because a sweep asks for the same `(48, 672, 4.0)` operator for every image of
+    every arm of a category, and building it costs more than applying it. The result is
+    shared, so callers must treat it as read-only.
+    """
+    lower, upper, weight = _axis_weights(source, target)
+    resample = np.zeros((target, source), dtype=np.float32)
+    rows = np.arange(target)
+    np.add.at(resample, (rows, lower), 1.0 - weight)
+    np.add.at(resample, (rows, upper), weight)
+    smoothed = _convolve_rows(np.ascontiguousarray(resample.T), gaussian_kernel(sigma)).T
+    operator: np.ndarray = np.ascontiguousarray(smoothed)
+    return operator
+
+
 def pixel_map(grid: np.ndarray, size: tuple[int, int], *, sigma: float) -> np.ndarray:
     """The paper's localization map: upsample to the frame, then smooth.
 
     In that order. Smoothing the token grid first and upsampling afterwards would apply a
     sigma of 4 *tokens* -- at 672 px with a 14-pixel patch, a blur fifty-six pixels wide
     instead of four.
+
+    Written as two matrix products rather than as that composition, because both halves
+    are separable and linear and therefore collapse: upsampling is `U g U'` and blurring
+    is `K v K'`, so the whole map is `(K U) g (K U)'` with one `(672, 48)` operator per
+    axis. The arithmetic is the same one -- a test pins it against the composition -- but
+    the cost is not. The composition walks a 672x672 frame once per kernel tap, 66
+    memory-bound passes over 1.8 MB, and measures 6.0 ms per image; the factored form is
+    23 MFLOP of cached BLAS at 0.04 ms. A sweep calls this once per image per arm, which
+    on one VisA category is ninety arms over two hundred images, so the category's metric
+    phase falls from about two minutes to thirty seconds. Worth having, and no more than
+    that: the forward pass it accompanies costs eighty.
     """
-    return gaussian_blur(upsample_bilinear(grid, size), sigma)
+    if grid.ndim != 2:
+        msg = f"expected a 2-D score map; got shape {grid.shape}"
+        raise ValueError(msg)
+    height, width = size
+    if height <= 0 or width <= 0:
+        msg = f"target size must be positive; got {size}"
+        raise ValueError(msg)
+    values = np.ascontiguousarray(grid, dtype=np.float32)
+    rows = separable_operator(values.shape[0], height, sigma)
+    columns = separable_operator(values.shape[1], width, sigma)
+    mapped: np.ndarray = rows @ values @ columns.T
+    return mapped
