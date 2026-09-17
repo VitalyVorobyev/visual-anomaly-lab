@@ -88,6 +88,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cache-dir", type=Path, default=REPOSITORY / "data" / "model-cache")
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Refuse to fetch a missing encoder, failing in the first second instead.",
+    )
     return parser
 
 
@@ -109,6 +114,7 @@ def main(argv: list[str] | None = None) -> int:
         pixel_metrics=not args.no_pixel_metrics,
         batch_size=args.batch_size,
         categories=tuple(args.categories),
+        allow_downloads=not args.offline,
     )
     arms = len(spec.views) * len(spec.shots) * len(spec.seeds) * len(spec.taus) * len(spec.rhos)
     print(

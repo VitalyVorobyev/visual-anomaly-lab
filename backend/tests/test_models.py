@@ -1008,8 +1008,15 @@ def test_every_backbone_has_a_spec_and_the_spec_is_self_consistent() -> None:
     for backbone, spec in BACKBONES.items():
         assert spec.timm_name
         assert spec.patch_size in {14, 16}
-        assert spec.embedding_dim in {384, 768}
-        assert spec.depth == 12
+        # The three published ViT shapes, as (width, depth, heads). Held as whole triples
+        # rather than as three independent membership checks: a table entry that paired
+        # ViT-L's width with ViT-B's depth would satisfy every one of those separately and
+        # then build a decoder of the wrong shape.
+        assert (spec.embedding_dim, spec.depth, spec.num_heads) in {
+            (384, 12, 6),
+            (768, 12, 12),
+            (1024, 24, 16),
+        }
         # A width splits evenly into its heads, or `dinomaly_custom`'s decoder cannot be
         # built from the table at all.
         assert spec.embedding_dim % spec.num_heads == 0
@@ -1030,7 +1037,11 @@ def test_the_dinov2_entries_are_the_ungated_ones() -> None:
         DinoBackbone.DINOV2_VIT_S14,
         DinoBackbone.DINOV2_VIT_S14_REG4,
         DinoBackbone.DINOV2_VIT_B14,
+        DinoBackbone.DINOV2_VIT_L14,
     }
+    # The whole family, at every width the table carries: the promise is that a user who
+    # never asks for a Hugging Face account still has a choice of encoder scale.
+    assert ungated == {key for key in DinoBackbone if key.value.startswith("dinov2_")}
     for key in ungated:
         assert "Apache-2.0" in BACKBONES[key].license_note
 

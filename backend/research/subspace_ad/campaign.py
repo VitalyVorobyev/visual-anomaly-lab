@@ -82,6 +82,11 @@ class CampaignSpec:
     batch_size: int = 4
     categories: tuple[str, ...] = ()
     pixel_metrics: bool = True
+    allow_downloads: bool = True
+    """Whether a missing encoder may be fetched. A long sweep is exactly the thing to
+    start before a train journey, and an encoder that silently reaches the network holds
+    the whole run on a socket timeout instead of failing in the first second."""
+
     pixel_taus: tuple[float, ...] = ()
     """Which thresholds get pixel-level metrics. Empty means every one in `taus`. The axis
     exists because a pixel metric costs about as much as the forward pass that produced the
@@ -429,6 +434,7 @@ def run_campaign(
                 views=spec.views,
                 cache_dir=cache_dir,
                 final_norm=spec.final_norm,
+                allow_downloads=spec.allow_downloads,
             )
             print(
                 f"  {backbone.value} @ {size}px on {encoder.device} "
