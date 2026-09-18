@@ -15,6 +15,7 @@ bounded resource planning, and produce source-frame maps under the shared evalua
 | `dino_memory` (`global_knn`) | frozen self-supervised patch features matched by nearest neighbour | [AnomalyDINO](https://arxiv.org/abs/2405.14529) (Damm et al., WACV 2025) — that a frozen DINOv2 patch bank plus a nearest-neighbour rule is a complete method, with no training and no adapter |
 | `dino_memory` (`local_gaussian`) | one shrunk Gaussian per patch position, scored by Mahalanobis distance | [PaDiM](https://arxiv.org/abs/2011.08785) (Defard et al., 2020) — the per-position distribution and the shrunk covariance; the encoder and the dimension reduction differ |
 | `dino_memory` (`local_knn`) | one bank per patch position, searched over a window | ours: the registration-aware middle between the two rows above |
+| `subspace_ad` | PCA of frozen patch features; a patch scores its residual against the normal subspace | SubspaceAD (Lendering et al., CVPR 2026) — training-free few-shot anomaly detection via subspace modelling. The paper's own layer window is stated as "layers 22-28 of 40", which our sweep found to be two different instructions on any other depth (ADR-0038) |
 
 The shared wrapper baseline is [anomalib](https://github.com/open-edge-platform/anomalib), currently pinned
 to 2.6.0. It is an implementation source, not the specification of our model or evaluation contracts.

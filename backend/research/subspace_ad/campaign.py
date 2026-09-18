@@ -40,6 +40,14 @@ from anomaly_lab.eval.metrics import average_precision, roc_auc
 from anomaly_lab.eval.pixel import PixelAccumulator, connected_regions
 from anomaly_lab.models.dino_backbone import BACKBONES, DinoBackbone
 from anomaly_lab.models.preprocessing import load_mask
+from anomaly_lab.models.score_map import pixel_map
+from anomaly_lab.models.subspace import (
+    CovarianceAccumulator,
+    SubspaceFit,
+    fit_subspace,
+    residual_basis,
+    tail_value_at_risk,
+)
 from anomaly_lab.regions.transform import SpatialTransform
 from research.subspace_ad.benchmarks import CategorySplit, ScoredImage, load_splits
 from research.subspace_ad.features import (
@@ -49,14 +57,6 @@ from research.subspace_ad.features import (
     prepare,
     rotations,
     valid_patches,
-)
-from research.subspace_ad.maps import pixel_map
-from research.subspace_ad.subspace import (
-    CovarianceAccumulator,
-    SubspaceFit,
-    fit_subspace,
-    residual_basis,
-    tail_value_at_risk,
 )
 
 GAUSSIAN_SIGMA = 4.0

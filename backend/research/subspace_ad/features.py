@@ -12,8 +12,8 @@ them is indistinguishable from a difference in the method:
   * **Which blocks.** The paper reads layers 22-28 of DINOv2-G's 40. That is a statement
     about *relative depth* (0.55 to 0.70) or about *a count of seven ending at 70%* -- on a
     40-block encoder the two are the same window, and on a 12-block ViT-S they are two
-    layers and seven layers respectively. `LayerBand` expresses both, and which one
-    transfers is a question the campaign answers rather than assumes.
+    layers and seven layers respectively. `dino_backbone.LayerBand` expresses both, and
+    which one transfers is a question the campaign answers rather than assumes.
   * **Final norm or not.** timm's `forward_intermediates(norm=True)` applies the encoder's
     *last* LayerNorm to every intermediate block it returns. DINOv2's own
     `get_intermediate_layers` defaults to the same thing, so it is the convention most
@@ -25,17 +25,13 @@ them is indistinguishable from a difference in the method:
     mean (Eq. 2). Pooling normalized layers is a different feature, and one this campaign
     can measure rather than argue about.
 
-**Rotations invent pixels, and the campaign decides what to do about that.** The fit set is
-augmented by random rotations, which for a square frame means the corners are filled with
-something. Under `zeros` they are filled with black, and those black patches enter the
-covariance as a genuine direction of "normal" variation that no test image will ever show.
-Under `masked` they are excluded: a rotated copy of an all-ones frame says exactly which
-patches are entirely real, and only those are folded in.
+**Rotations invent pixels, and `subspace.RotationFill` decides what to do about that.** The
+augmentation itself is torch-free and therefore lives beside the covariance it feeds; what
+stays here is the half that needs an encoder.
 """
 
 from __future__ import annotations
 
-import math
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from enum import StrEnum
@@ -46,77 +42,38 @@ import numpy as np
 from PIL import Image
 
 from anomaly_lab.media import decode
-from anomaly_lab.models.dino_backbone import BACKBONES, DinoBackbone, load_backbone, patch_grid
+from anomaly_lab.models.dino_backbone import (
+    BACKBONES,
+    LAYER_BANDS,
+    DinoBackbone,
+    LayerBand,
+    load_backbone,
+    patch_grid,
+)
+from anomaly_lab.models.subspace import RotationFill, rotations, valid_patches
 from anomaly_lab.regions.transform import SpatialTransform
 
-ROTATION_MAX_DEGREES = 345.0
-"""The paper's upper bound: rotations are drawn from 0 to 345 degrees."""
-
-
-class RotationFill(StrEnum):
-    """What a rotated frame's corners contribute to the fitted subspace."""
-
-    ZEROS = "zeros"
-    MASKED = "masked"
+__all__ = [
+    "LAYER_BANDS",
+    "Aggregation",
+    "FeatureView",
+    "LayerBand",
+    "PatchEncoder",
+    "PreparedImage",
+    "RotationFill",
+    "prepare",
+    "rotations",
+    "valid_patches",
+]
+"""Re-exported so a campaign module imports its whole vocabulary from one place. The
+definitions themselves live in `anomaly_lab` because the `subspace_ad` plugin needs the same
+ones, and the campaign that chose its defaults must not be running different code (ADR-0038).
+"""
 
 
 class Aggregation(StrEnum):
     MEAN = "mean"
     CONCAT = "concat"
-
-
-@dataclass(frozen=True)
-class LayerBand:
-    """A window of transformer blocks, expressed so it survives a change of encoder.
-
-    Depths differ across the menu -- 12 blocks for ViT-S and ViT-B, 24 for ViT-L, 40 for
-    the DINOv2-G the paper used -- so an absolute block number means a different thing on
-    each. Both readings of "layers 22-28" are representable:
-
-      * `fixed_count=None` keeps the **relative band**: every block between the two depth
-        fractions, so the window covers the same part of the encoder and its size follows
-        the depth.
-      * `fixed_count=n` keeps **n blocks ending at `end_fraction`**, so the window is the
-        same size everywhere and sits at the same depth at its deep end.
-    """
-
-    name: str
-    end_fraction: float
-    start_fraction: float | None = None
-    fixed_count: int | None = None
-
-    def blocks(self, depth: int) -> tuple[int, ...]:
-        """One-based block numbers for an encoder of this depth, ascending."""
-        if depth < 1:
-            msg = f"an encoder needs at least one block; got depth {depth}"
-            raise ValueError(msg)
-        last = min(depth, max(1, round(self.end_fraction * depth)))
-        if self.fixed_count is not None:
-            first = max(1, last - self.fixed_count + 1)
-        elif self.start_fraction is not None:
-            first = min(last, max(1, math.ceil(self.start_fraction * depth)))
-        else:
-            first = last
-        return tuple(range(first, last + 1))
-
-    def indices(self, depth: int) -> tuple[int, ...]:
-        """The same window as zero-based indices, which is what timm takes."""
-        return tuple(block - 1 for block in self.blocks(depth))
-
-
-# The paper's own windows first, each under both readings, then the two this repository's
-# `FeatureLayers` already offers so a SubspaceAD arm can be read against `dino_memory`.
-LAYER_BANDS: dict[str, LayerBand] = {
-    "mid_band": LayerBand("mid_band", end_fraction=0.70, start_fraction=0.55),
-    "mid7": LayerBand("mid7", end_fraction=0.70, fixed_count=7),
-    "mid4": LayerBand("mid4", end_fraction=0.70, fixed_count=4),
-    "final_band": LayerBand("final_band", end_fraction=1.0, start_fraction=0.85),
-    "final7": LayerBand("final7", end_fraction=1.0, fixed_count=7),
-    "last": LayerBand("last", end_fraction=1.0, fixed_count=1),
-    "last_two": LayerBand("last_two", end_fraction=1.0, fixed_count=2),
-    "last_four": LayerBand("last_four", end_fraction=1.0, fixed_count=4),
-    "upper_half": LayerBand("upper_half", end_fraction=1.0, start_fraction=0.5),
-}
 
 
 @dataclass(frozen=True)
@@ -185,51 +142,6 @@ def prepare(path: Path, size: int) -> PreparedImage:
         array=np.asarray(prepared, dtype=np.float32) / 255.0,
         transform=transform,
     )
-
-
-def rotations(
-    prepared: np.ndarray,
-    *,
-    count: int,
-    rng: np.random.Generator,
-    fill: RotationFill,
-) -> list[tuple[np.ndarray, np.ndarray | None]]:
-    """The original frame plus `count` rotated copies, each with its validity mask.
-
-    The mask is `None` for the unrotated original and for every copy under `zeros`, where
-    the invented corners are deliberately kept. Under `masked` it is a pixel-level map of
-    where the frame is real, produced by rotating an all-ones image through exactly the
-    same call -- which is more reliable than deriving the polygon, because it inherits
-    whatever rounding Pillow's own resampling does.
-    """
-    frames: list[tuple[np.ndarray, np.ndarray | None]] = [(prepared, None)]
-    if count <= 0:
-        return frames
-    source = Image.fromarray((prepared * 255.0).round().astype(np.uint8), mode="RGB")
-    ones = Image.fromarray(np.full(prepared.shape[:2], 255, dtype=np.uint8), mode="L")
-    for angle in rng.uniform(0.0, ROTATION_MAX_DEGREES, size=count):
-        turned = source.rotate(float(angle), resample=Image.Resampling.BILINEAR, fillcolor=0)
-        array = np.asarray(turned, dtype=np.float32) / 255.0
-        valid = None
-        if fill is RotationFill.MASKED:
-            spun = ones.rotate(float(angle), resample=Image.Resampling.NEAREST, fillcolor=0)
-            valid = np.asarray(spun) > 0
-        frames.append((array, valid))
-    return frames
-
-
-def valid_patches(valid: np.ndarray | None, grid: tuple[int, int], patch: int) -> np.ndarray | None:
-    """Which tokens of a `grid` layout are backed entirely by real pixels.
-
-    All-or-nothing per patch. A token whose receptive field is nine-tenths real is still a
-    token the encoder computed partly from invented black, and admitting it would put a
-    dimmed edge into the subspace of normal appearance.
-    """
-    if valid is None:
-        return None
-    rows, columns = grid
-    blocks = valid[: rows * patch, : columns * patch].reshape(rows, patch, columns, patch)
-    return blocks.all(axis=(1, 3)).reshape(-1)
 
 
 class PatchEncoder:

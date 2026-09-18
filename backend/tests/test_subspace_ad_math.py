@@ -24,13 +24,14 @@ from research.subspace_ad.benchmarks import (
     mvtec_splits,
 )
 from research.subspace_ad.features import LAYER_BANDS, Aggregation, FeatureView, LayerBand
-from research.subspace_ad.maps import (
+
+from anomaly_lab.models.score_map import (
     gaussian_blur,
     gaussian_kernel,
     pixel_map,
     upsample_bilinear,
 )
-from research.subspace_ad.subspace import (
+from anomaly_lab.models.subspace import (
     CovarianceAccumulator,
     fit_subspace,
     residual_basis,
@@ -97,6 +98,32 @@ def test_residual_at_rank_equals_the_papers_projection_formula() -> None:
         projected = centred @ components.T @ components
         longhand = np.einsum("nd,nd->n", centred - projected, centred - projected)
         np.testing.assert_allclose(basis.at_rank(rank), longhand, rtol=1e-4, atol=1e-4)
+
+
+def test_a_patch_outside_the_normal_subspace_scores_far_higher() -> None:
+    """The method's whole detection claim, with the encoder taken out of it.
+
+    Normal patches here lie near a five-dimensional subspace plus small isotropic noise, and
+    an anomaly is a patch pushed along a direction that subspace does not contain. The
+    residual has to see it. Checked on arrays rather than on images because that is where
+    the claim actually lives — `test_dl_subspace_ad_plugin.py` explains why the plugin's own
+    fixture cannot carry it.
+    """
+    data = _sample()
+    accumulator, _ = _fitted(data)
+    fit = fit_subspace(accumulator)
+    rank = fit.rank_for(0.99)
+
+    # The least significant eigenvector: by construction outside everything tau retained.
+    intruders = data[:20] + 5.0 * fit.components[-1]
+    normal = residual_basis(fit, data[:20], rank=rank).at_rank(rank)
+    odd = residual_basis(fit, intruders, rank=rank).at_rank(rank)
+
+    assert odd.min() > normal.max() * 100
+    # And the image-level rule inherits it: one anomalous patch in a normal map is enough,
+    # which is the property rho exists to tune.
+    mixed = np.concatenate([normal, odd[:1]])
+    assert tail_value_at_risk(mixed, [0.05])[0.05] > tail_value_at_risk(normal, [0.05])[0.05]
 
 
 def test_every_retained_component_is_orthonormal() -> None:

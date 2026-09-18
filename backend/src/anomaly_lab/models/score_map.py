@@ -6,9 +6,13 @@ Gaussian blur at sigma = 4.
 
 They are reimplemented here rather than imported for the reason `eval/metrics.py` gives
 for reimplementing ROC-AUC. scipy is not a dependency of this project at all, and torch's
-`interpolate` is behind the optional `dl` extra; taking either would mean the campaign's
-numbers depend on which extras the machine happened to have. Forty lines of array code
-keep the map identical everywhere, and keep it testable in the torch-free job.
+`interpolate` is behind the optional `dl` extra; taking either would mean a map depends on
+which extras the machine happened to have. Forty lines of array code keep it identical
+everywhere, and keep it testable in the torch-free job.
+
+Like `subspace`, this is shared between the `subspace_ad` plugin and the sweep that set
+its defaults, so the localization the campaign measured is the localization the workbench
+draws.
 
 **`align_corners=False` is the convention, and the choice is visible.** It is torch's
 default and OpenCV's behaviour, and it is the one that treats a pixel as a square with an

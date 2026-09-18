@@ -1,11 +1,16 @@
 """The whole of SubspaceAD that is not a forward pass, in numpy.
 
-Keeping this torch-free is a decision about what the reproduction gate is worth. The
-method is a covariance, an eigendecomposition and a subtraction; if those live inside the
-same module as the encoder, they can only be exercised on a machine with the optional `dl`
-extra installed, which is neither CI's torch-free job nor most checkouts. Here they are
-ordinary array code with ordinary tests, and the only thing the encoder contributes is the
-array it hands over.
+Shared deliberately. The `subspace_ad` plugin scores with this module, and so does the
+sweep in `backend/research/` that chose the plugin's defaults (ADR-0038), so a number the
+campaign measured and a number a run inside the workbench measures differ by the
+experiment rather than by a second implementation of the same three equations.
+
+Keeping it torch-free is the other decision, and it is about what the reproduction gate is
+worth. The method is a covariance, an eigendecomposition and a subtraction; if those live
+inside the same module as the encoder, they can only be exercised on a machine with the
+optional `dl` extra installed, which is neither CI's torch-free job nor most checkouts.
+Here they are ordinary array code with ordinary tests, and the only thing the encoder
+contributes is the array it hands over.
 
 **Two identities do the work, and both are exact rather than approximations.**
 
@@ -26,14 +31,88 @@ the same reason.
 Only the encoder forward and the input resolution genuinely cost anything. That is the
 finding the campaign's budget is built on, and it lives here because it is a property of
 this arithmetic, not of the schedule.
+
+The rotation augmentation is here for the same reason the covariance is: it is PIL and
+numpy, it decides what the subspace contains, and a test can check it on a checkerboard.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from enum import StrEnum
 
 import numpy as np
+from PIL import Image
+
+ROTATION_MAX_DEGREES = 345.0
+"""The paper's upper bound: the augmenting rotations are drawn from 0 to 345 degrees."""
+
+
+class RotationFill(StrEnum):
+    """What a rotated frame's corners contribute to the fitted subspace.
+
+    Rotating a square frame invents pixels, and the method has to decide what they mean.
+    Under `zeros` they are black and they enter the covariance as a genuine direction of
+    "normal" variation that no test image will ever show. Under `masked` they are excluded:
+    a rotated copy of an all-ones frame says exactly which patches are entirely real, and
+    only those are folded in.
+
+    The campaign held this at `zeros` throughout — it is what a literal reading of the paper
+    does — so `masked` is the option that has not been measured, not the other way round.
+    """
+
+    ZEROS = "zeros"
+    MASKED = "masked"
+
+
+def rotations(
+    prepared: np.ndarray,
+    *,
+    count: int,
+    rng: np.random.Generator,
+    fill: RotationFill,
+) -> list[tuple[np.ndarray, np.ndarray | None]]:
+    """The original frame plus `count` rotated copies, each with its validity mask.
+
+    The fit set is augmented rather than enlarged: a few-shot method sees one to four normal
+    images, and the subspace it can estimate from a few hundred patches is a poor one. Thirty
+    rotations of each frame turn that into a few thousand, at the price this function's
+    `fill` argument names.
+
+    The mask is `None` for the unrotated original and for every copy under `zeros`. Under
+    `masked` it is a pixel-level map of where the frame is real, produced by rotating an
+    all-ones image through exactly the same call — which is more reliable than deriving the
+    polygon, because it inherits whatever rounding Pillow's own resampling does.
+    """
+    frames: list[tuple[np.ndarray, np.ndarray | None]] = [(prepared, None)]
+    if count <= 0:
+        return frames
+    source = Image.fromarray((prepared * 255.0).round().astype(np.uint8), mode="RGB")
+    ones = Image.fromarray(np.full(prepared.shape[:2], 255, dtype=np.uint8), mode="L")
+    for angle in rng.uniform(0.0, ROTATION_MAX_DEGREES, size=count):
+        turned = source.rotate(float(angle), resample=Image.Resampling.BILINEAR, fillcolor=0)
+        array = np.asarray(turned, dtype=np.float32) / 255.0
+        valid = None
+        if fill is RotationFill.MASKED:
+            spun = ones.rotate(float(angle), resample=Image.Resampling.NEAREST, fillcolor=0)
+            valid = np.asarray(spun) > 0
+        frames.append((array, valid))
+    return frames
+
+
+def valid_patches(valid: np.ndarray | None, grid: tuple[int, int], patch: int) -> np.ndarray | None:
+    """Which tokens of a `grid` layout are backed entirely by real pixels.
+
+    All-or-nothing per patch. A token whose receptive field is nine-tenths real is still a
+    token the encoder computed partly from invented black, and admitting it would put a
+    dimmed edge into the subspace of normal appearance.
+    """
+    if valid is None:
+        return None
+    rows, columns = grid
+    blocks = valid[: rows * patch, : columns * patch].reshape(rows, patch, columns, patch)
+    return blocks.all(axis=(1, 3)).reshape(-1)
 
 
 @dataclass

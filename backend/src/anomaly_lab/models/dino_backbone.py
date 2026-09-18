@@ -25,6 +25,7 @@ plan must not cost three seconds of torch.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -217,6 +218,111 @@ _LAYER_INDICES: dict[FeatureLayers, tuple[int, ...]] = {
     FeatureLayers.MID_LATE: (-7, -4),
     FeatureLayers.LAST_FOUR: (-4, -3, -2, -1),
 }
+
+
+@dataclass(frozen=True)
+class LayerBand:
+    """A window of transformer blocks, expressed so it survives a change of encoder.
+
+    `FeatureLayers` above counts backwards from the end, which is the right thing for a
+    method that wants "the last two blocks" and means it. This says where a window sits as a
+    **fraction of the encoder's depth**, which is the right thing for a method that wants
+    "the middle of the stack" — and the two are not the same instruction. Depth varies across
+    the menu: 12 blocks for ViT-S and ViT-B, 24 for ViT-L, 40 for the DINOv2-G the SubspaceAD
+    paper used. "Layers 22-28 of 40" is simultaneously a relative band (0.55 to 0.70 of the
+    depth) and a fixed count of seven ending at 70 %; on a forty-block encoder they are the
+    same seven blocks and nothing distinguishes them, and on a twelve-block ViT-S they are
+    two blocks and seven.
+
+    Both readings are representable, because the SubspaceAD campaign carried them as separate
+    arms in order to answer which one transfers (ADR-0038):
+
+      * `fixed_count=None` keeps the **relative band** — every block between the two depth
+        fractions, so the window covers the same part of every encoder and its size follows
+        the depth.
+      * `fixed_count=n` keeps **n blocks ending at `end_fraction`**, so the window is the
+        same size everywhere and only its deep end sits at a fixed depth.
+
+    The campaign's answer, measured at 12 and 24 blocks over twelve VisA categories, is the
+    relative band: the fixed count loses by 6.5 points on ViT-S, 1.5 on ViT-B and nothing at
+    all on ViT-L, so a method that hard-codes a layer count is silently choosing a different
+    window on every backbone it is offered — and choosing worst on the small fast encoder a
+    user is most likely to start with.
+    """
+
+    name: str
+    end_fraction: float
+    start_fraction: float | None = None
+    fixed_count: int | None = None
+
+    def blocks(self, depth: int) -> tuple[int, ...]:
+        """One-based block numbers for an encoder of this depth, ascending."""
+        if depth < 1:
+            msg = f"an encoder needs at least one block; got depth {depth}"
+            raise ValueError(msg)
+        last = min(depth, max(1, round(self.end_fraction * depth)))
+        if self.fixed_count is not None:
+            first = max(1, last - self.fixed_count + 1)
+        elif self.start_fraction is not None:
+            first = min(last, max(1, math.ceil(self.start_fraction * depth)))
+        else:
+            first = last
+        return tuple(range(first, last + 1))
+
+    def indices(self, depth: int) -> tuple[int, ...]:
+        """The same window as zero-based indices, which is what timm takes."""
+        return tuple(block - 1 for block in self.blocks(depth))
+
+
+class LayerWindow(StrEnum):
+    """The named windows, as a picker a config field can offer.
+
+    The paper's own two readings first, then the narrower variants the campaign used to
+    bracket them, then the windows this repository's `FeatureLayers` already names — so a
+    SubspaceAD arm and a `dino_memory` arm can be asked for the same blocks and the answer
+    is about the method.
+
+    `UPPER_HALF` is the campaign's winner at both depths it was measured on, and it wins by
+    more as the encoder deepens; `LAST` is the worst window on a 24-block encoder, losing
+    every one of twelve categories, which is worth knowing because pooling the final block
+    alone is what most frozen-feature methods do by default.
+    """
+
+    MID_BAND = "mid_band"
+    MID7 = "mid7"
+    MID4 = "mid4"
+    FINAL_BAND = "final_band"
+    FINAL7 = "final7"
+    LAST = "last"
+    LAST_TWO = "last_two"
+    LAST_FOUR = "last_four"
+    UPPER_HALF = "upper_half"
+
+    @property
+    def band(self) -> LayerBand:
+        return LAYER_BANDS[self.value]
+
+    def blocks(self, depth: int) -> tuple[int, ...]:
+        return self.band.blocks(depth)
+
+    def indices(self, depth: int) -> tuple[int, ...]:
+        return self.band.indices(depth)
+
+
+LAYER_BANDS: dict[str, LayerBand] = {
+    "mid_band": LayerBand("mid_band", end_fraction=0.70, start_fraction=0.55),
+    "mid7": LayerBand("mid7", end_fraction=0.70, fixed_count=7),
+    "mid4": LayerBand("mid4", end_fraction=0.70, fixed_count=4),
+    "final_band": LayerBand("final_band", end_fraction=1.0, start_fraction=0.85),
+    "final7": LayerBand("final7", end_fraction=1.0, fixed_count=7),
+    "last": LayerBand("last", end_fraction=1.0, fixed_count=1),
+    "last_two": LayerBand("last_two", end_fraction=1.0, fixed_count=2),
+    "last_four": LayerBand("last_four", end_fraction=1.0, fixed_count=4),
+    "upper_half": LayerBand("upper_half", end_fraction=1.0, start_fraction=0.5),
+}
+"""Keyed by the plain name rather than by `LayerWindow`, because a sweep resolves a window
+from a string on a command line and a plugin resolves one from an enum; one dict serves both
+only if its keys are what the looser caller already has."""
 
 
 def validate_prepared_size(backbone: DinoBackbone, width: int, height: int) -> None:
