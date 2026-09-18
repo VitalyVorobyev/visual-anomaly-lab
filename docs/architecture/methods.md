@@ -346,6 +346,11 @@ arithmetic lives in `models/subspace.py` and `models/score_map.py` and is **shar
 chose the defaults** (ADR-0038), so a number the campaign measured and a number a run here measures
 differ by the experiment rather than by a second implementation.
 
+**The capacity verdict is the one that did not transfer**, and it is worth knowing before spending on
+a backbone. ViT-L beats ViT-B by +0.0249 ★ on VisA, winning eleven categories of twelve — and by
+-0.0002 on MVTec-AD, which is a tie, for roughly twice the compute. It stays the default because it
+is never worse; it is not a default that pays for itself on every dataset.
+
 **One subspace per channel.** Two views of one part share no normal appearance — a bright-field and a
 dark-field frame of the same object look nothing alike — so pooling them into one covariance would fit
 a subspace spanning both, against which neither is far from normal. `capabilities().channel_aware` is

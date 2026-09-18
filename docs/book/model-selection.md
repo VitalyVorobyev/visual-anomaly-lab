@@ -83,8 +83,12 @@ Set `rotations` to 0 when the part's orientation carries meaning — a component
 a keyed connector — because a rotated copy of it is not a normal example and admitting one puts a
 false direction into the subspace.
 
-The default backbone is ViT-L, which is where the measurements point and also the most expensive
-entry in the table; ViT-B costs about half and loses about 2.5 points of image AUROC on VisA. Its
+The default backbone is ViT-L, and it is also the most expensive entry in the table. Its margin
+depends on the data more than anything else in the sweep did: against ViT-B it wins 2.5 points of
+image AUROC on VisA, decisively and in eleven categories of twelve, and it wins **nothing** on
+MVTec-AD, where the two are a tie within noise. ViT-B costs about half. Start there on data that
+looks more like MVTec than VisA, and start there in any case while an experiment is still taking
+shape. Its
 defaults are the verdict of a parameter sweep rather than a paper's suggestion (`docs/measurements.md`,
 ADR-0038), but no public **promotion gate** has been run against it, which is why it is marked
 experimental — read its scores only against its own run (ADR-0028).

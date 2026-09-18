@@ -111,9 +111,11 @@ class SubspaceAdConfig(BaseModel):
         default=DinoBackbone.DINOV2_VIT_L14,
         description=(
             "Frozen encoder the patch features come from. ViT-L is the default because it "
-            "won the sweep by a decisive margin and it is ungated Apache-2.0 DINOv2; it "
-            "costs roughly twice ViT-B and thirteen times ViT-S per image, so the smaller "
-            "entries are the ones to reach for while an experiment is still being shaped. "
+            "is never worse and it is ungated Apache-2.0 DINOv2 — but its margin is "
+            "benchmark-dependent: decisive on VisA (+0.025 image AUROC over ViT-B, winning "
+            "11 categories of 12) and nothing at all on MVTec (-0.0002, a tie), for roughly "
+            "twice the compute. Try ViT-B first on data that resembles MVTec, and while an "
+            "experiment is still being shaped. "
             "The DINOv3 entries are licence-gated: access must be requested from Meta on "
             "Hugging Face and an approved HF_TOKEN must already be in the environment."
         ),
