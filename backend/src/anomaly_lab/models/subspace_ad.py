@@ -76,7 +76,7 @@ from anomaly_lab.models.preprocessing import (
     load_array,
     to_chw,
 )
-from anomaly_lab.models.score_map import pixel_map
+from anomaly_lab.models.score_map import pixel_map, upsample_bilinear
 from anomaly_lab.models.subspace import (
     CovarianceAccumulator,
     RotationFill,
@@ -190,8 +190,9 @@ class SubspaceAdConfig(BaseModel):
         le=32.0,
         description=(
             "Gaussian blur applied to the anomaly map after it is upsampled to the prepared "
-            "frame, in pixels. The paper's value. It cannot move the image score, which is "
-            "taken on the patch grid before any of this."
+            "frame, in pixels. The paper's value. Zero leaves the upsampled map unsmoothed, "
+            "which is the honest way to see what the encoder actually resolved. It cannot "
+            "move the image score, which is taken on the patch grid before any of this."
         ),
     )
     pretrained_backbone: bool = Field(
@@ -527,7 +528,16 @@ class SubspaceAdModel(AnomalyModel):
                     self.config.tail_fraction
                 ]
                 tokens = scores.reshape(grid).astype(np.float32)
-                values = pixel_map(tokens, size, sigma=self.config.smoothing_sigma)
+                # `pixel_map` refuses a non-positive sigma, and rightly: a Gaussian of width
+                # zero is not a blur, it is the absence of one, and a blur helper that
+                # silently accepted it would hide a misconfigured sweep. The absence is
+                # meaningful here, though — it is how a reader sees the raw upsample — so the
+                # plugin spends the branch rather than asking the helper to be vague.
+                values = (
+                    pixel_map(tokens, size, sigma=self.config.smoothing_sigma)
+                    if self.config.smoothing_sigma > 0.0
+                    else upsample_bilinear(tokens, size)
+                )
                 map_path = ctx.write_map(record.image_id, values)
                 ctx.emit_diagnostic(
                     "patch_residual",

@@ -114,4 +114,25 @@ module that imports something only present in the `dl` extra fails in the torch-
 other, which is the intended coupling; but nothing verifies that `research/` still runs against a
 released wheel, because it never does.
 
+## Changelog
+
+### 2026-09-18 — The method's own arithmetic moved into the package, and research imports it back
+
+"What research reuses, it reuses rather than reimplements" was written about the application's
+*helpers* — `SpatialTransform`, `eval/metrics.py`. Shipping the plugin turned it into a sharper
+question: the covariance, the residual identity, the tail mean, the rotation augmentation and the
+pixel map are the method, and they were sitting in `research/subspace_ad/`. Duplicating them in a
+plugin would have meant the campaign's verdict was measured on code the product does not run, which
+is the failure this record exists to prevent, one level deeper than it was originally aimed.
+
+So `subspace.py` and `maps.py` moved to `anomaly_lab/models/subspace.py` and
+`anomaly_lab/models/score_map.py`, `LayerBand` moved to `models/dino_backbone.py` beside the encoder
+table it is about, and `research/subspace_ad/features.py` imports all of them back. The one-way
+dependency is unchanged and is what makes the move legal in this direction and illegal in the other.
+
+The check that this was worth doing is in [`measurements.md`](../measurements.md): on VisA `candle`
+the plugin and the campaign produce identical patch counts, ranks inside each other's range, and
+image AUROC within 0.0014 — with genuinely different fit-image selection, rotation streams and pixel
+loading paths. Only the arithmetic is shared, and it is the part that agrees exactly.
+
 [paper]: ../papers.md

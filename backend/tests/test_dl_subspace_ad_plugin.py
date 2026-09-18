@@ -217,6 +217,30 @@ def test_the_image_score_cannot_be_moved_by_the_smoothing(fitted: Fitted) -> Non
     assert [entry.score for entry in again] == [entry.score for entry in fitted.predictions]
 
 
+def test_no_smoothing_is_a_setting_rather_than_a_crash(fitted: Fitted) -> None:
+    """`smoothing_sigma` is bounded at zero inclusive, and `pixel_map` refuses a zero sigma,
+    so the plugin has to mean the absence of a blur rather than pass it down."""
+    unsmoothed = SubspaceAdModel(_config(smoothing_sigma=0.0))
+    unsmoothed._fits = fitted.model._fits
+    unsmoothed._grid = fitted.model._grid
+    unsmoothed._encoder = fitted.model._encoder
+    unsmoothed._stats = fitted.model._stats
+
+    _, infer_ctx = _contexts(fitted.root / "sharp")
+    raw = unsmoothed.predict(fitted.probe, infer_ctx)
+    assert [entry.score for entry in raw] == [entry.score for entry in fitted.predictions]
+
+    entry = raw[-1]
+    assert entry.anomaly_map is not None
+    sharp = np.load(entry.anomaly_map)
+    blurred_entry = fitted.predictions[-1]
+    assert blurred_entry.anomaly_map is not None
+    blurred = np.load(blurred_entry.anomaly_map)
+    assert sharp.shape == blurred.shape == (SIZE, SIZE)
+    # An unsmoothed map keeps the extremes a blur pulls in.
+    assert sharp.max() > blurred.max()
+
+
 def test_keeping_every_direction_destroys_the_signal(fitted: Fitted) -> None:
     """The paper measures this collapse rather than guarding against it, and so does this.
 
