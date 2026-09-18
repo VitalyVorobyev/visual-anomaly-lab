@@ -47,6 +47,7 @@ citation can resolve to the wrong record.
 | [0035](0035-an-experiment-selects-its-channels-by-name.md) | An experiment selects its channels, by name | Evaluation |
 | [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
 | [0037](0037-a-frozen-dino-memory-is-ours-and-its-scoring-rule-is-one-axis.md) | A frozen DINO memory is ours, and its scoring rule is one axis | Methods |
+| [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships | Process |
 
 ## Conventions
 
