@@ -548,9 +548,14 @@ class SubspaceAdModel(AnomalyModel):
                     description=(
                         f"Squared distance from each patch to the normal subspace at "
                         f"rank {ranks[channel]}, at the encoder's own resolution. This is "
-                        "what the method computed; the anomaly map is this upsampled and "
-                        "smoothed, and the image score is the mean of its top "
-                        f"{self.config.tail_fraction:g}."
+                        "what the method computed; the anomaly map is this upsampled"
+                        + (
+                            f" and smoothed at sigma {self.config.smoothing_sigma:g}"
+                            if self.config.smoothing_sigma > 0.0
+                            else " and left unsmoothed"
+                        )
+                        + ", and the image score is the mean of its top "
+                        + f"{self.config.tail_fraction:g}."
                     ),
                 )
                 predictions.append(
