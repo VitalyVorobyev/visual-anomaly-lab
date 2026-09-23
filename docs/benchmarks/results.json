@@ -24,6 +24,10 @@
   "dino_memory": {
    "family": "frozen-backbone patch memory",
    "maturity": "supported"
+  },
+  "subspace_ad": {
+   "family": "frozen-backbone subspace",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [

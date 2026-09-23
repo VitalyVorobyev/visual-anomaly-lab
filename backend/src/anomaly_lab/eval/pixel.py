@@ -21,6 +21,7 @@ only approximation is the score quantization, at 65536 bins across the observed 
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -113,8 +114,24 @@ class PixelAccumulator:
         self.negative = np.zeros(self.bins, dtype=np.int64)
         self.region_fraction = np.zeros(self.bins, dtype=np.float64)
 
-    def add(self, anomaly_map: np.ndarray, mask: np.ndarray) -> None:
-        """Fold one image in. `anomaly_map` and `mask` must already be the same shape."""
+    def add(
+        self,
+        anomaly_map: np.ndarray,
+        mask: np.ndarray,
+        *,
+        regions: Sequence[np.ndarray] | None = None,
+    ) -> None:
+        """Fold one image in. `anomaly_map` and `mask` must already be the same shape.
+
+        `regions` lets a caller hand over the connected components it already has for this
+        mask. They are a property of the ground truth alone, so a caller scoring one mask
+        against several maps -- a sweep comparing configurations on a fixed test set --
+        recomputes the union-find for every one of them otherwise, and on a defect of ten
+        thousand pixels that costs more than the rest of the accumulation put together.
+        Passed or computed, the arithmetic that follows is the same: this is the one
+        implementation of AU-PRO in the tree, and a caller with a performance problem must
+        not become a second one.
+        """
         if anomaly_map.shape != mask.shape:
             msg = f"map {anomaly_map.shape} and mask {mask.shape} must have the same shape"
             raise ValueError(msg)
@@ -136,7 +153,7 @@ class PixelAccumulator:
         self.positive += np.bincount(flat_indices[flat_mask], minlength=self.bins)
         self.negative += np.bincount(flat_indices[~flat_mask], minlength=self.bins)
 
-        for region in connected_regions(mask):
+        for region in connected_regions(mask) if regions is None else regions:
             counts = np.bincount(flat_indices[region], minlength=self.bins)
             self.region_fraction += counts / region.size
             self.region_count += 1
