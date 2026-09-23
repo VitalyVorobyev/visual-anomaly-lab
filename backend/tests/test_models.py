@@ -35,6 +35,7 @@ from anomaly_lab.models.dino_backbone import (
     BACKBONES,
     DinoBackbone,
     FeatureLayers,
+    LayerWindow,
     patch_grid,
 )
 from anomaly_lab.models.dino_backbone import validate_prepared_size as validate_dino_size
@@ -77,6 +78,7 @@ from anomaly_lab.models.preprocessing import (
     to_chw,
 )
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
+from anomaly_lab.models.subspace_ad import SubspaceAdConfig
 from tests.conftest import write_image
 
 # ----------------------------------------------------------------- preprocessing
@@ -576,6 +578,7 @@ def test_every_registered_method_describes_itself_without_importing_torch() -> N
         "dinomaly_custom",
         "glass_anomalib",
         "dino_memory",
+        "subspace_ad",
     } <= keys
 
     for entry in described:
@@ -1008,8 +1011,15 @@ def test_every_backbone_has_a_spec_and_the_spec_is_self_consistent() -> None:
     for backbone, spec in BACKBONES.items():
         assert spec.timm_name
         assert spec.patch_size in {14, 16}
-        assert spec.embedding_dim in {384, 768}
-        assert spec.depth == 12
+        # The three published ViT shapes, as (width, depth, heads). Held as whole triples
+        # rather than as three independent membership checks: a table entry that paired
+        # ViT-L's width with ViT-B's depth would satisfy every one of those separately and
+        # then build a decoder of the wrong shape.
+        assert (spec.embedding_dim, spec.depth, spec.num_heads) in {
+            (384, 12, 6),
+            (768, 12, 12),
+            (1024, 24, 16),
+        }
         # A width splits evenly into its heads, or `dinomaly_custom`'s decoder cannot be
         # built from the table at all.
         assert spec.embedding_dim % spec.num_heads == 0
@@ -1030,7 +1040,11 @@ def test_the_dinov2_entries_are_the_ungated_ones() -> None:
         DinoBackbone.DINOV2_VIT_S14,
         DinoBackbone.DINOV2_VIT_S14_REG4,
         DinoBackbone.DINOV2_VIT_B14,
+        DinoBackbone.DINOV2_VIT_L14,
     }
+    # The whole family, at every width the table carries: the promise is that a user who
+    # never asks for a Hugging Face account still has a choice of encoder scale.
+    assert ungated == {key for key in DinoBackbone if key.value.startswith("dinov2_")}
     for key in ungated:
         assert "Apache-2.0" in BACKBONES[key].license_note
 
@@ -1579,3 +1593,67 @@ def test_exporting_onnx_refuses_a_multi_channel_bank_by_name(tmp_path: Path) -> 
 
     with pytest.raises(ValueError, match="reference_scope=channel"):
         model.export_onnx(tmp_path / "m.onnx", config)
+
+
+# ------------------------------------------------- subspace_ad, torch-free parts
+
+
+def test_a_layer_window_is_a_fraction_of_depth_not_a_count() -> None:
+    """The campaign's headline finding, as an assertion rather than as prose.
+
+    `upper_half` covers the same *part* of every encoder and grows with it; `last_four` is
+    four blocks wherever it lands. On the paper's own forty-block encoder the two readings of
+    "layers 22-28" agree, which is why the paper could not have noticed the difference.
+    """
+    assert LayerWindow.UPPER_HALF.blocks(12) == tuple(range(6, 13))
+    assert LayerWindow.UPPER_HALF.blocks(24) == tuple(range(12, 25))
+    assert len(LayerWindow.LAST_FOUR.blocks(12)) == len(LayerWindow.LAST_FOUR.blocks(24)) == 4
+
+    assert LayerWindow.MID_BAND.blocks(40) == LayerWindow.MID7.blocks(40) == tuple(range(22, 29))
+    assert LayerWindow.MID_BAND.blocks(12) == (7, 8)
+    assert LayerWindow.MID7.blocks(12) == tuple(range(2, 9))
+
+
+def test_subspace_ad_defaults_are_the_campaign_verdict() -> None:
+    """Pinned on purpose (ADR-0038, `docs/measurements.md`).
+
+    These four values are the output of a sweep, not a preference, so changing one is a claim
+    that something was measured again. This test is where that claim gets made explicitly.
+    """
+    config = SubspaceAdConfig()
+    assert config.backbone is DinoBackbone.DINOV2_VIT_L14
+    assert config.layers is LayerWindow.UPPER_HALF
+    assert config.variance == 0.99
+    assert config.tail_fraction == 0.002
+    assert BACKBONES[config.backbone].gated is False
+
+
+def test_the_subspace_ad_schema_renders_its_choices_as_pickers() -> None:
+    """No frontend work: `SchemaForm` reads `enum` through `$defs` and bounds off the field."""
+    schema = SubspaceAdConfig.model_json_schema()
+    defs = schema["$defs"]
+
+    def choices(field: str) -> list[str]:
+        reference = str(schema["properties"][field]["$ref"]).rsplit("/", 1)[-1]
+        return [str(value) for value in defs[reference]["enum"]]
+
+    assert "upper_half" in choices("layers")
+    assert "mid_band" in choices("layers")
+    assert "dinov2_vit_l14" in choices("backbone")
+    assert choices("rotation_fill") == ["zeros", "masked"]
+    assert schema["properties"]["variance"]["maximum"] == 1.0
+    assert schema["properties"]["rotations"]["default"] == 30
+    for name, field in schema["properties"].items():
+        assert field.get("description"), f"{name} has no description, so the form has no help"
+
+
+def test_subspace_ad_declares_itself_channel_aware_and_map_producing() -> None:
+    """One subspace per channel, so the capability has to say so — the evaluation layer and
+    the UI both branch on the flag and never on the registry key."""
+    from anomaly_lab.models.subspace_ad import SubspaceAdModel
+
+    capabilities = SubspaceAdModel.capabilities()
+    assert capabilities.channel_aware is True
+    assert capabilities.produces_anomaly_map is True
+    assert capabilities.produces_diagnostics is True
+    assert capabilities.supports_resume is False

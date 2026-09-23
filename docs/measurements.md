@@ -173,3 +173,123 @@ three floors cleared; ≈ 570 s per training leg against the wrapper's ≈ 610 s
 implementation the workbench carries forward is the one whose encoder is configurable (any
 `DinoBackbone` entry, decoder depth included) and whose every trainable line is in this
 repository. The wrapper's numbers above stay as its recorded legacy row.
+
+## SubspaceAD — defaults chosen by a sweep, gate still open
+
+**This entry is not a gate.** Every other block on this page records a predeclared floor and a paired
+control; this one records a parameter search, run outside the application by its own harness
+(ADR-0038) because the alternative was unaffordable. The promotion gate `subspace_ad` has *not* run is
+in [backlog.md](backlog.md), and the method ships `experimental` until it does.
+
+**Protocol.** VisA's twelve categories under the official one-class split for three tuning phases, then
+MVTec-AD's fifteen as a held-out fourth. A category is the unit of evidence: seeds fold inside a
+category first, then categories average, comparisons are paired within category, ± is the standard
+error over categories, and ★ marks a difference larger than twice its own. 215,874 rows over about
+twelve hours of Apple Silicon. The few-shot protocol is the paper's — k ∈ {1, 2, 4} normals, each
+augmented with 30 random rotations up to 345°, corners filled with black, and `transistor` excluded
+from rotation as the paper excludes it.
+
+**Why a sweep of that size was affordable**, which is the finding the budget rests on: three of the
+axes are free. The basis is orthonormal, so a patch's score at rank *r* is `‖x−µ‖²` minus a prefix of
+the squared coefficients — every τ is one `cumsum` off one projection. The image score is a prefix
+mean of the sorted map, so every ρ is one sort. The k-shot draws are nested, so one pass snapshots
+every k. Only the encoder and the input size cost a forward pass.
+
+| Axis | Swept | Verdict | Margin |
+|---|---|---|---|
+| Layer window | 9 windows, at depth 12 and 24 | `upper_half` | +0.12 image AUROC over the paper's window at depth 12 |
+| Window *encoding* | relative band vs fixed count | **a fraction of depth** | fixed count loses 6.5 / 1.5 / 0.0 points at ViT-S / ViT-B / ViT-L on VisA, and 3.6–4.7 ★ at depth 12 on MVTec |
+| Backbone | DINOv2 and DINOv3 at S, B, L | `dinov2_vit_l14` | +0.0249 ★ over ViT-B on VisA — and **nothing at all on MVTec** |
+| Prepared size | 448, 672 | 672 | a tie for detection at ViT-S/B; +0.0079 ★ at ViT-L |
+| τ (`variance`) | 0.95, 0.97, 0.99, 1.0 | 0.99 | 1.0 collapses the score to float noise (0.589) |
+| ρ (`tail_fraction`) | 0.001 – 0.02 | 0.002 | interior, and neither benchmark's preference is decisive |
+
+**The leading VisA arm, phase by phase.** Every figure is a mean over twelve categories, each first
+averaged over seeds.
+
+| | Phase 3 | Phase 2 | Phase 1 |
+|---|---:|---:|---:|
+| Encoder | `dinov2_vit_l14` | `dinov3_vit_b16` | `dinov2_vit_s14_reg4` |
+| Window | `upper_half` · 12–24 of 24 | `final7` · 6–12 | `last_four` · 9–12 |
+| τ · ρ | 0.99 · 0.002 | 0.99 · 0.005 | 0.99 · 0.01 |
+| Image AUROC | **0.9472 ±0.0135** | 0.9275 ±0.0215 | 0.8939 ±0.0325 |
+| Pixel AUROC | 0.9869 | 0.9841 | 0.9832 |
+| AU-PRO | **0.9683** | 0.9555 | 0.9448 |
+| Worst category | `macaroni2` · 0.847 | `macaroni2` · 0.730 | `macaroni2` · 0.587 |
+
+The worst category moved from 0.587 to 0.847 without a single change to the method — only to the
+encoder, the window and the aggregation fraction — and the standard error over categories more than
+halved, so the spread genuinely shrank rather than the mean being lifted by its easy categories.
+Phase 1's leader is a near-tie the table hides: `dinov3_vit_s16` with `final_band` reaches 0.8947
+±0.0307, eight ten-thousandths ahead on detection, and loses AU-PRO by 1.2 points. The DINOv2 arm is
+carried forward for that reason and because its weights are ungated.
+
+**Phase 4 held the defaults out against a benchmark they were not tuned on.** Fifteen MVTec-AD
+categories, the shipped configuration unchanged:
+
+| | MVTec-AD, 15 categories | VisA, 12 categories |
+|---|---:|---:|
+| Image AUROC | **0.9731 ±0.0105** | 0.9472 ±0.0135 |
+| Average precision | 0.9823 | 0.9482 |
+| Pixel AUROC | 0.9797 | 0.9869 |
+| AU-PRO | 0.9549 | 0.9683 |
+| Worst category | `screw` · 0.871 | `macaroni2` · 0.847 |
+
+`grid`, `leather` and `metal_nut` are exactly 1.0000 and `bottle` is 0.9992; the four holding the mean
+down are `screw` (0.871), `cable` (0.912), `transistor` (0.928) and `pill` (0.952). Note what
+`transistor` is: the one category rotation is withheld from, because a rotated transistor is not a
+normal transistor. It fits on 9,216 patches where every other category gets 285,696 — a thirty-first
+as many, since the rotations *are* the augmentation — and still reaches 0.928.
+
+Phase 4 confirmed three verdicts and overturned one:
+
+- **The window's *encoding* got a stronger answer, not a weaker one.** At depth 24 the fixed-count
+  reading loses to the relative band by **−0.0098 ★ (3–9)** on MVTec, where the same comparison on
+  VisA was a tie (−0.0016, not decisive); at depth 12 it loses by **−0.0472 ★ (2–12)** on DINOv3 ViT-B
+  and **−0.0364 ★ (3–11)** on DINOv2 ViT-B. Fifteen categories nobody tuned against decide what twelve
+  tuned ones could not, which is the one direction this evidence could have gone that makes the
+  finding more trustworthy rather than less.
+- **The ρ bracket is closed and the optimum is interior.** Phase 3 ended with ρ pinned to the smallest
+  value it had swept, which is the shape of a search that has not finished. Extending to 0.001 settles
+  it: 0.001 is *worse* (0.9691 against 0.9731). The two benchmarks then disagree about where the
+  interior optimum is, and **neither preference is decisive** — VisA prefers 0.002 by +0.0051 ±0.0037,
+  MVTec prefers 0.005 by +0.0023 ±0.0013. ρ = 0.002 ships because the axis is steep where it matters
+  and flat where it does not: VisA falls 2.5 points between 0.002 and 0.02 while MVTec spans 0.6
+  points across the whole range, so picking 0.002 costs 0.0023 on MVTec and picking 0.005 costs 0.0051
+  on VisA.
+- **`upper_half` is never worse.** Against `final7` — the same window at depth 12, seven blocks against
+  thirteen at depth 24 — it wins on VisA (+0.0098 ★, 10–2) and ties on MVTec (+0.0015, 5–6). It keeps
+  beating both readings of the paper's own window decisively on MVTec (+0.0133 ★ and +0.0230 ★, 12–1
+  and 13–1).
+- **The backbone verdict is the one that did not transfer.** ViT-L beat DINOv2 ViT-B by +0.0249 ★
+  (11–1) on VisA and by **−0.0002 ±0.0014 (5–7)** on MVTec — a dead tie, for roughly twice the compute.
+  ViT-L stays the default because it is never worse and decisively better on one of the two, but the
+  honest statement is narrower than Phase 3's: *on MVTec-like data ViT-B gives the same answer for
+  half the cost*, and a user whose data resembles MVTec more than VisA should start there.
+- **The few-shot curve flattens immediately.** k = 1 → 2 buys +0.0156; 2 → 4 buys +0.0023. The paper's
+  k ≤ 4 is where the curve already is, not a limitation being worked around.
+
+No default changed as a result of Phase 4, which is the outcome a held-out phase is run to be *allowed*
+to report.
+
+**The plugin reproduces the campaign.** The two share their arithmetic (`models/subspace.py`,
+`models/score_map.py`) but not their plumbing: the plugin reads prepared PNG artifacts through
+`load_array`, picks its fit images with `evenly_spaced`, and seeds its rotations from one integer,
+where the campaign prepares from source, draws a seeded permutation and uses a per-category stream. So
+this cannot be bit-exact. On VisA `candle`, k = 4:
+
+| Arm | Plugin | Campaign, per seed | Patches | Rank |
+|---|---:|---|---:|---:|
+| ViT-S/14-reg4, 448 px, `upper_half`, τ 0.99, ρ 0.01 | 0.9386 | 0.9369 / 0.9246 / 0.9451 / 0.9436 / 0.9356 | 126,976 both | 91 vs 91–92 |
+| ViT-L/14, 672 px, `upper_half`, τ 0.99, ρ 0.002 — **the shipped defaults** | 0.9462 | 0.9504 / 0.9428 / 0.9445 | 285,696 both | 300 vs 299–303 |
+
+Identical patch counts, ranks inside the campaign's own range, and image AUROC 0.0014 and 0.0003 from
+the campaign's mean — inside its seed spread in both cases. At the shipped defaults a fit over four
+images is 120 s and inference is 649 ms/image on MPS, both measured while the MVTec phase was running
+on the same machine, so both are upper bounds.
+
+**What this does not settle.** No paired control on shared prepared pixels, which is why the maturity
+label is `experimental`. Three axes were held fixed throughout because each costs a forward pass rather
+than an arithmetic re-read — per-layer L2 before pooling, `concat` instead of `mean`, and
+`final_norm=False` — and `rotation_fill=masked` was never measured at all. All four are in
+[backlog.md](backlog.md).

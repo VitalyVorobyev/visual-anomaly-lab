@@ -322,6 +322,64 @@ true for one configuration of a method is worse than an absent one. `capabilitie
 and the field decides whether it does. No public-data quality gate has been run yet; see
 [roadmap.md](../roadmap.md).
 
+## A frozen backbone can also be a subspace, and the window is a fraction of depth
+
+`subspace_ad` is the same frozen encoder again with a different question asked of it. Instead of
+keeping the training patches and measuring a distance to them, it keeps what they *span*: patch tokens
+are mean-pooled over a band of transformer blocks, PCA is fitted to the normals, and a patch scores the
+squared length of the part of itself the leading subspace cannot reconstruct. A fitted model is a mean
+vector and an orthonormal basis. Nothing is trained, nothing is stepped, and a fit over sixteen images
+finishes in under a minute.
+
+**The layer band is expressed as a position in the encoder's depth, not as a count of layers**, and
+that is the one design decision here that was measured rather than chosen. `dino_backbone.LayerBand`
+carries both readings — a relative band between two depth fractions, or a fixed count of blocks ending
+at one — because the source paper's "layers 22–28 of 40" is simultaneously both and they coincide only
+on a forty-block encoder. Measured at twelve and twenty-four blocks, the fixed count loses 6.5 points
+of image AUROC on ViT-S, 1.5 on ViT-B and nothing on ViT-L. A method that hard-codes seven layers is
+therefore choosing a different window on every backbone it is offered, and choosing worst on the small
+fast encoder a user reaches for first. `LayerWindow` is the picker that names the nine windows; the
+default is `upper_half`, which won at both depths and won by more on the deeper one.
+
+**Two identities make three of the four axes free**, and they are why the defaults could be chosen by
+measurement at all. Because the basis is orthonormal, a patch's score at rank *r* is `‖x−µ‖²` minus a
+prefix of the squared projection coefficients — so every `variance` threshold is one `cumsum` away from
+the same projection, and a stored fit answers at every threshold without refitting. Because the image
+score is the mean of the top `tail_fraction` of patch scores, it is a prefix mean of the sorted map, so
+every ρ is one sort away. Only the encoder forward and the prepared size genuinely cost anything. The
+arithmetic lives in `models/subspace.py` and `models/score_map.py` and is **shared with the sweep that
+chose the defaults** (ADR-0038), so a number the campaign measured and a number a run here measures
+differ by the experiment rather than by a second implementation.
+
+**The capacity verdict is the one that did not transfer**, and it is worth knowing before spending on
+a backbone. ViT-L beats ViT-B by +0.0249 ★ on VisA, winning eleven categories of twelve — and by
+-0.0002 on MVTec-AD, which is a tie, for roughly twice the compute. It stays the default because it
+is never worse; it is not a default that pays for itself on every dataset.
+
+**One subspace per channel.** Two views of one part share no normal appearance — a bright-field and a
+dark-field frame of the same object look nothing alike — so pooling them into one covariance would fit
+a subspace spanning both, against which neither is far from normal. `capabilities().channel_aware` is
+`True`, an image is scored against its own channel's subspace, and a channel the model was not fitted
+on **refuses by name**.
+
+**The few-shot protocol is the paper's, the cap is ours.** Each training image is augmented with
+`rotations` random rotations, which is how a one-shot fit gets enough patches for a covariance at all;
+the corners a rotation invents are admitted or excluded by `rotation_fill`. `rotations=0` is the
+setting for a part whose orientation carries meaning — the source paper excludes one MVTec category on
+exactly that ground, and here that is a field rather than a carve-out. `max_fit_images` bounds the fit
+at sixteen images sampled with `evenly_spaced`, and says in the log when it dropped any: the cost of a
+fit is `(1 + rotations)` forward passes per image and the covariance itself is free, so this is the
+only number that decides how long a fit takes.
+
+**A random encoder is not enough for this method, and that is a measured difference from
+`dino_memory`.** On the stamped-defect fixture the published DINOv2 ViT-S weights give AUROC 1.00 and a
+seeded random ViT gives 0.56; on an untrained encoder the pooled features of `last`, `last_four` and
+`upper_half` also agree to five significant figures, so the window axis is invisible there too. A
+nearest-neighbour bank works on random features because any metric space gives it a distance; a PCA
+residual needs variance directions that mean something. `test_dl_subspace_ad_plugin.py` is therefore
+hermetic about plumbing and silent about accuracy, and the detection claim is asserted on arrays in
+`test_subspace_ad_math.py` and measured on real data in [`measurements.md`](../measurements.md).
+
 ## A reconstruction method needs a fixed training horizon
 
 `dinomaly_anomalib` — a frozen registered DINOv2 encoder and anomalib's bottleneck and eight-layer

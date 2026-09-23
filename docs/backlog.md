@@ -92,6 +92,27 @@ until its output has been reviewed.
 - [ ] **Batch inference for the deep methods** (M): one image per forward pass today. PatchCore's
       backbone forward is 7 ms of a ~22 ms image — worth it only once inference is the bottleneck in
       a comparison.
+- [ ] **Run the public promotion gate for `subspace_ad`** (M): it ships `experimental` because it
+      has not run the one thing every other promoted method ran — a paired control on shared
+      immutable pixels, VisA `candle` and `pcb1` at 448 × 448 against PatchCore
+      ([measurements.md](measurements.md)). The sweep behind its defaults is far more evidence than
+      any gate produces, but it is evidence of a different kind: it was collected outside the
+      application, by its own harness. `scripts/dino-memory-public-gate.py` is the template.
+- [ ] **Sweep the three axes the campaign held fixed** (S): per-layer L2 normalization before
+      pooling, `concat` instead of `mean` aggregation, and `final_norm=False`. Each is already a
+      flag in `research/subspace_ad`, none is a plugin field, and all three change what the PCA sees
+      rather than how it is read — so unlike τ and ρ they cost a forward pass each. Note before
+      starting that `concat` is infeasible on a wide window at ViT-L: `upper_half` is thirteen
+      blocks of 1 024, and a 13 312-dimensional covariance is 1.4 GB.
+- [ ] **Measure `rotation_fill=masked`** (S): the campaign held it at `zeros` throughout, which is
+      what a literal reading of the paper does, so the option that excludes a rotation's invented
+      corners is shipped unmeasured. It is a one-axis rerun of one phase, and the honest expectation
+      is that it matters most where the part does not fill the frame.
+- [ ] **ONNX export for `subspace_ad`** (M): unlike `dino_memory`, every configuration of this
+      method has a single-input static graph — encoder, centre, project onto a fixed basis,
+      residual, sort for the tail mean, upsample, blur — with no data-dependent control flow and no
+      per-channel branch once a channel's basis is chosen. `portable_formats` is empty today because
+      nothing has been measured for parity, not because the graph is hard.
 
 ## Evaluation
 

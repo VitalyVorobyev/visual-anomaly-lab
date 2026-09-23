@@ -81,6 +81,10 @@ offers a one-click registration when it recognizes a complete pack. Registration
   splits and pixel masks, CC BY 4.0.
 - [GKN Blade Surface Defect Dataset](https://doi.org/10.17632/3bh998k78g.1)—good, nick, and scratch images,
   CC BY 4.0.
+- [MVTec-AD](https://www.mvtec.com/company/research/datasets/mvtec-ad)—15 object and texture classes with
+  pixel masks, CC BY-NC-SA 4.0, so **non-commercial use only**. MVTec distributes it behind a form; the
+  mirror this repository's fetch script uses is
+  [`TheoM55/mvtec_anomaly_detection`](https://huggingface.co/datasets/TheoM55/mvtec_anomaly_detection).
 
 Use the imported split to compare with a provider protocol. Any other tree can use the configurable CSV,
 folder-class, or multi-channel adapters.

@@ -25,12 +25,15 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible.
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
-- **Train and score** through one plugin interface. Six methods ship: `pixel_reference`
+- **Train and score** through one plugin interface. Seven methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
-  `dinomaly_custom`, `glass_anomalib` and `dino_memory` — a frozen
+  `dinomaly_custom`, `glass_anomalib`, `dino_memory` and `subspace_ad`. `dino_memory` is a frozen
   DINOv2/DINOv3 patch memory that is a coreset bank, a per-position bank or a per-position
   Gaussian depending on one `scoring` field. It cleared the paired VisA gate and beat its
   PatchCore control on all three floor metrics ([measurements.md](measurements.md)).
+  `subspace_ad` keeps what the normal patches *span* rather than the patches themselves — a PCA
+  over the same frozen encoders, with no training step at all — and is the first method whose
+  defaults were chosen by a measured sweep rather than picked (ADR-0038).
   `dinomaly_custom` is the in-house Dinomaly, with the encoder and the decoder depth as
   fields the anomalib wrapper it was measured against could not offer; that wrapper reached
   VisA parity and retired ([measurements.md](measurements.md)). Jobs run as subprocesses with

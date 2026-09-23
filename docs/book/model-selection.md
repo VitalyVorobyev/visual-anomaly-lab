@@ -61,6 +61,38 @@ recommended default, and read its scores only against its own run (ADR-0028).
 The DINOv3 backbone entries are licence-gated and need approved Hugging Face access; the default is an
 ungated Apache-2.0 DINOv2 that needs no account.
 
+## Frozen patch subspace
+
+`subspace_ad` asks a different question of the same frozen encoders: instead of keeping the training
+patches and measuring a distance to them, it keeps what they **span**. Patch tokens are pooled over a
+band of transformer blocks, PCA is fitted to the normals, and a patch scores the part of itself the
+normal subspace cannot reconstruct. Nothing is trained and nothing is stepped — a fitted model is a
+mean vector and an orthonormal basis, and a fit over sixteen images finishes in a minute or two.
+
+**Reach for it first on a new dataset.** It is the cheapest thing here that is not a baseline: no
+training horizon to choose, no bank budget to plan, and it works from a handful of normal images
+rather than from a full training set, because each one is augmented with thirty random rotations.
+
+Two fields decide most of what it does. `layers` is the band of blocks, expressed as a position in
+the encoder's depth rather than as a count — `upper_half`, the default, is blocks 6–12 of a ViT-S and
+12–24 of a ViT-L, and it beat the other eight windows at both depths. `tail_fraction` is how much of
+the map the image score averages: small finds a small defect that a whole-map mean would drown, large
+is steadier on a diffuse one, and its best value moves down as the encoder gets larger.
+
+Set `rotations` to 0 when the part's orientation carries meaning — a component with a printed label,
+a keyed connector — because a rotated copy of it is not a normal example and admitting one puts a
+false direction into the subspace.
+
+The default backbone is ViT-L, and it is also the most expensive entry in the table. Its margin
+depends on the data more than anything else in the sweep did: against ViT-B it wins 2.5 points of
+image AUROC on VisA, decisively and in eleven categories of twelve, and it wins **nothing** on
+MVTec-AD, where the two are a tie within noise. ViT-B costs about half. Start there on data that
+looks more like MVTec than VisA, and start there in any case while an experiment is still taking
+shape. Its
+defaults are the verdict of a parameter sweep rather than a paper's suggestion (`docs/measurements.md`,
+ADR-0038), but no public **promotion gate** has been run against it, which is why it is marked
+experimental — read its scores only against its own run (ADR-0028).
+
 ## Resource-gated candidates
 
 AnomalyVFM is measured but not integrated. Its pinned 355M-parameter adapted RADIO asset runs on the target
@@ -77,6 +109,7 @@ planning. “Runs once” is not the same as “fits the workbench contract.”
 | High-quality semantic reference | `dinomaly_custom` | PatchCore under same pixels |
 | Study learned synthetic anomalies | `glass_anomalib` | PatchCore and Dinomaly |
 | Position matters on registered capture | `dino_memory` (`local_knn`) | the same fit at `global_knn` |
+| Few normals, no training, answer today | `subspace_ad` | `dino_memory` (`global_knn`) on the same pixels |
 
 Keep the comparison interpretable: same split, same prepared geometry, one hypothesis changed per run, and
 failure samples inspected before the next configuration sweep.

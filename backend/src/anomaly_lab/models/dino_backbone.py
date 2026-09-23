@@ -6,11 +6,11 @@ a backbone would make every "ours" method partly a view of it, which is exactly 
 the methods that follow — a memory bank first, a Dinomaly port later — take it as an argument
 rather than owning one each.
 
-**Five encoders, and the shape of the menu is the point.** Two families, at two widths, with
-the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
+**Seven encoders, and the shape of the menu is the point.** Two families, at three widths,
+with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
 ADR-0029) included so a comparison against its recorded numbers measures the method rather
-than the encoder. Three of the five are ungated Apache-2.0 weights and are the default any new
-method should reach for; the two DINOv3 entries are behind Meta's DINOv3 licence and need an
+than the encoder. Four of the seven are ungated Apache-2.0 weights and are the default any new
+method should reach for; the three DINOv3 entries are behind Meta's DINOv3 licence and need an
 approved Hugging Face account, which `load_backbone` says in words rather than as a 401.
 
 **The patch size is a hard boundary, not a resize.** DINOv2 strides by 14 and DINOv3 by 16,
@@ -25,6 +25,7 @@ plan must not cost three seconds of torch.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -45,16 +46,24 @@ class DinoBackbone(StrEnum):
     Deliberately excluded: every `_qkvb` DINOv3 variant and the `eupe` pretrainings. timm
     carries them, but they resolve to weights under a FAIR noncommercial research licence
     (`fair-noncommercial-research-license` in timm's own pretrained config), and a menu that
-    mixes a licence a user may not use with four they may is a menu that has to be read
-    rather than chosen from. The larger DINOv3 sizes are left out for a duller reason: at
-    ViT-L and above the encoder forward, not the method, is what a run measures.
+    mixes a licence a user may not use with six they may is a menu that has to be read
+    rather than chosen from.
+
+    **ViT-L was once excluded on the grounds that at that size the encoder forward, not the
+    method, is what a run measures.** That was a guess, and the SubspaceAD campaign is what
+    turned it into a measurement: ViT-L costs three times ViT-B per image on this hardware,
+    so the claim about *cost* holds, and whether the accuracy follows is what
+    `docs/measurements.md` now records. ViT-g/14 stays out -- it is another three-fold step
+    on top of ViT-L, on a workbench whose compute target is a laptop.
     """
 
     DINOV2_VIT_S14 = "dinov2_vit_s14"
     DINOV2_VIT_S14_REG4 = "dinov2_vit_s14_reg4"
     DINOV2_VIT_B14 = "dinov2_vit_b14"
+    DINOV2_VIT_L14 = "dinov2_vit_l14"
     DINOV3_VIT_S16 = "dinov3_vit_s16"
     DINOV3_VIT_B16 = "dinov3_vit_b16"
+    DINOV3_VIT_L16 = "dinov3_vit_l16"
 
 
 @dataclass(frozen=True)
@@ -115,6 +124,15 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
         gated=False,
         license_note="Apache-2.0; no Hugging Face account or token needed.",
     ),
+    DinoBackbone.DINOV2_VIT_L14: BackboneSpec(
+        timm_name="vit_large_patch14_dinov2.lvd142m",
+        patch_size=14,
+        embedding_dim=1024,
+        depth=24,
+        num_heads=16,
+        gated=False,
+        license_note="Apache-2.0; no Hugging Face account or token needed.",
+    ),
     DinoBackbone.DINOV3_VIT_S16: BackboneSpec(
         timm_name="vit_small_patch16_dinov3.lvd1689m",
         patch_size=16,
@@ -139,6 +157,18 @@ BACKBONES: dict[DinoBackbone, BackboneSpec] = {
             "valid HF_TOKEN must be present before the weights will download."
         ),
     ),
+    DinoBackbone.DINOV3_VIT_L16: BackboneSpec(
+        timm_name="vit_large_patch16_dinov3.lvd1689m",
+        patch_size=16,
+        embedding_dim=1024,
+        depth=24,
+        num_heads=16,
+        gated=True,
+        license_note=(
+            "DINOv3 licence: access must be requested from Meta on Hugging Face and a "
+            "valid HF_TOKEN must be present before the weights will download."
+        ),
+    ),
 }
 
 ACCESS_REQUEST_URLS: dict[DinoBackbone, str] = {
@@ -148,10 +178,13 @@ ACCESS_REQUEST_URLS: dict[DinoBackbone, str] = {
     DinoBackbone.DINOV3_VIT_B16: (
         "https://huggingface.co/facebook/dinov3-vitb16-pretrain-lvd1689m"
     ),
+    DinoBackbone.DINOV3_VIT_L16: (
+        "https://huggingface.co/facebook/dinov3-vitl16-pretrain-lvd1689m"
+    ),
 }
 """Where a user goes to ask for the gated weights. Kept beside the table rather than in it
-because only two of the five entries have one, and a field that is `None` four times out of
-five is a field that gets read as optional rather than as licence-specific."""
+because only three of the seven entries have one, and a field that is `None` four times out
+of seven is a field that gets read as optional rather than as licence-specific."""
 
 
 class FeatureLayers(StrEnum):
@@ -185,6 +218,111 @@ _LAYER_INDICES: dict[FeatureLayers, tuple[int, ...]] = {
     FeatureLayers.MID_LATE: (-7, -4),
     FeatureLayers.LAST_FOUR: (-4, -3, -2, -1),
 }
+
+
+@dataclass(frozen=True)
+class LayerBand:
+    """A window of transformer blocks, expressed so it survives a change of encoder.
+
+    `FeatureLayers` above counts backwards from the end, which is the right thing for a
+    method that wants "the last two blocks" and means it. This says where a window sits as a
+    **fraction of the encoder's depth**, which is the right thing for a method that wants
+    "the middle of the stack" — and the two are not the same instruction. Depth varies across
+    the menu: 12 blocks for ViT-S and ViT-B, 24 for ViT-L, 40 for the DINOv2-G the SubspaceAD
+    paper used. "Layers 22-28 of 40" is simultaneously a relative band (0.55 to 0.70 of the
+    depth) and a fixed count of seven ending at 70 %; on a forty-block encoder they are the
+    same seven blocks and nothing distinguishes them, and on a twelve-block ViT-S they are
+    two blocks and seven.
+
+    Both readings are representable, because the SubspaceAD campaign carried them as separate
+    arms in order to answer which one transfers (ADR-0038):
+
+      * `fixed_count=None` keeps the **relative band** — every block between the two depth
+        fractions, so the window covers the same part of every encoder and its size follows
+        the depth.
+      * `fixed_count=n` keeps **n blocks ending at `end_fraction`**, so the window is the
+        same size everywhere and only its deep end sits at a fixed depth.
+
+    The campaign's answer, measured at 12 and 24 blocks over twelve VisA categories, is the
+    relative band: the fixed count loses by 6.5 points on ViT-S, 1.5 on ViT-B and nothing at
+    all on ViT-L, so a method that hard-codes a layer count is silently choosing a different
+    window on every backbone it is offered — and choosing worst on the small fast encoder a
+    user is most likely to start with.
+    """
+
+    name: str
+    end_fraction: float
+    start_fraction: float | None = None
+    fixed_count: int | None = None
+
+    def blocks(self, depth: int) -> tuple[int, ...]:
+        """One-based block numbers for an encoder of this depth, ascending."""
+        if depth < 1:
+            msg = f"an encoder needs at least one block; got depth {depth}"
+            raise ValueError(msg)
+        last = min(depth, max(1, round(self.end_fraction * depth)))
+        if self.fixed_count is not None:
+            first = max(1, last - self.fixed_count + 1)
+        elif self.start_fraction is not None:
+            first = min(last, max(1, math.ceil(self.start_fraction * depth)))
+        else:
+            first = last
+        return tuple(range(first, last + 1))
+
+    def indices(self, depth: int) -> tuple[int, ...]:
+        """The same window as zero-based indices, which is what timm takes."""
+        return tuple(block - 1 for block in self.blocks(depth))
+
+
+class LayerWindow(StrEnum):
+    """The named windows, as a picker a config field can offer.
+
+    The paper's own two readings first, then the narrower variants the campaign used to
+    bracket them, then the windows this repository's `FeatureLayers` already names — so a
+    SubspaceAD arm and a `dino_memory` arm can be asked for the same blocks and the answer
+    is about the method.
+
+    `UPPER_HALF` is the campaign's winner at both depths it was measured on, and it wins by
+    more as the encoder deepens; `LAST` is the worst window on a 24-block encoder, losing
+    every one of twelve categories, which is worth knowing because pooling the final block
+    alone is what most frozen-feature methods do by default.
+    """
+
+    MID_BAND = "mid_band"
+    MID7 = "mid7"
+    MID4 = "mid4"
+    FINAL_BAND = "final_band"
+    FINAL7 = "final7"
+    LAST = "last"
+    LAST_TWO = "last_two"
+    LAST_FOUR = "last_four"
+    UPPER_HALF = "upper_half"
+
+    @property
+    def band(self) -> LayerBand:
+        return LAYER_BANDS[self.value]
+
+    def blocks(self, depth: int) -> tuple[int, ...]:
+        return self.band.blocks(depth)
+
+    def indices(self, depth: int) -> tuple[int, ...]:
+        return self.band.indices(depth)
+
+
+LAYER_BANDS: dict[str, LayerBand] = {
+    "mid_band": LayerBand("mid_band", end_fraction=0.70, start_fraction=0.55),
+    "mid7": LayerBand("mid7", end_fraction=0.70, fixed_count=7),
+    "mid4": LayerBand("mid4", end_fraction=0.70, fixed_count=4),
+    "final_band": LayerBand("final_band", end_fraction=1.0, start_fraction=0.85),
+    "final7": LayerBand("final7", end_fraction=1.0, fixed_count=7),
+    "last": LayerBand("last", end_fraction=1.0, fixed_count=1),
+    "last_two": LayerBand("last_two", end_fraction=1.0, fixed_count=2),
+    "last_four": LayerBand("last_four", end_fraction=1.0, fixed_count=4),
+    "upper_half": LayerBand("upper_half", end_fraction=1.0, start_fraction=0.5),
+}
+"""Keyed by the plain name rather than by `LayerWindow`, because a sweep resolves a window
+from a string on a command line and a plugin resolves one from an enum; one dict serves both
+only if its keys are what the looser caller already has."""
 
 
 def validate_prepared_size(backbone: DinoBackbone, width: int, height: int) -> None:

@@ -11,6 +11,7 @@ This page is generated from the live model registry and checked method metadata.
 | `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | — |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
+| `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -89,6 +90,20 @@ A frozen WRN-50 feature extractor with learned global and local anomaly synthesi
 `dino_memory` · **frozen-backbone patch memory** · supported
 
 A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of normal images and scored globally, per position, or as a per-position Gaussian. Nothing is trained; the memory is the model.
+
+- Preferred device: `mps`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: yes
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## SubspaceAD (frozen encoder)
+
+`subspace_ad` · **frozen-backbone subspace** · experimental
+
+PCA of frozen DINO patch features over a few normal images; a patch scores the part of itself the normal subspace cannot reconstruct. Nothing is trained.
 
 - Preferred device: `mps`
 - Requires fitting: yes

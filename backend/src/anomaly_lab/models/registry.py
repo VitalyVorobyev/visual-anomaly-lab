@@ -58,6 +58,12 @@ def _dinomaly_custom() -> type[AnomalyModel]:
     return DinomalyCustomModel
 
 
+def _subspace_ad() -> type[AnomalyModel]:
+    from anomaly_lab.models.subspace_ad import SubspaceAdModel
+
+    return SubspaceAdModel
+
+
 # `efficientad_custom` cost exactly one entry and one module in M6 — no route, no schema, no
 # line of TypeScript — which is the prediction ADR-0007 made. It started as a second
 # implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
@@ -75,6 +81,11 @@ def _dinomaly_custom() -> type[AnomalyModel]:
 # `dino_memory` is the first in-house method built on the shared frozen-encoder table, and it
 # holds three different memories behind one `scoring` axis — a coreset bank, a per-position
 # bank and a per-position Gaussian — which still cost one module and this one line.
+# `subspace_ad` is the first method whose defaults were *measured* rather than chosen: a sweep
+# outside the application picked its backbone, layer window and two thresholds, and what
+# shipped was one module, this one line, and an entry in the measurements record (ADR-0038).
+# It trains nothing at all — the fit is a covariance and an eigendecomposition — which makes
+# it the cheapest strong baseline in the table and the one to run first on a new dataset.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -82,6 +93,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "dinomaly_custom": _dinomaly_custom,
     "glass_anomalib": _glass_anomalib,
     "dino_memory": _dino_memory,
+    "subspace_ad": _subspace_ad,
 }
 
 
