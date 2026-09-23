@@ -125,6 +125,10 @@ comparing them under one evaluation protocol.
   the pass removed. A raw `<details>` in particular renders **with no caret**, because the base layer
   drops the UA marker; use `Disclosure`. **A primitive that needs improving is improved upstream in
   lab-ui**, never patched locally — a local copy is how the apps stop agreeing with each other.
+- **A window shortcut goes through `useHotkeys`, never a bare `keydown` listener.** One guard —
+  text entry, lists, navigation keys on a slider or tab strip, an open dialog, held modifiers — for
+  every screen. Three screens each wrote their own and each missed a different case (⌘D relabelled
+  a part; `C` completed a document behind a dialog). `frontend/src/hooks/useHotkeys.test.ts` pins it.
 - **One page-level scroller per screen, and the layout owns it.** Three route layouts —
   `ReadingLayout`, `DatasetLayout`, `CanvasLayout` — are marked with `data-layout`, `data-band` and
   `data-scroll` so the contract is assertable, and `frontend/src/routes/dataset/tabScroll.test.tsx`

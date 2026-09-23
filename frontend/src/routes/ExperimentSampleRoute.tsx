@@ -36,7 +36,7 @@
  * z-map and M6's method gets whatever it emits, with no code written here.
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { ChevronLeft, ChevronRight, Microscope } from "lucide-react";
 
@@ -45,8 +45,9 @@ import { diagnosticPayloadUrl } from "../api/diagnostics";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl, tierFor } from "../api/imageUrl";
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
-import { cutValue, readResultsState, writeResultsState } from "../api/resultsState";
+import { cutValue, readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
 import { Badge, Button, Disclosure, Empty, ErrorBox, ImageStage, SkeletonRows, StageReadout, StageToolbar, Tooltip, cn, type StageView } from "@vitavision/lab-ui";
+import { useHotkeys } from "../hooks/useHotkeys";
 import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
 import {
   useDiagnoseImage,
@@ -67,9 +68,10 @@ export function ExperimentSampleRoute() {
 
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const state = readResultsState(params);
-
   const experiment = useExperiment(experimentId);
+  // Resolved exactly as the experiment page resolves it, so a link that carried no subset
+  // still pages through the subset the results tabs show — not every scored subset at once.
+  const state = resolveSubset(readResultsState(params), experiment.data?.scored_subsets ?? []);
   const images = useSampleImages(experimentId, sampleId);
   const diagnostics = useDiagnostics(experimentId);
 
@@ -105,25 +107,13 @@ export function ExperimentSampleRoute() {
    * browser already binds. The zoom keys are the stage's own — `0`, `1`, `+`, `-` are bound
    * by `ImageStage`, and `panKeys={false}` is what keeps the arrows for this list.
    *
-   * The handler is held in a ref and the effect has an explicit empty dependency array.
-   * Without one it re-subscribed a global listener on *every* render — which worked, but
-   * meant a component that re-renders on each pointermove was adding and removing a window
-   * listener at the same rate.
+   * The guard is `useHotkeys`'s. This screen's own matched tag names only, so an arrow on
+   * the focused cut slider — a `span[role=slider]` — also paged to the next sample.
    */
-  const shortcuts = useRef<(event: KeyboardEvent) => void>(() => {});
-  shortcuts.current = (event: KeyboardEvent) => {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const target = event.target as HTMLElement | null;
-    if (target && /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName)) return;
+  useHotkeys((event) => {
     if (event.key === "ArrowLeft") goTo(neighbours.previous);
     if (event.key === "ArrowRight") goTo(neighbours.next);
-  };
-
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => shortcuts.current(event);
-    globalThis.addEventListener("keydown", onKey);
-    return () => globalThis.removeEventListener("keydown", onKey);
-  }, []);
+  });
 
   if (images.error) return <ErrorBox>{images.error.message}</ErrorBox>;
   if (images.isPending) return <SkeletonRows rows={5} />;
@@ -160,7 +150,10 @@ export function ExperimentSampleRoute() {
         >
           ← Results
         </Link>
-        <h1 className="text-base font-semibold">Sample {sampleId}</h1>
+        {/* The sample's own name, as every other screen prints it — not its row id. */}
+        <h1 className="font-mono text-sm font-semibold">
+          {verdict ? `${verdict.group_key}/${verdict.external_id}` : `Sample ${sampleId}`}
+        </h1>
         {verdict && (
           <>
             <Badge tone={verdict.label === "defect" ? "defect" : "normal"}>{verdict.label}</Badge>
@@ -175,6 +168,28 @@ export function ExperimentSampleRoute() {
           {" · "}
           {images.data[0]?.inference_ms.toFixed(1)} ms
         </span>
+
+        {/* A mistake is only useful if it can be fixed from where it was found: a wrong
+            label, or a mask that missed the defect. Both used to be a manual trip back
+            through the dataset. */}
+        {experiment.data && (
+          <span className="flex items-center gap-3 text-xs">
+            <Link
+              to={`/datasets/${experiment.data.dataset_id}/samples/${sampleId}`}
+              className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
+            >
+              Open sample
+            </Link>
+            {images.data[0] && (
+              <Link
+                to={`/datasets/${experiment.data.dataset_id}/annotate/${sampleId}/${images.data[0].image_id}`}
+                className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
+              >
+                Annotate
+              </Link>
+            )}
+          </span>
+        )}
 
         <span className="ml-auto flex items-center gap-2">
           <span className="font-mono text-[11px] text-fg-subtle">

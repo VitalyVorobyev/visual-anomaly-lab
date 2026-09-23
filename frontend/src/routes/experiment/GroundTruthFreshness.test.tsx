@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 
 import type { MetricSummary } from "../../api/client";
+import { EMPTY_RESULTS } from "../../api/resultsState";
 import { BenchmarkTab } from "./BenchmarkTab";
 import { Headline, Metrics } from "./OverviewTab";
 
@@ -35,7 +36,15 @@ describe("ground-truth freshness", () => {
   });
 
   it("does not pair current curves with stale stored areas", () => {
-    wrap(<BenchmarkTab experimentId={7} subsets={["test"]} metrics={[STALE]} />);
+    wrap(
+      <BenchmarkTab
+        experimentId={7}
+        subsets={["test"]}
+        metrics={[STALE]}
+        state={{ ...EMPTY_RESULTS, subset: "test" }}
+        onChange={() => {}}
+      />,
+    );
 
     expect(screen.getByText("Recompute before reading these curves")).toBeTruthy();
     expect(screen.queryByLabelText(/ROC curve/)).toBeNull();

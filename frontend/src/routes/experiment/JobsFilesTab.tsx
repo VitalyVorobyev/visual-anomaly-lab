@@ -19,7 +19,7 @@ import { JobProgress } from "../../components/JobProgress";
 import { Badge, Empty, Panel } from "@vitavision/lab-ui";
 import { useJob } from "../../hooks/useJob";
 import { ArtifactsPanel } from "./ArtifactsPanel";
-import { jobTone } from "./OverviewTab";
+import { jobStatusTone } from "../../api/statusTone";
 
 export function JobsFilesTab({
   experimentId,
@@ -48,7 +48,7 @@ export function JobsFilesTab({
               <li key={job.id} className="flex items-center gap-3 py-2">
                 <span className="font-mono text-xs text-fg-muted">#{job.id}</span>
                 <span className="w-16">{job.kind}</span>
-                <Badge tone={jobTone(job.status)}>{job.status}</Badge>
+                <Badge tone={jobStatusTone(job.status)}>{job.status}</Badge>
                 <span className="truncate text-xs text-fg-muted">
                   {job.message ?? job.error ?? ""}
                 </span>

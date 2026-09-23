@@ -5,6 +5,7 @@ import {
   EMPTY_RESULTS,
   cutValue,
   readResultsState,
+  resolveSubset,
   writeResultsState,
 } from "./resultsState";
 
@@ -114,5 +115,25 @@ describe("the segmentation cut", () => {
   it("has no value before a run has recorded a range", () => {
     expect(cutValue(EMPTY_RESULTS, null)).toBeNull();
     expect(cutValue(EMPTY_RESULTS, undefined)).toBeNull();
+  });
+});
+
+describe("resolving the subset every tab reads", () => {
+  it("falls back to the last scored subset rather than to all of them", () => {
+    // No subset on the server means every scored subset ranked together — a different
+    // population from the one Overview's confusion matrix is computed over.
+    expect(resolveSubset(EMPTY_RESULTS, ["val", "test"]).subset).toBe("test");
+  });
+
+  it("keeps a subset the URL names when the run scored it", () => {
+    expect(resolveSubset(roundTrip("subset=val"), ["val", "test"]).subset).toBe("val");
+  });
+
+  it("replaces a subset the run never scored", () => {
+    expect(resolveSubset(roundTrip("subset=train"), ["test"]).subset).toBe("test");
+  });
+
+  it("stays unset before anything is scored", () => {
+    expect(resolveSubset(EMPTY_RESULTS, []).subset).toBeUndefined();
   });
 });

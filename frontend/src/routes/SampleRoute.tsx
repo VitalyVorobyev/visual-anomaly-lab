@@ -27,6 +27,7 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import { PAGE_SIZE, readBrowseState, toSampleQuery, writeBrowseState } from "../api/browseState";
 import type { ImageSummary, Label, SampleSummary } from "../api/client";
 import { preferredImageIndex } from "../api/defaultChannel";
+import { useHotkeys } from "../hooks/useHotkeys";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, FULL_TIER_ZOOM, RESET_VIEW, Skeleton, Switch, Tooltip, ZoomPanCanvas, type View } from "@vitavision/lab-ui";
@@ -173,29 +174,15 @@ export function SampleRoute() {
     preload.src = imageUrl(cover.id, "preview");
   }, [index, siblings]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      // Anywhere text is being entered, these are letters rather than commands. The old
-      // guard named two element types and missed `<textarea>` and `contentEditable`, so
-      // typing "n" in a free-text field would silently relabel the sample behind it.
-      const target = event.target;
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLSelectElement ||
-        target instanceof HTMLTextAreaElement ||
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) {
-        return;
-      }
-      const label = LABEL_KEYS[event.key.toLowerCase()];
-      if (label) apply(label);
-      if (event.key === "0") setView(RESET);
-      if (event.key === "ArrowRight") step(1);
-      if (event.key === "ArrowLeft") step(-1);
-    };
-    globalThis.addEventListener("keydown", onKey);
-    return () => globalThis.removeEventListener("keydown", onKey);
-  }, [apply, step]);
+  // The guard — text entry, open dialogs, held modifiers — is `useHotkeys`'s, and the same
+  // one every screen uses. This one had no modifier check, so ⌘D relabelled the part.
+  useHotkeys((event) => {
+    const label = LABEL_KEYS[event.key.toLowerCase()];
+    if (label) apply(label);
+    if (event.key === "0") setView(RESET);
+    if (event.key === "ArrowRight") step(1);
+    if (event.key === "ArrowLeft") step(-1);
+  });
 
   return (
     <div data-layout="sample" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-ground">

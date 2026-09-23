@@ -15,6 +15,7 @@ function detail(overrides: Partial<ExperimentDetail> = {}): ExperimentDetail {
     supports_resume: false,
     portable_formats: [],
     training_state: null,
+    status: "trained",
     ...overrides,
   } as ExperimentDetail;
 }
@@ -54,13 +55,32 @@ function wrap(node: ReactNode) {
 const noop = () => {};
 
 describe("RunBar", () => {
-  it("offers both runs once something has trained", () => {
+  it("offers scoring once trained, and makes retraining a named, confirmed action", () => {
+    // A method without resume writes no training_state; it is trained all the same, and
+    // offering a primary "Train" here retrained it without asking.
     wrap(
       <RunBar
         experimentId={3}
         detail={detail()}
         jobs={[job({})]}
-        hasTrained
+        onFollow={noop}
+        onViewLog={noop}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Retrain from scratch" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: /Score & evaluate/ }).hasAttribute("disabled"),
+    ).toBe(false);
+  });
+
+  it("does not count a failed train as trained", () => {
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail({ status: "failed" })}
+        jobs={[job({ status: "failed" })]}
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -69,16 +89,15 @@ describe("RunBar", () => {
     expect(screen.getByRole("button", { name: "Train" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Score & evaluate/ }).hasAttribute("disabled"),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("says why scoring is unavailable rather than offering a button that fails", () => {
     wrap(
       <RunBar
         experimentId={3}
-        detail={detail()}
+        detail={detail({ status: "draft" })}
         jobs={[]}
-        hasTrained={false}
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -95,7 +114,6 @@ describe("RunBar", () => {
         experimentId={3}
         detail={detail({ portable_formats: ["onnx"] })}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -112,7 +130,6 @@ describe("RunBar", () => {
         experimentId={3}
         detail={detail()}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -129,7 +146,6 @@ describe("RunBar", () => {
         experimentId={3}
         detail={detail()}
         jobs={[job({ id: 7, status: "running", progress: 0.42, message: "step 1680/4000" })]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -157,7 +173,6 @@ describe("RunBar", () => {
         liveJob={
           job({ id: 7, status: "running", progress: 0.31, message: "step 461/8000" }) as JobDetail
         }
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -177,7 +192,6 @@ describe("RunBar", () => {
         liveJob={
           job({ id: 6, status: "running", progress: 0.99, message: "step 7900/8000" }) as JobDetail
         }
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -191,9 +205,8 @@ describe("RunBar", () => {
     wrap(
       <RunBar
         experimentId={3}
-        detail={detail()}
+        detail={detail({ status: "training" })}
         jobs={[job({ status: "running" })]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -209,7 +222,6 @@ describe("RunBar", () => {
         experimentId={3}
         detail={detail()}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -225,7 +237,6 @@ describe("RunBar", () => {
         experimentId={3}
         detail={detail()}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -247,7 +258,6 @@ describe("RunBar", () => {
           config: { max_steps: 4000 },
         })}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -260,9 +270,9 @@ describe("RunBar", () => {
     expect(screen.getByLabelText("Additional steps").getAttribute("value")).toBe("4000");
   });
 
-  it("prints what continuing will do to the learning rate before the run", () => {
-    // The rate goes back up at the resume point. Surprising enough to state rather than
-    // leave to be discovered in the chart afterwards (handbook jobs.md).
+  it("prints what continuing will do before the run, in no one method's terms", () => {
+    // The bar is shared by every resumable method (ADR-0007), so it names what they all
+    // resume — never one method's schedule or penalty set.
     wrap(
       <RunBar
         experimentId={3}
@@ -272,24 +282,21 @@ describe("RunBar", () => {
           config: { max_steps: 4000 },
         })}
         jobs={[job({})]}
-        hasTrained
         onFollow={noop}
         onViewLog={noop}
       />,
     );
 
-    expect(screen.getByText(/Continuing to 8000/)).toBeTruthy();
-    expect(screen.getByText(/drop to step 7600/)).toBeTruthy();
-    expect(screen.getByText(/penalty-set order\s+restarts/)).toBeTruthy();
+    expect(screen.getByText(/to 8000 in total/)).toBeTruthy();
+    expect(screen.queryByText(/penalty|teacher|learning-rate/)).toBeNull();
   });
 
   it("disables continue when nothing has trained, and says why", () => {
     wrap(
       <RunBar
         experimentId={3}
-        detail={detail({ supports_resume: true, config: { max_steps: 4000 } })}
+        detail={detail({ status: "draft", supports_resume: true, config: { max_steps: 4000 } })}
         jobs={[]}
-        hasTrained={false}
         onFollow={noop}
         onViewLog={noop}
       />,
@@ -298,5 +305,21 @@ describe("RunBar", () => {
     const button = screen.getByRole("button", { name: "Continue" });
     expect(button.hasAttribute("disabled")).toBe(true);
     expect(button.getAttribute("title")).toBe("Nothing has been trained yet.");
+  });
+
+  it("says where a finished export went", () => {
+    // The bundle is listed on another tab, and nothing on this one used to say so.
+    wrap(
+      <RunBar
+        experimentId={3}
+        detail={detail({ portable_formats: ["onnx"] })}
+        jobs={[job({ id: 9, kind: "export" }), job({})]}
+        onFollow={noop}
+        onViewLog={noop}
+        onViewFiles={noop}
+      />,
+    );
+    expect(screen.getByText(/ONNX bundle written/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open Jobs & files" })).toBeTruthy();
   });
 });

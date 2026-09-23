@@ -97,3 +97,15 @@ export function maskUrl(imageId: number, prepared?: { experimentId: number }): s
   });
   return `${apiBaseUrl}/api/images/${imageId}/mask?${query.toString()}`;
 }
+
+/**
+ * The imported mask a `base="source_mask"` annotation document starts from.
+ *
+ * Not `maskUrl`: that is the image's *current* truth, newest completed revision first, and
+ * drawn as the editor's base it showed a revision — edits included — as though it were the
+ * layer under them. This is the pinned import, binary and source-sized, for the editor to
+ * tint in the label's colour.
+ */
+export function sourceMaskUrl(imageId: number): string {
+  return `${apiBaseUrl}/api/images/${imageId}/annotations/source-mask`;
+}

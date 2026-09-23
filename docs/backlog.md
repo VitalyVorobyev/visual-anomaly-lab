@@ -20,6 +20,30 @@ until its output has been reviewed.
       frame-relative zoom that means different things in different windows.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination, sortable column headers, and compatible selection handed to Compare.
+- [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`
+      inside a `<Link>` (catalogue header, dataset band, sample viewer, experiment catalogue), which
+      the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
+      `ButtonLink` there, release, and replace all five.
+- [ ] **Say what a dataset still needs before it can train** (M): a readiness line on the dataset
+      band — built region profile, split, runs — and a "New experiment" that names what is missing.
+      Keep the create form's state across its prerequisite links (today they discard it), select
+      the only profile or split when there is one, and show validation beside the field.
+- [ ] **Train, then score, as one action** (S): creating an experiment lands on a draft that needs
+      Train, a wait, then Score & evaluate.
+- [ ] **A way into Compare** (S): "Compare with…" from an experiment and multi-select in the
+      catalogue; the picker offers only scored runs of the same split.
+- [ ] **Import and Prepare survive a reload** (S): stage, job and form are local state, so a reload
+      during a scan or a build orphans its console.
+- [ ] **One vocabulary** (S): "Prepared input", "region profile" and "Model input" (which is the
+      colour preprocessing, and also the default profile name); threshold, cut and operating point;
+      method key versus title.
+- [ ] **Move the dataset sample viewer onto `ImageStage`** (M): the last `ZoomPanCanvas`. Give the
+      result viewers a vector layer beside the raster ones — boxes, labels and scores are what a
+      detection task will draw.
+- [ ] **Split the annotation editor** (L, split before starting): the route is ~1,900 lines. Hooks
+      per seam (draft session, queue, channel panes, document commands, segment assist, keymap),
+      per-tool modules in the canvas, static and live Konva layers, a brush-size cursor, a pixel
+      readout, a shortcut sheet, and its first tests.
 
 ## Spatial input
 

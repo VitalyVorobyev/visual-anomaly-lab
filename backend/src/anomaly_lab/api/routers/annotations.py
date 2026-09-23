@@ -840,6 +840,53 @@ def read_annotation_revision_mask(
     )
 
 
+@router.get(
+    "/api/images/{image_id}/annotations/source-mask",
+    summary="The imported mask a `source_mask` document is based on, as a binary PNG",
+    response_class=Response,
+    responses={200: {"content": {"image/png": {}}}},
+)
+def read_annotation_source_mask(request: Request, image_id: int) -> Response:
+    """The base layer of a `base="source_mask"` document, and nothing else.
+
+    The editor used to draw this base from `GET /api/images/{id}/mask`, which answers a
+    different question — the *current* truth, newest completed revision first. Once an
+    image had a revision the "base" on screen was that revision's outline, already
+    containing the regions being edited above it, and after an import that subtracts the
+    whole base it showed truth the document no longer had. A document's base is the
+    imported mask it pins, so that is what this serves: source-sized 0/255, verified
+    against the digest the catalog recorded, and never a revision.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        _image_dataset_id(conn, image_id)
+        source = masks_repo.get_mask_for_image(conn, image_id)
+        image = images_repo.get_image(conn, image_id)
+    if source is None or image is None:
+        raise HTTPException(status_code=404, detail=f"image {image_id} has no imported mask")
+    path = Path(source.path)
+    if not path.is_file():
+        raise HTTPException(status_code=409, detail="the source mask is unavailable")
+    actual = sha256_of(path)
+    if source.sha256 is not None and source.sha256 != actual:
+        raise HTTPException(
+            status_code=409,
+            detail="the imported source mask changed after it entered the catalog",
+        )
+    try:
+        mask = load_mask(path, size=(image.width, image.height))
+    except UnreadableImageError as exc:
+        raise HTTPException(status_code=410, detail=str(exc)) from exc
+    return Response(
+        content=encode_png(mask),
+        media_type="image/png",
+        headers={
+            "ETag": f'"annotation-source-mask-{actual}"',
+            "Cache-Control": "public, max-age=31536000, immutable",
+        },
+    )
+
+
 @router.put(
     "/api/images/{image_id}/annotations/draft/import/png",
     summary="Replace a draft's editable layers from a binary PNG mask",

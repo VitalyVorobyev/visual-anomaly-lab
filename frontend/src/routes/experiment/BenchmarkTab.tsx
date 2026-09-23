@@ -7,9 +7,8 @@
  * diagonal, for the same reason a metric that could not be computed renders as a dash.
  */
 
-import { useState } from "react";
-
 import type { MetricSummary, Subset } from "../../api/client";
+import type { ResultsState } from "../../api/resultsState";
 import { groupingNote } from "../../api/metrics";
 import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/lab-ui";
 import { CurveChart } from "../../components/charts/CurveChart";
@@ -25,12 +24,17 @@ export function BenchmarkTab({
   experimentId,
   subsets,
   metrics,
+  state,
+  onChange,
 }: {
   experimentId: number;
   subsets: Subset[];
   metrics: MetricSummary[];
+  /** Shared with Overview and Samples, so the curves are of the subset the matrix counts. */
+  state: ResultsState;
+  onChange: (next: Partial<ResultsState>) => void;
 }) {
-  const [subset, setSubset] = useState<Subset>(subsets[subsets.length - 1] ?? "test");
+  const subset = state.subset ?? subsets.at(-1) ?? "test";
   const forSubset = metrics.find((entry) => entry.subset === subset);
   const stale = forSubset?.ground_truth_stale ?? false;
   const curves = useCurves(experimentId, subset, !stale);
@@ -113,8 +117,8 @@ export function BenchmarkTab({
         <Results
           experimentId={experimentId}
           subsets={subsets}
-          subset={subset}
-          onSubset={setSubset}
+          state={state}
+          onChange={onChange}
           metrics={metrics}
           charts
         />

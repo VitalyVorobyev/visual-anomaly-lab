@@ -146,6 +146,21 @@ export function writeResultsState(state: ResultsState): URLSearchParams {
 }
 
 /**
+ * The state with its subset made explicit: the one the URL names, else the last one scored.
+ *
+ * An absent subset is not a neutral default on the server — `GET …/results` with no subset
+ * ranks **every** scored subset together, with a threshold suggested over the union. The
+ * Samples tab used to send exactly that while Overview and Benchmark showed `test`, so the
+ * gallery was ranking a different population from the confusion matrix beside it. Resolving
+ * once, before any tab reads the state, gives the three tabs and every link built from them
+ * one subset, and puts it in the links so the sample page asks the identical question.
+ */
+export function resolveSubset(state: ResultsState, scored: readonly Subset[]): ResultsState {
+  if (state.subset !== undefined && scored.includes(state.subset)) return state;
+  return { ...state, subset: scored.at(-1) };
+}
+
+/**
  * The segmentation cut in the map's own units.
  *
  * `null` when the run recorded no range — before anything is scored, and for a method that
