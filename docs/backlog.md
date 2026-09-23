@@ -11,6 +11,13 @@ until its output has been reviewed.
 
 - [ ] **Visual QA in light and dark at 1440×900 and 1024×768** (M): hierarchy, density, contrast,
       focus, loading/empty/error/disabled states, and no same-axis nested scroll.
+- [ ] **Move `SampleRoute.tsx` off `ZoomPanCanvas`** (S): the two result viewers are on `ImageStage`
+      and the dataset browser's single-sample viewer is the last consumer of the deprecated
+      component, so the component cannot leave the app until it moves. It is not distorted today —
+      it uses `object-contain`, so its picture is letterboxed rather than stretched — which is why
+      it was left alone. What it does gain is the stage's `scale` in real units: `tierFor` can then
+      decide its full-versus-preview tier the same way both result viewers do, instead of from a
+      frame-relative zoom that means different things in different windows.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination, sortable column headers, and compatible selection handed to Compare.
 
@@ -23,6 +30,16 @@ until its output has been reviewed.
 - [ ] **Measure compact source-map persistence** (M): projected float32 maps consume about 1.23 GB
       for a 200-image VisA test set. Compare compressed source maps against prepared-frame map plus
       pinned-transform projection, preserving constant-memory evaluation and exact overlay semantics.
+- [ ] **Stratify region-profile previews by channel** (S): 24 images evenly spaced across a
+      3-channel grouped dataset can resonate with the channel interleave and sample only two of the
+      three channels — a preview that looked clean while the unsampled channel's crops diverged by
+      35 % was how the first grouped crop profile shipped wrong. Spread the preview budget across
+      channels when the dataset has them.
+- [ ] **Per-sample crop harmonisation for grouped datasets** (M): extractors run per image, so the
+      channels of one sample can crop differently and misregister every per-position channel fusion.
+      `center_crop` sidesteps this by being content-free; a content-based extractor needs a
+      preparation-level rule (union box, or one designated reference channel) to be safe on grouped
+      data.
 
 ## Methods
 

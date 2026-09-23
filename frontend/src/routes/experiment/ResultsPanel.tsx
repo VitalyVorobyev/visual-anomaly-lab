@@ -11,10 +11,12 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
-import type { SampleVerdict, Subset } from "../../api/client";
+import type { MetricSummary, SampleVerdict, Subset } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
+import type { MetricValue } from "../../api/metrics";
+import { localizationTolerancePx } from "../../api/metrics";
 import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
-import { Badge, DEFECT_COLOUR, Empty, ErrorBox, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
+import { Badge, DEFECT_COLOUR, Empty, ErrorBox, InfoHint, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
 import {
   useCurves,
   useResults,
@@ -38,17 +40,65 @@ export const OUTCOME_LABEL: Record<string, string> = {
   unlabeled: "unlabeled",
 };
 
+/**
+ * The localization verdict's own vocabulary, deliberately kept apart from the outcome's.
+ *
+ * It is **orthogonal to the outcome, not a fifth value of it**: a true positive that fired
+ * off target is still a true positive, and one that is `null` here is not a miss — the
+ * question does not apply to a normal part, to a defect nobody annotated, or to a method
+ * that wrote no map. So this is a second badge beside the outcome rather than a widening of
+ * it, and `null` draws nothing at all.
+ */
+export function localizationBadge(
+  localized: boolean | null | undefined,
+): { tone: Tone; label: string } | null {
+  if (localized === null || localized === undefined) return null;
+  return localized
+    ? { tone: "normal", label: "localized" }
+    : { tone: "warning", label: "off target" };
+}
+
+/**
+ * How many of the rows that could be judged were localized.
+ *
+ * `judged` counts every row the question applies to — the ones carrying a verdict — and
+ * never the whole subset, so the denominator is "annotated defects whose map produced a
+ * peak" rather than "defects". Deliberately not filtered by outcome: the verdict compares
+ * the map against the ground truth and never against a cut, so this pair is the same at
+ * every position of the slider it is printed beside, and filtering to the detections would
+ * silently make it move.
+ */
+export function localizationSummary(
+  rows: readonly { localized?: boolean | null }[],
+): { localized: number; judged: number } {
+  let localized = 0;
+  let judged = 0;
+  for (const row of rows) {
+    if (row.localized === null || row.localized === undefined) continue;
+    judged += 1;
+    if (row.localized) localized += 1;
+  }
+  return { localized, judged };
+}
+
 export function Results({
   experimentId,
   subsets,
   subset,
   onSubset,
+  metrics,
   charts = false,
 }: {
   experimentId: number;
   subsets: Subset[];
   subset: Subset;
   onSubset: (subset: Subset) => void;
+  /**
+   * The stored metric sets, read for one thing only: the tolerance the localization
+   * verdicts were decided against, so the strip can name the radius rather than leave the
+   * rule abstract. Absent is fine — the counts stand without it.
+   */
+  metrics?: MetricSummary[];
   /** The benchmark tab wants the distribution charts; the overview does not. */
   charts?: boolean;
 }) {
@@ -67,6 +117,10 @@ export function Results({
 
   const span = (results.data?.score_max ?? 1) - (results.data?.score_min ?? 0);
   const step = span > 0 ? span / 500 : 0.001;
+
+  // This subset's stored metrics, read for the tolerance alone. `null` for a run evaluated
+  // before the verdicts existed, which is why the strip has a phrasing that works without it.
+  const stored = (metrics?.find((entry) => entry.subset === subset)?.metrics ?? {}) as MetricValue;
 
   return (
     <Panel
@@ -119,7 +173,11 @@ export function Results({
           {report.data && (
             <>
               {charts && <Distributions samples={report.data.samples} threshold={active} />}
-              <Confusion report={report.data} />
+              <Confusion
+                report={report.data}
+                samples={report.data.samples}
+                tolerancePx={localizationTolerancePx(stored)}
+              />
               {charts && <DefectTypes samples={report.data.samples} />}
               <VerdictTable
                 experimentId={experimentId}
@@ -206,6 +264,8 @@ function DefectTypes({ samples }: { samples: SampleVerdict[] }) {
 
 export function Confusion({
   report,
+  samples = [],
+  tolerancePx = null,
 }: {
   report: {
     confusion: {
@@ -218,8 +278,13 @@ export function Confusion({
     recall: number | null;
     f1: number | null;
   };
+  /** The classified rows, read for their localization verdicts alone. */
+  samples?: readonly { localized?: boolean | null }[];
+  /** The resolved tolerance radius, when the run's metrics named one. */
+  tolerancePx?: number | null;
 }) {
   const { confusion } = report;
+  const localization = localizationSummary(samples);
   return (
     <div className="flex flex-wrap items-center gap-6">
       <table className="text-sm">
@@ -263,6 +328,30 @@ export function Confusion({
             </dd>
           </div>
         ))}
+
+        {/* The one figure in this strip that does not move with the slider above it, which
+            is exactly why it needs the hint: read as a neighbour of precision and recall it
+            would look like another quantity at this threshold. */}
+        <div className="flex flex-col">
+          <dt className="flex items-center gap-1 text-xs text-fg-muted">
+            localized
+            <InfoHint label="What localized means">
+              Threshold-free, and unchanged as the slider moves: it asks whether the map&rsquo;s
+              peak landed within{" "}
+              {tolerancePx === null ? "the resolved tolerance" : `${tolerancePx} px`} of the
+              annotated region, never whether a score crossed a cut. Counted over the
+              annotated defects whose map produced a peak — a normal part, an unannotated
+              defect and a run with no map have no verdict rather than a failed one.
+            </InfoHint>
+          </dt>
+          <dd className="font-mono">
+            {localization.judged === 0 ? (
+              <span className="text-fg-subtle">—</span>
+            ) : (
+              `${localization.localized} of ${localization.judged}`
+            )}
+          </dd>
+        </div>
       </dl>
     </div>
   );
@@ -321,6 +410,10 @@ function VerdictTable({
         {shown.map((sample) => {
           const path = `${sample.group_key}/${sample.external_id}`;
           const imageId = imageBySample.get(sample.sample_id);
+          // Only the failure is marked. A badge on every localized row would put a second
+          // column of green beside the outcome and bury the handful of rows that got the
+          // right answer from the wrong pixels, which is the only thing to scan for here.
+          const offTarget = sample.localized === false;
           return (
             <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
               {/* A fixed width so the badges line up into columns down the list. Ragged
@@ -349,6 +442,7 @@ function VerdictTable({
               <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
                 {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
               </Badge>
+              {offTarget && <Badge tone="warning">off target</Badge>}
               {sample.notes && <span className="text-xs text-fg-muted">{sample.notes}</span>}
               <span className="ml-auto shrink-0 font-mono text-xs">{sample.score.toFixed(4)}</span>
             </li>

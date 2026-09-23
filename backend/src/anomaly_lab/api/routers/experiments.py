@@ -46,6 +46,7 @@ from anomaly_lab.domain.entities import (
     Subset,
 )
 from anomaly_lab.eval.ground_truth import current_digest
+from anomaly_lab.eval.localization import tolerance_px
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
 from anomaly_lab.eval.threshold import (
@@ -360,6 +361,22 @@ class SamplePreview(BaseModel):
     height: int = 0
 
 
+class MapPeak(BaseModel):
+    """Where one map's largest value sits, in source-frame pixels.
+
+    The **map's** peak, not the score's location. A stored map has been blurred, upsampled
+    from the patch grid and projected back into source coordinates, so its argmax is near
+    the cell that produced the score without being the same cell — and a method scoring at
+    a percentile below 100 is not reading a single cell at all. It marks the picture on
+    screen, which is the only thing a reviewer can check by eye.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    x: int
+    y: int
+
+
 class ImageScore(BaseModel):
     """One image of one sample, as the result viewer draws it."""
 
@@ -373,6 +390,24 @@ class ImageScore(BaseModel):
     has_mask: bool = False
     width: int = 0
     height: int = 0
+    peak: MapPeak | None = None
+    """`None` when no map was written, or when a legacy run has not been re-evaluated."""
+    localized: bool | None = None
+    """
+    Whether this image's map peaked inside its annotated region, within `tolerance_px`.
+
+    Threshold-free, so it does not move with the results slider. `null` is not applicable —
+    a normal image, a defect with no resolved mask, or a map that could not be read — and
+    never a miss.
+    """
+    tolerance_px: int | None = None
+    """
+    The radius the verdict was decided by, for this image's own frame.
+
+    Present whenever the frame is known, including when `localized` is `null`, so a viewer
+    can draw the tolerance it *would* be judged against. `EvalConfig.localization_tolerance`
+    is a fraction of the diagonal, so this differs per image on a mixed-size dataset.
+    """
     """
     The source image's pixel dimensions, so a viewer can shape its frame before the
     picture arrives. Without them the canvas is laid out square and reflows on load, or —
@@ -1195,6 +1230,11 @@ def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> l
             conn, [image.image_id for image in scored]
         )
 
+    # Read from the frozen `eval_config`, not from the current default: the verdict on the
+    # row was decided under the run's own tolerance, and printing a different radius beside
+    # it would describe a test that was never performed.
+    tolerance = EvalConfig.model_validate(experiment.eval_config).localization_tolerance
+
     return [
         ImageScore(
             image_id=image.image_id,
@@ -1206,6 +1246,17 @@ def get_sample_images(request: Request, experiment_id: int, sample_id: int) -> l
             width=image.width,
             height=image.height,
             map_scale=_map_scale(image.map_path),
+            peak=(
+                MapPeak(x=image.peak_x, y=image.peak_y)
+                if image.peak_x is not None and image.peak_y is not None
+                else None
+            ),
+            localized=image.localized,
+            tolerance_px=(
+                tolerance_px(image.width, image.height, tolerance)
+                if image.width > 0 and image.height > 0
+                else None
+            ),
         )
         for image in scored
     ]

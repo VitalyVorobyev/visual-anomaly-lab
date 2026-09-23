@@ -34,6 +34,11 @@ from typing import Any, ClassVar, Protocol, runtime_checkable
 import numpy as np
 from pydantic import BaseModel, Field
 
+# One numpy primitive, no model knowledge and no torch, imported so that "where the map
+# peaks" is defined once. The evaluation layer must never import a *model* module; nothing
+# forbids the reverse, and `models/preprocessing.py` is already read from `eval/` for the
+# same reason — one rule, one implementation.
+from anomaly_lab.eval.localization import peak_of
 from anomaly_lab.models.diagnostics import DiagnosticKind, DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -243,6 +248,14 @@ class InferContext(ModelContext):
 
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
+    _map_peaks: dict[int, tuple[int, int]] = field(default_factory=dict)
+    """Where each written map's largest value landed, in the frame it was stored in.
+
+    Collected here, at the one boundary every method's map already passes through, so that
+    no plugin has to know the localization verdict exists — and so that the peak is taken
+    from the *projected* array, which is the array the reviewer will look at.
+    """
+
     @property
     def maps_dir(self) -> Path:
         """Where anomaly maps are written. Created on first use, not at construction."""
@@ -290,7 +303,14 @@ class InferContext(ModelContext):
             raise ValueError(f"anomaly map for image {image_id} has no covered finite pixels")
         np.save(path, values)
         self._map_extremes.append((float(finite.min()), float(np.percentile(finite, 99.9))))
+        peak = peak_of(values)
+        if peak is not None:
+            self._map_peaks[image_id] = peak
         return path
+
+    def peak_for(self, image_id: int) -> tuple[int, int] | None:
+        """`(x, y)` of this image's map peak, or `None` if no map was written for it."""
+        return self._map_peaks.get(image_id)
 
     def display_range(self) -> tuple[float, float] | None:
         """`(low, high)` for rendering this run's maps, or `None` if none were written."""

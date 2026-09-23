@@ -20,6 +20,7 @@ import {
   detectionRows,
   formatScore,
   groupingNote,
+  localizationRows,
   pixelRows,
   timingRows,
 } from "../../api/metrics";
@@ -31,6 +32,10 @@ export function MetricTable({ runs }: { runs: ComparedRun[] }) {
   const sections: { title: string; rows: ComparisonRow[] }[] = [
     { title: "Detection", rows: comparisonRows(metrics.map(detectionRows)) },
     { title: "Pixel level", rows: comparisonRows(metrics.map(pixelRows)) },
+    /* Threshold-independent like everything else in this table: the localization verdict
+       compares a peak against an annotation, never a score against a cut, so it belongs
+       here rather than beside the per-run confusion matrices below. */
+    { title: "Localization", rows: comparisonRows(metrics.map(localizationRows)) },
     { title: "Timing", rows: comparisonRows(metrics.map(timingRows)) },
   ].filter((section) => section.rows.length > 0);
 

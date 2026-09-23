@@ -21,6 +21,12 @@ def _identity() -> type[RegionExtractor]:
     return IdentityExtractor
 
 
+def _center_crop() -> type[RegionExtractor]:
+    from anomaly_lab.regions.center_crop import CenterCropExtractor
+
+    return CenterCropExtractor
+
+
 def _foreground_threshold() -> type[RegionExtractor]:
     from anomaly_lab.regions.threshold import ForegroundThresholdExtractor
 
@@ -35,6 +41,7 @@ def _mobile_sam() -> type[RegionExtractor]:
 
 LOADERS: dict[str, Callable[[], type[RegionExtractor]]] = {
     "identity": _identity,
+    "center_crop": _center_crop,
     "foreground_threshold": _foreground_threshold,
     "mobile_sam": _mobile_sam,
 }

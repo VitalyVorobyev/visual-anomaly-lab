@@ -89,3 +89,15 @@ Negative consequences, accepted honestly:
   `reevaluate` recomputed `MetricSet` rows without rebuilding `SampleResult`, so a changed aggregation mode
   appeared to apply and did not. Deriving sample scores moved out of the `infer` handler and into
   `evaluate_and_store`, which now owns the whole from-stored-scores path.
+- **2026-08-24:** Closed the last of this record's "a method with a good score and a nonsensical map is
+  indistinguishable from a good one" — for the per-sample case, which the subset-wide pixel curves left open.
+  Each scored image now carries its map's peak and a **threshold-free** `localized` verdict: is that peak
+  inside the annotated region, within a fraction of the image diagonal? Persisting it does not weaken this
+  record's "nothing is persisted per threshold" — the verdict is identical at every threshold, so storing it
+  costs four nullable columns instead of one `.npy` read per image per slider tick. It is an orthogonal
+  qualifier and **not** a fifth `outcome`: the four names stay exactly four, and a `tp` that is
+  `localized = false` is still a true positive that got there from the wrong pixels. A part is judged by the
+  image that *produced* its aggregate score — under `max` the winning channel after normalization, which is
+  the same reduction this record already made substantive — because an "any channel hit" rule would hide the
+  failure being measured. `NULL` is not applicable and never a miss, so an unannotated defect leaves both the
+  numerator and the denominator ([the handbook](../architecture/evaluation.md)).

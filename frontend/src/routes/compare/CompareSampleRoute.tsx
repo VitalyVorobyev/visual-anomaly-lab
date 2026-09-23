@@ -14,7 +14,10 @@
  *   point in all of them.
  * - **One zoom and pan drives every pane**, because the comparison is spatial: where the
  *   methods fire and where they disagree. Panning one and not the others would make that
- *   unreadable at exactly the magnification where it matters.
+ *   unreadable at exactly the magnification where it matters. One `StageView` is shared by
+ *   every `ImageStage` here, and each stage is laid out at the image's own pixel size — so
+ *   a pane's layers are registered with its photograph by construction rather than by every
+ *   pane being handed the same aspect-ratio box.
  *
  * N panes, not two. The layout is a grid and the milestone's "A/B" is its N = 2 case.
  */
@@ -26,8 +29,8 @@ import type { ComparedRun, ComparedSample, ImageScore } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { cutFor, readCompareState, writeCompareState } from "../../api/compareState";
 import { preferredImageIndex } from "../../api/defaultChannel";
-import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
-import { Badge, Empty, ErrorBox, FULL_TIER_ZOOM, PageHeader, RESET_VIEW, SkeletonRows, Slider, Tabs, ToggleChip, ZoomPanCanvas, cn, type View } from "@vitavision/lab-ui";
+import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl, tierFor } from "../../api/imageUrl";
+import { Badge, Empty, ErrorBox, ImageStage, PageHeader, SkeletonRows, Slider, StageReadout, StageToolbar, Tabs, ToggleChip, cn, type StageView } from "@vitavision/lab-ui";
 import { useDataset } from "../../hooks/useCatalog";
 import { useComparison, useSampleImageSets } from "../../hooks/useComparison";
 import {
@@ -36,7 +39,8 @@ import {
   PREDICTION_SWATCH,
   TRUTH_SWATCH,
 } from "../experiment/OverlayControls";
-import { OUTCOME_TONE } from "../experiment/ResultsPanel";
+import { PeakMarker } from "../experiment/PeakMarker";
+import { OUTCOME_TONE, localizationBadge } from "../experiment/ResultsPanel";
 
 export function CompareSampleRoute() {
   const { sampleId: raw } = useParams();
@@ -59,8 +63,18 @@ export function CompareSampleRoute() {
   // the app has already filled.
   const dataset = useDataset(comparison.data?.dataset_id);
   const [channel, setChannel] = useState<number | null>(null);
-  // One view for every pane. The whole point of the screen is that the panes are aligned.
-  const [view, setView] = useState<View>(RESET_VIEW);
+  /*
+   * One view for every pane. The whole point of the screen is that the panes are aligned.
+   *
+   * `null` is `ImageStage`'s own opening view, resolved once a viewport has been measured.
+   * The caveat worth stating: `scale` is **absolute** — CSS pixels per image pixel — so
+   * panes showing images of *different* pixel sizes would sit at different relative zooms
+   * rather than at the same fraction of fit. That is accepted: every pane here draws the
+   * same image of the same sample, one run's map at a time, and the alternative — a
+   * fit-relative zoom — is the frame-relative arithmetic that made the layers drift in the
+   * first place.
+   */
+  const [view, setView] = useState<StageView | null>(null);
 
   const report = comparison.data;
   const back = `/compare?${writeCompareState({ ...state, view: "samples" }).toString()}`;
@@ -124,6 +138,15 @@ export function CompareSampleRoute() {
             title="The annotated region, identical in every pane"
           >
             ground truth
+          </ToggleChip>
+          {/* No swatch: each pane draws this in the colour of its own run's verdict, so one
+              dot would legend one pane and misdescribe the rest. */}
+          <ToggleChip
+            checked={state.peak}
+            onCheckedChange={(peak) => update({ peak })}
+            title="Where each run's map peaked, in the window its localization verdict was decided in"
+          >
+            peak
           </ToggleChip>
         </div>
 
@@ -216,13 +239,14 @@ function RunPane({
   /** The same image from a run that did score it, so the photograph is drawn regardless. */
   fallback: ImageScore;
   state: CompareState;
-  view: View;
-  onView: (view: View) => void;
+  view: StageView | null;
+  onView: (view: StageView) => void;
 }) {
   const shown = image ?? fallback;
   const cut = cutFor(state, run.map_range);
   const outcome = row?.outcomes[index] ?? null;
   const score = row?.scores[index] ?? null;
+  const localization = localizationBadge(image?.localized);
 
   const layers: { key: string; src: string; className?: string }[] = [];
   if (image && state.heatmap && image.has_map) {
@@ -245,25 +269,32 @@ function RunPane({
         <span className="min-w-0 truncate text-sm font-semibold text-fg">{run.name}</span>
         <span className="font-mono text-[11px] text-fg-subtle">{run.model_type}</span>
         {outcome && <Badge tone={OUTCOME_TONE[outcome] ?? "neutral"}>{outcome}</Badge>}
+        {/* Per run, because this is the disagreement the screen exists to show: two methods
+            can both be right about the label and differ about where the defect is. */}
+        {localization && <Badge tone={localization.tone}>{localization.label}</Badge>}
         <span className="ml-auto font-mono text-xs tabular-nums">
           {score === null ? <span className="text-fg-subtle">—</span> : score.toFixed(4)}
         </span>
       </figcaption>
 
-      <div className="flex min-h-0 flex-1 items-center justify-center">
-        <ZoomPanCanvas
+      <div className="relative min-h-0 flex-1 overflow-hidden">
+        <ImageStage
+          image={{ width: shown.width, height: shown.height }}
           view={view}
           onView={onView}
-          className="max-h-full max-w-full"
-          style={{ aspectRatio: `${shown.width} / ${shown.height}`, height: "100%" }}
-          label={`${run.name} · ${view.zoom.toFixed(1)}×`}
-          nativeWidth={shown.width}
+          // Off for the same reason as the results viewer, where the arrows step the
+          // sample list — one canvas gesture vocabulary across both. Dragging still pans,
+          // and the stage keeps 0 / 1 / + / -.
+          panKeys={false}
+          label={`${run.name} canvas`}
+          toolbar={<StageToolbar />}
+          readout={<StageReadout />}
         >
           <img
-            src={imageUrl(shown.image_id, view.zoom > FULL_TIER_ZOOM ? "full" : "preview")}
+            src={imageUrl(shown.image_id, tierFor(view))}
             alt={run.name}
             draggable={false}
-            className="absolute inset-0 h-full w-full object-fill"
+            className="absolute inset-0 h-full w-full"
           />
           {layers.map((layer) => (
             <img
@@ -273,12 +304,17 @@ function RunPane({
               aria-hidden
               draggable={false}
               className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full object-fill",
+                "pointer-events-none absolute inset-0 h-full w-full",
                 layer.className,
               )}
             />
           ))}
-        </ZoomPanCanvas>
+          {/* Per pane, from that run's own `ImageScore` — the peak is where *this* method
+              fired, and two methods disagreeing about it is exactly what the screen is for.
+              Drawn only for a run that scored this sample; the fallback photograph carries
+              another run's pixels and would put its peak under this run's name. */}
+          {state.peak && image !== undefined && <PeakMarker image={image} />}
+        </ImageStage>
       </div>
 
       {/* Both scales, under every pane. Without them two panes look like one axis, which is

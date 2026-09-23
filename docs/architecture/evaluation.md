@@ -4,8 +4,9 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 
 - `ImageResult.score` rows for an experiment,
 - `Sample.label`,
-- `SplitAssignment.subset`.
-- the resolved ground-truth mask for each image, when pixel metrics are enabled.
+- `SplitAssignment.subset`,
+- the resolved ground-truth mask for each image, and the float32 map on disk, when pixel or localization
+  metrics are computed.
 
 It never imports a model module and never re-runs inference. Every method is therefore evaluated by exactly
 the same code, which is the precondition for the comparison view to mean anything.
@@ -44,6 +45,79 @@ adapt their histogram bins to a run's observed range.
 **Image-level ROC-AUC stays on raw scores.** ADR-0011 keeps it as the number that isolates model quality from
 how the channels were combined, and normalization is part of combining them.
 
+## Did it find the defect, or merely score it?
+
+An image-level verdict is `agg_score >= threshold` against the sample's label, and it is blind to *where* the
+evidence came from. A defective part whose anomaly map fires on the background behind it counts as a true
+positive; a hundred of them read as a working method until somebody opens one of the pictures. Pixel ROC-AUC
+and AU-PRO already measure agreement over the frame, but they are a subset-wide summary — there is no
+per-sample answer to "was **this** hit on the part".
+
+`localized` is that answer: **does the map's peak fall inside the annotated region, within a tolerance?**
+It is deliberately *not* a fifth outcome. `outcome_of` names four buckets the comparison layer and the
+frontend both key on (ADR-0028), and widening that vocabulary would change what every existing `tp` means.
+A true positive that is `localized = false` is still a true positive — one that got the right answer from
+the wrong pixels.
+
+**It is the map's peak, not the score's location.** The stored map has been blurred, upsampled from the patch
+grid and projected back into source coordinates, so its argmax sits near the grid cell that produced the
+score without being that cell — and a method scoring at a percentile below 100 (`dino_memory`) is not reading
+a single cell at all. The verdict is therefore a statement about the picture the reviewer is looking at,
+which is the only thing that can be checked against a region drawn by hand.
+
+**The tolerance is a fraction of the image diagonal**, `EvalConfig.localization_tolerance`, default `0.02`,
+resolved to a pixel radius per image and reported beside the counts. Not a fixed pixel count: a map's real
+resolution is its patch stride — 14 or 16 source pixels for a DINO-family encoder before any upsampling — so
+"within 8 px" means *inside the same patch* on a small frame and four patches away on a large one. The radius
+is floored at 1, so a tolerance of exactly zero is still a 3x3 window; a radius of 0 would decide the verdict
+on a single pixel of a bilinearly resampled map. The test itself is a Chebyshev window clamped at the frame's
+edges — a square, because the difference from a disc is the corners of a box that is already a tolerance,
+and a negative slice start would silently select from the far side of the image.
+
+**Why this one is persisted while the confusion counts are not.** ADR-0011's line is threshold-dependence,
+not storage. Nothing here moves with the slider: the peak is a property of the map alone, and the verdict
+compares that peak against ground truth. Recomputing it per tick would mean one `.npy` and one mask PNG per
+image on every drag. Four nullable columns arrived in migration 019 — `image_result.peak_x`, `peak_y`,
+`localized`, and `sample_result.localized` — each three-valued: `1` hit, `0` miss, `NULL` **not applicable**,
+which is a normal image, a defect with no resolved mask, or a map that could not be read. `NULL` is never a
+miss. Staleness needs no new machinery: the verdicts are refreshed by the same re-evaluation that refreshes
+the pixel metrics, and go stale with the same `metric_set.ground_truth_digest`.
+
+Peaks are recorded as maps are written — `InferContext.write_map` already scans the projected array for its
+display extremes and takes the argmax in the same pass, so **no plugin changes and no plugin knows this
+exists**. A run scored before migration 019 has none; re-evaluating backfills them from the maps already on
+disk, once, and never re-reads a row that has one.
+
+**A part's verdict follows the image that produced its score.** Under `max` that is the argmax after channel
+normalization — the winning channel — so changing `channel_normalization` moves the winner and the verdict
+with it. An "any channel hit" rule would report a hit for a part whose score came from a channel that fired
+on the background while a discarded channel happened to find the defect, which is *exactly* the failure this
+records. Under `mean` no single image produced the number, so there is no winner and any hit counts. Under
+`feature_concat`-style methods one map is computed per sample and written once per image, so every channel
+carries the same peak and the argmax picks between identical verdicts — arbitrary, and harmless for that
+reason.
+
+Per subset, `metrics["localization"]` carries the tolerance and both populations:
+
+```json
+{
+  "tolerance_fraction": 0.02,
+  "tolerance_pixels": 23,
+  "defect_images_with_truth": 40,
+  "peak_on_target_images": 33,
+  "defect_samples_with_truth": 40,
+  "localized_samples": 33,
+  "unannotated_defect_samples": 2
+}
+```
+
+`tolerance_pixels` is `null` when the subset's scored images differ in size, because there is then a
+different radius per image and a single figure would name none of them. `*_with_truth` counts what was
+actually tested — a resolved mask *and* a readable map — so it is the denominator its numerator belongs to.
+**The whole block is absent when nothing was checked**, the way `pixel` is absent for a dataset with no
+masks: `0 of 0` would read as "this method never localized anything", which is a claim about the method made
+out of the absence of ground truth.
+
 ## Which channels a run reads
 
 `Experiment.channels` is a frozen list of channel **names**; empty means every channel. It is applied in
@@ -69,8 +143,8 @@ alongside it as a diagnostic (it reveals when a model scores individual views we
 that signal).
 
 Persisted in `MetricSet`: **threshold-independent metrics only** — sample-level and image-level ROC-AUC,
-average precision, per-subset sample counts, timing summaries, and the digest of the labels and masks those
-numbers measured.
+average precision, per-subset sample counts, timing summaries, the peak-on-target counts, and the digest of
+the labels and masks those numbers measured.
 
 ### Ground-truth snapshot and freshness
 
@@ -79,10 +153,16 @@ completed app-owned annotation revision, otherwise the imported source mask, oth
 hash-verifies the selected bytes before using them. A changed pinned file is a named failure, not a new truth
 silently measured under the old experiment.
 
+Ground truth is now resolved **once per run**, not once per subset: `resolve_ground_truth_masks` is keyed by
+image id, so a superset dictionary is exactly as correct per subset, and the byte verification happens one
+time instead of once per subset.
+
 Every subset's `ground_truth_digest` covers its current sample labels and each resolved mask's kind, row id
 and SHA256. Experiment detail recomputes that metadata digest without opening image files. A mismatch—or a
-legacy `NULL` digest—marks the metric set stale. The UI keeps old values visible with a warning, hides charts
-that would otherwise combine current labels with old areas, and offers reevaluation from stored scores. The
+legacy `NULL` digest—marks the metric set stale. The stored localization verdicts go stale by exactly the
+same signal, because they were computed against exactly the same resolved masks. The UI keeps old values
+visible with a warning, hides charts that would otherwise combine current labels with old areas, and offers
+reevaluation from stored scores. The
 comparison view carries the same signal per run and will not draw mixed-snapshot curves.
 
 **Threshold-dependent outputs are computed on demand** from the persisted scores: confusion matrix,

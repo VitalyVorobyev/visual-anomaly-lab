@@ -3,7 +3,15 @@ privatedata/
 *.bmp
 *.BMP
 docs/initial-prompt.md
+docs/dino3-methods.md
 setenv.sh
+
+# ── Reference papers: third-party PDFs, read locally and cited, never vendored ──
+# A conference PDF is megabytes of someone else's copyrighted typesetting. Methods
+# ported from one cite it by title and authors in the handbook; the file itself stays
+# out. check-repo-safety.sh would reject most of them on size alone -- this keeps the
+# folder from being staged in the first place.
+/papers/
 
 # ── Public reference datasets: too large to commit, freely available ───────
 # Anchored with a leading slash, and it matters: an unanchored `datasets` matches

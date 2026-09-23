@@ -14,7 +14,13 @@ from anomaly_lab.domain.entities import Aggregation, Label
 from anomaly_lab.eval.threshold import classify, report, suggest_threshold
 
 
-def _sample(sample_id: int, score: float, label: Label) -> ScoredSample:
+def _sample(
+    sample_id: int,
+    score: float,
+    label: Label,
+    *,
+    localized: bool | None = None,
+) -> ScoredSample:
     return ScoredSample(
         sample_id=sample_id,
         group_key="g",
@@ -24,6 +30,7 @@ def _sample(sample_id: int, score: float, label: Label) -> ScoredSample:
         agg_score=score,
         aggregation=Aggregation.MAX,
         subset=None,
+        localized=localized,
     )
 
 
@@ -97,3 +104,46 @@ def test_the_threshold_is_inclusive_at_its_own_value() -> None:
     samples = [_sample(1, 0.5, Label.DEFECT)]
     assert report(samples, 0.5).confusion.true_positive == 1
     assert report(samples, 0.500001).confusion.false_negative == 1
+
+
+def test_the_localization_verdict_does_not_move_with_the_slider() -> None:
+    """It compares a map against ground truth, so no threshold can change it. The same
+    defect is a `tp` at one cut and an `fn` at another while still having peaked on — or
+    beside — its annotated region."""
+    samples = [
+        _sample(1, 0.9, Label.DEFECT, localized=True),
+        _sample(2, 0.8, Label.DEFECT, localized=False),
+        _sample(3, 0.7, Label.DEFECT),
+        _sample(4, 0.1, Label.NORMAL),
+    ]
+
+    for threshold in (0.0, 0.75, 0.85, 10.0):
+        by_id = {v.sample_id: v for v in classify(samples, threshold)}
+        assert by_id[1].localized is True
+        assert by_id[2].localized is False
+        assert by_id[3].localized is None
+        assert by_id[4].localized is None
+
+    # …while the outcome of the same rows does move.
+    assert {v.sample_id: v.outcome for v in classify(samples, 0.85)}[2] == "fn"
+    assert {v.sample_id: v.outcome for v in classify(samples, 0.75)}[2] == "tp"
+
+
+def test_the_outcome_vocabulary_is_still_exactly_four_names_plus_unlabeled() -> None:
+    """`localized` is an orthogonal qualifier, not a fifth bucket. The comparison layer and
+    the frontend key on these five strings, and a run whose maps all miss must still report
+    the true positives it found."""
+    samples = [
+        _sample(1, 0.9, Label.DEFECT, localized=False),
+        _sample(2, 0.1, Label.DEFECT, localized=False),
+        _sample(3, 0.9, Label.NORMAL),
+        _sample(4, 0.1, Label.NORMAL),
+        _sample(5, 0.5, Label.UNLABELED, localized=True),
+    ]
+
+    outcomes = {verdict.outcome for verdict in classify(samples, 0.5)}
+    assert outcomes == {"tp", "fn", "fp", "tn", "unlabeled"}
+
+    found = report(samples, 0.5)
+    assert found.confusion.true_positive == 1
+    assert found.unlabeled == 1

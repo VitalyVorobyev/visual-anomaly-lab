@@ -115,6 +115,7 @@ export function BenchmarkTab({
           subsets={subsets}
           subset={subset}
           onSubset={setSubset}
+          metrics={metrics}
           charts
         />
       )}

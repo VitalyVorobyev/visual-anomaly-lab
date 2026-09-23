@@ -44,6 +44,47 @@ import numpy as np
 
 REPOSITORY = Path(__file__).resolve().parent.parent
 DEFAULT_DB = REPOSITORY / "data" / "app.sqlite3"
+BACKEND_SRC = REPOSITORY / "backend" / "src"
+
+
+def localize_rows(
+    conn: sqlite3.Connection, rows: list[dict], tolerance_fraction: float
+) -> None:
+    """Annotate each row with the stored map's peak and a peak-in-mask verdict.
+
+    An independent cross-check of the persisted `localized` column: same primitive
+    (`eval/localization.py`), same resolver, but recomputed here from the artifacts on
+    disk, so a disagreement would point at the persistence path rather than the rule.
+    """
+    if str(BACKEND_SRC) not in sys.path:
+        sys.path.insert(0, str(BACKEND_SRC))
+    from anomaly_lab.db.repositories.annotations import resolve_ground_truth_masks
+    from anomaly_lab.eval.localization import hits, peak_of, tolerance_px
+    from anomaly_lab.models.preprocessing import load_mask
+
+    truths = resolve_ground_truth_masks(conn, [int(r["image_id"]) for r in rows])
+    for row in rows:
+        row["peak_x"] = row["peak_y"] = row["localized"] = None
+        if not row["map_path"] or not Path(row["map_path"]).is_file():
+            continue
+        array = np.squeeze(np.load(row["map_path"]))
+        peak = peak_of(array)
+        if peak is None:
+            continue
+        row["peak_x"], row["peak_y"] = peak
+        truth = truths.get(int(row["image_id"]))
+        if row["label"] != "defect" or truth is None:
+            continue
+        mask = load_mask(Path(truth.path))
+        if mask.shape != array.shape:
+            # A resolved mask in a different frame: scale the argmax rather than
+            # resampling the label map (exact for a point, lossy for labels).
+            peak = (
+                round(peak[0] * (mask.shape[1] - 1) / max(1, array.shape[1] - 1)),
+                round(peak[1] * (mask.shape[0] - 1) / max(1, array.shape[0] - 1)),
+            )
+        radius = tolerance_px(mask.shape[1], mask.shape[0], tolerance_fraction)
+        row["localized"] = hits(mask, peak, radius)
 
 
 def roc_auc(labels: np.ndarray, scores: np.ndarray) -> float | None:
@@ -113,6 +154,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--subset", default="test", help="Subset to audit; 'all' for every one.")
     parser.add_argument("--csv", type=Path, help="Write the per-image table here.")
     parser.add_argument("--db", type=Path, default=DEFAULT_DB)
+    parser.add_argument(
+        "--localization",
+        action="store_true",
+        help="Recompute the peak-in-mask verdict per image from the maps on disk.",
+    )
+    parser.add_argument(
+        "--tolerance",
+        type=float,
+        default=0.02,
+        help="Peak-in-mask tolerance as a fraction of the image diagonal.",
+    )
     args = parser.parse_args(argv)
 
     conn = sqlite3.connect(args.db)
@@ -127,6 +179,8 @@ def main(argv: list[str] | None = None) -> int:
 
     subset = None if args.subset == "all" else args.subset
     rows = rows_for(conn, args.experiment_id, subset)
+    if args.localization and rows:
+        localize_rows(conn, rows, args.tolerance)
     conn.close()
     if not rows:
         print(f"experiment {args.experiment_id} has no scored images in {args.subset}")
@@ -164,12 +218,31 @@ def main(argv: list[str] | None = None) -> int:
         score = roc_auc(kept, np.array(values))
         print(f"    {name:<14} {score if score is None else f'{score:.4f}'}")
 
+    if args.localization:
+        judged = [r for r in rows if r.get("localized") is not None]
+        on_target = [r for r in judged if r["localized"]]
+        if judged:
+            print(
+                f"\n  localization (peak within {args.tolerance:.0%} of the diagonal): "
+                f"{len(on_target)} of {len(judged)} defect images on target"
+            )
+            for row in judged:
+                if not row["localized"]:
+                    print(
+                        f"    off target: image {row['image_id']} "
+                        f"score {row['score']:.4f} peak ({row['peak_x']}, {row['peak_y']})"
+                    )
+        else:
+            print("\n  localization: no defect image resolves ground truth — nothing to judge")
+
     if args.csv:
         args.csv.parent.mkdir(parents=True, exist_ok=True)
         fields = [
             "image_id", "image_path", "label", "subset", "score", "inference_ms",
             "map_path", "mask_path",
         ]
+        if args.localization:
+            fields += ["peak_x", "peak_y", "localized"]
         with args.csv.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.DictWriter(handle, fieldnames=fields, extrasaction="ignore")
             writer.writeheader()

@@ -116,10 +116,15 @@ its metric by hiding a defect. There is no mixed rollout and no method-specific 
 Spatial localisation has its own lazy `RegionExtractor` registry rather than becoming a model option. An
 extractor receives one source RGB array and returns one source pixel-edge box or an explicit failure. Its
 pydantic configuration schema drives the client exactly as model schemas do; adding an extractor is one
-module and one registry entry. The three current entries represent the value test rather than three promises
+module and one registry entry. The four current entries represent the value test rather than four promises
 of equal quality:
 
 - `identity` is the full-source control;
+- `center_crop` is a fixed fractional window around a configured centre — content-free by design, for
+  repeatably fixtured acquisitions where content-based extraction disagrees between the channels of one
+  grouped sample (measured on the first grouped dataset: a dark-field channel's glow pulled its Otsu box
+  ~35% wider than its bright-field sibling's on every sample, which would misregister any per-position
+  channel fusion). A deterministic window is the only extractor identical across channels by construction;
 - `foreground_threshold` estimates background luminance from the border, thresholds absolute contrast on a
   bounded analysis grid, and returns the largest connected component;
 - `mobile_sam` uses the verified TinyViT checkpoint and a bounded automatic prompt grid, then selects the

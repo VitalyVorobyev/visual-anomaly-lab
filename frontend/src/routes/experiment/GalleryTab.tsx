@@ -228,6 +228,14 @@ function Tile({
           <Badge tone={OUTCOME_TONE[verdict.outcome] ?? "neutral"}>
             {SHORT_OUTCOME[verdict.outcome] ?? OUTCOME_LABEL[verdict.outcome] ?? verdict.outcome}
           </Badge>
+          {/* Only the failure, and only here: a tile is 11rem wide, so a badge on every
+              localized sample would spend the identifier's width restating the common
+              case. The rare row that fired off target is the one worth finding. */}
+          {verdict.localized === false && (
+            <Badge tone="warning" className="shrink-0">
+              off target
+            </Badge>
+          )}
           {/* The external id alone. The group key is a directory path shared by every
               sample in the set, so at tile width it truncates to the part they have in
               common and identifies nothing. The full pair is on the sample page. */}

@@ -8,6 +8,8 @@ import {
   formatScore,
   groupingNote,
   isGrouped,
+  localizationRows,
+  localizationTolerancePx,
   pixelRows,
   timingRows,
 } from "./metrics";
@@ -110,6 +112,63 @@ describe("pixel rows", () => {
   });
 });
 
+describe("localization rows", () => {
+  const block = {
+    localization: {
+      tolerance_fraction: 0.02,
+      tolerance_pixels: 33,
+      defect_images_with_truth: 20,
+      peak_on_target_images: 15,
+      defect_samples_with_truth: 9,
+      localized_samples: 4,
+      unannotated_defect_samples: 0,
+    },
+  };
+
+  it("are empty for a run that checked nothing", () => {
+    // Absent rather than `0 of 0`, for the same reason the pixel block is absent without
+    // masks: a zero here reads as a finding about the method.
+    expect(localizationRows({ sample_roc_auc: 0.9 })).toEqual([]);
+    expect(localizationRows({})).toEqual([]);
+  });
+
+  it("report the hits over the defects that could be judged", () => {
+    const rows = localizationRows(block);
+    expect(rows[0]?.key).toBe("localized_samples");
+    expect(rows[0]?.value).toBe("4 of 9");
+  });
+
+  it("name the resolved radius, which is what the marker on screen shows", () => {
+    expect(localizationRows(block)[1]?.value).toBe("33 px");
+    expect(localizationTolerancePx(block)).toBe(33);
+  });
+
+  it("falls back to the configured fraction where the frames differ", () => {
+    // One radius would name none of them: it is a fraction of each frame's own diagonal.
+    const mixed = {
+      localization: {
+        tolerance_fraction: 0.02,
+        tolerance_pixels: null,
+        defect_samples_with_truth: 3,
+        localized_samples: 3,
+      },
+    };
+    expect(localizationRows(mixed)[1]?.value).toBe("2.0% of diagonal");
+    expect(localizationTolerancePx(mixed)).toBeNull();
+  });
+
+  it("keeps the count absent rather than dividing by nothing", () => {
+    const nothing = {
+      localization: { tolerance_fraction: 0.02, tolerance_pixels: 12, defect_samples_with_truth: 0, localized_samples: 0 },
+    };
+    expect(localizationRows(nothing)[0]?.value).toBeNull();
+  });
+
+  it("has no tolerance to report for a run with no localization block", () => {
+    expect(localizationTolerancePx({ pixel: { au_pro: 0.5 } })).toBeNull();
+  });
+});
+
 describe("timing rows", () => {
   it("are empty when nothing was timed", () => {
     expect(timingRows({})).toEqual([]);
@@ -125,6 +184,12 @@ describe("caveats", () => {
   it("say when defects were left out of the pixel metrics", () => {
     const notes = caveats({ pixel: { skipped_unannotated_defects: 4 } });
     expect(notes[0]).toContain("4 defective image(s)");
+  });
+
+  it("say when defects could not be judged for where their map fired", () => {
+    const notes = caveats({ localization: { unannotated_defect_samples: 7 } });
+    expect(notes.join(" ")).toContain("7 defective sample(s)");
+    expect(notes.join(" ")).toContain("no ground-truth region");
   });
 
   it("say when unlabeled samples were ranked but not counted", () => {

@@ -169,16 +169,25 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
             encoding="utf-8",
         )
 
-    image_rows = [
-        ImageResult(
-            experiment_id=experiment.id,
-            image_id=prediction.image_id,
-            score=prediction.score,
-            map_path=str(prediction.anomaly_map) if prediction.anomaly_map else None,
-            inference_ms=prediction.inference_ms,
+    # The peak comes from `write_map`, not from a plugin: it is measured on the projected
+    # array that was actually stored, so no method has to know the localization verdict
+    # exists and none can report a coordinate in a frame of its own choosing. Whether the
+    # peak is *on target* is `evaluate_and_store`'s answer a few lines below — this handler
+    # records what the model produced and never what the ground truth says about it.
+    image_rows: list[ImageResult] = []
+    for prediction in predictions:
+        peak = infer_ctx.peak_for(prediction.image_id)
+        image_rows.append(
+            ImageResult(
+                experiment_id=experiment.id,
+                image_id=prediction.image_id,
+                score=prediction.score,
+                map_path=str(prediction.anomaly_map) if prediction.anomaly_map else None,
+                inference_ms=prediction.inference_ms,
+                peak_x=peak[0] if peak is not None else None,
+                peak_y=peak[1] if peak is not None else None,
+            )
         )
-        for prediction in predictions
-    ]
 
     with connection(ctx.settings.db_path) as conn:
         results_repo.replace_image_results(conn, experiment.id, image_rows)

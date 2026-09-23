@@ -42,6 +42,14 @@ class ScoredImage:
     inference_ms: float
     label: Label
     subset: Subset | None
+    peak_x: int | None = None
+    peak_y: int | None = None
+    localized: bool | None = None
+    """Whether the map's peak landed inside the annotated region (handbook evaluation.md).
+
+    `None` is not applicable — a normal image, a defect with no mask, an unreadable map —
+    and never a miss. Defaulted so a hand-built row in a test states only what it is about.
+    """
 
 
 @dataclass(frozen=True)
@@ -56,6 +64,7 @@ class ScoredSample:
     agg_score: float
     aggregation: Aggregation
     subset: Subset | None
+    localized: bool | None = None
 
 
 def replace_image_results(
@@ -69,11 +78,21 @@ def replace_image_results(
         conn.execute("DELETE FROM image_result WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
             """
-            INSERT INTO image_result (experiment_id, image_id, score, map_path, inference_ms)
-                 VALUES (?, ?, ?, ?, ?)
+            INSERT INTO image_result (experiment_id, image_id, score, map_path, inference_ms,
+                                      peak_x, peak_y, localized)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
             [
-                (experiment_id, row.image_id, row.score, row.map_path, row.inference_ms)
+                (
+                    experiment_id,
+                    row.image_id,
+                    row.score,
+                    row.map_path,
+                    row.inference_ms,
+                    row.peak_x,
+                    row.peak_y,
+                    _flag(row.localized),
+                )
                 for row in rows
             ],
         )
@@ -82,6 +101,75 @@ def replace_image_results(
         raise
     conn.execute("COMMIT")
     return len(rows)
+
+
+def _flag(value: bool | None) -> int | None:
+    """`None` stays `None`. A three-valued column must not collapse to two on the way in."""
+    return None if value is None else int(value)
+
+
+def _optional_flag(value: object) -> bool | None:
+    """…and must not collapse to two on the way out either: `0` is a miss, `NULL` is not."""
+    return None if value is None else bool(value)
+
+
+def update_image_peaks(
+    conn: sqlite3.Connection,
+    experiment_id: int,
+    peaks: Mapping[int, tuple[int, int]],
+) -> int:
+    """Record where each map's largest value sits, in source-frame pixels.
+
+    Separate from the localization write because it answers a different question and goes
+    stale at a different time: the peak is a property of the map alone, so editing an
+    annotation cannot move it and it is computed once per stored map, ever.
+    """
+    if not peaks:
+        return 0
+    conn.execute("BEGIN")
+    try:
+        conn.executemany(
+            """
+            UPDATE image_result SET peak_x = ?, peak_y = ?
+             WHERE experiment_id = ? AND image_id = ?
+            """,
+            [(x, y, experiment_id, image_id) for image_id, (x, y) in sorted(peaks.items())],
+        )
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+    return len(peaks)
+
+
+def update_image_localization(
+    conn: sqlite3.Connection,
+    experiment_id: int,
+    verdicts: Mapping[int, bool | None],
+) -> int:
+    """Write every scored image's localization verdict, `None` included.
+
+    The caller passes a verdict for *every* image it evaluated, not only the hits, because
+    the answer can go from a value back to `None` — an annotation is deleted, a label is
+    corrected to normal — and a write that skipped those would leave a stale `1` on screen
+    beside ground truth that no longer exists.
+    """
+    if not verdicts:
+        return 0
+    conn.execute("BEGIN")
+    try:
+        conn.executemany(
+            "UPDATE image_result SET localized = ? WHERE experiment_id = ? AND image_id = ?",
+            [
+                (_flag(value), experiment_id, image_id)
+                for image_id, value in sorted(verdicts.items())
+            ],
+        )
+    except Exception:
+        conn.execute("ROLLBACK")
+        raise
+    conn.execute("COMMIT")
+    return len(verdicts)
 
 
 def replace_sample_results(
@@ -95,8 +183,8 @@ def replace_sample_results(
         conn.executemany(
             """
             INSERT INTO sample_result
-                   (experiment_id, sample_id, agg_score, aggregation, normalization)
-                 VALUES (?, ?, ?, ?, ?)
+                   (experiment_id, sample_id, agg_score, aggregation, normalization, localized)
+                 VALUES (?, ?, ?, ?, ?, ?)
             """,
             [
                 (
@@ -105,6 +193,7 @@ def replace_sample_results(
                     row.agg_score,
                     row.aggregation.value,
                     row.normalization.value if row.normalization else None,
+                    _flag(row.localized),
                 )
                 for row in rows
             ],
@@ -189,6 +278,9 @@ def list_scored_images(
                image_result.score         AS score,
                image_result.map_path      AS map_path,
                image_result.inference_ms  AS inference_ms,
+               image_result.peak_x        AS peak_x,
+               image_result.peak_y        AS peak_y,
+               image_result.localized     AS localized,
                sample.label               AS label,
                split_assignment.subset    AS subset
           FROM image_result
@@ -218,6 +310,9 @@ def list_scored_images(
             inference_ms=float(row["inference_ms"]),
             label=Label(row["label"]),
             subset=_subset_of(row["subset"]),
+            peak_x=None if row["peak_x"] is None else int(row["peak_x"]),
+            peak_y=None if row["peak_y"] is None else int(row["peak_y"]),
+            localized=_optional_flag(row["localized"]),
         )
         for row in rows
     ]
@@ -245,6 +340,7 @@ def list_scored_samples(
                sample.notes               AS notes,
                sample_result.agg_score    AS agg_score,
                sample_result.aggregation  AS aggregation,
+               sample_result.localized    AS localized,
                split_assignment.subset    AS subset
           FROM sample_result
           JOIN sample     ON sample.id = sample_result.sample_id
@@ -268,6 +364,7 @@ def list_scored_samples(
             agg_score=float(row["agg_score"]),
             aggregation=Aggregation(row["aggregation"]),
             subset=_subset_of(row["subset"]),
+            localized=_optional_flag(row["localized"]),
         )
         for row in rows
     ]
