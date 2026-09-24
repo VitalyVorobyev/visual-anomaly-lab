@@ -159,6 +159,7 @@ export function GalleryTab({
               verdict={verdict}
               preview={bySample.get(verdict.sample_id)}
               state={state}
+              task={task}
               cut={cut}
             />
           ))}
@@ -173,15 +174,17 @@ function Tile({
   verdict,
   preview,
   state,
+  task,
   cut,
 }: {
   experimentId: number;
   verdict: SampleVerdict;
   preview: SamplePreview | undefined;
   state: ResultsState;
+  task: Task | undefined;
   cut: number | null;
 }) {
-  const search = writeResultsState(state).toString();
+  const search = writeResultsState(state, task).toString();
 
   return (
     <li>

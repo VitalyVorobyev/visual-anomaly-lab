@@ -6,11 +6,12 @@ import {
   cutValue,
   readResultsState,
   resolveSubset,
+  resultsDefaults,
   writeResultsState,
 } from "./resultsState";
 
 function roundTrip(params: string) {
-  return readResultsState(new URLSearchParams(params));
+  return readResultsState(new URLSearchParams(params), "anomaly");
 }
 
 describe("reading the results view out of a URL", () => {
@@ -67,7 +68,7 @@ describe("reading the results view out of a URL", () => {
 
 describe("writing it back", () => {
   it("writes nothing for an untouched view", () => {
-    expect(writeResultsState(EMPTY_RESULTS).toString()).toBe("");
+    expect(writeResultsState(EMPTY_RESULTS, "anomaly").toString()).toBe("");
   });
 
   it("round-trips everything it writes", () => {
@@ -84,7 +85,7 @@ describe("writing it back", () => {
       peak: true,
       cut: 0.3,
     };
-    expect(readResultsState(writeResultsState(state))).toEqual(state);
+    expect(readResultsState(writeResultsState(state, "anomaly"), "anomaly")).toEqual(state);
   });
 
   it("brings a reader back to the tab they left", () => {
@@ -95,12 +96,64 @@ describe("writing it back", () => {
      * the tab here fixes all three at once, and any future link built the same way is
      * correct without anyone remembering to re-attach it.
      */
-    const fromGallery = readResultsState(new URLSearchParams("tab=samples&subset=test"));
-    expect(writeResultsState(fromGallery).get("tab")).toBe("samples");
+    const fromGallery = readResultsState(
+      new URLSearchParams("tab=samples&subset=test"),
+      "anomaly",
+    );
+    expect(writeResultsState(fromGallery, "anomaly").get("tab")).toBe("samples");
   });
 
   it("writes no tab for overview, matching how the tab strip clears it", () => {
-    expect(writeResultsState({ ...EMPTY_RESULTS, tab: "overview" }).has("tab")).toBe(false);
+    expect(writeResultsState({ ...EMPTY_RESULTS, tab: "overview" }, "anomaly").has("tab")).toBe(false);
+  });
+});
+
+describe("the defaults are the task's", () => {
+  it("opens a supervised segmentation run on its label map, not its heatmap", () => {
+    const state = readResultsState(new URLSearchParams(""), "semantic_segmentation");
+    expect(state.region).toBe(true);
+    expect(state.heatmap).toBe(false);
+    expect(state.truth).toBe(true);
+    expect(state.peak).toBe(false);
+  });
+
+  it("keeps a few-shot run on its foreground map, as an anomaly run is", () => {
+    expect(resultsDefaults("few_shot_segmentation")).toEqual(EMPTY_RESULTS);
+  });
+
+  it("reads an unknown task as an anomaly run until the experiment has loaded", () => {
+    expect(resultsDefaults(undefined)).toEqual(EMPTY_RESULTS);
+  });
+
+  it.each(["anomaly", "few_shot_segmentation", "semantic_segmentation"] as const)(
+    "writes nothing for an untouched %s view",
+    (task) => {
+      expect(writeResultsState(resultsDefaults(task), task).toString()).toBe("");
+    },
+  );
+
+  it.each(["anomaly", "semantic_segmentation"] as const)(
+    "round-trips every layer combination under the %s defaults",
+    (task) => {
+      for (const bits of Array.from({ length: 16 }, (_, index) => index)) {
+        const state = {
+          ...resultsDefaults(task),
+          heatmap: (bits & 1) !== 0,
+          region: (bits & 2) !== 0,
+          truth: (bits & 4) !== 0,
+          peak: (bits & 8) !== 0,
+        };
+        expect(readResultsState(writeResultsState(state, task), task)).toEqual(state);
+      }
+    },
+  );
+
+  it("writes a layer only where it departs from its own task's default", () => {
+    // Heatmap on is the anomaly default and a departure on a semantic run, and the reverse
+    // for the prediction — so the same state is a different URL under each.
+    const state = { ...EMPTY_RESULTS, heatmap: true, region: true };
+    expect(writeResultsState(state, "anomaly").toString()).toBe("seg=1");
+    expect(writeResultsState(state, "semantic_segmentation").toString()).toBe("map=1");
   });
 });
 

@@ -8,7 +8,7 @@
  * diagnostic is a green line around a plausible, wrong place.
  */
 
-import { render } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -59,7 +59,7 @@ const DIAGNOSTICS = {
 };
 
 function renderSample(
-  over: { images?: unknown; diagnostics?: unknown; search?: string } = {},
+  over: { images?: unknown; diagnostics?: unknown; search?: string; experiment?: unknown } = {},
 ) {
   return render(
     withProviders(
@@ -73,7 +73,7 @@ function renderSample(
       </MemoryRouter>,
       [
         [queryKeys.sampleImages(9, 12), over.images ?? [IMAGE]],
-        [queryKeys.experiment(9), EXPERIMENT],
+        [queryKeys.experiment(9), over.experiment ?? EXPERIMENT],
         [queryKeys.diagnostics(9), over.diagnostics ?? DIAGNOSTICS],
       ],
     ),
@@ -216,5 +216,28 @@ describe("the experiment sample viewer", () => {
     );
     expect(outlines).toHaveLength(1);
     expect(outlines[0]!.getAttribute("src")).not.toContain("frame=prepared");
+  });
+});
+
+describe("a supervised segmentation run's sample page", () => {
+  const SEMANTIC = { ...EXPERIMENT, task: "semantic_segmentation", classes: ["scratch", "dent"] };
+
+  it("opens on its label map, with the foreground map off", () => {
+    // The heatmap is the anomaly default; over a label map it hides the run's answer.
+    const { container } = renderSample({ experiment: SEMANTIC });
+
+    expect(screen.getByRole("switch", { name: "prediction" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "ground truth" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: /foreground/ }).getAttribute("aria-checked")).toBe("false");
+    // The label maps are canvases drawn once their planes arrive; no raster map is stacked.
+    const layers = stageLayers(container);
+    expect(layers).toHaveLength(1);
+    expect(layers[0]!.getAttribute("src")).toContain("/api/images/501/preview");
+  });
+
+  it("draws the foreground map when the URL asks for it", () => {
+    const { container } = renderSample({ experiment: SEMANTIC, search: "?map=1" });
+
+    expect(stageLayers(container).some((node) => node.src.includes("/anomaly-map?"))).toBe(true);
   });
 });
