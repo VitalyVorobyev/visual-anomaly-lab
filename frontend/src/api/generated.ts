@@ -2228,6 +2228,15 @@ export interface components {
             unlabeled: number;
         };
         /**
+         * ClassPresence
+         * @description Whether a sample shows an annotation class, as far as its ground truth says (ADR-0040).
+         *
+         *     `ABSENT` is truth, not a gap: a completed annotation without the class is a confirmed
+         *     negative. `UNLABELED` is the gap, and is excluded from every metric.
+         * @enum {string}
+         */
+        ClassPresence: "present" | "absent" | "unlabeled";
+        /**
          * ClassTableEntry
          * @description One class as a completed revision pinned it: its index in the class mask, and its area.
          */
@@ -5895,6 +5904,10 @@ export interface operations {
                 subset?: components["schemas"]["Subset"] | null;
                 /** @description `false` lists samples with at least one image still lacking ground truth — what an annotation queue asks for. Omit for both. */
                 annotated?: boolean | null;
+                /** @description With `presence`: an annotation class, by key (ADR-0040). */
+                class_key?: string | null;
+                /** @description With `class_key`: samples that show the class, lack it, or have no answer. */
+                presence?: components["schemas"]["ClassPresence"] | null;
                 limit?: number;
                 offset?: number;
             };
@@ -6899,6 +6912,8 @@ export interface operations {
                 frame?: components["schemas"]["MaskFrame"];
                 /** @description Whose pinned region build defines the prepared frame. Required by `frame=prepared`, and ignored otherwise. */
                 experiment_id?: number | null;
+                /** @description Outline one annotation class's region instead of all of them (ADR-0040). Source frame only; 404 when the image's truth does not answer for the class. */
+                class_key?: string | null;
             };
             header?: never;
             path: {

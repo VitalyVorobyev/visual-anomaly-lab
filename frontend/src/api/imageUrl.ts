@@ -89,6 +89,12 @@ export function predictionUrl(
  * The overlay stack on the sample page stays source-frame, because every layer in it
  * already is.
  */
+/** One annotation class's outline, from that class's own truth (ADR-0040). */
+export function classMaskUrl(imageId: number, classKey: string): string {
+  const query = new URLSearchParams({ class_key: classKey });
+  return `${apiBaseUrl}/api/images/${imageId}/mask?${query.toString()}`;
+}
+
 export function maskUrl(imageId: number, prepared?: { experimentId: number }): string {
   if (prepared === undefined) return `${apiBaseUrl}/api/images/${imageId}/mask`;
   const query = new URLSearchParams({

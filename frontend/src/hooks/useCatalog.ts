@@ -79,6 +79,8 @@ export function useSamples(datasetId: number | undefined, query: SampleQuery) {
               split_id: query.splitId,
               subset: query.subset,
               annotated: query.annotated,
+              class_key: query.classKey,
+              presence: query.presence,
               limit: query.limit,
               offset: query.offset,
             },

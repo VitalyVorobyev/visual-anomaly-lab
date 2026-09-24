@@ -30,6 +30,8 @@ class SampleFilter:
     split_id: int | None = None
     subset: Subset | None = None
     annotated: bool | None = None
+    sample_ids: Sequence[int] | None = None
+    """Only these samples — a set decided in Python, such as a class's presence (ADR-0040)."""
 
 
 _SAMPLE_MISSING_TRUTH = (
@@ -63,6 +65,13 @@ def _where(dataset_id: int, filters: SampleFilter) -> tuple[str, list[object]]:
             if not filters.annotated
             else f"{_SAMPLE_HAS_IMAGES} AND NOT {_SAMPLE_MISSING_TRUTH}"
         )
+
+    if filters.sample_ids is not None:
+        if filters.sample_ids:
+            clauses.append(f"sample.id IN ({','.join('?' * len(filters.sample_ids))})")
+            params.extend(filters.sample_ids)
+        else:
+            clauses.append("0")
 
     # A subset without a split is meaningless, so the split id carries the join and the
     # subset narrows it.

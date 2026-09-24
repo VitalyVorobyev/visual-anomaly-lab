@@ -11,7 +11,7 @@
  * prefix of `samples(id, …)`, so invalidating a dataset invalidates everything under it.
  */
 
-import type { Label, Subset } from "./client";
+import type { ClassPresence, Label, Subset } from "./client";
 import type { ExperimentListQuery } from "./experimentState";
 
 export interface SampleQuery {
@@ -21,6 +21,9 @@ export interface SampleQuery {
   subset?: Subset | undefined;
   /** `false` is "still has an image without ground truth" — the annotation queue's filter. */
   annotated?: boolean | undefined;
+  /** With `presence`: samples that show, lack, or have no answer for this class (ADR-0040). */
+  classKey?: string | undefined;
+  presence?: ClassPresence | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }

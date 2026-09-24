@@ -32,6 +32,7 @@ import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
 import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Switch, Tooltip, type StageView } from "@vitavision/lab-ui";
 
+import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 
@@ -383,29 +384,6 @@ export function SampleRoute() {
         </aside>
       </div>
     </div>
-  );
-}
-
-/** One block of the rail. A rule between blocks, rather than a box around each. */
-function RailSection({
-  title,
-  hint,
-  children,
-}: {
-  title: string | null;
-  hint?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-2.5 border-b border-line p-4 last:border-b-0">
-      {title !== null && (
-        <div className="flex items-baseline justify-between gap-2">
-          <h2 className="text-xs font-semibold tracking-tight text-fg">{title}</h2>
-          {hint && <span className="font-mono text-[11px] text-fg-subtle">{hint}</span>}
-        </div>
-      )}
-      {children}
-    </section>
   );
 }
 

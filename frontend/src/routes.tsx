@@ -32,6 +32,7 @@ import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
 import { SampleRoute } from "./routes/SampleRoute";
 import { SplitsRoute } from "./routes/SplitsRoute";
+import { StudioRoute } from "./routes/StudioRoute";
 import { RegionPreparationRoute } from "./routes/RegionPreparationRoute";
 
 const AnnotationEditorRoute = lazy(async () => {
@@ -95,6 +96,8 @@ export function AppRoutes() {
         {/* Flush as well: the sample viewer's own band and rail own their edges. */}
         <Route element={<CanvasLayout flush />}>
           <Route path="datasets/:datasetId/samples/:sampleId" element={<SampleRoute />} />
+          {/* The reference studio: two rails around one stage (ADR-0040). */}
+          <Route path="datasets/:datasetId/studio/:labelKey" element={<StudioRoute />} />
         </Route>
 
         {/* The image is the content: full window width, and the viewport's height. */}

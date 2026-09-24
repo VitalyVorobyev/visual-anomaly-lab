@@ -334,3 +334,41 @@ def test_an_anomaly_run_is_created_without_a_target_and_reads_back_null(
     )
     assert refused.status_code == 422
     assert "does not take a target class" in refused.text
+
+
+# --- reading a class ---------------------------------------------------------------------
+
+
+def test_samples_can_be_listed_by_their_presence_of_a_class(
+    client: TestClient, seeded: Fixture
+) -> None:
+    url = f"/api/datasets/{seeded.dataset_id}/samples"
+    present = client.get(url, params={"class_key": "defect", "presence": "present"})
+    absent = client.get(url, params={"class_key": "defect", "presence": "absent"})
+    assert present.json()["total"] == TEST_DEFECTS
+    assert absent.json()["total"] == TRAIN_NORMALS + TEST_NORMALS
+    assert client.get(url, params={"class_key": "defect"}).status_code == 422
+
+
+def test_one_class_s_region_is_outlined_from_its_own_truth(
+    client: TestClient, seeded: Fixture
+) -> None:
+    defect = client.get(
+        f"/api/images/{seeded.defect_image_ids[0]}/mask", params={"class_key": "defect"}
+    )
+    assert defect.status_code == 200
+    assert defect.headers["content-type"] == "image/png"
+    # A normal image is a confirmed absence: an empty outline, not a missing one.
+    normal = client.get(
+        f"/api/images/{seeded.normal_image_ids[0]}/mask", params={"class_key": "defect"}
+    )
+    assert normal.status_code == 200
+    missing = client.get(
+        f"/api/images/{seeded.normal_image_ids[0]}/mask", params={"class_key": "scratch"}
+    )
+    assert missing.status_code == 404
+    prepared = client.get(
+        f"/api/images/{seeded.defect_image_ids[0]}/mask",
+        params={"class_key": "defect", "frame": "prepared", "experiment_id": 1},
+    )
+    assert prepared.status_code == 422

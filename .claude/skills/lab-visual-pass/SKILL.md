@@ -48,7 +48,7 @@ needs. If VisA is absent, say so and stop — do not substitute any other data.
 
 ```bash
 uv run --with playwright python .claude/skills/lab-visual-pass/scripts/shots.py \
-  --ids $S/ids.json --out $S/shots            # all 18 screens (22 with --few-shot) × {light,dark} × {1440,1024}
+  --ids $S/ids.json --out $S/shots            # all 19 screens (23 with --few-shot) × {light,dark} × {1440,1024}
 # --quick for light 1440 only; --only 11-exp-overview 15-exp-sample to re-shoot a few
 ```
 

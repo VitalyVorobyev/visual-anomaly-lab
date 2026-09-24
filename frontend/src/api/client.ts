@@ -126,6 +126,7 @@ export type MetricSummary = Schemas["MetricSummary"];
 export type ResultsPage = Schemas["ResultsPage"];
 export type SampleVerdict = Schemas["SampleVerdict"];
 export type ThresholdReport = Schemas["ThresholdReport"];
+export type ClassPresence = Schemas["ClassPresence"];
 export type SegmentationOutcomes = Schemas["SegmentationOutcomes"];
 export type SegmentationVerdict = Schemas["SegmentationVerdict"];
 export type ImageScore = Schemas["ImageScore"];
