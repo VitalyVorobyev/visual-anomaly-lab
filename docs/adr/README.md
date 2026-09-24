@@ -8,15 +8,13 @@ cost. It is not the system's documentation. To learn how the workbench works, re
 would changing it now cost more than a refactor?* Both must be yes. A contract detail, a helper, a
 read path for something already decided, or a new option on an existing seam is handbook material.
 
-**Records are amendable.** An accepted record is edited when the decision it describes is refined,
-with a dated entry in a `## Changelog` section naming what changed. A **reversal** gets a new number
-and supersedes the old record explicitly.
+**Records are edited in place.** A refined decision is rewritten so it reads as one coherent
+choice. Records carry no changelog: git history is the changelog, and measured numbers live in
+[measurements.md](../measurements.md). A **reversal** gets a new number and supersedes the old
+record explicitly.
 
-**A record that no longer settles anything is removed, not archived.** Once the handbook holds the
-current truth and the record only preserves how the code used to be argued for, it is history rather
-than a decision, and it goes — with every citation repointed at the page that answers the question
-now. Numbers are never reused, so a surviving record keeps the number it has always had and no
-citation can resolve to the wrong record.
+**A record that no longer settles anything is removed**, with every citation repointed at the
+handbook page that answers the question now. Numbers are never reused.
 
 ## Decisions
 
@@ -28,7 +26,7 @@ citation can resolve to the wrong record.
 | [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | Sample owns label and split; channel is data, not schema | Domain |
 | [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import via pluggable adapters and a reviewable manifest | Import |
 | [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Common model plugin interface with capability flags | Methods |
-| [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — anomalib now, custom EfficientAD later | Methods |
+| [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — wrap a maintained library first, own a method later | Methods |
 | [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Job execution — subprocess per job, single FIFO queue | Jobs |
 | [0011](0011-evaluation-protocol-for-grouped-samples.md) | Evaluation protocol for grouped samples | Evaluation |
 | [0012](0012-frontend-stack-and-generated-api-client.md) | Frontend stack and a generated API client | Frontend |
@@ -57,8 +55,9 @@ citation can resolve to the wrong record.
 - **Length:** one page. If a record does not fit, the decision is probably two decisions.
 - **Cross-references:** cite related records inline as `(see ADR-0007)`.
 - **Consequences are honest.** Negative consequences are stated plainly. A record with only upsides
-  has not been thought through — and a record whose Consequences section has aged into a to-do list
-  should be amended, not reissued.
+  has not been thought through.
+- **No history.** No changelog, no "PR #N did X", no milestone narrative, no measured figures. Cite
+  `measurements.md` for a number and the handbook for a contract.
 
 ## Template
 
@@ -84,9 +83,4 @@ State explicitly what is ruled out, and why the rejected options were rejected.
 What becomes easier, and what becomes harder. State the negative consequences honestly — the costs
 accepted, the risks taken on, the work deferred to a backlog. This section is what makes the record
 worth re-reading later.
-
-## Changelog
-
-Only once a record has been amended. One dated line per amendment, naming what changed and why.
-Never used to soften a claim that turned out to be wrong — that belongs in Consequences, stated.
 ```

@@ -4,100 +4,57 @@
 
 ## Context
 
-The brief requires image-level anomaly scores, ROC-AUC where labels permit, a
-configurable-threshold confusion matrix, false-positive and false-negative lists, and per-sample
-inference time — and insists the evaluation layer stay independent of individual model
-implementations.
+Methods emit **per-image** scores (see ADR-0007), but labels and splits belong to the **sample**
+(see ADR-0005). A part photographed under three illuminations yields three scores and one label.
+Something must reduce them to one, and that reduction is a detection decision, not formatting.
 
-The domain model creates the central question: models emit **per-image** scores (ADR-0007), but
-labels and splits belong to the **sample** (ADR-0005). A part photographed under three illuminations
-yields three scores and one label. Something must reduce three numbers to one, and that reduction is
-a substantive detection decision, not a formatting step.
+The evaluation layer must also stay independent of every method, so that all of them are compared
+under one protocol, and it must handle unlabeled samples, datasets with and without pixel masks,
+and a threshold the operator wants to move freely.
 
-The dataset constrains what can be measured: no pixel masks exist, so **image-level metrics only**;
-and 113 samples in `unsorted/` are unlabeled, so they can be ranked but not scored.
+The alternatives for the reduction were `mean` (robust, and dilutes single-view evidence), a learned
+fusion (needs labels the workbench cannot assume), and pushing the reduction into each method
+(which would make every method's number partly a measure of its own fusion).
 
 ## Decision
 
-**The evaluation layer is model-independent.** It consumes only `ImageResult` scores, `Sample`
-labels, and `SplitAssignment` rows. It never imports a model, and it works identically for the
-classical baseline, the anomalib wrappers, and any future method.
+**Evaluation is model-independent.** It reads stored image scores, sample labels and split
+assignments, and never imports a model.
 
-- **Channel → sample aggregation: `max` by default.** A defect visible under *any* illumination
-  makes the part defective — dark-field reveals scratches that bright-field cannot see. Averaging
-  dilutes exactly that single-channel evidence: one strong signal among three views is halved or
-  worse. `mean` is available as a configuration option, and the choice is **recorded with the
-  experiment** so results remain interpretable.
-  **Caveat:** `max` assumes per-channel scores are comparable. That holds for the z-scored classical
-  baseline (handbook methods.md), whose scores are normalized against per-channel references by construction.
-  It is *not* guaranteed for the deep-learning methods, where one channel's score distribution may
-  simply sit higher and dominate every maximum. **Per-channel quantile normalization before
-  aggregation is a backlog item**, not a shipped feature.
-- **Headline metric: sample-level ROC-AUC.** Image-level ROC-AUC is also reported, since it isolates
-  raw model quality from the aggregation choice. Both are stored in the `MetricSet`.
-- **Threshold-dependent outputs are computed on demand.** Confusion matrix, precision, recall, and
-  the FP/FN sample lists are derived from persisted scores whenever the user moves the threshold
-  slider. **Nothing is persisted per threshold** — thresholds are a view concern, and storing them
-  would multiply rows while fixing a decision that should stay explorable.
-- **Unlabeled samples are ranked, never scored.** They appear in the most-normal / most-anomalous
-  lists (that is where triage value lies for `unsorted/`) and are excluded from every metric.
-- **Timing** comes from `ImageResult.inference_ms`, recorded per image at inference and aggregated
-  for reporting.
-- **Split guidance for the reference dataset:** train ≈ 60 **normal-only** samples; validation =
-  held-out normals plus some defects, used for threshold selection; test = the remainder. Splits are
-  seeded for reproducibility and stratified by capture group so no group lands entirely on one side.
+- **Channel-to-sample aggregation is `max` by default**, with `mean` available. A defect visible
+  under *any* view makes the part defective; averaging halves exactly that evidence.
+- **Per-channel normalization precedes the reduction**, because `max` assumes channels share a
+  scale and a deep method's channels usually do not — one view's scores sit higher and win every
+  maximum. It is off by default, and offered as `robust_z` or `rank`. It is fitted once over every
+  image the experiment scored, **labels ignored**, so the metric cannot become a function of the
+  answer. Aggregation and normalization are both recorded on each sample result.
+- **The headline is sample-level ROC-AUC.** Image-level ROC-AUC is reported beside it on **raw**
+  scores, to isolate model quality from the aggregation. Pixel-level metrics are computed wherever
+  masks exist.
+- **Everything threshold-dependent is derived on demand** — confusion matrix, precision, recall,
+  false-positive and false-negative lists — and **nothing is persisted per threshold**. How a
+  threshold is resolved across runs is ADR-0028's. A per-image localization verdict is stored
+  because it is threshold-free, and it judges a part by the image that produced its aggregate score.
+- **Unlabeled samples are ranked, never scored.** They appear in the ranked lists and in no metric.
+- **A metric that cannot be computed is absent, never zero.**
+- **Splits are seeded, sample-level, train on normals only, and stratified by capture group.** A
+  benchmark's official partition is reproduced verbatim instead.
+- **Re-evaluation rebuilds sample results and metrics from stored scores**, so changing the
+  aggregation never requires re-inference.
 
 ## Consequences
 
-Adding a method costs nothing in the evaluation layer, and every method is compared under exactly
-one protocol — which is the point of the workbench. Because only raw scores are persisted, the
-threshold slider is instant and re-thresholding never requires re-inference. Recording the
-aggregation mode keeps old experiments interpretable after the default changes.
+A new method costs nothing here, and every method is read under one protocol. The threshold control
+is instant. Recording the aggregation and normalization keeps old results interpretable.
 
-Negative consequences, accepted honestly:
-
-- **`max` is the least robust aggregator.** One noisy channel — a specular flare, a registration
-  failure — sets the sample score. It maximizes sensitivity and, on this dataset, will likely
-  produce the false positives.
-- **The comparability assumption is currently unenforced.** Until quantile normalization exists,
-  cross-method comparisons under `max` may partly measure score-scale artifacts rather than
-  detection quality. This is a real threat to the headline number's validity.
-- **ROC-AUC hides operating-point behaviour.** With 98 normal and 91 defect samples it is also a
-  noisy estimate; small AUC differences between methods will not be significant, and the tool offers
-  no confidence intervals.
-- **Tiny validation and test sets.** After reserving ~60 normals for training, the remaining
-  splits are small enough that a threshold chosen on validation may not transfer, and single-sample
-  changes visibly move metrics.
-- **No pixel-level evaluation, possibly ever.** Anomaly maps can be looked at but not scored; a
-  method with a good score and a nonsensical map is indistinguishable from a good one by metrics
-  alone.
-- **On-demand computation repeats work.** Every threshold change re-scans results; acceptable at
-  this scale, but it grows linearly with dataset size.
-
-## Changelog
-
-- **2026-08-14:** Shipped this record's own named backlog item. Per-channel normalization
-  (`EvalConfig.channel_normalization`, default `none`) now runs before the `max`/`mean` reduce and is
-  recorded per row on `SampleResult.normalization`, so "the comparability assumption is currently
-  unenforced" is no longer true by default and never true silently. Two transforms are offered: `robust_z`,
-  and `rank` — which is scale-free but keeps only the ordering, so a dramatic outlier and a marginal one
-  score identically. The transform is fitted **once over every image the experiment has scored, labels
-  ignored**: `sample_result` has no subset column, so a per-subset fit is not representable, and fitting on
-  labels would make the metric partly a function of the answer. Image-level ROC-AUC deliberately stays on raw
-  scores, keeping its stated role of isolating model quality from the aggregation choice.
-- **2026-08-14:** Fixed a gap this record's "re-thresholding never requires re-inference" claim depended on.
-  `reevaluate` recomputed `MetricSet` rows without rebuilding `SampleResult`, so a changed aggregation mode
-  appeared to apply and did not. Deriving sample scores moved out of the `infer` handler and into
-  `evaluate_and_store`, which now owns the whole from-stored-scores path.
-- **2026-08-24:** Closed the last of this record's "a method with a good score and a nonsensical map is
-  indistinguishable from a good one" — for the per-sample case, which the subset-wide pixel curves left open.
-  Each scored image now carries its map's peak and a **threshold-free** `localized` verdict: is that peak
-  inside the annotated region, within a fraction of the image diagonal? Persisting it does not weaken this
-  record's "nothing is persisted per threshold" — the verdict is identical at every threshold, so storing it
-  costs four nullable columns instead of one `.npy` read per image per slider tick. It is an orthogonal
-  qualifier and **not** a fifth `outcome`: the four names stay exactly four, and a `tp` that is
-  `localized = false` is still a true positive that got there from the wrong pixels. A part is judged by the
-  image that *produced* its aggregate score — under `max` the winning channel after normalization, which is
-  the same reduction this record already made substantive — because an "any channel hit" rule would hide the
-  failure being measured. `NULL` is not applicable and never a miss, so an unannotated defect leaves both the
-  numerator and the denominator ([the handbook](../architecture/evaluation.md)).
+- **`max` is the least robust aggregator.** One noisy view — a specular flare, a registration
+  failure — sets the part's score. It maximizes sensitivity at the cost of false positives.
+- **Normalization is opt-in.** A run left at the default is still exposed to scale artifacts
+  between channels; `rank` removes them and discards magnitude, so a dramatic outlier and a marginal
+  one score the same.
+- **ROC-AUC hides operating-point behaviour**, and on a small dataset it is a noisy estimate; the
+  tool offers no confidence intervals, so small differences are not significant.
+- **Small validation and test sets.** After training normals are reserved, a threshold chosen on
+  validation may not transfer, and one sample visibly moves a metric.
+- **A good score with a nonsensical map** is only caught where masks or annotations exist.
+- **On-demand derivation repeats work**, linear in the number of scored samples.

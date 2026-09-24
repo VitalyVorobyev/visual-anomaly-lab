@@ -6,7 +6,7 @@ implementations, measured against `efficientad_anomalib` — a thin wrapper arou
 anomalib — as **a baseline, not a specification to match** (**ADR-0029**): everything that
 decides a number here is ours. That wrapper is now retired, its head-to-head numbers kept
 only as a recorded historical comparison rather than something the workbench can re-run
-(**ADR-0029** changelog).
+(**ADR-0029**; figures in `docs/measurements.md`).
 
 The pieces live next door and are imported inside functions, so the registry stays lazy and
 opening the method picker costs nothing: `efficientad_nets` holds the architecture and the

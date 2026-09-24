@@ -1,13 +1,13 @@
 # The handbook
 
-**How `visual-anomaly-lab` works, now.** These pages carry no status and no date; they are edited
-whenever the system changes and describe it as it currently is. *Why* it is shaped this way is in
-[`docs/adr/`](../adr/) — and when a page and a record disagree, **the page is right about what the
-code does and the record is right about what was chosen** (ADR-0030).
+**How `visual-anomaly-lab` works, now.** These pages carry no status and no date; they describe the system
+as it currently is and are edited whenever it changes. *Why* it is shaped this way is in
+[`docs/adr/`](../adr/) — when a page and a record disagree, **the page is right about what the code does and
+the record is right about what was chosen** (ADR-0030).
 
 | Page | What it covers |
 |---|---|
-| [Overview](#overview--goals) *(below)* | The loop, the non-goals, the four constraints, the component map |
+| [Overview](#overview) *(below)* | The loop, the non-goals, the four constraints, the component map |
 | [Repository](repository.md) | Where everything lives on disk |
 | [Domain model](domain-model.md) | `Dataset`, `Sample`, `Image`, `Split`, `Experiment` and the rest |
 | [Annotations](annotations.md) | Source-mask provenance, editable drafts, immutable revisions |
@@ -21,65 +21,54 @@ code does and the record is right about what was chosen** (ADR-0030).
 | [Frontend](frontend.md) | Stack, the token layer, shell capabilities, every screen |
 | [Security](security.md) | The local attack surface, and what is deliberately not defended |
 
-Sequencing of the work is in [`roadmap.md`](../roadmap.md); the task breakdown is in
-[`backlog.md`](../backlog.md); measurement logs are in
-[`measurements.md`](../measurements.md) and
-[`measurements.md`](../measurements.md);
-M11's modern-method resource and benchmark evidence begins in
-[`measurements.md`](../measurements.md) and continues in
-[`measurements.md`](../measurements.md);
-producing an EfficientAD teacher rather than downloading one is in
-[`teacher-distillation.md`](../teacher-distillation.md).
+What works today and what is open is in [`roadmap.md`](../roadmap.md) and [`backlog.md`](../backlog.md);
+the gates and their numbers are in [`measurements.md`](../measurements.md); procedures for users and
+extenders are in the book (`book/src/`).
 
 ---
 
-## Overview & goals
+## Overview
 
-`visual-anomaly-lab` is a **local desktop research workbench** for visual anomaly detection. The long-term
-goal is a *universal* anomaly-detection explorer usable across many image datasets; the showcase dataset,
-images of a manufactured circular part, is the first reference dataset — an initial focus, not the final
-scope — and only the classical baseline exploits its geometry (design constraint 1 below). The workbench
-exists so that several anomaly-detection approaches can be trained, evaluated and compared on the *same*
-dataset under the *same* evaluation protocol, with results that are persisted, reopenable and reproducible.
-
-The workbench supports one loop, end to end:
+`visual-anomaly-lab` is a **local desktop research workbench** for visual anomaly detection, aimed at being a
+*universal* explorer for arbitrary image datasets. The showcase dataset (images of a manufactured circular
+part) is one reference dataset, not the scope; only an optional classical baseline may exploit its geometry.
+Several methods are trained, evaluated and compared on the *same* dataset under the *same* evaluation
+protocol, with results that are persisted, reopenable and reproducible.
 
 | Stage | What the user does |
 | --- | --- |
 | **Import** | Point the app at a folder of images; review a proposed manifest; commit it into the catalog. |
-| **Label & split** | Label samples, version source-frame defect masks, and create train/val/test splits. |
-| **Train** | Create an experiment: dataset + split + model + model config + preprocessing config; run it as an async job with live progress and logs. |
-| **Infer** | Score a subset (or individual samples) with a trained experiment, producing per-image scores and anomaly maps. |
-| **Evaluate** | Compute threshold-independent metrics; explore a threshold interactively; inspect FP/FN; view ranked most-normal / most-anomalous lists. |
+| **Label & split** | Label samples, version source-frame defect masks, create train/val/test splits. |
+| **Train** | Create an experiment (dataset + split + method + config + preprocessing) and run it as a job with live progress and logs. |
+| **Infer** | Score a subset or individual samples, producing per-image scores and anomaly maps. |
+| **Evaluate** | Threshold-independent metrics, an interactive threshold, FP/FN inspection, ranked lists. |
 | **Compare** | Put several experiments side by side under one protocol. |
-| **Export** | Publish a supported fitted method as a checksummed ONNX deployment bundle after parity. |
+| **Export** | Publish a supported fitted method as a checksummed ONNX bundle after parity. |
 
 ## Non-goals
 
-The brief's scope constraints are binding. The system deliberately does **not** implement:
-
 - production-line integration or automatic accept/reject decisions,
-- authentication, user accounts or multi-user access (ADR-0022, [security and privacy](security.md)),
-- cloud deployment or remote compute — everything runs on the local machine,
-- distributed or multi-node training,
+- authentication, user accounts or multi-user access (ADR-0022, [security](security.md)),
+- cloud deployment or remote compute,
+- distributed training,
 - real-time camera acquisition,
-- multi-user collaborative annotation or consensus workflows; annotation editing is local and single-user.
+- collaborative annotation; annotation editing is local and single-user.
 
-The guiding principle is **a small, understandable architecture over premature scalability**. There is one
-user, one machine, one job at a time.
+One user, one machine, one job at a time: **a small, understandable architecture over premature
+scalability**.
 
-## Design constraints that shape everything below
+## Design constraints
 
-1. **Dataset-agnostic core, dataset-specific baseline.** The classical baseline may exploit the part's
-   circular geometry (handbook methods.md); the domain model, import layer, DL methods and evaluation layer must not. In
-   particular the number of acquisition channels is **never** hard-coded — it is per-dataset data (ADR-0005).
-2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images. Labels
-   and split membership live on the *sample*, never on the image, so all views of a part always share a subset.
-3. **Private data never leaves the machine** (ADR-0022). Source images live
-   **outside the repository working tree** and are referenced in place, read-only, never copied into
-   tracked paths. Git cannot stage what is not under the working directory, so the commonest
-   catastrophic mistake is structurally unavailable rather than guarded against.
-4. **Apple Silicon / MPS** is the target compute device; there is no GPU cluster and no CUDA assumption.
+1. **Dataset-agnostic core.** The domain model, import layer, DL methods and evaluation layer assume
+   nothing about a dataset's geometry, and the number of acquisition channels is per-dataset data, never
+   hard-coded (ADR-0005).
+2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images.
+   Labels and split membership live on the *sample*, never on the image, so all views of a part share a
+   subset.
+3. **Private data never leaves the machine** (ADR-0022). Source images live **outside the repository
+   working tree** and are referenced in place, read-only; git cannot stage what is not under the working
+   directory.
+4. **Apple Silicon / MPS** is the target compute device; there is no CUDA assumption.
 
 ---
 
@@ -134,52 +123,44 @@ flowchart TB
     BROWSER["Plain browser (dev mode)"] -.->|"same HTTP API"| API
 ```
 
-## Component responsibilities
+## Components
 
-**React + TypeScript UI (WebView).** All application screens ([the UI](frontend.md)). It is a pure HTTP/WebSocket client — it
-holds no privileged capability and calls no Tauri-only APIs for core functionality. Server state is fetched
-from the sidecar; job progress arrives over WebSocket. The UI reads its backend base URL from a value injected
-by the shell, falling back to a dev default (`http://127.0.0.1:8000`) so the same bundle runs in a browser.
+**React + TypeScript UI (WebView).** All application screens ([frontend](frontend.md)). A pure
+HTTP/WebSocket client with no privileged capability and no Tauri-only API for core functionality; job
+progress arrives over WebSocket. It reads its backend base URL from the value the shell injects, falling
+back to `http://127.0.0.1:8000` so the same bundle runs in a browser.
 
-**Tauri shell (Rust).** Thin desktop wrapper. Its entire job is process lifecycle (ADR-0003):
+**Tauri shell (Rust).** Thin desktop wrapper whose entire job is process lifecycle (ADR-0003):
 
-- **find `uv` by absolute path, never by `PATH` alone.** An app launched from Finder is started by
-  launchd, and `launchctl getenv PATH` is empty on a stock machine: the process inherits
-  `/usr/bin:/bin:/usr/sbin:/sbin`, which contains no `uv`. The shell therefore tries
-  `ANOMALY_LAB_SIDECAR_CMD` first, then every `PATH` entry, then `~/.local/bin` (uv's own default)
-  and the Homebrew and MacPorts directories, and reports every path it tried when none holds an
-  executable. It also checks the checkout is still where the build recorded it, since that path is
-  baked in at compile time;
-- **spawn the FastAPI sidecar** as a child process with the data directory in its environment and
-  `ANOMALY_LAB_PORT=0`, then **read the port back from the child**. The sidecar binds the socket itself and
-  announces `{"ev":"ready","port":N,"pid":N}` as one JSON line on stdout, in the ADR-0009 event envelope.
-  The port is chosen by the OS and never released between choosing and serving, so there is no
-  bind → close → re-bind race. (The shell allocating a port and passing it down would have one; ADR-0003
-  specifies child-to-shell handoff for this reason.)
+- **find `uv` by absolute path.** An app launched from Finder inherits `/usr/bin:/bin:/usr/sbin:/sbin`,
+  which holds no `uv`. The shell tries `ANOMALY_LAB_SIDECAR_CMD`, then every `PATH` entry, then
+  `~/.local/bin` and the Homebrew and MacPorts directories, and reports every path it tried when none
+  holds an executable. It also checks the checkout is still where the build recorded it
+  (`ANOMALY_LAB_REPO_ROOT` overrides);
+- **spawn the sidecar** with the data directory in its environment and `ANOMALY_LAB_PORT=0`, then **read
+  the port back from the child**: the sidecar binds the socket itself and announces
+  `{"ev":"ready","port":N,"pid":N}` as one JSON line on stdout (the ADR-0009 envelope). The OS-chosen port
+  is never released between choosing and serving, so there is no bind → close → re-bind race;
 - **build the window only once the sidecar is ready**, injecting the base URL as `window.__ANOMALY_LAB__`
-  before the page loads. The UI therefore never renders against a URL that does not exist yet and needs no
-  retry-on-boot logic (ADR-0012);
+  before the page loads, so the UI needs no retry-on-boot logic (ADR-0012);
 - **build the window anyway when the backend did not start**, injecting `startupError` — the cause, the
-  paths searched and the backend's own last lines of output — in place of the capabilities, for the page
-  to paint ([frontend](frontend.md)). Nothing in the setup hook may return an error: on macOS it runs
-  inside `did_finish_launching`, an Objective-C callback an unwind may not cross, so Tauri's `panic!` on
-  a setup failure becomes `abort()` — a crash report, no window, and a packaged app's stderr going
-  nowhere to explain it;
-- **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the sidecar
-  in turn terminates any running job worker. Closing the last window quits the application, since macOS
-  would otherwise keep it alive with a sidecar serving a window that no longer exists.
+  paths searched and the backend's last lines of output — for the page to paint ([frontend](frontend.md)).
+  Nothing in the setup hook may return an error: on macOS it runs inside `did_finish_launching`, where a
+  panic becomes `abort()` with no window;
+- **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the
+  sidecar in turn terminates any running job worker. Closing the last window quits the application.
 
-Because stdout carries structured events, the sidecar's own logging goes to **stderr**, and the shell drains
-**both** pipes for the life of the process — a child whose pipe fills up blocks on write.
+Stdout carries structured events, so the sidecar logs to **stderr**, and the shell drains **both** pipes
+for the life of the process — a child whose pipe fills up blocks on write.
 
-macOS has no `PDEATHSIG` equivalent, so none of the above runs when the shell is force-quit or crashes. The
-sidecar therefore **also watches its parent independently**: given `ANOMALY_LAB_PARENT_PID` it probes that pid
-with signal 0 and exits when it disappears. It probes the recorded pid rather than comparing `os.getppid()`,
-because `uv run` sits between the shell and the interpreter — the immediate parent is not the shell. This
-watchdog, not the exit handler, is what guarantees no orphaned Python process survives an app crash.
+macOS has no `PDEATHSIG`, so none of this runs when the shell is force-quit or crashes. The sidecar
+therefore **watches its parent itself**: given `ANOMALY_LAB_PARENT_PID` it probes that pid with signal 0
+and exits when it disappears. It probes the recorded pid rather than `os.getppid()` because `uv run` sits
+between the shell and the interpreter. This watchdog is what guarantees no orphaned Python process
+survives an app crash.
 
-The shell additionally provides native file/folder pickers for the import flow, since a browser cannot return
-a server-visible absolute directory path.
+The shell also provides native file and folder pickers for import, since a browser cannot return a
+server-visible absolute path.
 
 **FastAPI sidecar.** The entire backend. Bound to `127.0.0.1` only, no authentication ([security and privacy](security.md)). Routers:
 
@@ -199,36 +180,33 @@ a server-visible absolute directory path.
 | `model_assets` | `/api/model-assets` | licensed asset catalogue, verified install/external source and app-owned removal |
 | `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
 
-**Routers present; services decide.** The two routers with the most orchestration hand it to a service
-beside the code they orchestrate: `annotations/service.py` (drafts, revisions, scope, interchange) and
-`experiments/service.py` (creation, preconditions for resume/export/diagnosis, deletion ordering, the
-resident and queue guards, raw values and stored diagnostics). A route reads its parameters and headers,
-calls one service function and shapes the answer — status, `ETag`, bytes. Transactions, file writes and
-every refusal live in the service. The other routers are thin enough that the split would add a file
-without removing a decision.
+**Routers present; services decide.** The two routers with the most orchestration hand it to a service:
+`annotations/service.py` (drafts, revisions, scope, interchange) and `experiments/service.py` (creation,
+preconditions for resume/export/diagnosis, deletion ordering, the resident and queue guards, raw values
+and stored diagnostics). A route reads its parameters and headers, calls one service function and shapes
+the answer — status, `ETag`, bytes; transactions, file writes and every refusal live in the service.
 
 **Refusals are domain errors, mapped once.** Code below the routers says *no* by raising a subclass of
-`anomaly_lab.errors.DomainError` — `NotFoundError`, `ConflictError`, `StaleVersionError`,
-`InvalidInputError`, `UnsupportedRequestError`, `GoneError`, `UnavailableError` — with a `detail` a person can
-act on. `api/errors.py` maps each class to its status (404, 409, 412, 422, 400, 410, 503) in one table and
-renders it exactly as FastAPI renders an `HTTPException`, `{"detail": …}`, so a refusal can move between a
-router and a service without a client noticing. An existing exception joins a category by inheriting from
-it: `GroundTruthDriftError` is a `ConflictError`, so every route that reads truth answers 409 without a
-translation of its own. `HTTPException` remains for what is only HTTP — a missing `If-Match` header is 428
-because of the request's headers, not because of anything in the domain.
+`anomaly_lab.errors.DomainError` with a `detail` a person can act on. `api/errors.py` maps each class to its
+status in one table — `UnsupportedRequestError` 400, `NotFoundError` 404, `ConflictError` 409, `GoneError`
+410, `StaleVersionError` 412, `InvalidInputError` 422, `UnavailableError` 503 — and renders it as FastAPI
+renders an `HTTPException` (`{"detail": …}`), so a refusal can move between router and service without a
+client noticing. An exception joins a category by inheriting from it: `GroundTruthDriftError` is a
+`ConflictError`, so every route that reads truth answers 409. `HTTPException` remains for what is only
+HTTP — a missing `If-Match` header is 428.
 
-**Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
-identifiers persisted in `Experiment.model_type`: `pixel_reference`,
-`efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`,
-`dino_memory`, `subspace_ad`. Adding a method means
-adding a module and a registry entry — nothing else in the application changes.
+**Model plugin registry.** A name → class dictionary of methods (ADR-0007) whose keys are persisted in
+`Experiment.model_type`: `pixel_reference`, `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`,
+`glass_anomalib`, `dino_memory`, `subspace_ad`. Adding a method means adding a module and a registry entry
+— nothing else in the application changes ([methods](methods.md)).
 
-**SQLite** at `data/app.sqlite3` — metadata, configuration, scores, paths ([the domain model](domain-model.md)). **Artifact store** at
-`data/artifacts/exp-<id>/` — checkpoints, reference statistics, anomaly maps, logs. **Thumbnail cache** at
-`data/thumbnails/` ([the media layer](media.md)). **Source images** live outside the repository and are treated as a read-only mount:
-the backend opens them for decoding and training and never writes to that tree (ADR-0022).
+**Storage.** SQLite at `data/app.sqlite3` holds metadata, configuration, scores and paths
+([domain model](domain-model.md)); the artifact store at `data/artifacts/exp-<id>/` holds method state,
+anomaly maps, logs and exports; the thumbnail cache is `data/thumbnails/` ([media](media.md)). Source images
+live outside the repository and are read-only: the backend decodes them and never writes to that tree
+(ADR-0022).
 
-## Standalone backend / browser-based development
+## Standalone backend
 
 The sidecar has **no dependency on Tauri** (ADR-0003). During development it runs directly:
 
@@ -236,12 +214,12 @@ The sidecar has **no dependency on Tauri** (ADR-0003). During development it run
 uv run --directory backend uvicorn anomaly_lab.api.app:create_app --factory --reload --port 8000
 ```
 
-and the React app runs under `vite dev` against it. Every feature is exercisable from a plain browser, which
-keeps the Python and TypeScript work independently testable and makes the Rust layer optional until packaging.
+and the React app runs under `vite dev` against it. Every feature is exercisable from a plain browser, so
+the Python and TypeScript halves are independently testable.
 
 CORS is permitted in dev mode only, and covers `http://localhost:*` and `http://127.0.0.1:*` **plus
-`tauri://localhost` and `http://tauri.localhost`** — the Tauri v2 WebView origins. They are not localhost
-*ports*, so a rule written only for the browser lets the browser path work while the desktop path fails.
+`tauri://localhost` and `http://tauri.localhost`** — the Tauri v2 WebView origins, which a rule written
+for localhost ports would miss.
 
-Convenience scripts wrap the three ways to run the system: `scripts/dev-backend.sh` (backend alone, the
-command above), `scripts/dev-frontend.sh` (Vite against it), and `scripts/dev-app.sh` (the full desktop app).
+`scripts/dev-backend.sh` (the command above), `scripts/dev-frontend.sh` (Vite against it) and
+`scripts/dev-app.sh` (the full desktop app) wrap the three ways to run the system.

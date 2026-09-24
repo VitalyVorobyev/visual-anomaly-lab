@@ -1,48 +1,43 @@
 # Media and thumbnail cache
 
-Source images are whatever the dataset supplies — the showcase tree holds 1280×1024 BMPs of roughly
-3.9 MB, the public reference datasets hold multi-megapixel JPEGs. Nothing below depends on which:
-resolution and format are per-image data, recorded at import. Serving source files directly to a browser
-grid would move hundreds of megabytes per screen and stall the UI, so the media layer serves
-**three tiers**:
+Source images are whatever the dataset supplies — BMPs of a few megabytes, multi-megapixel JPEGs.
+Resolution and format are per-image data, recorded at import. Serving source files to a browser grid would
+move hundreds of megabytes per screen, so the media layer serves **three tiers**:
 
 | Tier | Size | Format | Used by |
 | --- | --- | --- | --- |
 | `thumb` | 256 px long edge | WebP, q80 | dataset browser grid, ranked lists |
 | `preview` | 1024 px long edge | WebP, q85 | sample viewer, side-by-side channel comparison |
-| `full` | native 1280×1024 | lossless PNG, on demand | pixel-peeping, anomaly-map overlay inspection |
+| `full` | native | lossless PNG, on demand | pixel-peeping, anomaly-map overlay inspection |
 
-WebP at these quality levels is roughly two orders of magnitude smaller than the source BMP with no
-perceptible loss at the display sizes involved. The **full tier is lossless** because it is used to judge
-defects and to align anomaly-map overlays, where JPEG-style artifacts could be mistaken for surface features.
+The **full tier is lossless** because it is used to judge defects and align anomaly-map overlays, where
+compression artifacts could be mistaken for surface features.
 
 **Cache layout:** `data/thumbnails/{thumb,preview}/{image_id}.webp`. Keying by `image_id` alone is safe
-**because imported files are immutable**: paths are recorded once, `sha256` is stored at import, and `verify`
-([import](import.md)) detects any drift. There is no invalidation problem to solve, so none is built.
-Deleting a dataset inventories and removes these exact image-id cache files after its database transaction;
-it never derives a deletion target from an image's source path.
+**because imported files are immutable**: paths are recorded once, `sha256` is stored at import, and
+`verify` ([import](import.md)) detects drift, so there is no invalidation to build. Deleting a dataset
+removes exactly these image-id cache files after its database transaction; it never derives a deletion
+target from a source path.
 
-**Only `thumb` and `preview` are cached.** A cached `full` tier costs roughly 1.2 MB per image — most of a
-gigabyte for one dataset — to avoid re-rendering something that is looked at once, so it is rendered per
-request and kept off the wire by its `ETag` instead.
+**Only `thumb` and `preview` are cached.** A cached `full` tier would cost about a megabyte per image to
+avoid re-rendering something looked at once, so it is rendered per request and kept off the wire by its
+`ETag`.
 
-**Generation** is lazy — the first request for a cached tier renders and stores it — with a post-import
-**pre-warm job** (reusing the job system, [the job system](jobs.md)) that generates all thumbs up front so the first browse is
-smooth. Responses carry an `ETag` derived from the image `sha256` plus tier, and `Cache-Control: immutable`,
-so the WebView re-fetches nothing.
+**Generation** is lazy — the first request for a cached tier renders and stores it — plus a post-import
+**prewarm job** ([jobs](jobs.md)) that generates all thumbs up front. Responses carry an `ETag` derived from
+the image `sha256` plus tier, and `Cache-Control: immutable`.
 
-**8-bit grayscale BMPs are handled transparently.** Decoding normalizes to a common in-memory representation
-and the tier renderer is bit-depth agnostic, so the mixed 24-bit / 8-bit reference data requires no special
-casing at any call site.
+**Bit depth is transparent.** Decoding normalizes 8-bit grayscale and 24-bit sources to one in-memory
+representation, and the tier renderer is bit-depth agnostic, so no call site special-cases either.
 
 **The ground-truth outline is served in two frames.** `GET /api/images/{image_id}/mask` draws the annotated
-region's contour as a transparent PNG at the source's own size — an outline rather than a fill, because
-filling it hides the pixels the reader is judging the model's map against. `frame=prepared&experiment_id=N`
-draws the same mask projected through that run's pinned region transform, at the prepared size, which is
-what a **diagnostics** pane needs: nothing projects a diagnostic, so those panes are prepared-frame and a
-source-frame outline over one is off by exactly the crop and letterbox ([diagnostics](diagnostics.md)). The
-contour is traced after the projection, and the `ETag` carries the frame and the pinned manifest digest so
-the two can never answer for each other out of a cache.
+region's contour as a transparent PNG at the source's own size — an outline, because a fill hides the
+pixels the reader is judging the map against. `frame=prepared&experiment_id=N` draws the same mask
+projected through that run's pinned region transform, at the prepared size, which is what a
+**diagnostics** pane needs: diagnostics are prepared-frame, and a source-frame outline over one is off by
+exactly the crop and letterbox ([diagnostics](diagnostics.md)). The contour is traced after projection, and
+the `ETag` carries the frame and the pinned manifest digest so the two never answer for each other out of a
+cache.
 
 ---
 

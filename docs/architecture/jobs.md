@@ -1,70 +1,63 @@
 # Async job system
 
-Training and inference are long-running and must be asynchronous from the UI's perspective, with progress,
-logs, completion and failure states. The execution model is **one subprocess per job** (ADR-0009).
+Training, inference, import and every other long operation run as asynchronous jobs with progress, logs,
+completion and failure states. The execution model is **one subprocess per job** (ADR-0009).
 
-## Why a subprocess
+## Subprocess rationale
 
-- **PyTorch + MPS are fork-unsafe.** Running training in a thread inside the API process, or forking it, risks
-  deadlocks and driver-state corruption. A clean `spawn`ed process avoids the whole class of problem.
-- **Crash and OOM isolation.** A segfault or an out-of-memory kill in a training run takes down the worker,
-  not the API — the UI stays responsive and reports a failed job with its log.
-- **Memory is reclaimed on exit.** Model weights, memory banks and MPS allocations disappear when the process
-  ends; a long-lived server would otherwise accumulate them across experiments.
-- **Cancellation is honest.** Cooperative cancellation is tried first via `should_cancel()`; if the worker does
-  not stop, the parent escalates **`SIGTERM` → grace period → `SIGKILL`**. A thread offers no equivalent
-  guarantee, and "cancel" that does not actually stop the work is worse than no cancel button.
+- **PyTorch + MPS are fork-unsafe.** A thread in the API process, or a fork, risks deadlocks and driver-state
+  corruption; a clean `spawn`ed process avoids the class of problem.
+- **Crash and OOM isolation.** A segfault or out-of-memory kill takes down the worker, not the API; the UI
+  reports a failed job with its log.
+- **Memory is reclaimed on exit.** Weights, memory banks and MPS allocations disappear with the process.
+- **Cancellation is honest.** Cooperative cancellation via `should_cancel()` first; if the worker does not
+  stop, **`SIGTERM` → grace period → `SIGKILL`**.
 
 ## Queue
 
-A **single-job FIFO queue** lives in the API process, mirrored into the `Job` table. One machine, one user, one
-MPS device — concurrency would only cause contention and confusing timing measurements. Queued jobs are
-visible and cancellable before they start. The queue is intentionally in-process: no Celery, no Redis, no
-broker (ADR-0009).
+A **single-job FIFO queue** lives in the API process, mirrored into the `Job` table — one machine, one user,
+one MPS device, and concurrency would only distort timing. Queued jobs are visible and cancellable before
+they start. No Celery, no Redis, no broker (ADR-0009).
 
-Experiment and dataset deletion take the queue's **lifecycle guard**. `enqueue` takes the same cross-thread
-lock, so a delete operation cannot observe idle state and race a new train, score, verify or pre-warm request
-into existence. Active queued or running work blocks deletion and is named in the preview; it must finish or
-be cancelled first. Dataset lookup covers both experiment-bound jobs and dataset ids in kind-agnostic job
+**A new kind costs one `JobKind` member, one entry in `jobs/handlers.py` and its handler**, and nothing in
+the schema ([domain model](domain-model.md)); the queue, protocol, cancellation, log tee and WebSocket
+fan-out are kind-agnostic.
+
+**Deletion takes the queue's lifecycle guard.** `enqueue` takes the same cross-thread lock, so a delete
+cannot observe idle state and race a new job into existence. Queued or running work blocks deletion and is
+named in the preview. Dataset lookup covers both experiment-bound jobs and dataset ids in kind-agnostic job
 parameters.
 
-`reference_import` is the same queue mechanism, not a parallel importer: one worker scans every missing
-dataset in the selected public packs and atomically commits the resulting manifests. The worker process
-receives both the app-data directory and the reference-data directory explicitly; relying on a
-source-checkout default would make discovery in the API disagree with execution in a packaged build.
+## Job kinds
 
-`model_asset_download` is likewise an ordinary unbound job. Its handler knows only an asset key; the fixed
-catalogue supplies the immutable URL, byte count and SHA-256, preventing a caller from turning the sidecar
-into an arbitrary downloader. The licence must be accepted before enqueue. Bytes go to a job-specific
-partial file and become visible at the managed path only after size and digest verification; cancellation or
-failure removes the partial. Because it uses the same queue, download progress, logs and cancellation need no
-second mechanism, and a model-asset write cannot compete with an accelerator job.
-
-`region_prepare` has two modes behind one handler. Preview selects at most 24 evenly spaced images and returns
-transforms without writing prepared pixels. Build visits the whole dataset, checks cancellation between
-images, writes into a managed staging directory and atomically publishes only after its manifest and summary
-are complete. Per-image extraction/decode failures are persisted in the result and reduce coverage; they do
-not fail over to identity. A malformed job, missing model asset or extractor construction failure fails the
-job before processing, which keeps a partially configured profile from looking like a low-coverage success.
-
-`export` is experiment-bound and follows the same one-entry rule. It loads the fitted method, writes an ONNX
-bundle into app-owned staging, executes graph parity on CPU, hashes the payloads and atomically publishes only
-after the manifest is valid. Failure or cancellation removes staging. The queue and protocol have no
-export-specific branch; the kind cost one lazy handler and — then — one migration widening SQLite's `kind`
-check. Migration 020 dropped that check, so a new kind now costs one `JobKind` member, one entry in
-`jobs/handlers.py` and its handler, and nothing in the schema ([domain model](domain-model.md)).
+- **`import`, `verify`, `prewarm`** — scanning and hashing is slow enough to need progress, so import reuses
+  this machinery rather than growing a second progress mechanism ([import](import.md), [media](media.md)).
+- **`reference_import`** — one worker scans every missing dataset in the selected public packs and
+  atomically commits the manifests. The worker receives the app-data and reference-data directories
+  explicitly, so discovery in the API and execution agree in a packaged build.
+- **`model_asset_download`** — the handler knows only an asset key; the fixed catalogue supplies the URL,
+  byte count and SHA-256, so the sidecar cannot become an arbitrary downloader. The licence is accepted
+  before enqueue. Bytes go to a job-specific partial file and reach the managed path only after size and
+  digest verification; cancellation or failure removes the partial.
+- **`region_prepare`** — two modes. Preview selects at most 24 evenly spaced images and returns transforms
+  without writing pixels. Build visits the whole dataset, checks cancellation between images, writes into
+  managed staging and publishes atomically once its manifest and summary are complete. Per-image failures
+  are recorded and reduce coverage; they never fall back to identity. A malformed job, missing asset or
+  extractor construction failure fails the job before processing.
+- **`distill`** — produces a teacher asset, not an experiment, so its `experiment_id` is null; it is started
+  from the command line ([methods](methods.md)).
+- **`train`, `infer`, `export`** — experiment-bound. `export` writes an ONNX bundle into staging,
+  runs graph parity on CPU, hashes the payloads and publishes atomically ([deployment](deployment.md)).
 
 **A job may name its successor.** A `done` result carrying `follow_up: {"kind", "params"}`
-(`jobs/protocol.FOLLOW_UP_KEY`) is queued by `JobQueue._finish` — only when the job `succeeded`, never after
-a failure or a cancel, bound to the same experiment. The handler decides whether (only it read its params);
-the queue decides when, without knowing what either kind is. `train` with `then_score` is the one user: it
-names an `infer` of the default subsets, which is what makes "Train & score" one press. A malformed
-follow-up is logged and dropped rather than failing a job whose work is done, and one whose experiment was
-deleted in the interval is dropped the same way.
+(`jobs/protocol.FOLLOW_UP_KEY`) is queued by `JobQueue._finish` only when the job `succeeded`, bound to the
+same experiment. The handler decides whether; the queue decides when, without knowing either kind. `train`
+with `then_score` uses it to queue an `infer` of the default subsets ("Train & score"). A malformed
+follow-up, or one whose experiment was deleted meanwhile, is logged and dropped.
 
 ## Worker → parent event protocol
 
-The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:
+The worker talks to its parent in **JSON lines on stdout**, one flushed object per line:
 
 ```json
 {"ev":"progress","fraction":0.42,"message":"epoch 8/20"}
@@ -74,131 +67,82 @@ The worker communicates with its parent over **JSON-lines on stdout** — one JS
 {"ev":"error","type":"RuntimeError","message":"...","traceback":"..."}
 ```
 
-Line-delimited JSON is chosen because it is trivial to produce, trivially parsed incrementally, human-readable
-in a log file, and needs no shared-memory or socket setup between the two processes.
+The parent, for each line:
 
-The parent does three things with each line:
-
-1. **persists** `progress` / `message` / terminal state to the `Job` row (so a REST poll is always accurate);
-2. **tees the full stream** to the job's `log_path` — including any non-JSON output such as third-party
-   library chatter or a native crash message, which is exactly what is needed for post-mortem. A job bound to
-   an experiment logs to `data/artifacts/exp-<id>/logs/<job>.log`; one that is not — an import job — logs to
-   `data/jobs/logs/<job_id>.log`;
+1. **persists** `progress` / `message` / terminal state to the `Job` row, so a REST poll is accurate;
+2. **tees the full stream**, non-JSON output included, to the job's `log_path` —
+   `data/artifacts/exp-<id>/logs/<job>.log` for an experiment-bound job, `data/jobs/logs/<job>.log`
+   otherwise;
 3. **fans out** to subscribers of `WS /ws/jobs/{id}`.
 
-### Framing: two budgets, because a fragment is not a line
+### Framing
 
-`readline` is not used. It raises `ValueError` past asyncio's 64 KiB stream limit, and **a progress bar is
-one line** — tqdm separates frames with `\r`, never `\n` — so a 1.5 GB download once wedged the queue with
-no error recorded anywhere. Output is read in chunks and split by `split_output`, which flushes an
-unterminated fragment rather than buffering it without bound.
+`readline` is not used: it raises past asyncio's 64 KiB limit, and a tqdm progress bar is one line (frames
+separated by `\r`). Output is read in chunks and split by `split_output`, which flushes an unterminated
+fragment rather than buffering without bound. The budget depends on what the fragment could be: chatter
+can be cut anywhere (`MAX_LINE_BYTES`, 16 KiB), while a fragment beginning with `{` may be a protocol event,
+and half an event is no event (`MAX_EVENT_BYTES`, 8 MiB). Both are finite, so no output can stop the queue.
 
-That flush is right for chatter and destroys an event. A `region_prepare` preview reports 24 entries in one
-`done` frame, which for `foreground_threshold`'s six metadata keys per entry passes 16 KiB: the frame was
-cut mid-JSON, `parse_line` rejected both halves, no `DoneEvent` was observed, and the job finished
-**`succeeded` carrying `result = {}`**. The screen that reads the result then had nothing to draw and drew
-nothing, beside a green badge — a fault that survived because every symptom said the run was fine.
-
-So the budget depends on what the fragment could still be. A protocol event is a single JSON object and
-begins with `{`; chatter can be cut anywhere without losing meaning, while half a frame is not a frame and
-cannot be resumed once the buffer has moved on. `MAX_LINE_BYTES` (16 KiB) governs the second case,
-`MAX_EVENT_BYTES` (8 MiB) the first. Both are finite, so no output can stop the queue. Note the shape of
-the coverage gap this sat in: the preview handler is tested in-process, which bypasses the pipe entirely.
+**A result travels as one line.** A handler tested in-process bypasses the pipe, so it proves nothing about
+whether its result reaches the parent; a result whose size grows with the dataset is a finding about the
+result.
 
 ## Frontend reconnection
 
-WebSockets drop — on sleep, on network stack changes, on reload. The client rule is **snapshot then
-subscribe**: `GET /api/jobs/{id}` for current status, progress and recent log tail, *then* open the WebSocket
-for the live stream. This makes reconnection, first load and late-joining a running job all the same code
-path, with no missed-event reconciliation logic.
-
-A dropped socket now reopens on that same path — `onclose` refreshes the snapshot and re-subscribes after a
-short delay, unless the stream ended with an `end` frame, which is the one close not worth reopening.
-Without it a drop was permanent: no `end` arrives, so the console simply stopped at whatever step it had
-reached beside a badge still reading `running`, and only a remount recovered.
+The client rule is **snapshot then subscribe**: `GET /api/jobs/{id}` for status, progress and recent log
+tail, *then* the WebSocket for the live stream. First load, late-joining and reconnection are one code path
+with no missed-event reconciliation. A dropped socket reopens on that path after a short delay, unless the
+stream ended with an `end` frame.
 
 **Progress belongs to the job row, and only there.** A `progress` frame invalidates `["jobs", id]`
-*exactly* — not the experiment, which at four frames a second would be a poll wearing an event's clothes,
-and not the key's own children, because `["jobs", id, "metrics"]` is a prefix match away and that snapshot
-is built by parsing the whole log file (re-reading it live is forbidden for the same reason). Anything drawing live
-progress must therefore read the job row: the experiment detail payload carries a copy of it that is
-refreshed on window focus and terminal frames alone, and a bar drawn from that copy stands still for the
-length of a run.
+*exactly* — not the experiment (four frames a second would be a poll), and not the key's children, since
+`["jobs", id, "metrics"]` is built by parsing the whole log file. Anything drawing live progress reads the
+job row; the copy inside the experiment detail payload refreshes only on window focus and terminal frames.
 
-## Scalar series, after the fact
+## Scalar series
 
-`metric` events are streamed and tee'd, and stored in no column. That is enough for a live chart and not
-enough for one that survives a reload: `log_tail` is 200 raw lines of a stream that also carries progress
-frames and library chatter, which for a 20 000-step training run is its final seconds.
+`metric` events are streamed and tee'd but stored in no column. `GET /api/jobs/{id}/metrics` **parses the
+job's own log file** and returns the named series, downsampled to a drawable number of points with the drop
+reported — the log is already the durable copy of the stream. The client takes this snapshot when it opens
+the socket and appends live frames to it; the snapshot is not re-read live.
 
-`GET /api/jobs/{id}/metrics` therefore **parses the job's own log file** and returns the named series it
-finds, downsampled to a drawable number of points with the drop reported. No table, no migration, and no
-second event channel — the log is already the durable copy of the stream. The client takes this snapshot
-when it opens the socket and appends live frames to it, under the same freeze rule the console follows: the
-snapshot cannot be re-read live, because every event invalidates it and it comes back already containing the
-points the socket just delivered.
+## Resume
 
-## Import jobs
+Continuing training is a **declared capability** — `Capabilities.supports_resume` plus a
+`runtime_checkable` `SupportsResume` protocol with `completed_steps()` and
+`fit_more(train, ctx, *, additional_steps)` — so a method with no notion of a step grows no stub. The train
+handler checks the flag against the protocol and names a disagreement as a plugin bug.
+`efficientad_custom`, `dinomaly_custom` and `glass_anomalib` support it.
 
-Import scanning uses the **same machinery** (`kind = "import"`). Hashing several hundred ~4 MB BMPs is slow
-enough to need progress reporting, and reusing the job system means no second progress mechanism exists.
+- **`TrainParams.additional_steps`** carries the continuation length, so the experiment's frozen config is
+  untouched.
+- **The checkpoint carries optimizer moments, LR-scheduler state, the absolute step counter and its RNG
+  streams**, with no option to skip them: a weights-only warm start restarts Adam's moments and is
+  measurably not a continuation.
+- **Steps reported to `ctx.metric` are absolute** across the experiment, so a continued run's chart needs no
+  stitching.
+- **`model/train_state.json`** (`completed_steps`, `runs`, `last_run_steps`) is written by the handler,
+  because the torch-free API process cannot open a `.pt`.
+- **A continuation that cannot succeed is refused with 422** — the method cannot resume, nothing is trained,
+  or the checkpoint predates the format.
 
-## Continuing a run
+**Exactness.** Continuing through a save and a load is bit-identical to continuing in-process, pinned at
+`rtol=0, atol=0`. It is **not** true that 10 + 10 steps equals 20: `max_steps` is a per-run budget, each leg
+sizes its own schedule, and the continuation resizes it to the new total — both printed before the run.
+`StepLR` is multiplicative on the group's current rate and `Adam.load_state_dict` restores the decayed one,
+so `_build_scheduler` **computes** the resume rate from the schedule's closed form rather than inheriting
+it.
 
-Pressing **Train** on a trained experiment used to throw the model away and start over, which made the
-workbench a thing you take readings with rather than one you tune in. Resume is a **declared
-capability** — `Capabilities.supports_resume` plus a `runtime_checkable` `SupportsResume` protocol
-carrying `completed_steps()` and `fit_more(train, ctx, *, additional_steps)`. A protocol rather than
-two more abstract methods, so `pixel_reference` — which has no notion of a step — grows no stub. The
-train handler checks the flag *and* the protocol against each other and names a disagreement as a
-plugin bug.
+## The resident worker
 
-- **`TrainParams.additional_steps`, so the experiment's config is untouched.** How long to continue
-  for is a property of *this run*; the frozen record that makes an experiment reproducible stays
-  frozen.
-- **The checkpoint carries optimizer moments, LR-scheduler state, the absolute step counter and both
-  RNG streams.** A weights-only warm start restarts Adam's moments — most of what a long run has
-  learned about its own gradients — and produces a visible loss spike; it is honest but it is
-  measurably not a continuation. There is **no option to skip** the extra state, because an option
-  would make "can I continue this run?" depend on a flag chosen before anyone knew the answer. On the
-  reference configuration this takes a checkpoint from 32 MB to 75 MB.
-- **Steps reported to `ctx.metric` are absolute across an experiment's training**, so a continued
-  run's chart is a continuation of the first with no stitching.
-- **`model/train_state.json`** carries `completed_steps`, `runs` and `last_run_steps`, written by the
-  *handler*. The API process has no torch by design and cannot open a `.pt`; without the sidecar the
-  configuration panel would show `max_steps: 4000` beside an 8000-step model.
-- **A continuation that cannot succeed is refused as a form, with 422** — the method cannot resume,
-  nothing is trained, or the checkpoint predates the format.
+An interactive request is a hundred milliseconds of work behind seconds of setup, and the queue is a single
+FIFO, so a job per click would mean a model load per click and a wait behind training. There is instead
+**one resident compute worker**, keyed by `(kind, target key, artifact generation)` (ADR-0026), holding
+either an experiment inspector or MobileSAM, never both.
 
-**What "exact" means, precisely, because the loose version is false.** Continuing through a save and a
-load is bit-identical to continuing without ever leaving the process, pinned at `rtol=0, atol=0`.
-It is **not** true that 10 + 10 equals 20: `max_steps` is a per-run budget, so a run of 10 sizes its
-own `StepLR` for 10 and completes its tenfold decay inside those steps, and the continuation then
-resizes the schedule to the new total. Both facts are deliberate and both are printed before the run
-starts.
-
-That schedule arithmetic is the one place this has already been wrong. `StepLR.get_lr` is
-*multiplicative on the param group's current rate*, and `Adam.load_state_dict` restores the rate the
-previous leg ended on — always the decayed one, since every leg anneals over its own last 5%. Left
-alone, each continuation started a tenth low and dropped again: 1e-5 instead of 1e-4 on the first
-resume, 1e-9 by the fifth. `_build_scheduler` now **computes** the rate from the schedule's closed
-form at the resume point rather than inheriting it, in both EfficientAD plugins, pinned by two tests.
-
-Outside the checkpoint, and said on screen rather than only here: **the ImageNette penalty-set
-iterator restarts** in the anomalib wrapper. `efficientad_custom` resumes it.
-
-## The one process that is not a job
-
-Serving an interactive model request is a hundred milliseconds of work behind seconds of setup, so a
-job per click would mean a model load per click — and, because the queue is a single FIFO by design,
-a request made during training would wait for the training. There is instead **one resident compute
-worker**, keyed by `(kind, target key, artifact generation)` (**ADR-0026**). It holds either an
-experiment inspector or MobileSAM, never both.
-
-It mirrors the queue's layering exactly, so there is one shape to learn rather than two:
-`jobs/resident.py` is the manager; `jobs/inspector.py` and `jobs/segmenter.py` are thin entrypoints;
-`experiments/diagnose.py` and `model_assets/mobile_sam.py` do the work — as `jobs/queue.py`,
-`jobs/worker.py` and a job handler do.
+It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py` and
+`jobs/segmenter.py` are thin entrypoints; `experiments/diagnose.py` and `model_assets/mobile_sam.py` do the
+work — as `jobs/queue.py`, `jobs/worker.py` and a job handler do.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no migration. A
   browse click is not a unit of work anyone needs to cancel or resume.
@@ -206,30 +150,38 @@ It mirrors the queue's layering exactly, so there is one shape to learn rather t
   a protocol that is otherwise one-way. Responses keep the existing envelope and the same
   `parse_line`, whose tolerance for library chatter is worth more here than a tighter protocol.
 - **One lock, not a check.** `request` and `evict` take the same `asyncio.Lock`, and the queue awaits
-  an injected `before_spawn` hook immediately before spawning a worker. A resident and a job worker
-  **cannot coexist** — not because anything tests for it, but because starting a job has to wait for
-  the lock an in-flight request holds. **A job may therefore be delayed by one in-flight request, and
-  that delay *is* the guarantee**: the hook must not be made non-blocking. The dependency is injected
-  from `api/app.py` into both; the queue never imports the resident.
+  an injected `before_spawn` hook immediately before spawning a worker, so a resident and a job worker
+  **cannot coexist**: starting a job waits for the lock an in-flight request holds. **A job may
+  therefore be delayed by one in-flight request, and that delay *is* the guarantee**: the hook must not
+  be made non-blocking. The dependency is injected from `api/app.py` into both; the queue never imports
+  the resident. **A `before_spawn` hook that fails fails the job**, which is not started.
 - **Keyed by a generation fingerprint** over the experiment model directory or verified asset file,
-  compared on every request, so serving from stale weights is impossible by construction rather than
-  by an eviction hook firing in time. Changing target kind also replaces the process.
+  compared on every request, so serving from stale weights is impossible by construction. The
+  fingerprint is over names, sizes and mtimes, not content: it is on the request path, and a false
+  positive costs one respawn. Changing target kind also replaces the process.
 - **A request arriving while a job runs is refused with 409, naming the job.** Queuing it behind a
-  two-hour train would make a button that sometimes takes two hours.
+  two-hour train would make a button that sometimes takes two hours. The check reads the running `job`
+  row *and* the queue's claim, which covers the window between the pre-spawn hook and the row being
+  written.
+- **A request that cannot succeed fails as a request**, checked torch-free in the API process: 422 when
+  the method records no diagnostics or is untrained, 404 when the image is outside the experiment's split
+  or channel selection. 503 is reserved for the resident itself failing, and carries its stderr tail
+  (`STDERR_TAIL_LINES`). A request times out after `REQUEST_TIMEOUT_SECONDS`.
+- **`jobs/worker.py` ignores stdin.** The two sides agree only by both importing `REQUEST_ID` from
+  `jobs/protocol.py`. `tests/test_resident.py` pins that a job start evicts, that a hook which cannot
+  evict fails the job, and that nothing outlives the application.
 - **A request changes no score, annotation, map or metric.** A MobileSAM answer is an ephemeral set of
   ranked cropped bitmap candidates; only explicit acceptance puts one into the annotation draft.
-  `InferContext.maps_subdir` points diagnostic inference's
-  unconditional map write at `scratch-maps`, which is then removed; without it a browse request would
-  overwrite an image's map under a range fitted by a different run.
+  `InferContext.maps_subdir` points diagnostic inference's unconditional map write at `scratch-maps`,
+  which is then removed, so a browse request never overwrites a stored map.
 - **Any deviation kills the process** — a timeout, a broken pipe, a mismatched `rid`. Each is a state
   in which the next answer might belong to a different question, and respawning costs one model load.
 - **Idle eviction after ten minutes**, torn down with the application's lifespan before the queue's.
 - **Destructive artifact work holds an eviction guard**, not merely a one-shot `evict`: the resident is
   killed and its lock remains held until the database row and app-owned artifact directory are gone. A
   diagnostic request therefore cannot respawn into the interval between those two operations.
-  `GET /api/health` reports the resident kind, target key, generation, time to eviction and requests served
-  — the only place the one invisible process in the system becomes visible, and a lock-free field
-  read, because a health check that can block behind a model load is not a health check.
+- `GET /api/health` reports the resident kind, target key, generation, time to eviction and requests served
+  as a lock-free field read, because a health check that can block behind a model load is not one.
 
 ---
 

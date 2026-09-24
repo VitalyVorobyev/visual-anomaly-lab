@@ -69,5 +69,5 @@ has annotation, and whether it is ready for a task is a readiness check.
   say so on screen.
 - Whether a split for a supervised task should stratify by class.
 
-Record any decision with a live alternative as an amendment to ADR-0039 (dated `## Changelog`), and
+Record any decision with a live alternative by editing ADR-0039 in place (ADR-0030: no changelog), and
 commit with the `safe-commit` skill.

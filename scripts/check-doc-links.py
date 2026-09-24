@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Reject broken repository-local links in the user book and maintained docs."""
+"""Reject broken repository-local links, and citations of decision records that do not exist."""
 
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 from urllib.parse import unquote
 
@@ -37,6 +38,48 @@ def _local_target(source: Path, raw: str) -> Path | None:
     return source.parent / path_text
 
 
+ADR_CITATION = re.compile(r"\bADR-(\d{4})\b")
+CITING_ROOTS = (
+    "backend/src",
+    "backend/tests",
+    "frontend/src",
+    "docs",
+    "book/src",
+    "scripts",
+    ".claude",
+)
+CITING_FILES = ("CLAUDE.md", "AGENTS.md", "README.md")
+
+
+def _stale_adr_citations() -> list[str]:
+    """A removed record's citations are repointed in the same change (ADR-0030).
+
+    A record may still name the record it superseded, so docs/adr/ itself is exempt.
+    """
+    live = {path.name[:4] for path in (ROOT / "docs" / "adr").glob("[0-9][0-9][0-9][0-9]-*.md")}
+    tracked = subprocess.run(
+        ["git", "ls-files", "--", *CITING_ROOTS, *CITING_FILES],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    failures: list[str] = []
+    for name in tracked:
+        path = ROOT / name
+        if not path.is_file() or path in SKIP_FILES or name.startswith("docs/adr/"):
+            continue
+        try:
+            text = path.read_text(encoding="utf-8")
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(text.splitlines(), start=1):
+            for number in ADR_CITATION.findall(line):
+                if number not in live:
+                    failures.append(f"{name}:{line_number}: cites removed record ADR-{number}")
+    return failures
+
+
 def main() -> int:
     failures: list[str] = []
     files = _markdown_files()
@@ -49,6 +92,7 @@ def main() -> int:
                     failures.append(
                         f"{source.relative_to(ROOT)}:{line_number}: missing local target {raw!r}"
                     )
+    failures.extend(_stale_adr_citations())
     if failures:
         print("\n".join(failures))
         return 1

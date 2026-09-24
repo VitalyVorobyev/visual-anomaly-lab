@@ -19,7 +19,7 @@ Every path in the manifest is POSIX-relative and traversal-safe. Every payload f
 SHA-256. Float fixtures are little-endian, contiguous `float32`; their shapes and NCHW layout are in the
 manifest. `format_version` is the compatibility boundary.
 
-The first contract is intentionally static-shape, batch-one. An experiment already freezes width, height
+The contract is static-shape, batch-one. An experiment already freezes width, height
 and colour, so dynamic dimensions add runtime ambiguity without enabling a current workflow.
 
 **The declared input is the colour the experiment froze, including under `grayscale`.** A method whose
@@ -58,18 +58,19 @@ not a function of its displayed map. This distinction is load-bearing for PatchC
 reweights its most anomalous patch using neighbours in the memory bank. A consumer compares the resolved
 score with the recorded operating point when one was available. Source-frame projection is a host operation
 because production systems may own their source geometry independently.
+
 An operating point is resolved from one named subset rather than a mixture: test first, then validation,
 then train as an explicit last resort. The chosen subset and rule travel with the value.
 
-Four registered methods across four families have proven exporters: `pixel_reference` (explicit
-statistics and a percentile host reducer), `efficientad_custom` (a deep graph and max/top-k host reducer),
+Four methods across four families have proven exporters: `pixel_reference` (explicit statistics and
+a percentile host reducer), `efficientad_custom` (a deep graph and max/top-k host reducer),
 `patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score), and
-`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score). The
-retired `dinomaly_anomalib` wrapper had a proven exporter too (transformer reconstruction map and
-graph-produced smoothed top-one-percent score); `dinomaly_custom`, the in-house implementation that
-reached parity with it, does not export yet (`docs/backlog.md`). A future
-method truthfully reports no portable format until its graph or auxiliary-tensor representation and parity
-tolerance have been proven.
+`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score).
+`dinomaly_custom`, `dino_memory` and `subspace_ad` report no portable format (`docs/backlog.md`); a method
+reports one only once its graph and parity tolerance have been proven.
+
+## Reference runner
+
 The Rust reference runner validates the same manifest and hashes before using pinned `ort` 2.0.0-rc.13 and
 ONNX Runtime. `verify` executes the deterministic fixture and enforces both map and score tolerances; `infer`
 accepts a prepared little-endian NCHW float32 tensor and emits a JSON score/verdict plus an optional raw map.
@@ -77,7 +78,7 @@ The reference binary uses CPU so it is a portable conformance oracle. The bundle
 that Rust crate or execution provider; a production runner may register the target's ONNX Runtime provider
 without changing the bundle.
 
-The CI handoff is deliberately cross-language: Python fits and exports the real baseline, then the compiled
+The CI handoff is cross-language: Python fits and exports the real baseline, then the compiled
 Rust binary validates and executes that output. Rust-only tests would not catch schema or score-contract drift
 between the two implementations.
 
