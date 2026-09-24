@@ -9,9 +9,12 @@
  * per-tool `if` chains out of the scene.
  */
 
-import type { AnnotationPoint, AssistBox, AssistPoint } from "../../../api/client";
+import type { AnnotationPoint, AssistBox, AssistPoint, BoxShape } from "../../../api/client";
 
-export type EditorTool = "select" | "polygon" | "brush" | "eraser" | "assist";
+export type EditorTool = "select" | "polygon" | "box" | "brush" | "eraser" | "assist";
+
+/** A box region's geometry in source pixels, without its identity or class. */
+export type BoxRect = Pick<BoxShape, "x" | "y" | "width" | "height">;
 
 export interface ToolContext {
   /** The polygon being drawn, in source pixels. */
@@ -30,13 +33,19 @@ export interface ToolContext {
  */
 export type Gesture =
   | { kind: "stroke"; points: AnnotationPoint[]; flat: number[] }
-  | { kind: "box"; start: AnnotationPoint };
+  | {
+      kind: "box";
+      start: AnnotationPoint;
+      /** Where the drag is now; the box tool follows it, the assist box emits it instead. */
+      end?: AnnotationPoint;
+    };
 
 export type ToolEffect =
   | { type: "deselect" }
   | { type: "stroke"; points: AnnotationPoint[] }
   | { type: "vertex"; point: AnnotationPoint }
   | { type: "closePolygon" }
+  | { type: "box"; rect: BoxRect }
   | { type: "assistPoint"; point: AssistPoint }
   | { type: "assistBox"; box: AssistBox }
   | { type: "toggleFit" };

@@ -34,11 +34,16 @@ has annotation, and whether it is ready for a task is a readiness check.
    - **ADR-0028 still holds.** A confidence is not comparable across runs. Anything thresholded is
      resolved per run by one shared rule whose name and value are printed, and Compare puts only
      threshold-free metrics side by side.
-3. **Ground truth.** Completion writes a class-index PNG next to the binary mask and the revision
-   pins its class table (`annotation_render.py`); `annotations/class_truth.py` resolves and loads a
-   class's region per image. *(planned: annotation schema v2)* `BoxShape`, `instance_id` and an
-   instances file for detection. v1 documents must read as v2 unchanged. The taxonomy is `AnnotationLabel`, managed on the Annotate tab
-   (`routes/dataset/ClassManager.tsx`). Class hotkeys must avoid `0`/`1`.
+3. **Ground truth.** Completion writes a class-index PNG and an instances JSON next to the binary
+   mask, and the revision pins its class table and the instances file's path and digest
+   (`annotation_render.py`); `annotations/class_truth.py` resolves and loads a class's region per
+   image. A document holds polygons, boxes and bitmaps, each with an optional `instance_id`; an
+   instance is `{instance_id, label_key, box, pixels}` over its final pixels. **The shape union grows
+   without a schema version**: a new shape kind is additive, an unset optional field is left out of
+   the canonical JSON so stored digests never move, and every kind branch names its kind
+   (`assert_never` in Python, a `never` check in TypeScript) rather than falling through an `else`.
+   The taxonomy is `AnnotationLabel`, managed on the Annotate tab (`routes/dataset/ClassManager.tsx`);
+   the editor's class keys are `2`–`9`, because `0`/`1` are the view's.
 4. **Predictions.** A binary task writes its mask with `InferContext.write_mask`. *(planned)*
    `Prediction` in `models/base.py` gains optional `label_map` and `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
    ranking, the gallery and disagreement keep working.

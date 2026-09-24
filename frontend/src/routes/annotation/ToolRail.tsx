@@ -11,6 +11,7 @@ import {
   MousePointer2,
   Redo2,
   Shapes,
+  Square,
   Undo2,
   WandSparkles,
   ZoomIn,
@@ -25,6 +26,7 @@ import { Tooltip, cn, focusRing } from "@vitavision/lab-ui";
 const TOOLS: { tool: EditorTool; command: EditorCommand; icon: ReactNode; label: string }[] = [
   { tool: "select", command: "tool.select", icon: <MousePointer2 />, label: "Select" },
   { tool: "polygon", command: "tool.polygon", icon: <Shapes />, label: "Polygon" },
+  { tool: "box", command: "tool.box", icon: <Square />, label: "Box" },
   { tool: "brush", command: "tool.brush", icon: <Brush />, label: "Brush" },
   { tool: "eraser", command: "tool.eraser", icon: <Eraser />, label: "Eraser" },
   { tool: "assist", command: "tool.assist", icon: <WandSparkles />, label: "Contour assist" },

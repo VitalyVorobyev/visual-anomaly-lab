@@ -55,11 +55,25 @@ An annotation document is JSON schema version 1 in **source-image pixel coordina
 `image_width`, `image_height`, a base (`empty` or `source_mask`) and an ordered list of shapes:
 
 - a polygon — stable id, taxonomy key, `add` / `subtract` operation, three or more points;
+- a box — the same identity, taxonomy and operation fields and a float `x`, `y`, `width`, `height`
+  rectangle with positive area. It rasterises as the polygon of its four corners, through the same
+  call, so a box and that polygon cover exactly the same pixels;
 - a bitmap — the same identity, taxonomy and operation fields, a cropped binary PNG and its integer
   source-frame rectangle.
 
+Every shape may carry an optional `instance_id`, which groups `add` shapes into one object instance
+(see [completion](#completion-and-storage)). Unset, a shape is its own instance. Add shapes that share
+an instance must share a class.
+
 Duplicate shape ids, geometry outside the source frame, malformed bitmap bytes, unknown label keys,
-dimension changes and base-layer changes are rejected before persistence.
+an instance holding two classes, dimension changes and base-layer changes are rejected before
+persistence.
+
+**The shape list grows without a new schema version.** `schema_version` stays `1`: box and
+`instance_id` are additions to a discriminated union, so every stored document reads unchanged. An unset
+`instance_id` is left out of the canonical JSON rather than written as null, so every stored document
+keeps its `document_sha256`; `tests/test_annotation_boxes.py` pins one such digest. A change that would
+alter how an existing document reads or hashes is what would need a version.
 
 The editor draws a `source_mask` base from `GET /api/images/{id}/annotations/source-mask` — the pinned
 import, binary, digest-checked — and **not** from `GET /api/images/{id}/mask`, which is the image's
@@ -132,21 +146,31 @@ dimensions are refused (`409`), never rescaled, and one bad target fails the who
 
 ## Completion and storage
 
-Completion rasterises the base and the ordered polygon/bitmap operations once (`annotation_render.py`).
-An `add` paints its class's index and a `subtract` clears whatever is there; a `source_mask` base is drawn
-in `defect`. Two PNGs are written atomically from that one canvas:
+Completion rasterises the base and the ordered polygon, box and bitmap operations once
+(`annotation_render.py`). An `add` paints its class's index and a `subtract` clears whatever is there; a
+`source_mask` base is drawn in `defect`. Three files are written atomically from that one pass:
 
 - `data/annotations/image-<id>/revision-<n>.png`, the binary mask every anomaly consumer reads, which is
   exactly `index > 0`;
-- `revision-<n>.classes.png`, the 8-bit class-index mask, with 0 as background.
+- `revision-<n>.classes.png`, the 8-bit class-index mask, with 0 as background;
+- `revision-<n>.instances.json`, the object instances detection and instance segmentation read:
+  `{"instances": [{instance_id, label_key, box, pixels}]}`.
+
+An instance is keyed by `instance_id`, else by the shape's id, over `add` shapes in draw order. It owns
+the pixels its shapes set that still carry its class in the final class mask: a later cut or a later
+shape drawn over them takes them away. `box` is the tight `[x0, y0, x1, y1]` of those pixels, `x1`/`y1`
+exclusive, and `pixels` their count. An instance left with no pixels is dropped, and the `source_mask`
+base belongs to no instance. The pass keeps one `int32` owner raster beside the class canvas, drawn by
+the same calls, so memory is bounded by the image, not by the number of shapes.
 
 The revision pins `class_table`: every class the dataset had at completion, in taxonomy order, with its
-index (from 1) and pixel count. Completion then hashes the canonical document and both masks, inserts an
-append-only revision and removes the draft. A database trigger rejects `UPDATE` on revisions. The mask
+index (from 1) and pixel count, and `instances_path` / `instances_sha256` (migration 024; null on a
+revision completed before it). Completion then hashes the canonical document, both masks and the instances
+file, inserts an append-only revision and removes the draft. A database trigger rejects `UPDATE` on revisions. The mask
 endpoint verifies its expected app-owned path and digest before serving immutable bytes.
 
-`POST /api/samples/{id}/annotations/complete` renders once and copies both files to every image's own
-revision path, so `mask_sha256` and `class_mask_sha256` are identical across the fan-out and shared truth is checkable. Each image
+`POST /api/samples/{id}/annotations/complete` renders once and copies all three files to every image's own
+revision path, so `mask_sha256`, `class_mask_sha256` and `instances_sha256` are identical across the fan-out and shared truth is checkable. Each image
 keeps its own `revision_no`. Every written file is registered on the write transaction and removed if it
 rolls back ([repository](repository.md)).
 
@@ -188,8 +212,8 @@ The dataset-local queue filters by label and to samples still missing ground tru
 with whether every, some or none of the sample's images resolve to truth — by the same SQL predicate the
 filter uses. Under sample scope a part is one card. Keyboard traversal prefetches adjacent queue pages.
 
-The editor is a full-height controlled Konva scene: polygon/vertex and brush/eraser editing, add/subtract,
-undo/redo, `ETag`-guarded save and completion. Dirty drafts autosave after a short idle; a `412` keeps the
+The editor is a full-height controlled Konva scene: polygon/vertex, box and brush/eraser editing,
+add/subtract, undo/redo, `ETag`-guarded save and completion. Dirty drafts autosave after a short idle; a `412` keeps the
 local edit visible and offers an explicit reload of the server draft rather than choosing a winner.
 
 **Navigation and view.** Left-drag pans while Select is active; right-drag pans from every tool. Fit and
@@ -256,6 +280,14 @@ carrying truth, so the mark never accuses somebody of leaving a drawn defect und
   operation is changed in Selection. The class picker appears only when the dataset has more than one class
   — label count is data. The inspector section shows the tool in hand (brush size, vertex readout) and is
   not drawn when empty.
+- **A box is dragged corner to corner** with the box tool (`R`), normalised whichever corner the drag
+  began from; a drag with no area draws nothing. Under Select a box moves like any region and its four
+  corners are vertex handles: dragging one resizes the box against the opposite corner, and dragging past
+  it flips the box rather than inverting it. `shapeOutline` is the one place a box becomes points, for
+  the scene, the pixel readout and the resize.
+- **Class keys.** `2`–`9` pick the class for new regions, in the order the class picker lists them, which
+  prints each class's key beside its name; `0` and `1` stay Fit and 1:1. They are one entry in
+  `EDITOR_BINDINGS`, so the shortcut sheet lists them.
 - **A region moves.** Select-drag translates; arrow keys nudge by 1 px, 10 with Shift. The offset is clamped
   once against the shape's extent, never per coordinate, so a polygon at an edge is not deformed.
 - **A polygon closes itself.** A click near the first vertex closes the ring; a click on the last vertex is

@@ -123,7 +123,11 @@ export function RegionsSection({
                 </span>
                 <span className="font-mono text-[9px] text-fg-subtle">
                   {shape.operation === "subtract" ? "−" : "+"}
-                  {shape.kind === "polygon" ? `${shape.points.length}v` : "mask"}
+                  {shape.kind === "polygon"
+                    ? `${shape.points.length}v`
+                    : shape.kind === "box"
+                      ? "box"
+                      : "mask"}
                 </span>
               </button>
             );

@@ -3,7 +3,7 @@
  * the mask the document resolves to is set there.
  *
  * The value is folded the way the document is read — the base, then each shape in order, an
- * `add` setting the pixel and a `subtract` clearing it. A polygon is tested at the pixel's
+ * `add` setting the pixel and a `subtract` clearing it. A polygon or a box is tested at the pixel's
  * centre, which is what a rasteriser samples; a bitmap is looked up in its decoded crop. A
  * bitmap whose crop has not been decoded yet is left out rather than guessed.
  *
@@ -11,6 +11,7 @@
  * that "is that pixel in or out" can be answered by pointing at it.
  */
 
+import { shapeOutline } from "../../api/annotationState";
 import type { AnnotationDocument, AnnotationPoint, PolygonShape } from "../../api/client";
 
 export interface PixelReading {
@@ -47,9 +48,10 @@ export function readPixel(
   let region: number | null = null;
   document.shapes.forEach((shape, index) => {
     const covered =
-      shape.kind === "polygon"
-        ? insidePolygon(shape, pixel.x + 0.5, pixel.y + 0.5)
-        : insideBitmap(shape, pixel.x, pixel.y, masks.get(shape.png_base64));
+      shape.kind === "bitmap"
+        ? insideBitmap(shape, pixel.x, pixel.y, masks.get(shape.png_base64))
+        : // A box is read as the polygon of its corners, which is what the backend draws.
+          insidePolygon({ points: shapeOutline(shape) }, pixel.x + 0.5, pixel.y + 0.5);
     if (!covered) return;
     region = index + 1;
     value = shape.operation === "add" ? 1 : 0;

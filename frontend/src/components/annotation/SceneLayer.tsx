@@ -12,6 +12,7 @@ import { memo, useEffect, useMemo, useState } from "react";
 import { Circle, Group, Image as KonvaImage, Layer, Line, Rect } from "react-konva";
 
 import { tintedMask } from "../../api/annotationBitmap";
+import { boxWithCorner, shapeOutline } from "../../api/annotationState";
 import type {
   AnnotationDocument,
   AnnotationLabel,
@@ -144,13 +145,23 @@ export const SceneLayer = memo(function SceneLayer({
             }
             const selected = shape.id === selectedId;
             // The dragged vertex is applied here rather than committed on every mouse move:
-            // the outline follows the handle, and undo still steps one drag at a time.
-            const points =
-              vertexDrag?.shapeId === shape.id
+            // the outline follows the handle, and undo still steps one drag at a time. A box's
+            // vertices are its corners, and dragging one resizes it against the opposite one.
+            const dragging = vertexDrag?.shapeId === shape.id ? vertexDrag : null;
+            let points: AnnotationPoint[];
+            if (shape.kind === "polygon") {
+              points = dragging
                 ? shape.points.map((point, index) =>
-                    index === vertexDrag.index ? vertexDrag.point : point,
+                    index === dragging.index ? dragging.point : point,
                   )
                 : shape.points;
+            } else if (shape.kind === "box") {
+              points = shapeOutline(
+                dragging ? boxWithCorner(shape, dragging.index, dragging.point) : shape,
+              );
+            } else {
+              return assertNever(shape);
+            }
             return (
               <Group
                 key={shape.id}
@@ -260,6 +271,10 @@ export const SceneLayer = memo(function SceneLayer({
     </Layer>
   );
 });
+
+function assertNever(shape: never): never {
+  throw new Error(`unknown region kind: ${JSON.stringify(shape)}`);
+}
 
 function BitmapLayer({
   shape,

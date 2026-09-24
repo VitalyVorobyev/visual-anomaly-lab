@@ -22,7 +22,7 @@ import sqlite3
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import ClassVar, Protocol
+from typing import ClassVar, Protocol, assert_never
 from uuid import uuid4
 
 import numpy as np
@@ -46,6 +46,7 @@ from anomaly_lab.annotation_interchange import (
 from anomaly_lab.annotation_render import (
     AnnotationRenderError,
     RenderedTruth,
+    instances_destination,
     rasterize,
     render_truth,
 )
@@ -66,6 +67,8 @@ from anomaly_lab.domain.annotations import (
     AnnotationSampleDraft,
     AnnotationShape,
     BitmapShape,
+    BoxShape,
+    PolygonShape,
 )
 from anomaly_lab.domain.entities import AnnotationScope, ClassPresence, Image
 from anomaly_lab.errors import (
@@ -233,6 +236,10 @@ def _validate_taxonomy(
                 decode_shape(shape)
             except AnnotationBitmapError as exc:
                 raise InvalidInputError(str(exc)) from exc
+        elif isinstance(shape, PolygonShape | BoxShape):
+            pass  # their geometry is checked against the frame by the document itself
+        else:  # pragma: no cover - the discriminated union is closed
+            assert_never(shape)
 
 
 def _shared_frame(images: list[Image]) -> tuple[int, int]:
@@ -279,6 +286,7 @@ def _render(
             classes=classes,
             source_mask_path=source_mask_path,
             source_mask_sha256=source_mask_sha256,
+            instances_path=instances_destination(destination),
         )
     except AnnotationRenderError as exc:
         raise ConflictError(str(exc)) from exc
@@ -289,6 +297,14 @@ def _class_mask(destination: Path, rendered: RenderedTruth) -> annotations_repo.
         path=str(_class_mask_destination(destination)),
         sha256=rendered.class_mask_sha256,
         table=rendered.class_table,
+    )
+
+
+def _instances_file(destination: Path, rendered: RenderedTruth) -> annotations_repo.InstancesFile:
+    if rendered.instances_sha256 is None:  # pragma: no cover - `_render` always writes one
+        raise ConflictError("the revision's instances were not rendered")
+    return annotations_repo.InstancesFile(
+        path=str(instances_destination(destination)), sha256=rendered.instances_sha256
     )
 
 
@@ -579,6 +595,7 @@ class ImageDrafts(DraftUnit[AnnotationDraft, AnnotationDraftState]):
             # Registered before the render, so a render that fails part-way leaves nothing.
             tx.remove_on_rollback(destination)
             tx.remove_on_rollback(_class_mask_destination(destination))
+            tx.remove_on_rollback(instances_destination(destination))
             rendered = _render(
                 conn,
                 dataset_id,
@@ -594,6 +611,7 @@ class ImageDrafts(DraftUnit[AnnotationDraft, AnnotationDraftState]):
                 mask_path=str(destination),
                 mask_sha256=rendered.mask_sha256,
                 class_mask=_class_mask(destination, rendered),
+                instances=_instances_file(destination, rendered),
             )
 
     def import_file(
@@ -794,6 +812,7 @@ class SampleDrafts(DraftUnit[AnnotationSampleDraft, AnnotationSampleDraftState])
                     mask_path=str(path),
                     mask_sha256=rendered.mask_sha256,
                     class_mask=_class_mask(path, rendered),
+                    instances=_instances_file(path, rendered),
                 )
                 for image, path, rendered in _fan_out(
                     tx, settings, dataset_id, draft.document, images
@@ -825,6 +844,7 @@ def _fan_out(
         destination = _revision_destination(settings, image.id, next_no)
         tx.remove_on_rollback(destination)
         tx.remove_on_rollback(_class_mask_destination(destination))
+        tx.remove_on_rollback(instances_destination(destination))
         if first is None:
             first = (
                 destination,
@@ -841,6 +861,7 @@ def _fan_out(
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(first[0], destination)
             shutil.copyfile(_class_mask_destination(first[0]), _class_mask_destination(destination))
+            shutil.copyfile(instances_destination(first[0]), instances_destination(destination))
         written.append((image, destination, first[1]))
     return written
 

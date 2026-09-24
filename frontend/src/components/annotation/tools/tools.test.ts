@@ -130,6 +130,37 @@ describe("assist", () => {
   });
 });
 
+describe("box", () => {
+  const tool = TOOLS.box;
+
+  it("commits the box a drag spans, whichever corner it began from", () => {
+    const down = tool.down(context(), { x: 40, y: 30 }, { shiftKey: false });
+    expect(down.effects).toEqual([{ type: "deselect" }]);
+    if (!down.gesture) throw new Error("expected a box gesture");
+    const moved = tool.move(context(), down.gesture, { x: 10.5, y: 50 });
+    expect(moved.effects).toEqual([]);
+    if (!moved.gesture) throw new Error("expected the gesture to continue");
+    expect(tool.up(context(), moved.gesture)).toEqual([
+      { type: "box", rect: { x: 10.5, y: 30, width: 29.5, height: 20 } },
+    ]);
+  });
+
+  it("commits nothing for a drag without area", () => {
+    const down = tool.down(context(), { x: 5, y: 5 }, { shiftKey: false });
+    if (!down.gesture) throw new Error("expected a box gesture");
+    expect(tool.up(context(), down.gesture)).toEqual([]);
+    // A drag along one axis is a line, not a box.
+    const flat = tool.move(context(), down.gesture, { x: 20, y: 5 });
+    if (!flat.gesture) throw new Error("expected the gesture to continue");
+    expect(tool.up(context(), flat.gesture)).toEqual([]);
+  });
+
+  it("draws rather than pans, and leaves the keys to the page", () => {
+    expect(tool.pansWithPrimary).toBe(false);
+    expect(tool.key(context(), { x: 0, y: 0 }, { key: " ", shiftKey: false })).toBeNull();
+  });
+});
+
 describe("select", () => {
   it("pans with the primary button, owns no key, and toggles Fit on a double-click", () => {
     const tool = TOOLS.select;

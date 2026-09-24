@@ -14,6 +14,7 @@ import type Konva from "konva";
 import { useLayoutEffect, useRef } from "react";
 import { Circle, Group, Layer, Line, Rect } from "react-konva";
 
+import { boxBetween } from "../../api/annotationState";
 import type { AnnotationPoint, AssistBox, AssistPoint } from "../../api/client";
 import { type LiveStore, useLive } from "./liveStore";
 import { withAlpha, type ScenePalette } from "./scenePalette";
@@ -52,6 +53,11 @@ export function LiveLayer({
   const keyboardFocused = useLive(store, (state) => state.keyboardFocused);
   const pointer = useLive(store, (state) => (brushCursor ? state.pointer : null));
   const trail = gesture?.kind === "stroke" ? gesture.flat : null;
+  // The box tool's drag; the assist box is drawn from its own prop, which outlives the drag.
+  const drawnBox =
+    tool === "box" && gesture?.kind === "box" && gesture.end
+      ? boxBetween(gesture.start, gesture.end)
+      : null;
 
   // The trail's array is appended in place, so its identity does not change as it grows and
   // react-konva would never hand the node the new points. Handing them over here, keyed on
@@ -104,6 +110,17 @@ export function LiveLayer({
             lineCap="round"
             lineJoin="round"
             opacity={0.72}
+          />
+        )}
+        {drawnBox && (
+          <Rect
+            x={drawnBox.x}
+            y={drawnBox.y}
+            width={drawnBox.width}
+            height={drawnBox.height}
+            stroke={palette.signal}
+            strokeWidth={2 / scale}
+            dash={[6 / scale, 4 / scale]}
           />
         )}
         {assistBox && (

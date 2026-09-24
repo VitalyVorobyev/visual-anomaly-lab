@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Any, Literal, assert_never
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -19,6 +19,7 @@ from anomaly_lab.domain.annotations import (
     AnnotationPoint,
     AnnotationShape,
     BitmapShape,
+    BoxShape,
     PolygonShape,
 )
 
@@ -386,9 +387,13 @@ def render_shapes(shapes: list[AnnotationShape], *, size: tuple[int, int]) -> np
             region[bitmap] = 255 if shape.operation == "add" else 0
             canvas.paste(Image.fromarray(region.astype(np.uint8), mode="L"), (shape.x, shape.y))
             draw = ImageDraw.Draw(canvas)
-        else:
+        elif isinstance(shape, PolygonShape):
             draw.polygon(
                 [(point.x, point.y) for point in shape.points],
                 fill=255 if shape.operation == "add" else 0,
             )
+        elif isinstance(shape, BoxShape):
+            draw.polygon(shape.corners(), fill=255 if shape.operation == "add" else 0)
+        else:  # pragma: no cover - the discriminated union is closed
+            assert_never(shape)
     return np.asarray(canvas) > 0

@@ -19,8 +19,9 @@ application.
   override or the reference pack it came from — with a virtualised grid, channel filters and an
   image-first sample viewer. A dataset names the channel it is read in, and every screen that has
   room for one photograph of a part opens on it.
-- **Annotate** at pixel level: polygon and brush with editable contour tracing, undo/redo, autosave
-  with conflict detection, and a keyboard queue. Truth is versioned and lives in the source frame.
+- **Annotate** at pixel level: polygon, box and brush with editable contour tracing, instance ids,
+  class keys, undo/redo, autosave with conflict detection, and a keyboard queue. Completion records
+  the object instances beside the masks. Truth is versioned and lives in the source frame.
   One annotation covers every channel of a part, while revisions stay per image.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible.

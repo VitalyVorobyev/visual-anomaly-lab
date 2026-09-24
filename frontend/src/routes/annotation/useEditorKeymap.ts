@@ -19,6 +19,7 @@ import type { Label } from "../../api/client";
 import type { AnnotationCanvasHandle } from "../../components/annotation/AnnotationCanvas";
 import {
   CANVAS_BINDINGS,
+  classSlotFor,
   type EditorCommand,
   PEEK_MS,
   windowBindingFor,
@@ -93,6 +94,7 @@ export function editorKeyActions({
     },
     "tool.select": () => setTool("select"),
     "tool.polygon": () => setTool("polygon"),
+    "tool.box": () => setTool("box"),
     "tool.brush": () => setTool("brush"),
     "tool.eraser": () => setTool("eraser"),
     "tool.assist": () => setTool("assist"),
@@ -142,6 +144,10 @@ export function editorKeyActions({
     "label.normal": () => applyLabel("normal"),
     "label.defect": () => applyLabel("defect"),
     "label.unlabeled": () => applyLabel("unlabeled"),
+    "class.pick": (event) => {
+      const slot = classSlotFor(event.key);
+      if (slot !== null) commands.pickClass(slot);
+    },
     shortcuts: (event) => {
       event.preventDefault();
       openShortcuts();
