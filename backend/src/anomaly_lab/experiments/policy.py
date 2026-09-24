@@ -3,9 +3,9 @@
 `anomaly` learns what normal looks like, so it fits on the train subset's normals and
 calibrates on the val subset's. A targeted task (ADR-0040) fits on its references — every
 image of the train subset whose ground truth answers for the target class, present or
-absent — and has no val subset. Supervised segmentation fits on every image of the train
-subset whose truth answers for all of its pinned classes, and has no val subset either. The
-train handler asks here instead of deciding, so the answer has one home per task.
+absent — and has no val subset. Supervised segmentation and detection fit on every image of
+the train subset whose truth answers for all of their pinned classes, and have no val subset
+either. The train handler asks here instead of deciding, so the answer has one home per task.
 """
 
 from __future__ import annotations
@@ -14,8 +14,10 @@ import sqlite3
 from dataclasses import dataclass, field
 
 from anomaly_lab.annotations.class_truth import (
+    BoxTruth,
     ClassTruth,
     LabelTruth,
+    resolve_box_truth,
     resolve_class_truth,
     resolve_label_truth,
 )
@@ -41,6 +43,8 @@ class TrainingSet:
     """For a targeted task: the ground truth of every image in `train`."""
     label_truths: dict[int, LabelTruth] = field(default_factory=dict)
     """For supervised segmentation: the label truth of every image in `train`."""
+    box_truths: dict[int, BoxTruth] = field(default_factory=dict)
+    """For detection: the box truth of every image in `train`."""
 
 
 def training_set(conn: sqlite3.Connection, experiment: Experiment) -> TrainingSet:
@@ -113,6 +117,30 @@ def training_set(conn: sqlite3.Connection, experiment: Experiment) -> TrainingSe
                 "samples."
             ),
             label_truths={image.image_id: labelled[image.image_id] for image in train},
+        )
+
+    if experiment.task is Task.OBJECT_DETECTION and experiment.classes:
+        # The images segmentation would label, read as boxes: an image with a gap in its
+        # truth would teach that an unanswered object is not there.
+        classes = experiment.classes
+        boxed = resolve_box_truth(
+            conn, experiment.dataset_id, [image.image_id for image in everything], classes
+        )
+        train = [image for image in everything if image.image_id in boxed]
+        return TrainingSet(
+            train=train,
+            val=[],
+            excluded=len(everything) - len(train),
+            excluded_because=(
+                "have no completed annotation that answers for every class of the run"
+            ),
+            empty_because=(
+                f"no image in the train subset of split {experiment.split_id} has ground "
+                f"truth for every one of {', '.join(classes)}. Complete an annotation of "
+                "the training images, or choose a split whose train subset holds annotated "
+                "samples."
+            ),
+            box_truths={image.image_id: boxed[image.image_id] for image in train},
         )
 
     raise NoTrainingPolicyError(f"the task {experiment.task.value!r} has no training policy")

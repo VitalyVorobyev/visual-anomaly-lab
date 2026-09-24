@@ -97,7 +97,13 @@ application.
   (`logit_bias` `held_out_iou`), it beats the floor by the predeclared margin on both VisA classes, where
   the head's own argmax labelled a few percent of every image defect ([measurements.md](measurements.md)).
   Its mask of a small VisA defect is usable, not good.
-- **Detection** (ADR-0039) follows, and reuses the same seams.
+- **Detection** (ADR-0039) runs end to end on the same seams, torch-free: a run pins its classes, fits
+  through `box_targets` on the boxes of its annotated training images — a revision's instances, or an
+  imported mask's connected components — writes boxes per image, and is read by COCO's protocol
+  (AP@[.5:.95] as the headline, AP50, AP75, recall, AP per class). `color_detector` is the floor, the
+  colour classifier's components boxed. Its results read as metric tables alone: the create form does
+  not offer it `class_stratified`, and there are no drawn boxes, no per-sample verdict, no deep detector
+  and no public gate yet.
 
 ## Deliberately not built
 

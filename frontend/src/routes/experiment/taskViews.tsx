@@ -8,15 +8,22 @@
  * and the bodies of Overview and Benchmark. An anomaly run reads a threshold and a
  * confusion matrix; a few-shot segmentation run reads overlap against its class and what
  * happened on each sample (ADR-0040); a supervised segmentation run reads each class's IoU
- * across subsets, its confusion matrix drawn, and what happened on each sample (ADR-0039).
- * No body is reached except through here.
+ * across subsets, its confusion matrix drawn, and what happened on each sample (ADR-0039); an
+ * object detection run reads COCO's AP per subset and per class, and has no per-sample verdict
+ * or drawn boxes yet. No body is reached except through here.
  */
 
 import type { ReactNode } from "react";
 
 import type { MetricSummary, SampleVerdict, Subset, Task } from "../../api/client";
 import type { MetricValue } from "../../api/metrics";
-import { formatScore, segmentationRows, semanticRows, timingRows } from "../../api/metrics";
+import {
+  formatScore,
+  objectDetectionRows,
+  segmentationRows,
+  semanticRows,
+  timingRows,
+} from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES } from "../../api/resultsState";
 import {
@@ -269,10 +276,48 @@ const SEMANTIC: TaskView = {
   ),
 };
 
+const DETECTION_HEADLINE = [
+  { key: "ap", label: "AP@[.5:.95]" },
+  { key: "ap50", label: "AP50" },
+  { key: "ap75", label: "AP75" },
+  { key: "recall", label: "recall" },
+];
+
+const DETECTION: TaskView = {
+  filters: [{ id: "all", label: "all", outcomes: undefined }],
+  rank: { desc: "most confident", asc: "least" },
+  outcomeNote: () => (
+    <>A detection run is ranked by its most confident box; it has no per-sample verdict yet.</>
+  ),
+  Scored: ({ metrics, state }) => (
+    <Headline metrics={metrics} subset={state.subset} keys={DETECTION_HEADLINE} />
+  ),
+  MetricTables: ({ experimentId, metrics }) => (
+    <Metrics
+      experimentId={experimentId}
+      metrics={metrics}
+      note={
+        <>
+          COCO&apos;s protocol over the boxes the method wrote: detections matched by confidence
+          at IoU 0.50 to 0.95, at most 100 an image, no confidence cut. Counted per image;
+          unlabelled images are left out and counted.
+        </>
+      }
+      body={(subset, values) => <DetectionSubset subset={subset} metrics={values} />}
+    />
+  ),
+  Benchmark: () => (
+    <Panel title="Boxes">
+      <Empty>A detection run&apos;s boxes are not drawn on this screen yet.</Empty>
+    </Panel>
+  ),
+};
+
 const VIEWS: Partial<Record<Task, TaskView>> = {
   anomaly: ANOMALY,
   few_shot_segmentation: FEW_SHOT,
   semantic_segmentation: SEMANTIC,
+  object_detection: DETECTION,
 };
 
 /** The view for a run's task; an unknown or still-loading task reads as anomaly. */
@@ -361,6 +406,35 @@ function SemanticSubset({ subset, metrics }: { subset: Subset; metrics: MetricVa
       {(images.without_prediction ?? 0) > 0 && (
         <p className="text-xs text-warn">
           {images.without_prediction} scored images have no label map.
+        </p>
+      )}
+      {timingRows(metrics).length > 0 && (
+        <>
+          <h4 className="mt-1 text-xs font-semibold text-fg">Timing</h4>
+          <MetricList rows={timingRows(metrics)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function DetectionSubset({ subset, metrics }: { subset: Subset; metrics: MetricValue }) {
+  const images = (metrics.images ?? {}) as Record<string, number>;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-semibold">
+        {subset}
+        <CountRun
+          counts={[
+            ["labelled", images.labelled ?? 0, "normal"],
+            ["unlabeled", images.unlabeled ?? 0, "unlabeled"],
+          ]}
+        />
+      </h3>
+      <MetricList rows={objectDetectionRows(metrics)} />
+      {(images.without_prediction ?? 0) > 0 && (
+        <p className="text-xs text-warn">
+          {images.without_prediction} scored images have no stored detections.
         </p>
       )}
       {timingRows(metrics).length > 0 && (

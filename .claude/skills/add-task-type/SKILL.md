@@ -27,7 +27,8 @@ has annotation, and whether it is ready for a task is a readiness check.
    reads stored predictions and ground truth and writes `MetricSet`s; it never imports a model. It
    names a `headline` metric and answers `current_digest`, so staleness is judged against its own
    truth (`FewShotSegmentationEvaluator` with `eval/segmentation.py`, and
-   `SemanticSegmentationEvaluator` with `eval/semantic.py`, are the other two examples).
+   `SemanticSegmentationEvaluator` with `eval/semantic.py`, and `ObjectDetectionEvaluator` with
+   `eval/detection.py`, are the other three examples).
    - **Bound memory.** Segmentation accumulates a per-class confusion matrix, never per-pixel arrays;
      detection keeps per-class lists of (confidence, matched) pairs. Linear in images is fine;
      linear in pixels is not.
@@ -39,7 +40,9 @@ has annotation, and whether it is ready for a task is a readiness check.
    mask, and the revision pins its class table and the instances file's path and digest
    (`annotation_render.py`); `annotations/class_truth.py` resolves and loads a class's region per
    image (`resolve_class_truth`), or every pinned class at once as a label map
-   (`resolve_label_truth`) — an image is labelled for that only when it answers every class. A document holds polygons, boxes and bitmaps, each with an optional `instance_id`; an
+   (`resolve_label_truth`), or the same images' object instances as boxes (`resolve_box_truth`,
+   which boxes an imported mask by its connected components) — an image is labelled for that only
+   when it answers every class. A document holds polygons, boxes and bitmaps, each with an optional `instance_id`; an
    instance is `{instance_id, label_key, box, pixels}` over its final pixels. **The shape union grows
    without a schema version**: a new shape kind is additive, an unset optional field is left out of
    the canonical JSON so stored digests never move, and every kind branch names its kind
@@ -48,15 +51,18 @@ has annotation, and whether it is ready for a task is a readiness check.
    the editor's class keys are `2`–`9`, because `0`/`1` are the view's.
 4. **Predictions.** A binary task writes its mask with `InferContext.write_mask`; a multi-class
    one writes an 8-bit label map with `InferContext.write_label_map` (nearest, never interpolated)
-   and sets `Prediction.label_map`. *(planned)* `Prediction` gains optional `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
-   ranking, the gallery and disagreement keep working.
-5. **Targets.** `TrainContext.targets: TargetProvider | None` for one class, and its sibling
-   `TrainContext.label_targets: LabelTargetProvider | None` for a pinned class list. Both are `None`
+   and sets `Prediction.label_map`; a detection one writes its boxes with
+   `InferContext.write_instances` (source frame through `box_projector`, at most 100 an image) and
+   sets `Prediction.instances`. Every prediction keeps an image-level `score` (for detection, the top
+   confidence) so ranking, the gallery and disagreement keep working.
+5. **Targets.** `TrainContext.targets: TargetProvider | None` for one class, and its siblings
+   `TrainContext.label_targets: LabelTargetProvider | None` for a pinned class list as a label map and
+   `TrainContext.box_targets: BoxTargetProvider | None` for it as boxes. All are `None`
    for `anomaly`, which is what makes an anomaly method unable to see a defect mask by
    construction — **never pass ground truth to a plugin any other way.** The training-set policy is the task's, in
    `experiments/policy.py`: `anomaly` trains on the train subset's normals, `few_shot_segmentation`
-   on its references, `semantic_segmentation` on the train subset's images labelled for every
-   pinned class; a new task adds its branch there. The split that feeds it is the task's too:
+   on its references, `semantic_segmentation` and `object_detection` on the train subset's images
+   labelled for every pinned class; a new task adds its branch there. The split that feeds it is the task's too:
    `splitServesTask` (`frontend/src/hooks/useDatasetReadiness.ts`) says which strategies a task is
    offered, and a supervised task's is `class_stratified` (`datasets/splitting.py`). The `infer` log names the evaluator's
    `headline` metric.

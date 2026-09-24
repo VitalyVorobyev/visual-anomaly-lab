@@ -48,6 +48,10 @@
   "dino_linear_seg": {
    "family": "segmentation linear head on frozen DINO",
    "maturity": "supported"
+  },
+  "color_detector": {
+   "family": "detection colour components",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [

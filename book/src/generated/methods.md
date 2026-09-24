@@ -17,6 +17,7 @@ This page is generated from the live model registry and checked method metadata.
 | `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
 | `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | experimental | no | — |
 | `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | supported | no | — |
+| `color_detector` | Colour detector (detection floor) | detection colour components | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -193,6 +194,21 @@ A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounde
 
 - Tasks: `semantic_segmentation`
 - Preferred device: `mps`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: no
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## Colour detector (detection floor)
+
+`color_detector` · **detection colour components** · experimental
+
+Fits one colour model to the inside of each class's boxes and one to everything outside them, then boxes each connected region of a class. CPU, seconds, no torch.
+
+- Tasks: `object_detection`
+- Preferred device: `cpu`
 - Requires fitting: yes
 - Anomaly map: yes
 - Diagnostics: no

@@ -394,7 +394,7 @@ class Experiment(BaseModel):
     classes: list[str] = Field(
         default_factory=list,
         description=(
-            "The annotation classes a supervised segmentation run segments, pinned at "
+            "The annotation classes a supervised run segments or detects, pinned at "
             "creation in taxonomy order: `classes[i]` is label index `i + 1`, and 0 is "
             "background. Empty for every other task."
         ),

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import experiments as experiments_repo
-from anomaly_lab.domain.entities import ExperimentStatus, JobKind
+from anomaly_lab.domain.entities import ExperimentStatus, JobKind, Task
 from anomaly_lab.experiments.context import (
     ExperimentJobError,
     diagnostics_writer,
@@ -23,7 +23,11 @@ from anomaly_lab.experiments.context import (
     to_records,
 )
 from anomaly_lab.experiments.policy import NoTrainingPolicyError, training_set
-from anomaly_lab.experiments.targets import PreparedClassTargets, PreparedLabelTargets
+from anomaly_lab.experiments.targets import (
+    PreparedBoxTargets,
+    PreparedClassTargets,
+    PreparedLabelTargets,
+)
 from anomaly_lab.jobs.context import JobCancelledError, JobContext
 from anomaly_lab.jobs.protocol import FOLLOW_UP_KEY
 from anomaly_lab.models.base import ModelCancelledError, SupportsResume, TrainContext
@@ -152,11 +156,16 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         targets=None
         if experiment.target_label is None
         else PreparedClassTargets(experiment.target_label, chosen.truths, loaded.region_build),
-        label_targets=None
-        if not experiment.classes
-        else PreparedLabelTargets(
+        label_targets=PreparedLabelTargets(
             tuple(experiment.classes), chosen.label_truths, loaded.region_build
-        ),
+        )
+        if experiment.task is Task.SEMANTIC_SEGMENTATION
+        else None,
+        box_targets=PreparedBoxTargets(
+            tuple(experiment.classes), chosen.box_truths, loaded.region_build
+        )
+        if experiment.task is Task.OBJECT_DETECTION
+        else None,
     )
 
     model_dir = loaded.artifact_dir / MODEL_SUBDIR

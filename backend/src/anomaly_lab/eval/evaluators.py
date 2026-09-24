@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Experiment, Subset, Task
-from anomaly_lab.eval import ground_truth, runner, segmentation, semantic
+from anomaly_lab.eval import detection, ground_truth, runner, segmentation, semantic
 
 
 class Evaluator(Protocol):
@@ -125,10 +125,38 @@ class SemanticSegmentationEvaluator:
         return semantic.current_digest(conn, experiment, subset)
 
 
+class ObjectDetectionEvaluator:
+    """Every pinned class as boxes, by COCO's protocol, over stored detections (ADR-0039)."""
+
+    headline = "ap"
+
+    def evaluate_and_store(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        # The sample rows are the ranked list and the gallery's order, as for any task.
+        runner.rebuild_sample_results(conn, experiment)
+        computed, digests = detection.evaluate(conn, experiment)
+        results_repo.replace_metric_sets(
+            conn, experiment.id, computed, ground_truth_digests=digests
+        )
+        return computed
+
+    def evaluate(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        return detection.evaluate(conn, experiment)[0]
+
+    def current_digest(
+        self, conn: sqlite3.Connection, experiment: Experiment, subset: Subset
+    ) -> str:
+        return detection.current_digest(conn, experiment, subset)
+
+
 EVALUATORS: dict[Task, Callable[[], Evaluator]] = {
     Task.ANOMALY: AnomalyEvaluator,
     Task.FEW_SHOT_SEGMENTATION: FewShotSegmentationEvaluator,
     Task.SEMANTIC_SEGMENTATION: SemanticSegmentationEvaluator,
+    Task.OBJECT_DETECTION: ObjectDetectionEvaluator,
 }
 
 

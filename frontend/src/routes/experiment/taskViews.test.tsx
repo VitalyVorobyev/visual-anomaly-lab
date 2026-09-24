@@ -81,6 +81,39 @@ describe("the task views", () => {
     expect(screen.getByText("Pixel ROC-AUC (threshold-free)")).toBeTruthy();
   });
 
+  it("reads a detection run as COCO's AP per subset and per class, with gaps as dashes", () => {
+    const view = taskView("object_detection");
+    const detection = [
+      {
+        subset: "test" as const,
+        computed_at: "2026-09-25T00:00:00Z",
+        ground_truth_digest: null,
+        ground_truth_stale: false,
+        metrics: {
+          classes: ["scratch", "stain"],
+          ap: 0.505,
+          ap50: 0.505,
+          ap75: 0.505,
+          recall: 0.5,
+          recall50: 0.5,
+          per_class_ap: { scratch: 0.505, stain: null },
+          images: { labelled: 1, unlabeled: 0, without_prediction: 0 },
+        },
+      },
+    ];
+    render(
+      withProviders(
+        <MemoryRouter>{view.MetricTables({ ...props(), metrics: detection })}</MemoryRouter>,
+      ),
+    );
+    expect(screen.getByText("AP@[.5:.95]")).toBeTruthy();
+    expect(screen.getByText("AP · scratch")).toBeTruthy();
+    // A class with no truth box has no AP, and reads as a dash rather than a zero.
+    expect(screen.getByText("AP · stain").nextElementSibling?.textContent).toBe("—");
+    expect(screen.queryByText("Sample ROC-AUC")).toBeNull();
+    expect(view.filters.map((filter) => filter.id)).toEqual(["all"]);
+  });
+
   it("reads a supervised segmentation run off its confusion matrix, per class", () => {
     const view = taskView("semantic_segmentation");
     const semantic = [

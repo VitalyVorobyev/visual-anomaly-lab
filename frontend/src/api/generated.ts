@@ -3301,7 +3301,7 @@ export interface components {
             target_label: string | null;
             /**
              * Classes
-             * @description The classes a supervised segmentation run segments, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
+             * @description The classes a supervised run segments or detects, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
              */
             classes: string[];
             /**
@@ -3422,7 +3422,7 @@ export interface components {
             target_label: string | null;
             /**
              * Classes
-             * @description The classes a supervised segmentation run segments, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
+             * @description The classes a supervised run segments or detects, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
              */
             classes: string[];
             /**

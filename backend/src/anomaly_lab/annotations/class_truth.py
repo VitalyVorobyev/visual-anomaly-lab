@@ -1,8 +1,9 @@
 """Per-image class truth, and its pixels in the source frame (ADR-0039, ADR-0040).
 
-Two readings share one presence rule. A targeted task reads one class's region
+Three readings share one presence rule. A targeted task reads one class's region
 (`resolve_class_truth`, `load_class_mask`); a supervised segmentation task reads every
-pinned class at once as a label map (`resolve_label_truth`, `load_label_map`).
+pinned class at once as a label map (`resolve_label_truth`, `load_label_map`); a detection
+task reads the same images' object instances as boxes (`resolve_box_truth`, `load_boxes`).
 
 Presence is decided by `annotations_repo.image_presence`, the rule every class read shares.
 This module adds the pixels: where a targeted task's references and queries read the
@@ -28,13 +29,18 @@ from typing import Literal
 import numpy as np
 from PIL import Image
 
-from anomaly_lab.annotation_render import AnnotationRenderError, rasterize
+from anomaly_lab.annotation_render import (
+    AnnotationRenderError,
+    component_instances,
+    document_instances,
+    rasterize,
+)
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories.annotations import DEFAULT_LABEL_KEY
 from anomaly_lab.domain.annotations import AnnotationDocument
 from anomaly_lab.domain.entities import ClassPresence
 from anomaly_lab.media.decode import sha256_of
-from anomaly_lab.models.base import IGNORE_INDEX
+from anomaly_lab.models.base import IGNORE_INDEX, TargetBox
 from anomaly_lab.models.preprocessing import load_mask
 
 
@@ -298,3 +304,140 @@ def _relabel(
     for key, index in stored_index.items():
         table[index] = position.get(key, IGNORE_INDEX)
     return table[np.asarray(stored, dtype=np.uint8)]
+
+
+# ------------------------------------------------------------------ every class as boxes
+
+
+@dataclass(frozen=True)
+class BoxTruth:
+    """Where one image's object instances come from. Only images answered for every pinned
+    class have one — the images `resolve_label_truth` would label, read as boxes."""
+
+    image_id: int
+    kind: Literal["instances", "document", "source", "normal"]
+    size: tuple[int, int]
+    """`(width, height)` of the source image."""
+    path: str | None = None
+    """The instances file, or the imported mask."""
+    sha256: str | None = None
+    revision_id: int | None = None
+    document: str | None = None
+    classes: tuple[str, ...] = ()
+    """For a document, the classes it is rasterised against: its revision's class table when
+    it has one, else the dataset's."""
+    source_mask_path: str | None = None
+    source_mask_sha256: str | None = None
+
+    @property
+    def identity(self) -> str:
+        """What pins this answer, for a ground-truth digest."""
+        pinned = self.sha256 or self.source_mask_sha256 or "-"
+        return f"{self.kind}:{self.revision_id or 0}:{pinned}"
+
+
+def resolve_box_truth(
+    conn: sqlite3.Connection, dataset_id: int, image_ids: Sequence[int], classes: Sequence[str]
+) -> dict[int, BoxTruth]:
+    """The images whose truth answers for every one of `classes`, and how to read their boxes.
+
+    Labelled by the rule `resolve_label_truth` applies, so a detection run and a segmentation
+    run over one split agree on which images they may read. The boxes come from:
+
+    - a revision's instances file, when it has one and its document is drawn on an empty
+      base;
+    - its document, re-rasterised in memory, otherwise — a revision older than instances
+      files, or one drawn over an imported mask, whose base no drawn instance owns;
+    - an imported mask's connected components, of the default class;
+    - nothing, for an image of a sample labelled normal.
+    """
+    created = annotations_repo.label_created_at(conn, dataset_id)
+    dataset_classes = tuple(label.key for label in annotations_repo.list_labels(conn, dataset_id))
+    found: dict[int, BoxTruth] = {}
+    for row in annotations_repo.truth_rows_for_images(conn, image_ids):
+        if any(
+            annotations_repo.image_presence(row, key, created) is ClassPresence.UNLABELED
+            for key in classes
+        ):
+            continue
+        image_id = int(row["image_id"])
+        size = (int(row["width"]), int(row["height"]))
+        revision_id = None if row["revision_id"] is None else int(row["revision_id"])
+        if row["document"] is not None:
+            document = str(row["document"])
+            on_source = json.loads(document).get("base") == "source_mask"
+            if row["instances_path"] is not None and not on_source:
+                found[image_id] = BoxTruth(
+                    image_id,
+                    "instances",
+                    size,
+                    path=str(row["instances_path"]),
+                    sha256=str(row["instances_sha256"]),
+                    revision_id=revision_id,
+                )
+                continue
+            pinned = (
+                tuple(str(entry["key"]) for entry in json.loads(str(row["class_table"])))
+                if row["class_table"] is not None
+                else dataset_classes
+            )
+            found[image_id] = BoxTruth(
+                image_id,
+                "document",
+                size,
+                revision_id=revision_id,
+                document=document,
+                classes=pinned,
+                source_mask_path=row["revision_source_path"],
+                source_mask_sha256=row["revision_source_sha256"],
+            )
+        elif row["source_id"] is not None:
+            found[image_id] = BoxTruth(
+                image_id, "source", size, path=str(row["source_path"]), sha256=row["source_sha256"]
+            )
+        else:
+            found[image_id] = BoxTruth(image_id, "normal", size)
+    return found
+
+
+def load_boxes(truth: BoxTruth) -> list[TargetBox]:
+    """The image's object instances as boxes in the source frame, pixel-edge coordinates.
+
+    Every instance, of whatever class: a reader keeps the classes its run pinned and counts the
+    rest. Each kind is verified against what pinned it, as `load_label_map` is.
+    """
+    if truth.kind == "normal":
+        return []
+    if truth.kind == "document":
+        document = AnnotationDocument.model_validate_json(truth.document or "{}")
+        try:
+            instances = document_instances(
+                document,
+                truth.classes,
+                source_mask_path=Path(truth.source_mask_path) if truth.source_mask_path else None,
+                source_mask_sha256=truth.source_mask_sha256,
+            )
+        except AnnotationRenderError as exc:
+            raise ClassTruthError(f"image {truth.image_id}: {exc}") from exc
+        return [_target(instance.label_key, instance.box) for instance in instances]
+
+    path = Path(truth.path or "")
+    if not path.is_file():
+        raise ClassTruthError(f"the {truth.kind} truth of image {truth.image_id} is unavailable")
+    if truth.sha256 is not None and sha256_of(path) != truth.sha256:
+        raise ClassTruthError(
+            f"the {truth.kind} truth of image {truth.image_id} changed after it was pinned"
+        )
+    if truth.kind == "source":
+        region = load_mask(path, size=truth.size)
+        return [
+            _target(instance.label_key, instance.box)
+            for instance in component_instances(region, DEFAULT_LABEL_KEY, prefix="source")
+        ]
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    return [_target(str(entry["label_key"]), entry["box"]) for entry in stored["instances"]]
+
+
+def _target(label_key: str, box: Sequence[float]) -> TargetBox:
+    x0, y0, x1, y1 = (float(value) for value in box)
+    return TargetBox(label_key, (x0, y0, x1, y1))

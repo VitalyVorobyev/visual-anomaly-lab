@@ -10,6 +10,7 @@ const SHORT: Record<string, string> = {
   sample_roc_auc: "AUROC",
   foreground_iou: "IoU",
   mean_iou: "mIoU",
+  ap: "AP",
 };
 
 export function headlineLabel(metric: string): string {

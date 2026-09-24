@@ -41,27 +41,27 @@ Later, each behind a measured gate:
 
 Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, label targets, label
 maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_linear_seg` deep head,
-the `class_stratified` split, its result screens and its public gates (`measurements.md`). What remains, in dependency order, one PR each:
+the `class_stratified` split, its result screens and its public gates (`measurements.md`). Detection
+runs end to end torch-free — box truth, box targets, stored boxes, COCO's AP and the `color_detector`
+floor. What remains, in dependency order, one PR each:
 
-- [ ] **Detection runs end to end, torch-free** (M): box truth resolved per image over the run's
-      pinned classes (`annotations/class_truth.py`); `TrainContext.box_targets` beside the other two
-      providers; `Prediction.instances` and `InferContext.write_instances`, which stores source-frame
-      boxes beside the map through the pinned region transform; a COCO-style evaluator —
-      AP@[.5:.95] as the headline, AP50, AP75, per-class AP and recall, from per-class lists of
-      (confidence, matched) pairs bounded by the per-image detection cap, `None` for a class with no
-      truth — and a torch-free floor detector, so the slice runs in the torch-free CI job.
 - [ ] **A split for detection** (S): `class_stratified` stratifies by the classes a sample shows
       under the one presence rule, which a detection run's truth shares, so it should serve as is.
       Confirm that with a test over boxed truth, then offer it (and `manual`) in `splitServesTask`
       and name the task in the dataset's readiness band.
-- [ ] **Detection result screens** (M): through `taskViews.tsx` — boxes on `VectorLayer` on
-      `SampleStage` and the gallery tiles (truth dashed, prediction solid, toned `normal` for a match,
+- [ ] **Detection result screens** (M): through `taskViews.tsx` — a route serving an image's stored
+      and true boxes, drawn on `VectorLayer` on `SampleStage` and the gallery tiles (truth dashed, prediction solid, toned `normal` for a match,
       `defect` for a false positive, `warn` for a miss), a per-class AP table across subsets, and a
       per-sample verdict for the gallery. A verdict needs a confidence cut, so it is resolved per run
       by one shared rule whose name and value are printed (ADR-0028), and the matching IoU is AP50's.
 - [ ] **A deep detector** (M): on the frozen-DINO path, fitted through `box_targets` and writing
       instances; `dl`-gated tests, seed reproducibility in both directions, and one module plus one
       registry entry.
+- [ ] **A drawn box owns exactly the pixels it covers** (S): completion rasterises a box shape's
+      outline inclusively, so a box of width 3 owns 4 columns and its instance box — detection truth —
+      is one pixel larger than drawn ([annotations.md](architecture/annotations.md)). Decide the edge
+      convention once (pixel edges, as `prepare_box` uses), change what completion writes, and pin it
+      with a test before the gate measures against it.
 - [ ] **Public detection gate** (M): predeclared in `measurements.md` before it runs — VisA's masks
       boxed by their connected components on a `class_stratified` split, the deep detector against
       the floor, with AP@[.5:.95] as the decision and AP50 and recall reported.

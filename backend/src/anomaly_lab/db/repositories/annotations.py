@@ -645,6 +645,8 @@ _TRUTH_ROWS = """
            latest.class_table    AS class_table,
            latest.class_mask_path    AS class_mask_path,
            latest.class_mask_sha256  AS class_mask_sha256,
+           latest.instances_path     AS instances_path,
+           latest.instances_sha256   AS instances_sha256,
            latest.source_mask_path   AS revision_source_path,
            latest.source_mask_sha256 AS revision_source_sha256,
            latest.completed_at   AS completed_at,

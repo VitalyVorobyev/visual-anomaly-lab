@@ -129,7 +129,7 @@ class ExperimentSummary(BaseModel):
     classes: list[str] = Field(
         default_factory=list,
         description=(
-            "The classes a supervised segmentation run segments, pinned at creation: "
+            "The classes a supervised run segments or detects, pinned at creation: "
             "`classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks."
         ),
     )

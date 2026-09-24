@@ -28,9 +28,11 @@ class ImageRecord(BaseModel):
 
 class Prediction(BaseModel):
     image_id: int
-    score: float               # higher = more anomalous; for segmentation, the share given a class
+    score: float               # higher = more anomalous; for segmentation, the share given a class;
+                               # for detection, the highest confidence
     anomaly_map: Path | None   # float32 .npy
     label_map: Path | None     # semantic segmentation: 8-bit class-index PNG (write_label_map)
+    instances: Path | None     # object detection: boxes as JSON (write_instances)
     inference_ms: float
 
 class AnomalyModel(ABC):
@@ -102,6 +104,10 @@ untouched field is sent as unset.
   `LabelTargetProvider` with the run's pinned `classes` and `labels(image_id)`, a `uint8` label map in the
   prepared frame where `classes[i]` is `i + 1`, 0 is background and `IGNORE_INDEX` (255) is letterbox
   padding or a class the run did not pin — fitted on by nobody;
+- `TrainContext.box_targets` — the third sibling, for `object_detection`: a `BoxTargetProvider` with the
+  pinned `classes` and `boxes(image_id)`, the image's object instances of those classes as `TargetBox`es
+  (`label_key`, `box`) in the prepared frame, clipped to the region crop. Boxes are pixel-edge
+  `(x0, y0, x1, y1)` with `x1`/`y1` exclusive. An empty list is a confirmed absence;
 - `InferContext.write_map(image_id, array)` — projects a prepared-frame map to source coordinates,
   persists it as float32 and accumulates the run's finite display range;
 - `InferContext.write_mask(image_id, mask)` — a method's own foreground decision, projected nearest
@@ -114,12 +120,20 @@ untouched field is sent as unset.
   interpolated. The `score` beside it is the share of the prepared image given a class other than
   background, so every segmentation method's score means the same thing and needs no calibrated
   probability.
+- `InferContext.write_instances(image_id, instances, classes=keys)` — a detection method's
+  `PredictedInstance`s (`label_key`, `box`, `confidence`), in the prepared frame. Each is checked — a
+  pinned class, a finite confidence, a box with area — and projected into the source frame through the
+  pinned transform (`SpatialTransform.project_box`), clipped to the crop; a box wholly in the letterbox
+  padding is dropped. Stored most confident first as `maps/<id>.instances.json`, an empty list
+  included. More than `MAX_INSTANCES_PER_IMAGE` (100, COCO's cap) is refused rather than trimmed: a
+  method keeps its most confident. The `score` beside it is the highest confidence, 0 when it found
+  nothing.
 
 **What `fit` is given is the task's** (`experiments/policy.py`). `anomaly` fits on the train subset's
 normals and calibrates on the val subset's. `few_shot_segmentation` fits on every train-subset image whose
 truth answers for the target class, present or absent (`annotations/class_truth.py`), and has no val.
-`semantic_segmentation` fits on every train-subset image whose truth answers for all of the run's pinned
-classes, and has no val. The handler logs how many images it left out and why.
+`semantic_segmentation` and `object_detection` fit on every train-subset image whose truth answers for
+all of the run's pinned classes, and have no val. The handler logs how many images it left out and why.
 
 Models never touch SQLite, never read application settings, and never write outside `artifact_dir` and
 `cache_dir`, which is what makes a plugin testable with a `NullReporter` and no job system.
@@ -320,9 +334,11 @@ on a small defect class the scaled map clears 0.5 on too few of the images that 
 | `proto_seg` | few-shot: debiased prototype bank / probe | fit | no | no | no | mps |
 | `color_classifier` | segmentation: per-class colour Gaussians | fit | no | no | no | cpu |
 | `dino_linear_seg` | segmentation: softmax head on frozen DINO | yes | no | no | no | mps |
+| `color_detector` | detection: colour components, boxed | fit | no | no | no | cpu |
 
 `color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone, `color_classifier`
-and `dino_linear_seg` declare `semantic_segmentation` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
+and `dino_linear_seg` declare `semantic_segmentation` alone, `color_detector` declares
+`object_detection` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -503,6 +519,24 @@ score.
 - A class with no training pixel is not modelled, never predicted, and named in a warning. It refuses to
   fit without label targets, or when the training images hold no pixel of any class.
 - ONNX: none.
+
+### `color_detector`
+
+The detection floor (ADR-0039): `color_classifier` read as boxes, numpy + Pillow, no torch. Training
+paints each truth box's interior with its class and everything outside every box as background — a
+pixel is inside when its centre is, and a smaller box is painted over a larger one — and fits
+`color_classifier`'s Gaussians to that. At inference every 8-connected component of a class's argmax is
+one detection: its tight box, and as confidence the mean smoothed posterior of the class over it. It
+writes the boxes, the probability of anything but background as its map, and the top confidence as its
+score.
+
+- The `color_classifier` fields, plus `min_area` (4 prepared pixels; a smaller component is not a
+  detection) and `max_detections` (100, the most confident kept).
+- A box is not an outline, so each class's colour model also learns the background its boxes enclose.
+  It knows only colour: touching objects of one class are one detection. What a deep detector has to
+  beat, not a candidate.
+- Components use `eval/pixel.py`'s union-find, a Python loop over foreground pixels.
+- It refuses to fit without box targets. ONNX: none.
 
 ### `dino_linear_seg`
 
