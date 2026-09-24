@@ -181,9 +181,9 @@ function Protocol({
       </div>
 
       <div className="flex items-center gap-2">
-        <span className="text-xs font-medium text-fg-muted">Operating point</span>
+        <span className="text-xs font-medium text-fg-muted">Threshold rule</span>
         <SegmentedControl
-          aria-label="Operating point"
+          aria-label="Threshold rule"
           value={state.at}
           onValueChange={(value) => onChange({ at: value as CompareState["at"] })}
           options={[

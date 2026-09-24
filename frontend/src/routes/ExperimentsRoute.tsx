@@ -21,7 +21,7 @@
  */
 
 import { Plus, Search, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import type { ModelDescription } from "../api/client";
@@ -35,7 +35,7 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, cn, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, Callout, Checkbox, cn, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import {
@@ -45,7 +45,10 @@ import {
   useExperiments,
   useModelTypes,
 } from "../hooks/useExperiments";
+import { refusalReason, toggleRun } from "../api/compareState";
+import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
+import { isUsableBuild } from "../hooks/useDatasetReadiness";
 import { experimentStatusTone } from "../api/statusTone";
 
 type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
@@ -62,7 +65,11 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
   const datasets = useDatasets();
   const methods = useModelTypes();
   const remove = useDeleteExperiment();
+  const navigate = useNavigate();
   const [pendingDelete, setPendingDelete] = useState<ExperimentRow | null>(null);
+  // Runs picked for a comparison. The first one anchors it, and the same rule the Compare
+  // screen's picker uses decides what may join — so a selection made here always opens.
+  const [picked, setPicked] = useState<number[]>([]);
   const deletionPreview = useExperimentDeletionPreview(pendingDelete?.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const state = readExperimentCatalogState(searchParams);
@@ -75,7 +82,32 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
   const update = (patch: Partial<typeof state>) =>
     setSearchParams(writeExperimentCatalogState({ ...state, ...patch }), { replace: true });
 
+  const rows = experiments.data ?? [];
+  const anchor = rows.find((row) => row.id === picked[0]);
+  const togglePicked = (id: number) =>
+    setPicked((current) => toggleRun(current, id));
+
   const columns: Column<ExperimentRow>[] = [
+    {
+      key: "pick",
+      header: <span className="sr-only">Pick for comparison</span>,
+      width: "2rem",
+      cell: (row) => {
+        const refusal = refusalReason(row, anchor, picked);
+        return (
+          <Tooltip content={refusal ?? "Pick for comparison"}>
+            <span className="inline-flex">
+              <Checkbox
+                checked={picked.includes(row.id)}
+                disabled={refusal !== null}
+                onCheckedChange={() => togglePicked(row.id)}
+                aria-label={`Pick ${row.name} for comparison`}
+              />
+            </span>
+          </Tooltip>
+        );
+      },
+    },
     {
       key: "name",
       header: "Name",
@@ -162,15 +194,32 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
       <Panel
         title={experiments.data ? `${experiments.data.length} experiments` : "Experiment history"}
         actions={
-          activeFilters > 0 ? (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setSearchParams(writeExperimentCatalogState(EMPTY_EXPERIMENT_CATALOG))}
-            >
-              Clear {activeFilters}
-            </Button>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            {picked.length > 0 && (
+              <>
+                <Button variant="ghost" size="sm" onClick={() => setPicked([])}>
+                  Clear selection
+                </Button>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  disabled={picked.length < 2}
+                  onClick={() => void navigate(`/compare?ids=${picked.join(",")}`)}
+                >
+                  {picked.length < 2 ? "Pick one more to compare" : `Compare ${picked.length}`}
+                </Button>
+              </>
+            )}
+            {activeFilters > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setSearchParams(writeExperimentCatalogState(EMPTY_EXPERIMENT_CATALOG))}
+              >
+                Clear {activeFilters}
+              </Button>
+            )}
+          </div>
         }
       >
         <div className="mb-4 grid gap-3 border-b border-line pb-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -402,16 +451,29 @@ function CreateExperiment({
   const datasets = useDatasets();
   const create = useCreateExperiment();
 
-  const [name, setName] = useState("");
-  const [datasetId, setDatasetId] = useState<number | undefined>(initialDatasetId);
-  const [splitId, setSplitId] = useState<number | undefined>();
-  const [regionProfileId, setRegionProfileId] = useState<number | undefined>();
-  const [methodKey, setMethodKey] = useState<string | undefined>();
+  // Read once, on mount: the draft this form left behind when the reader followed one of
+  // its own prerequisite links out of it.
+  const storageKey = draftKey(initialDatasetId);
+  const [draft] = useState(() => readDraft(storageKey));
+  const pendingValues = useRef(draft);
+
+  const [name, setName] = useState(draft?.name ?? "");
+  const [datasetId, setDatasetId] = useState<number | undefined>(
+    initialDatasetId ?? draft?.datasetId,
+  );
+  const [splitId, setSplitId] = useState<number | undefined>(draft?.splitId);
+  const [regionProfileId, setRegionProfileId] = useState<number | undefined>(
+    draft?.regionProfileId,
+  );
+  const [methodKey, setMethodKey] = useState<string | undefined>(draft?.methodKey);
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
-  const [channels, setChannels] = useState<string[]>([]);
+  const [channels, setChannels] = useState<string[]>(draft?.channels ?? []);
   const [tab, setTab] = useState<ConfigTab>("method");
+  // Field-level errors wait for the first press of Create: a form that opens covered in
+  // red for fields nobody has reached yet is shouting, not helping.
+  const [attempted, setAttempted] = useState(false);
 
   const splits = useSplits(datasetId);
   const dataset = useDataset(datasetId);
@@ -443,9 +505,73 @@ function CreateExperiment({
     }
   }, [catalog.data, methodKey]);
 
-  useEffect(() => setConfigValues(initialValues(configFields)), [configFields]);
-  useEffect(() => setPreprocessingValues(initialValues(preprocessingFields)), [preprocessingFields]);
-  useEffect(() => setEvaluationValues(initialValues(evaluationFields)), [evaluationFields]);
+  // Each group starts from its schema's defaults, with the draft laid over it once — and the
+  // method's values only for the method they were typed for.
+  useEffect(() => {
+    const restored = pendingValues.current;
+    setConfigValues(
+      restoreValues(
+        configFields,
+        restored?.methodKey === methodKey ? restored?.configValues : undefined,
+      ),
+    );
+    if (restored && configFields.length > 0) restored.configValues = {};
+    // `methodKey` changes together with `configFields`; the fields are the trigger.
+  }, [configFields]);
+  useEffect(
+    () =>
+      setPreprocessingValues(
+        restoreValues(preprocessingFields, pendingValues.current?.preprocessingValues),
+      ),
+    [preprocessingFields],
+  );
+  useEffect(
+    () =>
+      setEvaluationValues(restoreValues(evaluationFields, pendingValues.current?.evaluationValues)),
+    [evaluationFields],
+  );
+
+  // When there is exactly one answer, the question answers itself.
+  useEffect(() => {
+    const only = regionProfiles.data?.length === 1 ? regionProfiles.data[0] : undefined;
+    if (regionProfileId === undefined && only) setRegionProfileId(only.id);
+  }, [regionProfiles.data, regionProfileId]);
+  useEffect(() => {
+    const only = splits.data?.length === 1 ? splits.data[0] : undefined;
+    if (splitId === undefined && only) setSplitId(only.id);
+  }, [splits.data, splitId]);
+
+  useEffect(() => {
+    writeDraft(storageKey, {
+      name,
+      datasetId,
+      splitId,
+      regionProfileId,
+      methodKey,
+      configValues,
+      preprocessingValues,
+      evaluationValues,
+      channels,
+    });
+  }, [
+    storageKey,
+    name,
+    datasetId,
+    splitId,
+    regionProfileId,
+    methodKey,
+    configValues,
+    preprocessingValues,
+    evaluationValues,
+    channels,
+  ]);
+
+  const datasetName = datasets.data?.find((entry) => entry.id === datasetId)?.name;
+  // The name a reader would have typed anyway. Used when the field is left empty, so a name
+  // is never the thing standing between a reader and a run.
+  const suggestedName =
+    method && datasetName ? `${method.title} on ${datasetName}` : "";
+  const effectiveName = name.trim() || suggestedName;
 
   const blocking = [
     ...jsonErrors(configFields, configValues),
@@ -458,12 +584,25 @@ function CreateExperiment({
   // Said out loud rather than left to a greyed-out button. "Why can't I press this" is a
   // question the screen has to answer without anyone reading the source.
   const missing: string[] = [];
-  if (name.trim() === "") missing.push("a name");
-  if (datasetId === undefined) missing.push("a dataset");
-  if (splitId === undefined) missing.push("a split");
-  if (regionProfileId === undefined) missing.push("a prepared input");
-  else if (!regionBuild.data || regionBuild.data.failed > 0) {
-    missing.push("a complete region build");
+  const fieldError: { name?: string; dataset?: string; profile?: string; split?: string } = {};
+  if (effectiveName === "") {
+    missing.push("a name");
+    fieldError.name = "Name the run.";
+  }
+  if (datasetId === undefined) {
+    missing.push("a dataset");
+    fieldError.dataset = "Choose the dataset to train on.";
+  }
+  if (splitId === undefined) {
+    missing.push("a split");
+    fieldError.split = "Choose which samples train and which are scored.";
+  }
+  if (regionProfileId === undefined) {
+    missing.push("a region profile");
+    fieldError.profile = "Choose the region profile the method reads.";
+  } else if (!isUsableBuild(regionBuild.data)) {
+    missing.push("a built region profile");
+    fieldError.profile = "This revision has no complete build yet.";
   }
   if (method && !method.availability.available) missing.push("a method you can run");
 
@@ -471,6 +610,7 @@ function CreateExperiment({
     missing.length === 0 && methodKey !== undefined && blocking.length === 0;
 
   const submit = () => {
+    setAttempted(true);
     if (
       !ready ||
       methodKey === undefined ||
@@ -482,7 +622,7 @@ function CreateExperiment({
     }
     create.mutate(
       {
-        name: name.trim(),
+        name: effectiveName,
         dataset_id: datasetId,
         split_id: splitId,
         region_profile_id: regionProfileId,
@@ -492,7 +632,12 @@ function CreateExperiment({
         evaluation: toOptions(evaluationFields, evaluationValues),
         channels,
       },
-      { onSuccess: (created) => void navigate(`/experiments/${created.id}`) },
+      {
+        onSuccess: (created) => {
+          clearDraft(storageKey);
+          void navigate(`/experiments/${created.id}`);
+        },
+      },
     );
   };
 
@@ -505,16 +650,20 @@ function CreateExperiment({
 
         <Section step={1} title="What to train on">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            <Field label="Name">
+            <Field label="Name" error={attempted ? fieldError.name : undefined}>
               <Input
                 aria-label="Name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="efficientad on candle"
+                placeholder={suggestedName || "Name this run"}
               />
             </Field>
 
-            <Field as="group" label="Dataset">
+            <Field
+              as="group"
+              label="Dataset"
+              error={attempted ? fieldError.dataset : undefined}
+            >
               <Select
                 aria-label="Dataset"
                 value={datasetId === undefined ? "" : String(datasetId)}
@@ -536,7 +685,8 @@ function CreateExperiment({
 
             <Field
               as="group"
-              label="Prepared input"
+              label="Region profile"
+              error={attempted ? fieldError.profile : undefined}
               description={
                 datasetId !== undefined && regionProfiles.data?.length === 0 ? (
                   <>
@@ -566,7 +716,7 @@ function CreateExperiment({
               }
             >
               <Select
-                aria-label="Prepared input"
+                aria-label="Region profile"
                 value={regionProfileId === undefined ? "" : String(regionProfileId)}
                 placeholder={datasetId === undefined ? "Pick a dataset first" : "Choose a revision…"}
                 disabled={datasetId === undefined}
@@ -584,6 +734,7 @@ function CreateExperiment({
             <Field
               as="group"
               label="Split"
+              error={attempted ? fieldError.split : undefined}
               description={
                 noSplits ? (
                   <>
@@ -680,7 +831,7 @@ function CreateExperiment({
                 },
                 {
                   id: "preprocessing",
-                  label: "Model input",
+                  label: "Colour",
                   count: overrideCount(preprocessingFields, preprocessingValues),
                 },
                 {
@@ -726,12 +877,9 @@ function CreateExperiment({
         {create.error && <ErrorBox>{create.error.message}</ErrorBox>}
 
         <div className="flex items-center gap-3 border-t border-line pt-4">
-          <Button
-            variant="primary"
-            loading={create.isPending}
-            disabled={!ready}
-            onClick={submit}
-          >
+          {/* Pressable while incomplete: pressing it is how the reader finds out what,
+              beside the field that needs it rather than in a sentence down here only. */}
+          <Button variant="primary" loading={create.isPending} onClick={submit}>
             Create experiment
           </Button>
           {missing.length > 0 && (
@@ -741,6 +889,17 @@ function CreateExperiment({
       </div>
     </Panel>
   );
+}
+
+/** A group's schema defaults with whatever the draft kept for the same fields laid over. */
+function restoreValues(fields: ReturnType<typeof describeFields>, saved?: RawValues): RawValues {
+  const values = initialValues(fields);
+  if (!saved) return values;
+  for (const field of fields) {
+    const value = saved[field.name];
+    if (value !== undefined) values[field.name] = value;
+  }
+  return values;
 }
 
 /** `a, b and c` — a sentence, since this one is read as one. */

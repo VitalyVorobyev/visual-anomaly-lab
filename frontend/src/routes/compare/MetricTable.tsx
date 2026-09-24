@@ -108,7 +108,7 @@ export function OperatingTable({
   }
 
   return (
-    <Panel title="At each run's own operating point">
+    <Panel title="At each run's own threshold">
       <p className="mb-3 text-xs text-fg-muted">
         {operatingPoint === "f1" ? (
           <>

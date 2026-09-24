@@ -152,9 +152,9 @@ export function CompareSampleRoute() {
 
         {state.region && (
           <div className="flex min-w-56 flex-1 items-center gap-2">
-            <span className="shrink-0 text-xs text-fg-muted">cut</span>
+            <span className="shrink-0 text-xs text-fg-muted">map cut</span>
             <Slider
-              aria-label="Segmentation cut, as a fraction of each run's own map range"
+              aria-label="Map cut, as a fraction of each run's own map range"
               min={0}
               max={1}
               step={0.01}
@@ -322,7 +322,7 @@ function RunPane({
       <div className="flex flex-col gap-0.5">
         <MapScaleReadout scale={image?.map_scale} range={run.map_range} />
         {cut !== null && state.region && (
-          <p className="font-mono text-[11px] text-fg-subtle">cut {cut.toFixed(3)}</p>
+          <p className="font-mono text-[11px] text-fg-subtle">map cut {cut.toFixed(3)}</p>
         )}
         {image === undefined && (
           <p className="text-xs text-fg-subtle">This run did not score this sample.</p>

@@ -14,7 +14,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router";
+import { useNavigate, useSearchParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import { Badge, Button, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
@@ -89,8 +89,35 @@ function Stepper({ stage }: { stage: Stage["kind"] }) {
   );
 }
 
+/**
+ * The stage lives in the URL while there is something on the server to come back to — a
+ * scan job to follow, a manifest to review — so a reload, or leaving and pressing Back,
+ * returns to it instead of orphaning its console. Configure has nothing to return to, and
+ * a commit's report is the one stage held in memory: it has already been acted on.
+ */
+export function readImportStage(params: URLSearchParams): Stage {
+  const scan = Number(params.get("scan"));
+  if (Number.isInteger(scan) && scan > 0) return { kind: "scanning", jobId: scan };
+  const manifest = params.get("manifest");
+  if (manifest) return { kind: "review", manifestId: manifest };
+  return { kind: "configure" };
+}
+
+function stageParams(stage: Stage): Record<string, string> {
+  if (stage.kind === "scanning") return { scan: String(stage.jobId) };
+  if (stage.kind === "review") return { manifest: stage.manifestId };
+  return {};
+}
+
 export function ImportRoute() {
-  const [stage, setStage] = useState<Stage>({ kind: "configure" });
+  const [params, setParams] = useSearchParams();
+  const [committed, setCommitted] = useState<CommitResponse | null>(null);
+  const stage: Stage = committed ? { kind: "committed", result: committed } : readImportStage(params);
+  const setStage = (next: Stage) => {
+    setCommitted(next.kind === "committed" ? next.result : null);
+    // A new step is a new history entry, so Back walks the stages; restarting replaces.
+    setParams(stageParams(next), { replace: next.kind === "configure" || next.kind === "committed" });
+  };
 
   return (
     <div className="flex flex-col gap-6">

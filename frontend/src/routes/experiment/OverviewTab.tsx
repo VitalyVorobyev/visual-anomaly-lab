@@ -121,7 +121,7 @@ export function Configuration({
             }}
           />
           <ConfigBlock title="Method" values={detail.config} />
-          <ConfigBlock title="Model input" values={detail.preprocessing} />
+          <ConfigBlock title="Colour" values={detail.preprocessing} />
         </div>
       </Disclosure>
     </Panel>
