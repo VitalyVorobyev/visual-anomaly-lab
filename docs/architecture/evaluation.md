@@ -11,6 +11,12 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 It never imports a model module and never re-runs inference. Every method is therefore evaluated by exactly
 the same code, which is the precondition for the comparison view to mean anything.
 
+**Which code evaluates a run is chosen by its task** (ADR-0039), from the table in
+`eval/evaluators.py`. Everything on this page is the `anomaly` evaluator, which is `eval/runner.py`
+behind that seam and unchanged by it. The `infer` job and re-evaluation both call
+`evaluator_for(experiment.task)`, and a task with no entry cannot be created, so no run reaches the
+end of inference with nothing to read it.
+
 ## Channel → sample aggregation
 
 A part is scored from its per-image scores. The **default aggregation is `max`**: a defect visible under any

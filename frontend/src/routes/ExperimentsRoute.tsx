@@ -24,7 +24,7 @@ import { Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import type { ModelDescription } from "../api/client";
+import type { ModelDescription, Task } from "../api/client";
 import {
   useRegionBuild,
   useRegionProfiles,
@@ -35,7 +35,7 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, Checkbox, cn, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import {
@@ -435,6 +435,13 @@ function formatDate(value: string): string {
 
 type ConfigTab = "method" | "preprocessing" | "evaluation";
 
+const TASK_ORDER: Task[] = ["anomaly", "semantic_segmentation", "object_detection"];
+const TASK_LABEL: Record<Task, string> = {
+  anomaly: "Anomaly detection",
+  semantic_segmentation: "Segmentation",
+  object_detection: "Object detection",
+};
+
 /**
  * `title` is how the dataset mount names the form without a second `<h1>` — the band's
  * dataset name is the only one on the screen, so this heading is the panel's, not the page's.
@@ -466,6 +473,7 @@ function CreateExperiment({
     draft?.regionProfileId,
   );
   const [methodKey, setMethodKey] = useState<string | undefined>(draft?.methodKey);
+  const [task, setTask] = useState<Task>("anomaly");
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
@@ -480,7 +488,16 @@ function CreateExperiment({
   const datasetChannels = dataset.data?.channels ?? [];
   const regionProfiles = useRegionProfiles(datasetId);
   const regionBuild = useRegionBuild(regionProfileId);
-  const method: ModelDescription | undefined = catalog.data?.methods.find(
+  // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker
+  // appears only when there are two — the same rule the channel chips follow.
+  const tasks = TASK_ORDER.filter((entry) =>
+    (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)),
+  );
+  const methodsForTask = useMemo(
+    () => (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
+    [catalog.data, task],
+  );
+  const method: ModelDescription | undefined = methodsForTask.find(
     (entry) => entry.key === methodKey,
   );
 
@@ -500,10 +517,10 @@ function CreateExperiment({
   // Default to the first method the moment the catalog lands, so the form is never a
   // blank screen waiting for a choice nobody knew they had to make.
   useEffect(() => {
-    if (methodKey === undefined && catalog.data && catalog.data.methods.length > 0) {
-      setMethodKey(catalog.data.methods[0]?.key);
+    if (methodsForTask.length > 0 && !methodsForTask.some((entry) => entry.key === methodKey)) {
+      setMethodKey(methodsForTask[0]?.key);
     }
-  }, [catalog.data, methodKey]);
+  }, [methodsForTask, methodKey]);
 
   // Each group starts from its schema's defaults, with the draft laid over it once — and the
   // method's values only for the method they were typed for.
@@ -627,6 +644,7 @@ function CreateExperiment({
         split_id: splitId,
         region_profile_id: regionProfileId,
         model_type: methodKey,
+        task,
         config: toOptions(configFields, configValues),
         preprocessing: toOptions(preprocessingFields, preprocessingValues),
         evaluation: toOptions(evaluationFields, evaluationValues),
@@ -801,8 +819,18 @@ function CreateExperiment({
 
         <Section step={2} title="Method">
           {catalog.isPending && <SkeletonRows rows={2} />}
+          {tasks.length > 1 && (
+            <div className="mb-3">
+              <SegmentedControl
+                aria-label="Task"
+                value={task}
+                options={tasks.map((entry) => ({ value: entry, label: TASK_LABEL[entry] }))}
+                onValueChange={(value) => setTask(value as Task)}
+              />
+            </div>
+          )}
           <div className="grid gap-3 sm:grid-cols-2">
-            {catalog.data?.methods.map((entry) => (
+            {methodsForTask.map((entry) => (
               <MethodCard
                 key={entry.key}
                 method={entry}

@@ -2083,6 +2083,8 @@ export interface components {
          *     the moment they do, adding a method stops being a file plus an entry.
          */
         Capabilities: {
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
             /**
              * Requires Training
              * @default true
@@ -2458,6 +2460,11 @@ export interface components {
             region_profile_id: number;
             /** Model Type */
             model_type: string;
+            /**
+             * @description What the run is asked to do. The method must list it in its capabilities.
+             * @default anomaly
+             */
+            task: components["schemas"]["Task"];
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -2889,6 +2896,8 @@ export interface components {
             region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
+            /** @default anomaly */
+            task: components["schemas"]["Task"];
             /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
@@ -2977,6 +2986,8 @@ export interface components {
             region_manifest_sha256: string;
             /** Model Type */
             model_type: string;
+            /** @default anomaly */
+            task: components["schemas"]["Task"];
             /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
@@ -4484,6 +4495,16 @@ export interface components {
             /** Unlabeled */
             unlabeled: number;
         };
+        /**
+         * Task
+         * @description What an experiment is asked to do, frozen at creation (ADR-0039).
+         *
+         *     It chooses the training set, the evaluator and the result screens. `anomaly` ranks images
+         *     by how unlike the training normals they are; the other two are supervised and read their
+         *     targets from the dataset's annotation.
+         * @enum {string}
+         */
+        Task: "anomaly" | "semantic_segmentation" | "object_detection";
         /**
          * ThresholdReport
          * @description Everything that changes when the slider moves — counts *and* the classified rows.

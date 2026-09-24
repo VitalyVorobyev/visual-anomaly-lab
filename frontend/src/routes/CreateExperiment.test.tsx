@@ -19,6 +19,7 @@ const METHOD = {
   title: "Pixel reference",
   summary: "A median image.",
   capabilities: {
+    tasks: ["anomaly"],
     requires_training: true,
     produces_anomaly_map: true,
     produces_diagnostics: false,
@@ -59,12 +60,15 @@ const PROFILE = {
   created_at: "2026-09-01T00:00:00Z",
 };
 
-function seed({ splits = [SPLIT] }: { splits?: unknown[] } = {}): [readonly unknown[], unknown][] {
+function seed({
+  splits = [SPLIT],
+  methods = [METHOD],
+}: { splits?: unknown[]; methods?: unknown[] } = {}): [readonly unknown[], unknown][] {
   return [
     [
       queryKeys.modelTypes(),
       {
-        methods: [METHOD],
+        methods,
         preprocessing_schema: { type: "object", properties: {} },
         evaluation_schema: { type: "object", properties: {} },
       },
@@ -77,7 +81,7 @@ function seed({ splits = [SPLIT] }: { splits?: unknown[] } = {}): [readonly unkn
   ];
 }
 
-function renderForm(splits?: unknown[]) {
+function renderForm(splits?: unknown[], methods?: unknown[]) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={["/datasets/7/experiments/new"]}>
@@ -85,7 +89,7 @@ function renderForm(splits?: unknown[]) {
           <Route path="datasets/:datasetId/experiments/new" element={<DatasetCreateExperimentRoute />} />
         </Routes>
       </MemoryRouter>,
-      seed(splits === undefined ? {} : { splits }),
+      seed({ ...(splits === undefined ? {} : { splits }), ...(methods === undefined ? {} : { methods }) }),
     ),
   );
 }
@@ -114,6 +118,23 @@ describe("the create-experiment form", () => {
     expect(screen.queryByText("Choose which samples train and which are scored.")).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Create experiment" }));
     expect(screen.getByText("Choose which samples train and which are scored.")).toBeTruthy();
+  });
+
+  it("asks for a task only when there is more than one, and shows only its methods", () => {
+    renderForm();
+    expect(screen.queryByRole("radiogroup", { name: "Task" })).toBeNull();
+    expect(screen.getAllByText("Pixel reference").length).toBeGreaterThan(0);
+
+    const detector = {
+      ...METHOD,
+      key: "box_finder",
+      title: "Box finder",
+      capabilities: { ...METHOD.capabilities, tasks: ["object_detection"] },
+    };
+    renderForm(undefined, [METHOD, detector]);
+    expect(screen.getAllByText("Pixel reference").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Box finder")).toBeNull();
+    expect(screen.getAllByText("Object detection").length).toBeGreaterThan(0);
   });
 
   it("brings back what was typed before following a prerequisite link", () => {

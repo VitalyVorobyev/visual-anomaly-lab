@@ -172,9 +172,15 @@ PNG per successful source image, a deterministic JSON-lines transform manifest a
 digests make both configuration and materialisation auditable.
 
 **`Experiment`** — `id`, `name`, `dataset_id`, `split_id`, `region_profile_id`,
-`region_manifest_sha256`, `model_type`, `model_config` (JSON),
+`region_manifest_sha256`, `model_type`, `task`, `model_config` (JSON),
 `preprocessing_config` (JSON), `eval_config` (JSON), `channels` (JSON), `status`, `artifact_dir`,
 `created_at`, `notes`.
+
+`task` is one of `Task` — `anomaly`, `semantic_segmentation`, `object_detection` — frozen at creation
+(ADR-0039). Migration 021 added it with the default `anomaly`, which is what every earlier run is. It is
+validated in Python rather than by a CHECK, like `job.kind` since migration 020, so a new task is not a
+table rebuild. Creation refuses a method whose `Capabilities.tasks` does not list the task, and a task
+with no registered evaluator.
 
 `channels` is a JSON array of channel **names** naming the acquisition channels this run reads; `[]` means
 every channel, which is what every experiment created before migration 013 meant, so the column needed no

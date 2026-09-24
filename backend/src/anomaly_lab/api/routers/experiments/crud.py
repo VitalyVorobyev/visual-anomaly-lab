@@ -62,6 +62,7 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
         split_id=body.split_id,
         region_profile_id=body.region_profile_id,
         model_type=body.model_type,
+        task=body.task,
         config=body.config,
         preprocessing=body.preprocessing,
         evaluation=body.evaluation,

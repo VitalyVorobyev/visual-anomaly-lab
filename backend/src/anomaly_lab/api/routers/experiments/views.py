@@ -28,6 +28,7 @@ from anomaly_lab.domain.entities import (
     ExperimentStatus,
     MetricSet,
     Subset,
+    Task,
 )
 from anomaly_lab.eval.ground_truth import current_digest
 from anomaly_lab.eval.threshold import SampleVerdict
@@ -76,6 +77,10 @@ class CreateExperimentRequest(BaseModel):
     split_id: int
     region_profile_id: int
     model_type: str
+    task: Task = Field(
+        default=Task.ANOMALY,
+        description="What the run is asked to do. The method must list it in its capabilities.",
+    )
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
     evaluation: dict[str, Any] = Field(default_factory=dict)
@@ -110,6 +115,7 @@ class ExperimentSummary(BaseModel):
     region_profile_id: int
     region_manifest_sha256: str
     model_type: str
+    task: Task = Task.ANOMALY
     channels: list[str] = Field(
         default_factory=list,
         description=(
@@ -416,6 +422,7 @@ def summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumma
         region_profile_id=experiment.region_profile_id,
         region_manifest_sha256=experiment.region_manifest_sha256,
         model_type=experiment.model_type,
+        task=experiment.task,
         channels=experiment.channels,
         status=experiment.status,
         created_at=experiment.created_at,

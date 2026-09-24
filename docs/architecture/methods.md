@@ -7,6 +7,7 @@ only this interface and the registry key.
 # backend/src/anomaly_lab/models/base.py
 
 class Capabilities(BaseModel):
+    tasks: list[Task]                # ADR-0039; defaults to [anomaly], so no older plugin changed
     requires_training: bool          # PatchCore/EfficientAD yes; a pure-reference method may say no
     produces_anomaly_map: bool       # drives whether the UI offers overlay controls
     produces_diagnostics: bool       # drives whether the UI offers the inspector views (ADR-0018)

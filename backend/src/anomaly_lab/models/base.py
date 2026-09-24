@@ -38,6 +38,7 @@ from pydantic import BaseModel, Field
 # peaks" is defined once. The evaluation layer must never import a *model* module; nothing
 # forbids the reverse, and `models/preprocessing.py` is already read from `eval/` for the
 # same reason — one rule, one implementation.
+from anomaly_lab.domain.entities import Task
 from anomaly_lab.eval.localization import peak_of
 from anomaly_lab.models.diagnostics import DiagnosticKind, DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -65,6 +66,13 @@ class Capabilities(BaseModel):
 
     model_config = API_MODEL_CONFIG
 
+    tasks: list[Task] = Field(default_factory=lambda: [Task.ANOMALY])
+    """The tasks this method can be run as (ADR-0039).
+
+    An experiment is created for one task and refused for a method that does not list it.
+    The default is what every method written before tasks existed does, so none of them
+    had to change.
+    """
     requires_training: bool = True
     produces_anomaly_map: bool = True
     produces_diagnostics: bool = False
