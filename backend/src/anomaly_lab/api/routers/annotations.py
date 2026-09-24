@@ -29,7 +29,7 @@ from anomaly_lab.annotation_interchange import (
 )
 from anomaly_lab.annotation_render import AnnotationRenderError, render_binary_mask
 from anomaly_lab.config import Settings
-from anomaly_lab.db.connection import connection
+from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -216,51 +216,38 @@ def _save_import(
     ],
 ) -> AnnotationDraft:
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        current = annotations_repo.get_draft(conn, image_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+        if expected != _etag(current):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        labels = annotations_repo.list_labels(conn, dataset_id)
+        known = {label.key: label.name for label in labels}
+        default_key = labels[0].key if labels else "defect"
         try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            current = annotations_repo.get_draft(conn, image_id)
-            if current is None:
-                raise HTTPException(
-                    status_code=404, detail=f"image {image_id} has no annotation draft"
-                )
-            if expected != _etag(current):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            labels = annotations_repo.list_labels(conn, dataset_id)
-            known = {label.key: label.name for label in labels}
-            default_key = labels[0].key if labels else "defect"
-            try:
-                shapes = build_shapes(
-                    (current.document.image_width, current.document.image_height), known
-                )
-                document = imported_document(
-                    current.document,
-                    shapes,
-                    clear_label_key=default_key,
-                )
-            except AnnotationInterchangeError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
-            _validate_document(
-                conn,
-                image_id,
-                dataset_id,
-                document,
-                expected_base=current.document.base,
+            shapes = build_shapes(
+                (current.document.image_width, current.document.image_height), known
             )
-            saved = annotations_repo.update_draft(conn, image_id, current.version, document)
-            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+            document = imported_document(
+                current.document,
+                shapes,
+                clear_label_key=default_key,
+            )
+        except AnnotationInterchangeError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        _validate_document(
+            conn,
+            image_id,
+            dataset_id,
+            document,
+            expected_base=current.document.base,
+        )
+        saved = annotations_repo.update_draft(conn, image_id, current.version, document)
+        if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
     _set_draft_etag(response, saved)
     return saved
 
@@ -466,34 +453,23 @@ def create_annotation_draft(
 ) -> AnnotationDraft:
     _require_if_none_match(if_none_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            annotations_repo.ensure_default_label(conn, dataset_id)
-            if annotations_repo.get_draft(conn, image_id) is not None:
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            seed = _seed_state(conn, image_id)
-            _validate_document(
-                conn, image_id, dataset_id, document, expected_base=seed.document.base
-            )
-            created = annotations_repo.create_draft(
-                conn,
-                image_id,
-                document,
-                base_revision_id=seed.base_revision_id,
-                source_mask_id=seed.source_mask_id,
-                source_mask_path=seed.source_mask_path,
-                source_mask_sha256=_pin_source_mask(conn, seed),
-            )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        annotations_repo.ensure_default_label(conn, dataset_id)
+        if annotations_repo.get_draft(conn, image_id) is not None:
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        seed = _seed_state(conn, image_id)
+        _validate_document(conn, image_id, dataset_id, document, expected_base=seed.document.base)
+        created = annotations_repo.create_draft(
+            conn,
+            image_id,
+            document,
+            base_revision_id=seed.base_revision_id,
+            source_mask_id=seed.source_mask_id,
+            source_mask_path=seed.source_mask_path,
+            source_mask_sha256=_pin_source_mask(conn, seed),
+        )
     _set_draft_etag(response, created)
     return created
 
@@ -510,26 +486,15 @@ def discard_annotation_draft(
 ) -> Response:
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            current = annotations_repo.get_draft(conn, image_id)
-            if current is None:
-                raise HTTPException(
-                    status_code=404, detail=f"image {image_id} has no annotation draft"
-                )
-            if not _is_wildcard(expected) and expected != _etag(current):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            annotations_repo.delete_draft(conn, image_id, current.version)
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        current = annotations_repo.get_draft(conn, image_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+        if not _is_wildcard(expected) and expected != _etag(current):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        annotations_repo.delete_draft(conn, image_id, current.version)
     return Response(status_code=204)
 
 
@@ -546,33 +511,20 @@ def save_annotation_draft(
 ) -> AnnotationDraft:
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            current = annotations_repo.get_draft(conn, image_id)
-            if current is None:
-                raise HTTPException(
-                    status_code=404, detail=f"image {image_id} has no annotation draft"
-                )
-            if expected != _etag(current):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            _validate_document(
-                conn, image_id, dataset_id, document, expected_base=current.document.base
-            )
-            saved = annotations_repo.update_draft(conn, image_id, current.version, document)
-            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        current = annotations_repo.get_draft(conn, image_id)
+        if current is None:
+            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+        if expected != _etag(current):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        _validate_document(
+            conn, image_id, dataset_id, document, expected_base=current.document.base
+        )
+        saved = annotations_repo.update_draft(conn, image_id, current.version, document)
+        if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
     _set_draft_etag(response, saved)
     return saved
 
@@ -636,96 +588,85 @@ def copy_annotation_regions(
     """
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            source = annotations_repo.get_draft(conn, image_id)
-            if source is None:
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        source = annotations_repo.get_draft(conn, image_id)
+        if source is None:
+            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+        if expected != _etag(source):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        if not source.document.shapes:
+            raise HTTPException(status_code=422, detail="this draft has no regions to copy")
+
+        image = images_repo.get_image(conn, image_id)
+        if image is None:  # pragma: no cover - the ownership join already found it
+            raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+        siblings = {
+            sibling.id: sibling
+            for sibling in images_repo.list_images_for_sample(conn, image.sample_id)
+        }
+
+        # De-duplicated up front: asking for the same channel twice is a client slip, and
+        # honouring it literally would append the regions twice.
+        wanted = list(dict.fromkeys(body.target_image_ids))
+        copied: list[CopiedChannel] = []
+        for target_id in wanted:
+            if target_id == image_id:
                 raise HTTPException(
-                    status_code=404, detail=f"image {image_id} has no annotation draft"
+                    status_code=422, detail="a channel cannot be copied onto itself"
                 )
-            if expected != _etag(source):
+            sibling = siblings.get(target_id)
+            if sibling is None:
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"image {target_id} is not another channel of this sample",
+                )
+            if (sibling.width, sibling.height) != (image.width, image.height):
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"image {target_id} is {sibling.width}x{sibling.height} and this one "
+                        f"is {image.width}x{image.height}; an annotation never leaves its "
+                        "source frame"
+                    ),
+                )
+
+            current = annotations_repo.get_draft(conn, target_id)
+            if current is None:
+                seed = _seed_state(conn, target_id)
+                current = annotations_repo.create_draft(
+                    conn,
+                    target_id,
+                    seed.document,
+                    base_revision_id=seed.base_revision_id,
+                    source_mask_id=seed.source_mask_id,
+                    source_mask_path=seed.source_mask_path,
+                    source_mask_sha256=_pin_source_mask(conn, seed),
+                )
+            document = current.document.model_copy(
+                update={
+                    "shapes": [
+                        *current.document.shapes,
+                        *_with_fresh_ids(source.document.shapes),
+                    ]
+                }
+            )
+            _validate_document(
+                conn, target_id, dataset_id, document, expected_base=current.document.base
+            )
+            saved = annotations_repo.update_draft(conn, target_id, current.version, document)
+            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
                 raise HTTPException(
                     status_code=412, detail="the annotation draft changed elsewhere"
                 )
-            if not source.document.shapes:
-                raise HTTPException(status_code=422, detail="this draft has no regions to copy")
-
-            image = images_repo.get_image(conn, image_id)
-            if image is None:  # pragma: no cover - the ownership join already found it
-                raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
-            siblings = {
-                sibling.id: sibling
-                for sibling in images_repo.list_images_for_sample(conn, image.sample_id)
-            }
-
-            # De-duplicated up front: asking for the same channel twice is a client slip, and
-            # honouring it literally would append the regions twice.
-            wanted = list(dict.fromkeys(body.target_image_ids))
-            copied: list[CopiedChannel] = []
-            for target_id in wanted:
-                if target_id == image_id:
-                    raise HTTPException(
-                        status_code=422, detail="a channel cannot be copied onto itself"
-                    )
-                sibling = siblings.get(target_id)
-                if sibling is None:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=f"image {target_id} is not another channel of this sample",
-                    )
-                if (sibling.width, sibling.height) != (image.width, image.height):
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            f"image {target_id} is {sibling.width}x{sibling.height} and this one "
-                            f"is {image.width}x{image.height}; an annotation never leaves its "
-                            "source frame"
-                        ),
-                    )
-
-                current = annotations_repo.get_draft(conn, target_id)
-                if current is None:
-                    seed = _seed_state(conn, target_id)
-                    current = annotations_repo.create_draft(
-                        conn,
-                        target_id,
-                        seed.document,
-                        base_revision_id=seed.base_revision_id,
-                        source_mask_id=seed.source_mask_id,
-                        source_mask_path=seed.source_mask_path,
-                        source_mask_sha256=_pin_source_mask(conn, seed),
-                    )
-                document = current.document.model_copy(
-                    update={
-                        "shapes": [
-                            *current.document.shapes,
-                            *_with_fresh_ids(source.document.shapes),
-                        ]
-                    }
+            copied.append(
+                CopiedChannel(
+                    image_id=target_id,
+                    version=saved.version,
+                    shape_count=len(saved.document.shapes),
                 )
-                _validate_document(
-                    conn, target_id, dataset_id, document, expected_base=current.document.base
-                )
-                saved = annotations_repo.update_draft(conn, target_id, current.version, document)
-                if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-                    raise HTTPException(
-                        status_code=412, detail="the annotation draft changed elsewhere"
-                    )
-                copied.append(
-                    CopiedChannel(
-                        image_id=target_id,
-                        version=saved.version,
-                        shape_count=len(saved.document.shapes),
-                    )
-                )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+            )
     return CopyRegionsResult(copied=len(source.document.shapes), targets=copied)
 
 
@@ -740,57 +681,42 @@ def complete_annotation_draft(
 ) -> AnnotationRevision:
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    destination: Path | None = None
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True) as tx:
+        dataset_id = _image_dataset_id(conn, image_id)
+        _require_image_scope(conn, dataset_id)
+        draft = annotations_repo.get_draft(conn, image_id)
+        if draft is None:
+            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+        if expected != _etag(draft):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        _validate_document(
+            conn, image_id, dataset_id, draft.document, expected_base=draft.document.base
+        )
+        latest = annotations_repo.latest_revision(conn, image_id)
+        next_no = (latest.revision_no if latest else 0) + 1
+        destination = settings.annotation_image_dir(image_id) / f"revision-{next_no}.png"
+        tx.remove_on_rollback(destination)
+        if settings.annotations_dir.is_symlink() or destination.parent.is_symlink():
+            raise HTTPException(
+                status_code=409, detail="the app-owned annotation directory is unsafe"
+            )
         try:
-            dataset_id = _image_dataset_id(conn, image_id)
-            _require_image_scope(conn, dataset_id)
-            draft = annotations_repo.get_draft(conn, image_id)
-            if draft is None:
-                raise HTTPException(
-                    status_code=404, detail=f"image {image_id} has no annotation draft"
-                )
-            if expected != _etag(draft):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            _validate_document(
-                conn, image_id, dataset_id, draft.document, expected_base=draft.document.base
+            mask_sha256 = render_binary_mask(
+                draft.document,
+                destination,
+                source_mask_path=Path(draft.source_mask_path) if draft.source_mask_path else None,
+                source_mask_sha256=draft.source_mask_sha256,
             )
-            latest = annotations_repo.latest_revision(conn, image_id)
-            next_no = (latest.revision_no if latest else 0) + 1
-            destination = settings.annotation_image_dir(image_id) / f"revision-{next_no}.png"
-            if settings.annotations_dir.is_symlink() or destination.parent.is_symlink():
-                raise HTTPException(
-                    status_code=409, detail="the app-owned annotation directory is unsafe"
-                )
-            try:
-                mask_sha256 = render_binary_mask(
-                    draft.document,
-                    destination,
-                    source_mask_path=Path(draft.source_mask_path)
-                    if draft.source_mask_path
-                    else None,
-                    source_mask_sha256=draft.source_mask_sha256,
-                )
-            except AnnotationRenderError as exc:
-                raise HTTPException(status_code=409, detail=str(exc)) from exc
-            document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
-            revision = annotations_repo.insert_revision(
-                conn,
-                draft,
-                document_sha256=document_sha256,
-                mask_path=str(destination),
-                mask_sha256=mask_sha256,
-            )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            if destination is not None:
-                destination.unlink(missing_ok=True)
-            raise
+        except AnnotationRenderError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
+        revision = annotations_repo.insert_revision(
+            conn,
+            draft,
+            document_sha256=document_sha256,
+            mask_path=str(destination),
+            mask_sha256=mask_sha256,
+        )
     return revision
 
 
@@ -1150,30 +1076,23 @@ def set_annotation_scope(
     them. Only the editing surface moves.
     """
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            if datasets_repo.get_dataset(conn, dataset_id) is None:
-                raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
-            state = _scope_state(conn, dataset_id)
-            if body.scope is not state.scope:
-                if state.open_drafts:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            f"{state.open_drafts} annotation drafts are open; complete or "
-                            "discard them before changing scope"
-                        ),
-                    )
-                if body.scope is AnnotationScope.SAMPLE and state.blockers:
-                    raise HTTPException(status_code=409, detail="; ".join(state.blockers))
-                datasets_repo.set_annotation_scope(conn, dataset_id, body.scope)
-            updated = _scope_state(conn, dataset_id)
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        if datasets_repo.get_dataset(conn, dataset_id) is None:
+            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+        state = _scope_state(conn, dataset_id)
+        if body.scope is not state.scope:
+            if state.open_drafts:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"{state.open_drafts} annotation drafts are open; complete or "
+                        "discard them before changing scope"
+                    ),
+                )
+            if body.scope is AnnotationScope.SAMPLE and state.blockers:
+                raise HTTPException(status_code=409, detail="; ".join(state.blockers))
+            datasets_repo.set_annotation_scope(conn, dataset_id, body.scope)
+        updated = _scope_state(conn, dataset_id)
     return updated
 
 
@@ -1256,26 +1175,17 @@ def create_sample_annotation_draft(
 ) -> AnnotationSampleDraft:
     _require_if_none_match(if_none_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _sample_dataset_id(conn, sample_id)
-            _require_sample_scope(conn, dataset_id)
-            annotations_repo.ensure_default_label(conn, dataset_id)
-            if annotations_repo.get_sample_draft(conn, sample_id) is not None:
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            # Resolved for its refusals -- a shared frame, and a newest revision that can
-            # actually be shared -- before anything is written.
-            _sample_seed_state(conn, sample_id)
-            _validate_sample_document(conn, sample_id, dataset_id, document)
-            created = annotations_repo.create_sample_draft(conn, sample_id, document)
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _sample_dataset_id(conn, sample_id)
+        _require_sample_scope(conn, dataset_id)
+        annotations_repo.ensure_default_label(conn, dataset_id)
+        if annotations_repo.get_sample_draft(conn, sample_id) is not None:
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        # Resolved for its refusals -- a shared frame, and a newest revision that can
+        # actually be shared -- before anything is written.
+        _sample_seed_state(conn, sample_id)
+        _validate_sample_document(conn, sample_id, dataset_id, document)
+        created = annotations_repo.create_sample_draft(conn, sample_id, document)
     _set_sample_draft_etag(response, created)
     return created
 
@@ -1292,26 +1202,17 @@ def discard_sample_annotation_draft(
 ) -> Response:
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _sample_dataset_id(conn, sample_id)
-            _require_sample_scope(conn, dataset_id)
-            current = annotations_repo.get_sample_draft(conn, sample_id)
-            if current is None:
-                raise HTTPException(
-                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
-                )
-            if not _is_wildcard(expected) and expected != _sample_etag(current):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            annotations_repo.delete_sample_draft(conn, sample_id, current.version)
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _sample_dataset_id(conn, sample_id)
+        _require_sample_scope(conn, dataset_id)
+        current = annotations_repo.get_sample_draft(conn, sample_id)
+        if current is None:
+            raise HTTPException(
+                status_code=404, detail=f"sample {sample_id} has no annotation draft"
+            )
+        if not _is_wildcard(expected) and expected != _sample_etag(current):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        annotations_repo.delete_sample_draft(conn, sample_id, current.version)
     return Response(status_code=204)
 
 
@@ -1328,31 +1229,20 @@ def save_sample_annotation_draft(
 ) -> AnnotationSampleDraft:
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _sample_dataset_id(conn, sample_id)
-            _require_sample_scope(conn, dataset_id)
-            current = annotations_repo.get_sample_draft(conn, sample_id)
-            if current is None:
-                raise HTTPException(
-                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
-                )
-            if expected != _sample_etag(current):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            _validate_sample_document(conn, sample_id, dataset_id, document)
-            saved = annotations_repo.update_sample_draft(conn, sample_id, current.version, document)
-            if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+        dataset_id = _sample_dataset_id(conn, sample_id)
+        _require_sample_scope(conn, dataset_id)
+        current = annotations_repo.get_sample_draft(conn, sample_id)
+        if current is None:
+            raise HTTPException(
+                status_code=404, detail=f"sample {sample_id} has no annotation draft"
+            )
+        if expected != _sample_etag(current):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        _validate_sample_document(conn, sample_id, dataset_id, document)
+        saved = annotations_repo.update_sample_draft(conn, sample_id, current.version, document)
+        if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
     _set_sample_draft_etag(response, saved)
     return saved
 
@@ -1395,70 +1285,58 @@ def complete_sample_annotation_draft(
     """
     expected = _require_if_match(if_match)
     settings: Settings = request.app.state.settings
-    written: list[Path] = []
-    with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
-        try:
-            dataset_id = _sample_dataset_id(conn, sample_id)
-            _require_sample_scope(conn, dataset_id)
-            draft = annotations_repo.get_sample_draft(conn, sample_id)
-            if draft is None:
-                raise HTTPException(
-                    status_code=404, detail=f"sample {sample_id} has no annotation draft"
-                )
-            if expected != _sample_etag(draft):
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
-            _validate_sample_document(conn, sample_id, dataset_id, draft.document)
-            if settings.annotations_dir.is_symlink():
+    with connection(settings.db_path) as conn, transaction(conn, immediate=True) as tx:
+        dataset_id = _sample_dataset_id(conn, sample_id)
+        _require_sample_scope(conn, dataset_id)
+        draft = annotations_repo.get_sample_draft(conn, sample_id)
+        if draft is None:
+            raise HTTPException(
+                status_code=404, detail=f"sample {sample_id} has no annotation draft"
+            )
+        if expected != _sample_etag(draft):
+            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+        _validate_sample_document(conn, sample_id, dataset_id, draft.document)
+        if settings.annotations_dir.is_symlink():
+            raise HTTPException(
+                status_code=409, detail="the app-owned annotation directory is unsafe"
+            )
+
+        images = images_repo.list_images_for_sample(conn, sample_id)
+        document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
+        rendered: Path | None = None
+        mask_sha256 = ""
+        revisions: list[AnnotationRevision] = []
+        for image in images:
+            next_no = annotations_repo.next_revision_no(conn, image.id)
+            destination = settings.annotation_image_dir(image.id) / f"revision-{next_no}.png"
+            if destination.parent.is_symlink():
                 raise HTTPException(
                     status_code=409, detail="the app-owned annotation directory is unsafe"
                 )
-
-            images = images_repo.list_images_for_sample(conn, sample_id)
-            document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
-            rendered: Path | None = None
-            mask_sha256 = ""
-            revisions: list[AnnotationRevision] = []
-            for image in images:
-                next_no = annotations_repo.next_revision_no(conn, image.id)
-                destination = settings.annotation_image_dir(image.id) / f"revision-{next_no}.png"
-                if destination.parent.is_symlink():
-                    raise HTTPException(
-                        status_code=409, detail="the app-owned annotation directory is unsafe"
-                    )
-                if rendered is None:
-                    try:
-                        mask_sha256 = render_binary_mask(
-                            draft.document,
-                            destination,
-                            source_mask_path=None,
-                            source_mask_sha256=None,
-                        )
-                    except AnnotationRenderError as exc:
-                        raise HTTPException(status_code=409, detail=str(exc)) from exc
-                    rendered = destination
-                else:
-                    destination.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copyfile(rendered, destination)
-                written.append(destination)
-                revisions.append(
-                    annotations_repo.insert_shared_revision(
-                        conn,
-                        image.id,
+            if rendered is None:
+                try:
+                    mask_sha256 = render_binary_mask(
                         draft.document,
-                        document_sha256=document_sha256,
-                        mask_path=str(destination),
-                        mask_sha256=mask_sha256,
+                        destination,
+                        source_mask_path=None,
+                        source_mask_sha256=None,
                     )
+                except AnnotationRenderError as exc:
+                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                rendered = destination
+            else:
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copyfile(rendered, destination)
+            tx.remove_on_rollback(destination)
+            revisions.append(
+                annotations_repo.insert_shared_revision(
+                    conn,
+                    image.id,
+                    draft.document,
+                    document_sha256=document_sha256,
+                    mask_path=str(destination),
+                    mask_sha256=mask_sha256,
                 )
-            annotations_repo.delete_sample_draft(conn, sample_id)
-            conn.execute("COMMIT")
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            for path in written:
-                path.unlink(missing_ok=True)
-            raise
+            )
+        annotations_repo.delete_sample_draft(conn, sample_id)
     return revisions

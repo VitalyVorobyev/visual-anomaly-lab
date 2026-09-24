@@ -17,6 +17,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from anomaly_lab.db.connection import transaction
 from anomaly_lab.domain.entities import (
     Aggregation,
     ImageResult,
@@ -73,8 +74,7 @@ def replace_image_results(
     rows: Sequence[ImageResult],
 ) -> int:
     """Replace every image result for this experiment, atomically."""
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         conn.execute("DELETE FROM image_result WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
             """
@@ -96,10 +96,6 @@ def replace_image_results(
                 for row in rows
             ],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return len(rows)
 
 
@@ -126,8 +122,7 @@ def update_image_peaks(
     """
     if not peaks:
         return 0
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         conn.executemany(
             """
             UPDATE image_result SET peak_x = ?, peak_y = ?
@@ -135,10 +130,6 @@ def update_image_peaks(
             """,
             [(x, y, experiment_id, image_id) for image_id, (x, y) in sorted(peaks.items())],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return len(peaks)
 
 
@@ -156,8 +147,7 @@ def update_image_localization(
     """
     if not verdicts:
         return 0
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         conn.executemany(
             "UPDATE image_result SET localized = ? WHERE experiment_id = ? AND image_id = ?",
             [
@@ -165,10 +155,6 @@ def update_image_localization(
                 for image_id, value in sorted(verdicts.items())
             ],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return len(verdicts)
 
 
@@ -177,8 +163,7 @@ def replace_sample_results(
     experiment_id: int,
     rows: Sequence[SampleResult],
 ) -> int:
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         conn.execute("DELETE FROM sample_result WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
             """
@@ -198,10 +183,6 @@ def replace_sample_results(
                 for row in rows
             ],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return len(rows)
 
 
@@ -213,8 +194,7 @@ def replace_metric_sets(
     ground_truth_digests: Mapping[Subset, str] | None = None,
 ) -> int:
     """Replace this experiment's metric sets. Subsets with no metrics are simply absent."""
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         conn.execute("DELETE FROM metric_set WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
             """
@@ -231,10 +211,6 @@ def replace_metric_sets(
                 for subset, metrics in metrics_by_subset.items()
             ],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return len(metrics_by_subset)
 
 

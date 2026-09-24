@@ -27,7 +27,7 @@ from pydantic import BaseModel, Field
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
-from anomaly_lab.db.connection import connection
+from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
@@ -778,21 +778,14 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
         # Stable now: no worker or resident can write into the directory while it is
         # measured and removed, so the result reports what was actually reclaimed.
         usage = await asyncio.to_thread(path_usage, artifact_path)
-        with connection(settings.db_path) as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
-                if active:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="cancel or wait for the active job before deleting this experiment",
-                    )
-                deleted = experiments_repo.delete_experiment(conn, experiment_id)
-                conn.execute("COMMIT")
-            except BaseException:
-                if conn.in_transaction:
-                    conn.execute("ROLLBACK")
-                raise
+        with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+            active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
+            if active:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cancel or wait for the active job before deleting this experiment",
+                )
+            deleted = experiments_repo.delete_experiment(conn, experiment_id)
 
         removed = True
         artifact_error: str | None = None

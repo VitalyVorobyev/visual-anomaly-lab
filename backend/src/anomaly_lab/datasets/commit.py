@@ -20,12 +20,11 @@ from __future__ import annotations
 
 import sqlite3
 from dataclasses import dataclass, field
-from pathlib import Path
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.manifest import Manifest
 from anomaly_lab.datasets.storage import committed_manifest_id, save_manifest
-from anomaly_lab.datasets.storage import manifest_path as stored_manifest_path
+from anomaly_lab.db.connection import Transaction, transaction
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import masks as masks_repo
@@ -64,79 +63,97 @@ def commit_manifest(
     manifest: Manifest,
     *,
     dataset_id: int | None = None,
-    _within_transaction: bool = False,
 ) -> CommitResult:
     """Write an accepted manifest into the catalog, and store it verbatim."""
-    if not _within_transaction:
-        conn.execute("BEGIN IMMEDIATE")
-    saved_path: str | None = None
-    try:
-        dataset, created = _resolve_dataset(conn, manifest, dataset_id)
-        channel_ids = {
-            name: datasets_repo.upsert_channel(conn, dataset.id, name=name, position=index).id
-            for index, name in enumerate(manifest.channels)
-        }
+    with transaction(conn, immediate=True) as tx:
+        return _commit_within(tx, settings, manifest, dataset_id=dataset_id)
 
-        samples_created = samples_updated = images_created = images_updated = masks = 0
-        seen_paths: set[str] = set()
 
-        for proposed in manifest.samples:
-            sample, sample_is_new = samples_repo.upsert_sample(
-                conn,
-                dataset.id,
-                group_key=proposed.group_key,
-                external_id=proposed.external_id,
-                label=proposed.label,
-                notes=proposed.notes,
-            )
-            samples_created += int(sample_is_new)
-            samples_updated += int(not sample_is_new)
+def commit_manifests_atomically(
+    conn: sqlite3.Connection, settings: Settings, manifests: list[Manifest]
+) -> list[CommitResult]:
+    """Commit a reference pack as one database decision.
 
-            for image in proposed.images:
-                row, image_is_new = images_repo.upsert_image(
-                    conn,
-                    sample.id,
-                    # An unmapped channel name means no channel, not a new one: the
-                    # dictionary is the manifest's `channels` list, which the operator
-                    # has just reviewed.
-                    channel_id=channel_ids.get(image.channel or ""),
-                    path=image.path,
-                    width=image.width,
-                    height=image.height,
-                    bit_depth=image.bit_depth,
-                    file_size=image.file_size,
-                    sha256=image.sha256,
-                )
-                images_created += int(image_is_new)
-                images_updated += int(not image_is_new)
-                seen_paths.add(image.path)
+    All expensive scans happen before this call.  Manifest files are written while the
+    database transaction is open and removed if a later member fails, so the batch is
+    either fully registered or absent from both catalog and accepted-manifest storage.
+    """
+    with transaction(conn, immediate=True) as tx:
+        return [_commit_within(tx, settings, manifest) for manifest in manifests]
 
-                # A mask the manifest no longer mentions is left alone, for the same
-                # reason a missing image is reported rather than deleted: a re-scan run
-                # with the mask options forgotten must not silently discard annotations.
-                if image.mask_path is not None:
-                    masks_repo.upsert_mask(conn, row.id, path=image.mask_path)
-                    masks += 1
 
-        missing = [
-            image.path
-            for image in images_repo.list_images_for_dataset(conn, dataset.id)
-            if image.path not in seen_paths
-        ]
-        manifest_id = committed_manifest_id(dataset.id)
-        path = save_manifest(settings, manifest, manifest_id=manifest_id)
-        saved_path = str(path)
-        datasets_repo.record_manifest(
-            conn, dataset.id, adapter=manifest.adapter, manifest_path=str(path)
+def _commit_within(
+    tx: Transaction,
+    settings: Settings,
+    manifest: Manifest,
+    *,
+    dataset_id: int | None = None,
+) -> CommitResult:
+    """One manifest's rows and stored copy, inside a transaction the caller owns.
+
+    The stored manifest is registered for removal on rollback, so a failure anywhere in
+    the caller's transaction — this manifest's rows, or a later member of a batch — takes
+    the file back with the rows.
+    """
+    conn = tx.conn
+    dataset, created = _resolve_dataset(conn, manifest, dataset_id)
+    channel_ids = {
+        name: datasets_repo.upsert_channel(conn, dataset.id, name=name, position=index).id
+        for index, name in enumerate(manifest.channels)
+    }
+
+    samples_created = samples_updated = images_created = images_updated = masks = 0
+    seen_paths: set[str] = set()
+
+    for proposed in manifest.samples:
+        sample, sample_is_new = samples_repo.upsert_sample(
+            conn,
+            dataset.id,
+            group_key=proposed.group_key,
+            external_id=proposed.external_id,
+            label=proposed.label,
+            notes=proposed.notes,
         )
-    except Exception:
-        if not _within_transaction and conn.in_transaction:
-            conn.execute("ROLLBACK")
-        if saved_path is not None:
-            Path(saved_path).unlink(missing_ok=True)
-        raise
-    if not _within_transaction:
-        conn.execute("COMMIT")
+        samples_created += int(sample_is_new)
+        samples_updated += int(not sample_is_new)
+
+        for image in proposed.images:
+            row, image_is_new = images_repo.upsert_image(
+                conn,
+                sample.id,
+                # An unmapped channel name means no channel, not a new one: the
+                # dictionary is the manifest's `channels` list, which the operator
+                # has just reviewed.
+                channel_id=channel_ids.get(image.channel or ""),
+                path=image.path,
+                width=image.width,
+                height=image.height,
+                bit_depth=image.bit_depth,
+                file_size=image.file_size,
+                sha256=image.sha256,
+            )
+            images_created += int(image_is_new)
+            images_updated += int(not image_is_new)
+            seen_paths.add(image.path)
+
+            # A mask the manifest no longer mentions is left alone, for the same
+            # reason a missing image is reported rather than deleted: a re-scan run
+            # with the mask options forgotten must not silently discard annotations.
+            if image.mask_path is not None:
+                masks_repo.upsert_mask(conn, row.id, path=image.mask_path)
+                masks += 1
+
+    missing = [
+        image.path
+        for image in images_repo.list_images_for_dataset(conn, dataset.id)
+        if image.path not in seen_paths
+    ]
+    manifest_id = committed_manifest_id(dataset.id)
+    path = save_manifest(settings, manifest, manifest_id=manifest_id)
+    tx.remove_on_rollback(path)
+    datasets_repo.record_manifest(
+        conn, dataset.id, adapter=manifest.adapter, manifest_path=str(path)
+    )
 
     return CommitResult(
         dataset_id=dataset.id,
@@ -150,33 +167,6 @@ def commit_manifest(
         masks=masks,
         missing_paths=sorted(missing)[:MAX_MISSING_REPORTED],
     )
-
-
-def commit_manifests_atomically(
-    conn: sqlite3.Connection, settings: Settings, manifests: list[Manifest]
-) -> list[CommitResult]:
-    """Commit a reference pack as one database decision.
-
-    All expensive scans happen before this call.  Manifest files are written while the
-    database transaction is open and removed if a later member fails, so the batch is
-    either fully registered or absent from both catalog and accepted-manifest storage.
-    """
-    conn.execute("BEGIN IMMEDIATE")
-    results: list[CommitResult] = []
-    written: list[str] = []
-    try:
-        for manifest in manifests:
-            result = commit_manifest(conn, settings, manifest, _within_transaction=True)
-            results.append(result)
-            written.append(result.manifest_id)
-        conn.execute("COMMIT")
-    except Exception:
-        if conn.in_transaction:
-            conn.execute("ROLLBACK")
-        for manifest_id in written:
-            stored_manifest_path(settings, manifest_id).unlink(missing_ok=True)
-        raise
-    return results
 
 
 def _resolve_dataset(

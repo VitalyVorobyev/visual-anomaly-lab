@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field, model_validator
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.reference_packs import PackMembership, pack_membership
-from anomaly_lab.db.connection import connection
+from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
@@ -563,32 +563,23 @@ async def delete_dataset(request: Request, dataset_id: int) -> DatasetDeletionRe
     resident: ResidentWorker = request.app.state.resident
 
     async with queue.lifecycle_guard(), resident.eviction_guard():
-        with connection(settings.db_path) as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                # The write transaction begins before the inventory: a simultaneous
-                # re-import or manual-label request cannot add rows after we have named
-                # the consequences but before the cascade commits.
-                inventory = _deletion_inventory(conn, settings, dataset_id)
-                if not inventory.storage_safe:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="refusing dataset deletion because an app-owned path is unsafe",
-                    )
-                active = jobs_repo.active_jobs_for_dataset(conn, dataset_id)
-                if active:
-                    raise HTTPException(
-                        status_code=409,
-                        detail="cancel or wait for active dataset work before deleting it",
-                    )
-                deleted = datasets_repo.delete_dataset_rows(
-                    conn, dataset_id, include_experiments=True
+        with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+            # The write transaction begins before the inventory: a simultaneous
+            # re-import or manual-label request cannot add rows after we have named
+            # the consequences but before the cascade commits.
+            inventory = _deletion_inventory(conn, settings, dataset_id)
+            if not inventory.storage_safe:
+                raise HTTPException(
+                    status_code=409,
+                    detail="refusing dataset deletion because an app-owned path is unsafe",
                 )
-                conn.execute("COMMIT")
-            except BaseException:
-                if conn.in_transaction:
-                    conn.execute("ROLLBACK")
-                raise
+            active = jobs_repo.active_jobs_for_dataset(conn, dataset_id)
+            if active:
+                raise HTTPException(
+                    status_code=409,
+                    detail="cancel or wait for active dataset work before deleting it",
+                )
+            deleted = datasets_repo.delete_dataset_rows(conn, dataset_id, include_experiments=True)
 
         freed = StorageUsage()
         cleanup_errors: list[str] = []
