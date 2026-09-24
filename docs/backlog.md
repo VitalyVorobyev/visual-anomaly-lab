@@ -27,10 +27,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Calibrate the foreground probability** (M): absent images score foreground almost everywhere
-      at 0.5. Fit the probability's scale on the references themselves (leave-one-out over the
-      support set), so the cut means the same thing on every class; re-run the gate's protocol and
-      compare with the recorded verdict.
 - [ ] **A cross-domain few-shot gate** (M): VisA defects are small and subtle, the hardest target for
       a method built for objects. Choose a public few-shot segmentation dataset with object classes,
       predeclare the protocol in `measurements.md`, and run the three methods on it.

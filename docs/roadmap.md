@@ -78,8 +78,10 @@ application.
     mark absent, and freeze into a run.
 
   The public VisA gate made `proto_seg` the default, and showed that no method yet draws a usable mask of
-  a small defect at the fixed `>= 0.5` cut ([measurements.md](measurements.md)). Still open: a
-  calibrated foreground probability, and a cross-domain gate.
+  a small defect at the fixed `>= 0.5` cut ([measurements.md](measurements.md)). Every few-shot method
+  can scale its probability on its own references (`calibration` `leave_one_out`); its gate leg kept
+  the unscaled default, because the scaled cut stops flagging absent images but finds too few of the
+  present ones. Still open: a cross-domain gate.
 - **Supervised segmentation** (ADR-0039) runs end to end on the few-shot task's seams: a run pins its
   dataset's classes at creation, fits on the annotated images of its train subset through
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix

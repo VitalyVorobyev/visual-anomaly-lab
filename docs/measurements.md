@@ -293,9 +293,10 @@ below. VisA
 defects are also a hard target for a method built for objects, which is why a cross-domain few-shot
 dataset is the next gate.
 
-### Calibration leg — predeclared
+### Calibration leg — `none` stays the default
 
-Predeclared before it ran. `scripts/few-shot-public-gate.py --leg calibration` asks whether a foreground
+Predeclared before it ran. `scripts/few-shot-public-gate.py --leg calibration`, 72 runs in 1.9 h on MPS
+(torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0), asks whether a foreground
 probability fitted on the references makes the fixed `>= 0.5` cut mean something
 ([methods](architecture/methods.md#calibrating-the-foreground-probability)).
 
@@ -332,3 +333,52 @@ were already below the IoU tolerance, so an IoU condition alone would have adopt
 nothing; the recall condition was added for that reason, and the smoke cell is not part of the leg. The
 same cell moved `color_prototype`'s presence ROC-AUC by 0.0007, because the logit's clip merged nearly
 saturated scores into ties; the clip is now float64's own, so the construction check above holds.
+
+**Result.** Means over both classes and three seeds; the spread is the IoU's across seeds. The `none` rows
+reproduce the first leg's 5- and 10-shot cells to the reported digit.
+
+| Method | Shots | Calibration | Foreground IoU | ± seeds | Boundary F1 | Pixel AP | Presence ROC-AUC | Absent FPR | Present recall |
+|---|---|---|---|---|---|---|---|---|---|
+| `color_prototype` | 5 | `none` | 0.0026 | 0.0002 | 0.0021 | 0.011 | 0.301 | 1.000 | 0.960 |
+| | | `leave_one_out` | 0.0001 | 0.0001 | 0.0004 | 0.010 | 0.301 | 0.211 | 0.068 |
+| | 10 | `none` | 0.0025 | 0.0001 | 0.0022 | 0.015 | 0.318 | 1.000 | 0.974 |
+| | | `leave_one_out` | 0.0000 | 0.0000 | 0.0002 | 0.014 | 0.318 | 0.212 | 0.022 |
+| `fss_dino` | 5 | `none` | 0.0037 | 0.0010 | 0.0015 | 0.104 | 0.724 | 1.000 | 0.979 |
+| | | `leave_one_out` | 0.0870 | 0.0300 | 0.0737 | 0.104 | 0.724 | 0.120 | 0.372 |
+| | 10 | `none` | 0.0035 | 0.0004 | 0.0010 | 0.098 | 0.721 | 1.000 | 0.998 |
+| | | `leave_one_out` | 0.0642 | 0.0165 | 0.0758 | 0.098 | 0.721 | 0.047 | 0.332 |
+| `proto_seg` | 5 | `none` | 0.0357 | 0.0253 | 0.0121 | 0.153 | 0.820 | 0.926 | 0.911 |
+| | | `leave_one_out` | 0.0570 | 0.0344 | 0.0617 | 0.153 | 0.820 | 0.001 | 0.188 |
+| | 10 | `none` | 0.0216 | 0.0194 | 0.0075 | 0.154 | 0.849 | 0.955 | 0.965 |
+| | | `leave_one_out` | 0.0518 | 0.0178 | 0.0976 | 0.154 | 0.849 | 0.001 | 0.185 |
+
+By class at 5 shots, `leave_one_out` against `none`:
+
+| Method | Class | Foreground IoU | Absent FPR | Present recall |
+|---|---|---|---|---|
+| `fss_dino` | `candle` | 0.0035 → 0.174 | 1.000 → 0.239 | 1.000 → 0.726 |
+| | `pcb1` | 0.0040 → 0.0002 | 1.000 → 0.001 | 0.958 → 0.018 |
+| `proto_seg` | `candle` | 0.067 → 0.114 | 0.851 → 0.002 | 0.954 → 0.358 |
+| | `pcb1` | 0.0041 → 0.0002 | 1.000 → 0.000 | 0.867 → 0.018 |
+
+The fitted scales move the cut up the unscaled map: 0.5 falls at an unscaled probability of 0.82–1.00 for
+the DINO methods and above 0.999 for `color_prototype`, with slopes 0.4–4.0 and 0.14–0.77.
+
+Both construction checks hold: presence ROC-AUC is identical between the variants in every cell, and pixel
+average precision moves by at most 0.0004.
+
+**Verdict, by the rule.** Absent-image FPR falls by 0.79 (`color_prototype`), 0.88 (`fss_dino`) and 0.92
+(`proto_seg`), and foreground IoU falls by no more than the tolerance for any method — it rises by 0.083
+for `fss_dino` and 0.021 for `proto_seg`. But present-image recall keeps 7 %, 38 % and 21 % of its `none`
+value, under the half the rule asks for, so **`none` stays every method's default** and `leave_one_out`
+ships as an option.
+
+**What the leg says beyond its rule.** A scale fitted on the references means what it says: a pixel at 0.5
+is as likely the class as not, and on a defect that covers a fraction of a percent of the frame almost no
+pixel is. The cut then draws the class only where a method is confident, which is what the rise in IoU
+and boundary F1 on `candle` is — and draws nothing on `pcb1`, where no method is confident, so the mean
+recall falls with it. Calibration answers the question the backlog asked (the cut now means the same thing
+on every class) and shows that on VisA the honest answer at 0.5 is mostly "absent". The recall condition
+is what held it back, and it was added to reject a scale that draws nothing; on `candle` the scale draws
+something useful, on `pcb1` it does not.
+
