@@ -17,11 +17,14 @@ the label of the patch it happens to sit in.
   evenly spaced, then at most `pixels_per_image` labelled pixels from each, and the float32
   footprint is logged and refused above a ceiling. Pixels marked `IGNORE_INDEX` are never
   sampled.
-- **Each class in an image gets a share of that image's pixels** (`sample_pixels`,
-  `pixel_sampling = per_class`): the budget is split equally among the classes present, a class
-  with fewer pixels than its share gives the rest back to the others, and each class's pixels
-  are evenly spaced over its own raster order. Sampled evenly over the whole image instead
-  (`raster`), a defect covering a fraction of a percent of the frame gets a pixel or two.
+- **How an image's budget is spent is `pixel_sampling`** (`sample_pixels`). `raster`, the
+  default, spaces it evenly over the image's labelled pixels, so a defect covering a fraction of
+  a percent of the frame gets a pixel or two. `per_class` splits it equally among the classes
+  present, a class with fewer pixels than its share giving the rest back to the others, each
+  class evenly spaced over its own pixels. Balancing the sample is not balancing the answer:
+  under `inverse_frequency` either rule gives the classes equal total weight, and the public gate
+  measured `per_class` *lower* on defect IoU, because thousands of defect pixels at that weight
+  move the boundary further into background (docs/measurements.md).
 - **The head is fitted on the CPU**, with AdamW on shuffled minibatches, from a seeded
   generator that draws both its initial weights and the batch order — nothing reads torch's
   global stream, so a seed is the whole answer. It is small enough that the accelerator would
@@ -133,11 +136,11 @@ class DinoLinearSegConfig(BaseModel):
         ),
     )
     pixel_sampling: PixelSampling = Field(
-        default=PixelSampling.PER_CLASS,
+        default=PixelSampling.RASTER,
         description=(
-            "'per_class' splits each image's pixels equally among the classes present in it, "
-            "so a small defect is sampled as often as the background around it; 'raster' "
-            "spaces them evenly over the image, where a small class gets almost none."
+            "'raster' spaces each image's pixels evenly over it, where a small class gets "
+            "almost none; 'per_class' splits them equally among the classes present, so a "
+            "small defect is sampled as often as the background around it."
         ),
     )
     max_training_pixels: int = Field(

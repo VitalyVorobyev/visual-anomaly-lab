@@ -53,12 +53,12 @@ Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, la
 maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_linear_seg` deep head,
 the `class_stratified` split, its result screens and a public gate (`measurements.md`). What remains, in dependency order, one PR each:
 
-- [ ] **`dino_linear_seg` samples a small class too thinly** (M): the public gate
-      (`measurements.md`) trained the head on 28–109 defect pixels of 130 900, because
-      `plan_pixels` spaces pixels evenly in raster order, and `inverse_frequency` then turned
-      that into false presence on nearly every normal image. Sample each class towards a share of
-      the budget (as `color_classifier` caps per class), log what each class got, and rerun the
-      gate unchanged otherwise — a new predeclared leg, not a retune after the fact.
+- [ ] **`dino_linear_seg`'s argmax is not calibrated to a small class** (M): `inverse_frequency`
+      trains the head as if every class were equally common, and with the defect sampled fairly
+      (`pixel_sampling` `per_class`) it labels 3–6 % of every VisA image defect
+      (`measurements.md`, leg 2). Choose a correction — the class prior restored to the logits at
+      prediction, `class_balancing` `none` over a per-class sample, or a threshold fitted on
+      training pixels — predeclare it as a new gate on the same protocol, and run it.
 - [ ] **Detection** (L, split before starting): COCO-style AP, and predictions drawn against truth
       on the vector layer.
 

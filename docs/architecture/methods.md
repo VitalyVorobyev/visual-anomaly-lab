@@ -490,21 +490,24 @@ foreground-share score, like `color_classifier`.
   only when there are more of them than the total, since each keeps a pixel; the plan and its float32
   footprint are logged, and a plan above 4 GiB is refused naming the knobs. `IGNORE_INDEX` pixels are
   never sampled, and only the chosen images are encoded.
-- **Each class in an image gets a share of its pixels.** Under `pixel_sampling` `per_class` (default),
-  `allocate_pixels` splits an image's budget equally among the classes present in it, visiting the
-  smallest first so that a class with fewer pixels than its share takes them all and leaves the rest to
-  the others; `sample_pixels` then spaces each class's take evenly over that class's own pixels. Nothing
-  is random. `raster` spaces the budget evenly over the image's labelled pixels whatever their class,
-  which gives a defect covering a fraction of a percent of the frame a pixel or two
-  ([measurements](../measurements.md)). The fit logs the sampling rule and, per class, the pixels taken
-  against the labelled pixels the chosen images held.
+- **`pixel_sampling` decides how an image's budget is spent.** `raster` (default) spaces it evenly over
+  the image's labelled pixels whatever their class, which gives a defect covering a fraction of a percent
+  of the frame a pixel or two. `per_class` has `allocate_pixels` split the budget equally among the
+  classes present in the image, visiting the smallest first so that a class with fewer pixels than its
+  share takes them all and leaves the rest to the others, and `sample_pixels` spaces each class's take
+  evenly over that class's own pixels. Nothing is random either way. The fit logs the rule and, per
+  class, the pixels taken against the labelled pixels the chosen images held. `per_class` is not the
+  default because the public gate measured it lower on defect IoU on both VisA classes: with thousands
+  of defect pixels under `inverse_frequency`, the head moves its boundary further into background and
+  labels a few percent of every image defect ([measurements](../measurements.md)).
 - **The head fits on the CPU** with AdamW (`learning_rate` 1e-3, `weight_decay` 1e-4) for `epochs` (10)
   over shuffled minibatches of `batch_size` (1 024), with cross-entropy weighted by `class_balancing`:
   `inverse_frequency` (default) gives every sampled class the same total weight, `none` counts every pixel
-  once. The two rules do different work: per-class sampling balances the classes *within* an image, and
-  the weights balance what remains *across* images, because an image without the class still contributes
-  its budget to background — on a dataset of mostly normal images the defect stays the smaller class of
-  the sample, and it is weighted up by that ratio rather than by the thousands raster sampling needed. One seeded generator draws the initial weights and the batch order, so nothing depends on torch's
+  once. Weighting and sampling do different work: per-class sampling balances the classes *within* an
+  image, and the weights balance what remains *across* images, because an image without the class still
+  contributes its budget to background. Either way `inverse_frequency` trains the head as if every class
+  were equally common, so its argmax is not calibrated to a class that covers a fraction of a percent of
+  the pixels; that is the open question the gate leaves (backlog, Supervised tasks). One seeded generator draws the initial weights and the batch order, so nothing depends on torch's
   global stream; the tests assert the seed in both directions. The per-epoch loss is a metric.
 - `layers` defaults to the last block; `refine` is `bilinear` (the function the head was trained on) or
   `guided`, which filters each class's probability against the image before the argmax.
@@ -512,10 +515,9 @@ foreground-share score, like `color_classifier`.
   label targets, or when the sampled pixels hold no class at all. The encoder is not saved: `save` writes
   the head (each file whole, then renamed into place) and the encoder's fingerprint, and `load` refuses
   a different backbone or layer set.
-- **Experimental.** The public gate's first leg kept it there: under `raster` sampling it beat the floor
-  on one VisA class by the predeclared margin and not on the other, having trained on almost no defect
-  pixels; a second leg, identical but for `per_class` sampling, is predeclared
-  ([measurements](../measurements.md)). ONNX: none.
+- **Experimental.** Both legs of the public gate kept it there: under `raster` sampling it beat the floor
+  by the predeclared margin on one VisA class and not the other, and under `per_class` sampling its lead
+  shrank on both ([measurements](../measurements.md)). ONNX: none.
 
 ### `fss_dino`
 
