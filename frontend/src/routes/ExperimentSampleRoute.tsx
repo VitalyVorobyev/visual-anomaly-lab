@@ -49,7 +49,8 @@ import { cutValue, readResultsState, resolveSubset, writeResultsState } from "..
 import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, StageReadout, Tooltip, type StageView } from "@vitavision/lab-ui";
 import { SampleStage, type RasterLayer } from "../components/viewer/SampleStage";
 import { useHotkeys } from "../hooks/useHotkeys";
-import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
+import { LabelLayer } from "../components/viewer/LabelLayer";
+import { useAnomalyValues, useLabelPlane, useSourceValues } from "../hooks/useMapValues";
 import {
   useDiagnoseImage,
   useDiagnostics,
@@ -130,6 +131,9 @@ export function ExperimentSampleRoute() {
   const note = missingNote(diagnostics.data);
   const range = experiment.data?.map_range;
   const cut = cutValue(state, range);
+  // A supervised segmentation run draws its label maps instead of a cut and a mask (ADR-0039).
+  const classes =
+    experiment.data?.task === "semantic_segmentation" ? experiment.data.classes : undefined;
   const verdict = verdicts.shown.find((entry) => entry.sample_id === sampleId);
   // Beside the outcome rather than folded into it: "caught it, from the wrong pixels" is a
   // different finding from "caught it", and only this badge can say so.
@@ -227,6 +231,7 @@ export function ExperimentSampleRoute() {
         range={range}
         hasMask={anyMask}
         hasMap={anyMap}
+        classes={classes}
       />
 
       {/* Columns from the image count, never from a constant: a one-image sample is one
@@ -248,6 +253,7 @@ export function ExperimentSampleRoute() {
             view={view}
             onView={setView}
             single={images.data.length === 1}
+            labelled={classes !== undefined}
           />
         ))}
       </div>
@@ -324,6 +330,7 @@ function ChannelView({
   view,
   onView,
   single,
+  labelled,
 }: {
   image: ImageScore;
   experimentId: number;
@@ -333,6 +340,8 @@ function ChannelView({
   view: StageView | null;
   onView: (view: StageView) => void;
   single: boolean;
+  /** A supervised segmentation run: prediction and truth are label maps, not a cut and a mask. */
+  labelled: boolean;
 }) {
   /*
    * Nothing is fetched until the pointer is actually over this canvas — `hovered` gates
@@ -349,6 +358,14 @@ function ChannelView({
   // Every colour plane in one payload, with the count in its header — a mono experiment
   // and an RGB one are the same code path, and neither is encoded here.
   const sourceValues = useSourceValues(experimentId, image.image_id, hover !== null);
+  // A supervised run's label maps, fetched only while their layer is on.
+  const predictedLabels = useLabelPlane(
+    experimentId,
+    image.image_id,
+    false,
+    labelled && state.region,
+  );
+  const trueLabels = useLabelPlane(experimentId, image.image_id, true, labelled && state.truth);
 
   const layers: RasterLayer[] = [];
   if (state.heatmap && image.has_map) {
@@ -361,10 +378,10 @@ function ChannelView({
       className: "opacity-80",
     });
   }
-  if (state.region && image.has_map && cut !== null) {
+  if (!labelled && state.region && image.has_map && cut !== null) {
     layers.push({ key: "region", src: predictionUrl(image.image_id, experimentId, cut) });
   }
-  if (state.truth && image.has_mask) {
+  if (!labelled && state.truth && image.has_mask) {
     layers.push({ key: "truth", src: maskUrl(image.image_id) });
   }
 
@@ -401,7 +418,13 @@ function ChannelView({
           {/* A vector layer among the raster ones, and inside the same transform for the
               same reason: a marker that drifts from the heatmap it marks is worse than no
               marker. It draws itself in image coordinates. */}
-          {state.peak && <PeakMarker image={image} />}
+          {state.peak && !labelled && <PeakMarker image={image} />}
+          {labelled && state.region && predictedLabels.data && (
+            <LabelLayer plane={predictedLabels.data} style="prediction" />
+          )}
+          {labelled && state.truth && trueLabels.data && (
+            <LabelLayer plane={trueLabels.data} style="truth" />
+          )}
         </SampleStage>
       </div>
 
@@ -418,11 +441,33 @@ function ChannelView({
         />
         <div className="flex items-baseline justify-between gap-3">
           <MapScaleReadout scale={image.map_scale} range={range} />
-          {!image.has_map && <span className="text-xs text-fg-subtle">no anomaly map</span>}
+          {labelled ? (
+            <LabelNote
+              predicted={state.region ? predictedLabels.error : null}
+              truth={state.truth ? trueLabels.error : null}
+            />
+          ) : (
+            !image.has_map && <span className="text-xs text-fg-subtle">no anomaly map</span>
+          )}
         </div>
       </div>
     </figure>
   );
+}
+
+/**
+ * Why a label layer that is on draws nothing. A 404 is a fact — no label map, or truth that
+ * does not answer for every pinned class — and anything else is a failure worth printing.
+ */
+function LabelNote({ predicted, truth }: { predicted: Error | null; truth: Error | null }) {
+  const says = (error: Error | null, absent: string) =>
+    error === null ? null : error.message.startsWith("404") ? absent : error.message;
+  const notes = [
+    says(predicted, "no label map"),
+    says(truth, "no truth for every class of this run"),
+  ].filter((note): note is string => note !== null);
+  if (notes.length === 0) return null;
+  return <span className="text-xs text-fg-subtle">{notes.join(" · ")}</span>;
 }
 
 /**

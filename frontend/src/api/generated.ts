@@ -735,14 +735,41 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Each sample's few-shot segmentation outcome, ranked by presence
+         * Each sample's segmentation outcome, ranked by score
          * @description What a segmentation run did to each sample, for the gallery and the sample page.
          *
-         *     The few-shot counterpart of the threshold report, computed per request from the stored
-         *     maps and masks under the evaluator's rule (ADR-0040). An anomaly run is refused: its
-         *     outcomes are the threshold report's.
+         *     The segmentation counterpart of the threshold report, computed per request from what
+         *     the run stored. A few-shot run is read against its class under the evaluator's rule
+         *     (ADR-0040); a supervised run's label maps against every pinned class, with one more
+         *     outcome, `false_class` (ADR-0039). An anomaly run is refused: its outcomes are the
+         *     threshold report's.
          */
         get: operations["get_segmentation_outcomes_api_experiments__experiment_id__segmentation_outcomes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/images/{image_id}/labels": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One image's label map, predicted or true, as class indices
+         * @description A supervised segmentation run's class per pixel, for the sample page to draw.
+         *
+         *     The value-plane format (handbook diagnostics.md): 0 is background and `i + 1` is the
+         *     run's `classes[i]`. Served as indices rather than a picture because a class's colour is
+         *     the interface's, from the design system's palette; a large frame arrives decimated by an
+         *     integer stride, so every value sent is a class the method or the annotator gave.
+         */
+        get: operations["read_label_plane_api_experiments__experiment_id__images__image_id__labels_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6929,6 +6956,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SegmentationOutcomes"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_label_plane_api_experiments__experiment_id__images__image_id__labels_get: {
+        parameters: {
+            query?: {
+                /** @description The image's truth over the run's pinned classes instead of the method's label map. A pixel of a class the run does not know is NaN. */
+                truth?: boolean;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */

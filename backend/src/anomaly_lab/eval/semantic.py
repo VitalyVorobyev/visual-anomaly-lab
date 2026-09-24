@@ -43,6 +43,7 @@ from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.results import ScoredImage
 from anomaly_lab.domain.entities import Experiment, Subset
 from anomaly_lab.eval.metrics import timing_summary
+from anomaly_lab.eval.segmentation import LOW_IOU_BELOW, SegmentationOutcomes, SegmentationVerdict
 from anomaly_lab.models.base import IGNORE_INDEX
 
 BACKGROUND = "background"
@@ -140,9 +141,18 @@ def _mean(values: Any) -> float | None:
     return None if not known else float(sum(known) / len(known))
 
 
+def label_map_path(maps_dir: Path, image_id: int) -> Path:
+    """Where an image's predicted label map is, whether or not it was written."""
+    return maps_dir / f"{image_id}{LABEL_MAP_SUFFIX}"
+
+
 def predicted_labels(image: ScoredImage, maps_dir: Path) -> np.ndarray | None:
     """The label map the method wrote for an image, or `None` if it wrote none."""
-    path = maps_dir / f"{image.image_id}{LABEL_MAP_SUFFIX}"
+    return read_label_map(label_map_path(maps_dir, image.image_id))
+
+
+def read_label_map(path: Path) -> np.ndarray | None:
+    """A stored label map as `uint8` class indices, or `None` if there is none."""
     if not path.is_file():
         return None
     with Image.open(path) as opened:
@@ -158,9 +168,13 @@ def _classes(experiment: Experiment) -> tuple[str, ...]:
 def _truths(
     conn: sqlite3.Connection, experiment: Experiment, images: Sequence[ScoredImage]
 ) -> dict[int, LabelTruth]:
-    return resolve_label_truth(
-        conn, experiment.dataset_id, [image.image_id for image in images], _classes(experiment)
-    )
+    return _truths_for(conn, experiment, [image.image_id for image in images])
+
+
+def _truths_for(
+    conn: sqlite3.Connection, experiment: Experiment, image_ids: Sequence[int]
+) -> dict[int, LabelTruth]:
+    return resolve_label_truth(conn, experiment.dataset_id, image_ids, _classes(experiment))
 
 
 def digest(
@@ -211,3 +225,119 @@ def current_digest(conn: sqlite3.Connection, experiment: Experiment, subset: Sub
     """The digest a subset's metrics would carry now; reads metadata only, never pixels."""
     images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
     return digest(experiment, images, _truths(conn, experiment, images))
+
+
+# ---------------------------------------------------------------------------- per sample
+
+LABEL_MAP_RULE = "the method's label map, as written"
+"""What decided each pixel's class: nothing is cut, so the rule printed is that there is none."""
+
+
+def _sample_outcome(counts: np.ndarray) -> tuple[str, float | None, bool]:
+    """One sample's outcome, mean IoU and whether it predicted any class, from its matrix.
+
+    `counts` is the sample's pooled confusion matrix, background first. The classes that
+    matter are the ones it shows (`truth`) and the ones it was given (`predicted`):
+
+    - shows none: `correct_absence` if nothing was predicted, `false_presence` otherwise;
+    - a class it shows was not found anywhere on it: `miss`;
+    - a class it does not show was predicted on it: `false_class`;
+    - otherwise the mean IoU over its classes decides `hit` or `low_iou`.
+
+    The mean IoU is over the classes shown or predicted, and `None` when it shows none — the
+    same absence the few-shot verdict has.
+    """
+    hits = np.diag(counts)[1:]
+    truth = counts.sum(axis=1)[1:]
+    predicted = counts.sum(axis=0)[1:]
+    shown = truth > 0
+    given = predicted > 0
+    predicted_any = bool(given.any())
+    if not shown.any():
+        return ("false_presence" if predicted_any else "correct_absence"), None, predicted_any
+    involved = shown | given
+    unions = truth + predicted - hits
+    iou = float(np.mean(hits[involved] / unions[involved]))
+    if bool((hits[shown] == 0).any()):
+        return "miss", iou, predicted_any
+    if bool((given & ~shown).any()):
+        return "false_class", iou, predicted_any
+    return ("hit" if iou >= LOW_IOU_BELOW else "low_iou"), iou, predicted_any
+
+
+def sample_outcomes(
+    conn: sqlite3.Connection, experiment: Experiment, subset: Subset | None
+) -> SegmentationOutcomes:
+    """Per sample: `hit`, `low_iou`, `miss`, `false_class`, `false_presence`,
+    `correct_absence` or `unlabeled`, ranked by score.
+
+    Computed on request from the stored label maps, like the few-shot report. A sample's
+    labelled images are pooled into one small confusion matrix — `(classes + 1)²` counts,
+    never pixels — so its verdict is over every image that answers for every pinned class;
+    one with none is `unlabeled`. Nothing is thresholded: the label map is the method's own
+    decision.
+    """
+    classes = _classes(experiment)
+    size = len(classes) + 1
+    images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+    samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
+    truths = _truths(conn, experiment, images)
+    maps_dir = Path(experiment.artifact_dir) / "maps"
+
+    pooled: dict[int, np.ndarray] = {}
+    for image in images:
+        truth = truths.get(image.image_id)
+        predicted = None if truth is None else predicted_labels(image, maps_dir)
+        if truth is None or predicted is None:
+            continue
+        accumulator = ConfusionAccumulator(classes)
+        try:
+            accumulator.add(load_label_map(truth, classes), predicted, inference_ms=0.0)
+        except SemanticEvalError as exc:
+            raise SemanticEvalError(f"image {image.image_id}: {exc}") from exc
+        found = pooled.setdefault(image.sample_id, np.zeros((size, size), dtype=np.int64))
+        found += accumulator.counts
+
+    verdicts: list[SegmentationVerdict] = []
+    for sample in samples:
+        counts = pooled.get(sample.sample_id)
+        if counts is None:
+            outcome, iou, predicted_any = "unlabeled", None, False
+        else:
+            outcome, iou, predicted_any = _sample_outcome(counts)
+        verdicts.append(
+            SegmentationVerdict(
+                sample_id=sample.sample_id,
+                group_key=sample.group_key,
+                external_id=sample.external_id,
+                label=sample.label,
+                notes=sample.notes,
+                score=sample.agg_score,
+                predicted_defect=predicted_any,
+                outcome=outcome,
+                iou=iou,
+            )
+        )
+    verdicts.sort(key=lambda verdict: verdict.score, reverse=True)
+    return SegmentationOutcomes(threshold_rule=LABEL_MAP_RULE, samples=verdicts)
+
+
+def label_plane(
+    conn: sqlite3.Connection, experiment: Experiment, image_id: int, *, truth: bool
+) -> np.ndarray | None:
+    """One image's label map for drawing, as float32 class indices in the source frame.
+
+    `truth=False` is what the method wrote; `truth=True` is the image's truth over the run's
+    pinned classes, with a pixel of a class the run does not know as NaN — ignored, not
+    background. `None` when there is no such map: no prediction, or truth that does not
+    answer for every pinned class.
+    """
+    if truth:
+        found = _truths_for(conn, experiment, [image_id]).get(image_id)
+        if found is None:
+            return None
+        labels = load_label_map(found, _classes(experiment)).astype(np.float32)
+        labels[labels == IGNORE_INDEX] = np.nan
+        return labels
+    predicted = read_label_map(label_map_path(Path(experiment.artifact_dir) / "maps", image_id))
+    return None if predicted is None else predicted.astype(np.float32)

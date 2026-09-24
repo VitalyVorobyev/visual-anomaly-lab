@@ -109,9 +109,10 @@ because pills mark in-page state.
 
 **Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. Every
 run needs a built profile; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
-class with a reference and something to test on (from the coverage read) and a split of references
-(`splitServesTask`). With one task the band is a checklist. With two, the shared first step comes first,
-then each task shows a check or the link to its next step.
+class with a reference and something to test on (from the coverage read) and a split of references;
+`semantic_segmentation` (named *Segment*) needs the same annotated class and a `class_stratified` or
+`manual` split (`splitServesTask`). With one task the band is a checklist. With more, the shared first
+step comes first, then each task shows a check or the link to its next step.
 
 **Vocabulary.** A *region profile* is the crop-and-resize recipe built on Prepare; *Colour* is the
 experiment's colour option; the *threshold* is a run's image-score cut; the *map cut* is the fraction of a
@@ -218,19 +219,30 @@ rows carrying a verdict. An optional `peak` layer draws the stored argmax and it
 **Results by task** (`routes/experiment/taskViews.tsx`). The shell is shared — run bar, tab set,
 `ResultsState`, the gallery's grid, the sample page — and so is the data flow: `useVerdicts(experiment,
 state, task)` hands every screen the same classified rows, from the threshold report for `anomaly` or
-from `GET /api/experiments/{id}/segmentation-outcomes?subset=` for `few_shot_segmentation`, and asks
+from `GET /api/experiments/{id}/segmentation-outcomes?subset=` for both segmentation tasks, and asks
 neither until the task is known. What the registry holds per task is the gallery's outcome strip and rank
 words, the note saying what an outcome is measured against, and the bodies of Overview, the metric tables
 and Benchmark. The outcome vocabularies are disjoint (`tp`/`fp`/`tn`/`fn`; `hit`/`low_iou`/`miss`/
-`false_presence`/`correct_absence`), so one URL parameter and one "mistakes" set serve both. A few-shot
+`false_presence`/`correct_absence`, and `false_class` for a supervised run), so one URL parameter and
+one "mistakes" set serve every task. A few-shot
 Overview promotes IoU, Dice, presence ROC-AUC and the rate flagged on absent images, and tallies outcomes
 per sample. Its tables are `segmentationRows`, with present / absent / unlabelled image counts. Its
 Benchmark shows present samples by IoU band and absent samples by outcome. How overlap moves with the
-number of references is a question across runs, and is open. A `semantic_segmentation` run has no
-per-sample verdict: `useVerdicts` ranks the results page's rows under the neutral outcome `scored`, its
-strip is `all` alone, Overview promotes mean IoU, pixel accuracy, mean class accuracy and
-frequency-weighted IoU, and its tables are `semanticRows` — the summary, then one IoU per pinned class,
-with labelled / unlabelled image counts. Its split list is every strategy but `few_shot`.
+number of references is a question across runs, and is open. A `semantic_segmentation` run's verdict
+is per sample, pooled over its labelled images ([evaluation](evaluation.md)): `miss`, `false_class`,
+`false_presence`, `correct_absence`, or `hit` / `low_iou` by mean IoU. Overview promotes mean IoU,
+pixel accuracy, mean class accuracy and frequency-weighted IoU, then a lab-ui `Table` of each class's
+IoU across the scored subsets (background and the mean beside them), the stored confusion matrix of the
+current subset drawn as a `Table` whose cells are each true row's share, toned `normal` on the diagonal
+and `defect` off it at five token strengths, and the outcome tally. Its tables are `semanticRows` — the
+summary, then one IoU per pinned class, with labelled / unlabelled image counts — and its Benchmark shows
+samples by mean-IoU band and absent samples by outcome. Its split list is every strategy but `few_shot`.
+On the sample page its layers are label maps, not a cut and a mask: `GET
+/api/experiments/{id}/images/{iid}/labels[?truth=true]` serves the method's map or the truth over the
+pinned classes as a value plane of class indices, and `LabelLayer` paints it on a canvas inside the
+`SampleStage` (`components/viewer/labelPaint.ts`) — prediction solid (faint fill, full outline), truth
+dashed (outline only), background and ignored pixels clear. Class `i` is lab-ui's `seriesColour(i - 1)`,
+by pinned position, never the dataset's own label colour, and the overlay row carries the legend.
 
 **Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
 where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each

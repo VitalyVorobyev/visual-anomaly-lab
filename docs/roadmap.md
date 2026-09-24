@@ -85,8 +85,10 @@ application.
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix
   (mean IoU, per-class IoU and accuracy, pixel accuracy, frequency-weighted IoU). `color_classifier` is
   the torch-free floor, and `class_stratified` draws a split for it from annotated samples, stratified
-  by the classes each shows. Still open: result screens beyond the metric tables, a deep method, and
-  its public gate.
+  by the classes each shows. Its results read in its own terms: IoU per class across subsets, the
+  confusion matrix drawn, a per-sample verdict (`false_class` beside the few-shot outcomes), the label
+  maps over the image — prediction solid, truth dashed, one palette colour per pinned class — and the
+  task in the dataset's readiness band. Still open: a deep method, and its public gate.
 - **Detection** (ADR-0039) follows, and reuses the same seams.
 
 ## Deliberately not built

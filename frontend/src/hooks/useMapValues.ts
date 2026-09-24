@@ -13,7 +13,7 @@
 import { useQuery } from "@tanstack/react-query";
 
 import { fetchPlane, type ValuePlane } from "@vitavision/lab-ui";
-import { anomalyMapValuesUrl, sourceValuesUrl } from "../api/valuesUrl";
+import { anomalyMapValuesUrl, labelPlaneUrl, sourceValuesUrl } from "../api/valuesUrl";
 
 const FOREVER = {
   staleTime: Number.POSITIVE_INFINITY,
@@ -51,5 +51,27 @@ export function useSourceValues(
     queryFn: () => fetchPlane(sourceValuesUrl(experimentId as number, imageId as number)),
     enabled: enabled && experimentId !== undefined && imageId !== undefined,
     ...FOREVER,
+  });
+}
+
+/**
+ * A supervised run's label map for one image — `truth` for the annotation over the run's
+ * pinned classes. Fetched when its layer is on rather than on hover: it is the picture, not a
+ * readout. Unlike the planes above it can change under an open run — inference again, or an
+ * annotation completed — so it is refetched when the sample is opened again rather than kept
+ * for the session. A 404 is an answer (no label map, or truth that does not answer for every
+ * class), so it is not retried.
+ */
+export function useLabelPlane(
+  experimentId: number | undefined,
+  imageId: number | undefined,
+  truth: boolean,
+  enabled: boolean,
+) {
+  return useQuery<ValuePlane>({
+    queryKey: ["values", "labels", experimentId, imageId, truth],
+    queryFn: () => fetchPlane(labelPlaneUrl(experimentId as number, imageId as number, truth)),
+    enabled: enabled && experimentId !== undefined && imageId !== undefined,
+    retry: false,
   });
 }

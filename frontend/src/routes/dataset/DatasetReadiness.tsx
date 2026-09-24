@@ -1,10 +1,11 @@
 /**
  * One line beside "New experiment" saying whether pressing it can lead anywhere yet — per task.
  *
- * Every run needs a built region profile; an anomaly run needs a split, and a few-shot run a
- * class with references and a split of them (ADR-0040). The band says it before the create
+ * Every run needs a built region profile; an anomaly run needs a split, a few-shot run a
+ * class with references and a split of them (ADR-0040), and a supervised segmentation run an
+ * annotated class and a split of annotated samples (ADR-0039). The band says it before the create
  * form does, in the order the steps have to be done, and each step is the link that does it.
- * With one task it reads as a checklist. With two, the shared first step comes first, and
+ * With one task it reads as a checklist. With more, the shared first step comes first, and
  * then each task says whether it is ready or what it needs next. Held to one line with no
  * wrap, because the band's height is fixed by construction.
  */
@@ -31,6 +32,7 @@ const STEP: Record<ReadinessStep, { label: string; path: string }> = {
 const TASK_NAME: Partial<Record<Task, string>> = {
   anomaly: "Anomaly",
   few_shot_segmentation: "Few-shot",
+  semantic_segmentation: "Segment",
 };
 
 const LINK = cn("rounded-sm transition-colors hover:text-signal", focusRing);

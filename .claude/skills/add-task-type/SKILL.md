@@ -64,10 +64,12 @@ has annotation, and whether it is ready for a task is a readiness check.
    `Capabilities.tasks`. It must still cost one module and one registry entry. If it needs a route,
    a schema or TypeScript, the boundary is wrong — fix the boundary.
 7. **Result screens.** The shared shell stays — run bar, subset, `ResultsState` in the URL, the one
-   `SampleStage`. Predictions and truth are drawn with `VectorLayer`
-   (`frontend/src/components/viewer/`): truth dashed, predictions solid, toned per shape (`normal`
-   for a match, `defect` for a false positive, `warn` for a miss). What branches on the task is the
-   body of Overview and Benchmark, not the screens around it.
+   `SampleStage`. Truth is dashed and predictions solid: shapes with `VectorLayer`
+   (`frontend/src/components/viewer/`), toned per shape (`normal` for a match, `defect` for a false
+   positive, `warn` for a miss); a label map with `LabelLayer`, served as class indices and painted in
+   lab-ui's series palette by pinned class position (`labelPaint.ts`). What branches on the task is the
+   body of Overview and Benchmark, the outcome strip, and the sample page's layers — not the screens
+   around them.
 
 ## Tests that prove the seam, not just the feature
 
