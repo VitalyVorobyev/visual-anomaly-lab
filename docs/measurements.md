@@ -294,10 +294,11 @@ defects are also a hard target for a method built for objects, which is why a cr
 dataset is the next gate.
 
 
-## Supervised segmentation — predeclared, not yet run
+## Supervised segmentation — `dino_linear_seg` stays experimental; neither method draws a usable defect mask
 
-The first supervised segmentation gate (ADR-0039), predeclared below before it runs.
-`scripts/semantic-public-gate.py`.
+The first supervised segmentation gate (ADR-0039), predeclared below before it ran.
+`scripts/semantic-public-gate.py`, 12 runs in 12.5 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1,
+Pillow 12.3.0).
 
 **Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
 divide. The dataset is read as a semantic segmentation benchmark of one class, `defect`: VisA's pixel
@@ -326,3 +327,37 @@ seeds, per class.
   move IoU by more; and it must hold on both classes because the few-shot gate's lead came from one class
   alone.
 - `color_classifier` is the floor and stays experimental whatever the result.
+
+**Result.** Test subset, means over three seeds; the spread is across seeds. Outcomes are samples pooled
+over the three seeds (90 defect and 900 or 903 normal samples per class).
+
+| Class | Method | Mean IoU | ± seeds | Background IoU | Pixel accuracy | Mean class accuracy | ms/image | Fit s |
+|---|---|---|---|---|---|---|---|---|
+| `candle` | `color_classifier` | 0.0007 | 0.0002 | 0.647 | 0.647 | 0.942 | 32 | 8 |
+| | `dino_linear_seg` | 0.0829 | 0.0208 | 0.998 | 0.998 | 0.834 | 83 | 67 |
+| `pcb1` | `color_classifier` | 0.0038 | 0.0007 | 0.853 | 0.854 | 0.805 | 33 | 8 |
+| | `dino_linear_seg` | 0.0388 | 0.0097 | 0.984 | 0.984 | 0.876 | 88 | 59 |
+
+| Class | Method | Defects: hit / low IoU / miss | Normals: correct absence / false presence |
+|---|---|---|---|
+| `candle` | `color_classifier` | 0 / 88 / 2 | 0 / 900 |
+| | `dino_linear_seg` | 2 / 84 / 4 | 80 / 820 |
+| `pcb1` | `color_classifier` | 0 / 90 / 0 | 0 / 903 |
+| | `dino_linear_seg` | 6 / 78 / 6 | 0 / 903 |
+
+Peak RSS: 0.17 GB (`color_classifier`), 1.9–2.0 GB (`dino_linear_seg`).
+
+**Verdict, by the rule.** `dino_linear_seg` leads `color_classifier` by 0.082 mean IoU on `candle` and by
+0.035 on `pcb1`. The margin of 0.05 holds on one class, not both, so **`dino_linear_seg` stays
+experimental**.
+
+**What the gate says beyond its rule.** Neither method draws a usable mask of a VisA defect. The floor
+labels a third of `candle`'s pixels and a seventh of `pcb1`'s as defect; the deep head is far more
+precise but still marks some defect on nearly every normal image, and reaches an IoU of 0.5 on 2 of 90
+defect samples on `candle` and 6 of 90 on `pcb1`. The cause in the head's case is visible in its own training log: `plan_pixels`
+samples labelled pixels evenly in raster order, so a class covering a fraction of a percent of each frame
+gets almost nothing — 28–33 of 130 900 sampled pixels on `candle` and 93–109 on `pcb1` were defect — and
+`inverse_frequency` weighting then weighs each of those few pixels 1 200–4 500 times a background one, which buys recall
+(mean class accuracy 0.83–0.88) at the price of false presence everywhere. The floor, which samples each
+class separately, saw 30 000–100 000 defect pixels and still could not separate defect by colour. The gate
+therefore measures the sampling rule as much as the head.
