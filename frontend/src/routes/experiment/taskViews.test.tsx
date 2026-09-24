@@ -112,7 +112,66 @@ describe("the task views", () => {
     // A class nobody drew or predicted has no IoU, and reads as a dash rather than a zero.
     expect(screen.getByText("IoU · stain").nextElementSibling?.textContent).toBe("—");
     expect(screen.queryByText("Foreground IoU")).toBeNull();
-    expect(view.filters.map((filter) => filter.id)).toEqual(["all"]);
+    expect(view.filters.find((filter) => filter.id === "mistakes")?.outcomes).toEqual([
+      "miss",
+      "false_class",
+      "false_presence",
+      "low_iou",
+    ]);
+  });
+
+  it("draws a supervised run's IoU per class across subsets and its confusion matrix", () => {
+    const view = taskView("semantic_segmentation");
+    const entry = (subset: "val" | "test", scratch: number | null) => ({
+      subset,
+      computed_at: "2026-09-24T00:00:00Z",
+      ground_truth_digest: null,
+      ground_truth_stale: false,
+      metrics: {
+        classes: ["scratch", "stain"],
+        mean_iou: 0.5,
+        per_class_iou: { scratch, stain: null },
+        background_iou: 0.9,
+        pixel_accuracy: 0.95,
+        mean_class_accuracy: 0.6,
+        frequency_weighted_iou: 0.9,
+        confusion: {
+          classes: ["background", "scratch", "stain"],
+          counts: [
+            [90, 10, 0],
+            [5, 15, 0],
+            [0, 0, 0],
+          ],
+        },
+        images: { labelled: 4, unlabeled: 0, without_prediction: 0 },
+      },
+    });
+    render(
+      withProviders(
+        <MemoryRouter>
+          {view.Scored({
+            ...props(),
+            subsets: ["val", "test"],
+            metrics: [entry("val", 0.25), entry("test", null)],
+            state: { ...EMPTY_RESULTS, subset: "test" },
+          })}
+        </MemoryRouter>,
+      ),
+    );
+    const iou = screen.getByRole("table", { name: "IoU per class and subset" });
+    expect(iou.textContent).toContain("IoU · val");
+    expect(iou.textContent).toContain("IoU · test");
+    expect(iou.textContent).toContain("0.250");
+    // scratch has no IoU on test, and stain none anywhere: dashes, never zeros.
+    expect(iou.textContent?.match(/—/g)?.length).toBe(3);
+
+    const confusion = screen.getByRole("table", { name: "Confusion matrix" });
+    // Each cell is its share of the true row; a class with no true pixels is dashes.
+    expect(confusion.textContent).toContain("75.0%");
+    expect(confusion.textContent).toContain("25.0%");
+    expect(screen.getByTitle("15 pixels").className).toContain("bg-normal");
+    expect(screen.getByTitle("5 pixels").className).toContain("bg-defect");
+    expect(screen.getByText("Confusion · test")).toBeTruthy();
   });
 
   it("gives each task its own outcome strip and rank words", () => {

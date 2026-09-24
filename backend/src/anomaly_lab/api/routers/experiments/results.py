@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
-from fastapi import APIRouter, Query, Request
+from fastapi import APIRouter, HTTPException, Query, Request, Response
 
 from anomaly_lab.api.routers.experiments.views import (
     ArtifactFile,
@@ -29,11 +29,13 @@ from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Label, Subset, Task
 from anomaly_lab.errors import ConflictError
+from anomaly_lab.eval import semantic
 from anomaly_lab.eval.localization import tolerance_px
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.eval.segmentation import SegmentationOutcomes, sample_outcomes
 from anomaly_lab.eval.threshold import ThresholdReport, classify, report, suggest_threshold
+from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.base import evenly_spaced
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -68,7 +70,7 @@ def get_results(
 
 @router.get(
     "/{experiment_id}/segmentation-outcomes",
-    summary="Each sample's few-shot segmentation outcome, ranked by presence",
+    summary="Each sample's segmentation outcome, ranked by score",
 )
 def get_segmentation_outcomes(
     request: Request,
@@ -77,18 +79,68 @@ def get_segmentation_outcomes(
 ) -> SegmentationOutcomes:
     """What a segmentation run did to each sample, for the gallery and the sample page.
 
-    The few-shot counterpart of the threshold report, computed per request from the stored
-    maps and masks under the evaluator's rule (ADR-0040). An anomaly run is refused: its
-    outcomes are the threshold report's.
+    The segmentation counterpart of the threshold report, computed per request from what
+    the run stored. A few-shot run is read against its class under the evaluator's rule
+    (ADR-0040); a supervised run's label maps against every pinned class, with one more
+    outcome, `false_class` (ADR-0039). An anomaly run is refused: its outcomes are the
+    threshold report's.
     """
     experiment, settings = load(request, experiment_id)
-    if experiment.task is not Task.FEW_SHOT_SEGMENTATION:
+    if experiment.task not in (Task.FEW_SHOT_SEGMENTATION, Task.SEMANTIC_SEGMENTATION):
         raise ConflictError(
-            f"experiment {experiment.id} is a {experiment.task.value} run; its outcomes are "
-            "the threshold report's"
+            f"experiment {experiment.id} is a {experiment.task.value} run; it has no "
+            "segmentation outcomes"
         )
     with connection(settings.db_path) as conn:
+        if experiment.task is Task.SEMANTIC_SEGMENTATION:
+            return semantic.sample_outcomes(conn, experiment, subset)
         return sample_outcomes(conn, experiment, subset)
+
+
+@router.get(
+    "/{experiment_id}/images/{image_id}/labels",
+    summary="One image's label map, predicted or true, as class indices",
+    response_class=Response,
+    responses={200: {"content": {"application/octet-stream": {}}}},
+)
+def read_label_plane(
+    request: Request,
+    experiment_id: int,
+    image_id: int,
+    truth: bool = Query(
+        default=False,
+        description=(
+            "The image's truth over the run's pinned classes instead of the method's label "
+            "map. A pixel of a class the run does not know is NaN."
+        ),
+    ),
+) -> Response:
+    """A supervised segmentation run's class per pixel, for the sample page to draw.
+
+    The value-plane format (handbook diagnostics.md): 0 is background and `i + 1` is the
+    run's `classes[i]`. Served as indices rather than a picture because a class's colour is
+    the interface's, from the design system's palette; a large frame arrives decimated by an
+    integer stride, so every value sent is a class the method or the annotator gave.
+    """
+    experiment, settings = load(request, experiment_id)
+    if experiment.task is not Task.SEMANTIC_SEGMENTATION:
+        raise ConflictError(
+            f"experiment {experiment.id} is a {experiment.task.value} run; it wrote no label maps"
+        )
+    with connection(settings.db_path) as conn:
+        scored = results_repo.get_image_result(conn, experiment.id, image_id) is not None
+        plane = semantic.label_plane(conn, experiment, image_id, truth=truth) if scored else None
+    if plane is None:
+        what = "no truth for every pinned class" if truth else "no label map"
+        raise HTTPException(
+            status_code=404, detail=f"image {image_id} has {what} in experiment {experiment.id}"
+        )
+    return Response(
+        content=encode_plane(plane),
+        media_type="application/octet-stream",
+        # Revalidated: re-running inference or completing an annotation changes the answer.
+        headers={"Cache-Control": "no-cache"},
+    )
 
 
 @router.get("/{experiment_id}/threshold", summary="Confusion matrix at one threshold")

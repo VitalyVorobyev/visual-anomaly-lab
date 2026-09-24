@@ -20,7 +20,7 @@ from anomaly_lab.annotations.class_truth import (
 )
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.eval.semantic import ConfusionAccumulator, SemanticEvalError
+from anomaly_lab.eval.semantic import ConfusionAccumulator, SemanticEvalError, _sample_outcome
 from anomaly_lab.media.decode import sha256_of
 from anomaly_lab.models.base import IGNORE_INDEX, Device, InferContext, NullReporter
 from anomaly_lab.models.diagnostics import DiagnosticWriter
@@ -265,3 +265,36 @@ def test_a_label_map_is_stored_in_the_source_frame_and_checked(tmp_path: Path) -
         ctx.write_label_map(7, np.full((2, 4), 3), classes=2)
     with pytest.raises(ValueError, match="class indices"):
         ctx.write_label_map(7, np.zeros((2, 4), dtype=np.float32), classes=2)
+
+
+def _pooled(truth: np.ndarray, predicted: np.ndarray) -> np.ndarray:
+    accumulator = ConfusionAccumulator(CLASSES)
+    accumulator.add(truth, predicted, inference_ms=0.0)
+    return accumulator.counts
+
+
+def test_a_sample_verdict_reads_its_own_confusion_matrix() -> None:
+    truth, predicted = _two_classes_and_background()
+    # Both classes found; scratch 1/3, stain 3/5 — a mean of 7/15, under the 0.5 bar.
+    outcome, iou, predicted_any = _sample_outcome(_pooled(truth, predicted))
+    assert (outcome, predicted_any) == ("low_iou", True)
+    assert iou == pytest.approx((1 / 3 + 3 / 5) / 2)
+
+    assert _sample_outcome(_pooled(truth, truth)) == ("hit", 1.0, True)
+
+    # Scratch shown and never found: a miss, whatever else went right.
+    no_scratch = np.where(predicted == 1, 0, predicted).astype(np.uint8)
+    assert _sample_outcome(_pooled(truth, no_scratch))[0] == "miss"
+
+    # Only stain shown, but scratch predicted too: a class it does not show.
+    stain_only = np.where(truth == 1, 0, truth).astype(np.uint8)
+    extra = stain_only.copy()
+    extra[0, 3] = 1
+    outcome, iou, _ = _sample_outcome(_pooled(stain_only, extra))
+    assert outcome == "false_class"
+    # Over stain (4/4) and scratch (0/1): the extra class counts against the mean.
+    assert iou == pytest.approx(0.5)
+
+    empty = np.zeros_like(truth)
+    assert _sample_outcome(_pooled(empty, empty)) == ("correct_absence", None, False)
+    assert _sample_outcome(_pooled(empty, predicted)) == ("false_presence", None, True)

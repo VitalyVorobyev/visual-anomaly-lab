@@ -23,6 +23,12 @@ until its output has been reviewed.
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
       `ButtonLink` there, release, and replace all five.
 
+- [ ] **A segmentation run's sample page opens on its label map** (S): the overlay defaults in
+      `api/resultsState.ts` are the anomaly ones — heatmap and truth on, prediction off — so on a
+      `semantic_segmentation` run the heatmap covers the label map until it is toggled, and the
+      gallery tiles' overlay chips are the anomaly set. Make the defaults the task's, keeping an
+      untouched view's URL clean (a default is not written).
+
 ## Few-shot segmentation
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
@@ -44,13 +50,9 @@ Later, each behind a measured gate:
 ## Supervised tasks
 
 Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, label targets, label
-maps, the confusion-matrix evaluator, the `color_classifier` floor and the `class_stratified` split. What remains, in dependency
-order, one PR each:
+maps, the confusion-matrix evaluator, the `color_classifier` floor, the `class_stratified` split and
+its result screens. What remains, in dependency order, one PR each:
 
-- [ ] **Segmentation result screens** (M): through `taskViews.tsx` — a per-class IoU table across
-      subsets, the stored confusion matrix drawn, the label map over the image on `SampleStage`
-      (truth dashed, prediction solid), a per-sample verdict for the gallery in place of the neutral
-      `scored`, and the task in the dataset readiness band.
 - [ ] **A deep segmentation method on the frozen-DINO path** (M): a linear head on the shared patch
       features, fitted through `label_targets`, writing label maps; `dl`-gated tests, seed
       reproducibility in both directions, and one module plus one registry entry.

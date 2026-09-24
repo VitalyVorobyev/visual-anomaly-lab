@@ -16,6 +16,8 @@ import type { ResultsState } from "../../api/resultsState";
 import { cutValue } from "../../api/resultsState";
 import { Slider, ToggleChip } from "@vitavision/lab-ui";
 
+import { classColour } from "../../components/viewer/labelPaint";
+
 /**
  * The colours the *server* draws these layers in, repeated here for the swatches.
  *
@@ -34,13 +36,23 @@ export function OverlayControls({
   range,
   hasMask,
   hasMap,
+  classes,
 }: {
   state: ResultsState;
   onChange: (next: Partial<ResultsState>) => void;
   range: MapScale | null | undefined;
   hasMask: boolean;
   hasMap: boolean;
+  /**
+   * A supervised segmentation run's pinned classes (ADR-0039). Given, the prediction and
+   * the truth are its label maps — one colour per class, a legend instead of a swatch, and
+   * no cut, because the method's classes are its own decision.
+   */
+  classes?: readonly string[];
 }) {
+  if (classes !== undefined) {
+    return <LabelControls state={state} onChange={onChange} hasMap={hasMap} classes={classes} />;
+  }
   const cut = cutValue(state, range);
 
   return (
@@ -114,6 +126,65 @@ export function OverlayControls({
           />
         </div>
       )}
+    </div>
+  );
+}
+
+function LabelControls({
+  state,
+  onChange,
+  hasMap,
+  classes,
+}: {
+  state: ResultsState;
+  onChange: (next: Partial<ResultsState>) => void;
+  hasMap: boolean;
+  classes: readonly string[];
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+      <div className="flex flex-wrap items-center gap-1.5">
+        <ToggleChip
+          checked={state.region}
+          onCheckedChange={(region) => onChange({ region })}
+          title="The label map the method wrote, drawn solid"
+        >
+          prediction
+        </ToggleChip>
+        <ToggleChip
+          checked={state.truth}
+          onCheckedChange={(truth) => onChange({ truth })}
+          title="The annotation over the run's classes, drawn dashed"
+        >
+          ground truth
+        </ToggleChip>
+        <ToggleChip
+          checked={state.heatmap}
+          disabled={!hasMap}
+          onCheckedChange={(heatmap) => onChange({ heatmap })}
+          swatch={HEATMAP_SWATCH}
+          title={
+            hasMap
+              ? "How strongly each pixel was given any class"
+              : "This run recorded no foreground map"
+          }
+        >
+          foreground
+        </ToggleChip>
+      </div>
+      <ul aria-label="Classes" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+        {classes.map((name, index) => (
+          <li key={name} className="flex items-center gap-1.5 text-fg-muted">
+            <span
+              aria-hidden
+              className="inline-block size-2.5 rounded-sm"
+              style={{ backgroundColor: classColour(index + 1) }}
+            />
+            {name}
+          </li>
+        ))}
+        <li className="text-fg-subtle">prediction solid · truth dashed</li>
+      </ul>
     </div>
   );
 }

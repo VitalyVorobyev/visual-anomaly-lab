@@ -30,10 +30,11 @@ import { parseTab } from "./experimentTabs";
 /**
  * The verdict buckets the server tags rows with. `all` is the absence of a filter.
  *
- * Two vocabularies, one per task, and disjoint: an anomaly run is `tp`/`fp`/`tn`/`fn` at a
- * threshold (the threshold report), a few-shot segmentation run is `hit`/`low_iou`/`miss`/
- * `false_presence`/`correct_absence` against its class truth (ADR-0040). Disjoint is what
- * lets one URL parameter and one "mistakes" set serve both.
+ * Two vocabularies, disjoint: an anomaly run is `tp`/`fp`/`tn`/`fn` at a threshold (the
+ * threshold report); a segmentation run is `hit`/`low_iou`/`miss`/`false_presence`/
+ * `correct_absence` against its class truth (ADR-0040), and a supervised one adds
+ * `false_class`, a class predicted on a sample that does not show it (ADR-0039). Disjoint is
+ * what lets one URL parameter and one "mistakes" set serve every task.
  */
 export const OUTCOMES = [
   "tp",
@@ -43,6 +44,7 @@ export const OUTCOMES = [
   "hit",
   "low_iou",
   "miss",
+  "false_class",
   "false_presence",
   "correct_absence",
   "unlabeled",
@@ -56,6 +58,7 @@ export const MISTAKE_OUTCOMES: readonly Outcome[] = [
   "fp",
   "fn",
   "miss",
+  "false_class",
   "false_presence",
   "low_iou",
 ];

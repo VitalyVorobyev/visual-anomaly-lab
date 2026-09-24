@@ -32,6 +32,13 @@ from anomaly_lab.models.preprocessing import PreprocessingConfig
 
 from .conftest import Fixture, create_experiment, run_handler
 
+
+def decode_plane(payload: bytes) -> np.ndarray:
+    """A one-channel value plane (`media/values.py`) as a `(height, width)` array."""
+    width, height = (int(value) for value in np.frombuffer(payload[4:12], dtype="<u4"))
+    return np.frombuffer(payload[24:], dtype="<f4").reshape(height, width)
+
+
 SIZE = 16
 RED, GREEN = (200, 30, 30), (30, 190, 40)
 
@@ -241,6 +248,38 @@ def test_the_whole_supervised_slice_runs_without_torch(
     assert detail["metrics"][0]["ground_truth_stale"] is False
     ranked = client.get(f"/api/experiments/{created['id']}/results", params={"subset": "test"})
     assert ranked.status_code == 200 and len(ranked.json()["samples"]) == total
+
+    # Each sample's verdict, from its own label maps: nothing thresholded, every one labelled.
+    outcomes = client.get(
+        f"/api/experiments/{created['id']}/segmentation-outcomes", params={"subset": "test"}
+    )
+    assert outcomes.status_code == 200, outcomes.text
+    body = outcomes.json()
+    assert body["threshold_rule"] == "the method's label map, as written"
+    verdicts = body["samples"]
+    assert len(verdicts) == len(ranked.json()["samples"])
+    allowed = {"hit", "low_iou", "miss", "false_class", "false_presence", "correct_absence"}
+    assert {verdict["outcome"] for verdict in verdicts} <= allowed
+    assert any(verdict["outcome"] == "hit" for verdict in verdicts)
+    assert all(
+        verdict["iou"] is None
+        for verdict in verdicts
+        if verdict["outcome"] in ("correct_absence", "false_presence")
+    )
+
+    # The label maps as value planes, predicted and true, in the run's numbering.
+    image_id = seeded.defect_image_ids[-1]
+    base = f"/api/experiments/{created['id']}/images/{image_id}/labels"
+    predicted = decode_plane(client.get(base).content)
+    truth = decode_plane(client.get(base, params={"truth": "true"}).content)
+    assert predicted.shape == truth.shape
+    assert set(np.unique(predicted)) <= {0.0, 1.0}
+    assert set(np.unique(truth)) == {0.0, 1.0}
+    unscored = seeded.defect_image_ids[0]  # in train, so never scored
+    missing = client.get(f"/api/experiments/{created['id']}/images/{unscored}/labels")
+    assert missing.status_code == 404
+    refused = client.get(f"/api/experiments/{anomaly['id']}/images/{image_id}/labels")
+    assert refused.status_code == 409
 
     # An anomaly fit is still given no ground truth of either kind.
     seen: dict[str, Any] = {}

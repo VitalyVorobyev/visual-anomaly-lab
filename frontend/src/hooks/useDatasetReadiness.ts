@@ -3,7 +3,8 @@
  *
  * Every run needs a *built* region profile. An anomaly run needs a split drawn or adopted for
  * it; a few-shot run needs a class with a reference and something to test on, and a split of
- * references (ADR-0040). This reads the facts the create form checks, with the same rule for
+ * references (ADR-0040); a supervised segmentation run needs the same annotated class and a
+ * split of annotated samples, drawn by class or listed by hand (ADR-0039). This reads the facts the create form checks, with the same rule for
  * "built" (a build report exists and no image failed), so the band and the form cannot
  * disagree about whether a dataset is ready.
  */
@@ -41,7 +42,14 @@ export interface TaskReadiness {
 export type ReadinessStep = "prepare" | "split" | "annotate" | "references";
 
 /** The tasks the band speaks for, in the order it names them. */
-export const READINESS_TASKS: Task[] = ["anomaly", "few_shot_segmentation"];
+export const READINESS_TASKS: Task[] = [
+  "anomaly",
+  "few_shot_segmentation",
+  "semantic_segmentation",
+];
+
+/** The tasks that learn from annotation, and so wait on a class that has some. */
+const ANNOTATED_TASKS: Task[] = ["few_shot_segmentation", "semantic_segmentation"];
 
 /**
  * Which split strategies a task trains on: an anomaly run on a drawn or adopted partition
@@ -89,14 +97,15 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
   const offered = READINESS_TASKS.filter((task) =>
     (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(task)),
   );
-  // A class a few-shot run can use has a reference to learn from and something else to test on.
+  // A class a segmentation run can use has an annotated sample to learn from and another to
+  // test on — for few-shot a reference, for a supervised run a training image.
   const usableClass = (coverage.data ?? []).some(
     (entry) => entry.present >= 1 && entry.present + entry.absent >= 2,
   );
   const tasks = offered.map((task) => {
     const missing: ReadinessStep[] = [];
     if (builtProfiles === 0) missing.push("prepare");
-    if (task === "few_shot_segmentation" && !usableClass) missing.push("annotate");
+    if (ANNOTATED_TASKS.includes(task) && !usableClass) missing.push("annotate");
     if (!(splits.data ?? []).some((split) => splitServesTask(split, task))) {
       missing.push(task === "few_shot_segmentation" ? "references" : "split");
     }
@@ -108,7 +117,7 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
       profiles.data !== undefined &&
       splits.data !== undefined &&
       catalog.data !== undefined &&
-      (!offered.includes("few_shot_segmentation") || coverage.data !== undefined) &&
+      (!offered.some((task) => ANNOTATED_TASKS.includes(task)) || coverage.data !== undefined) &&
       builds.every((build) => !build.isPending),
     profiles: profiles.data?.length ?? 0,
     builtProfiles,

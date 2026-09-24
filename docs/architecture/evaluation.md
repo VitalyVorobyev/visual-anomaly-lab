@@ -293,6 +293,18 @@ map as the method wrote it (`maps/<id>.labels.png`, source frame) and the label 
     the mean; its own `background_iou` sits beside them;
   - `pixel_accuracy` and `frequency_weighted_iou`, which count background, as their definitions do;
   - `timing`.
+- **Per sample, on request.** `semantic.sample_outcomes` (the same
+  `GET /api/experiments/{id}/segmentation-outcomes`, with `threshold_rule` saying the label map is read as
+  written) pools a sample's labelled images into one `(classes + 1)²` matrix — never pixels — and reads
+  it: shows no class → `correct_absence` or `false_presence`; a class it shows found nowhere → `miss`; a
+  class predicted that it does not show → `false_class`; otherwise `hit` or `low_iou` by mean IoU at 0.5.
+  The mean IoU over the classes shown or predicted travels as `iou`, `None` when it shows none; a sample
+  with no labelled image is `unlabeled`. Computed from the stored maps and never stored.
+- **Label maps for drawing.** `GET /api/experiments/{id}/images/{iid}/labels` serves an image's stored
+  label map, and `?truth=true` its truth over the pinned classes, as a value plane of class indices
+  (`media/values.py`; a truth pixel of a class the run does not know is NaN). Only for a
+  `semantic_segmentation` run (409 otherwise) and a scored image (404 otherwise); colour is the
+  interface's.
 - **The ground-truth digest** hashes the pinned class list and each image's pinned answer.
 
 ## Run audit

@@ -27,3 +27,9 @@ export function diagnosticValuesUrl(experimentId: number, entry: DiagnosticEntry
   }
   return `${apiBaseUrl}/api/experiments/${experimentId}/diagnostics/payload?${query.toString()}`;
 }
+
+/** A supervised run's label map for one image, as class indices: the method's, or the truth. */
+export function labelPlaneUrl(experimentId: number, imageId: number, truth: boolean): string {
+  const query = truth ? "?truth=true" : "";
+  return `${apiBaseUrl}/api/experiments/${experimentId}/images/${imageId}/labels${query}`;
+}

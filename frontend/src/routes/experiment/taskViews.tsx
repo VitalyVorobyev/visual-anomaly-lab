@@ -7,15 +7,16 @@
  * that is all this registry holds: the gallery's outcome filters and the words around them,
  * and the bodies of Overview and Benchmark. An anomaly run reads a threshold and a
  * confusion matrix; a few-shot segmentation run reads overlap against its class and what
- * happened on each image (ADR-0040); a supervised segmentation run reads the summary of its
- * per-class confusion matrix (ADR-0039). No body is reached except through here.
+ * happened on each sample (ADR-0040); a supervised segmentation run reads each class's IoU
+ * across subsets, its confusion matrix drawn, and what happened on each sample (ADR-0039).
+ * No body is reached except through here.
  */
 
 import type { ReactNode } from "react";
 
 import type { MetricSummary, SampleVerdict, Subset, Task } from "../../api/client";
 import type { MetricValue } from "../../api/metrics";
-import { segmentationRows, semanticRows, timingRows } from "../../api/metrics";
+import { formatScore, segmentationRows, semanticRows, timingRows } from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES } from "../../api/resultsState";
 import {
@@ -27,7 +28,11 @@ import {
   Panel,
   SkeletonRows,
   StackedBars,
+  Table,
+  cn,
+  type Column,
 } from "@vitavision/lab-ui";
+import { classColour } from "../../components/viewer/labelPaint";
 import { BenchmarkTab } from "./BenchmarkTab";
 import { Headline, MetricList, Metrics } from "./OverviewTab";
 import { OUTCOME_TONE, Results } from "./ResultsPanel";
@@ -172,7 +177,18 @@ const FEW_SHOT: TaskView = {
       body={(subset, values) => <SegmentationSubset subset={subset} metrics={values} />}
     />
   ),
-  Benchmark: ({ verdicts }) => <OverlapDistribution verdicts={verdicts} />,
+  Benchmark: ({ verdicts }) => (
+    <OverlapDistribution
+      verdicts={verdicts}
+      words={{
+        present: "Samples that show the class, by IoU",
+        empty: "No sample in this subset has truth for the class.",
+        footnote:
+          "How the overlap moves with the number of references is a question across runs — " +
+          "draw references with several shot counts and seeds, and compare them.",
+      }}
+    />
+  ),
 };
 
 const SEMANTIC_HEADLINE = [
@@ -182,14 +198,48 @@ const SEMANTIC_HEADLINE = [
   { key: "frequency_weighted_iou", label: "frequency-weighted IoU" },
 ];
 
+const SEMANTIC_OUTCOMES: Outcome[] = [
+  "hit",
+  "low_iou",
+  "miss",
+  "false_class",
+  "false_presence",
+  "correct_absence",
+  "unlabeled",
+];
+
 const SEMANTIC: TaskView = {
-  filters: [{ id: "all", label: "all", outcomes: undefined }],
+  filters: [
+    { id: "all", label: "all", outcomes: undefined },
+    {
+      id: "mistakes",
+      label: "mistakes",
+      outcomes: MISTAKE_OUTCOMES.filter((outcome) => SEMANTIC_OUTCOMES.includes(outcome)),
+    },
+    { id: "hit", label: "hit", outcomes: ["hit"] },
+    { id: "low_iou", label: "low IoU", outcomes: ["low_iou"] },
+    { id: "miss", label: "miss", outcomes: ["miss"] },
+    { id: "false_class", label: "false class", outcomes: ["false_class"] },
+    { id: "false_presence", label: "false presence", outcomes: ["false_presence"] },
+    { id: "correct_absence", label: "correct absence", outcomes: ["correct_absence"] },
+    { id: "unlabeled", label: "unlabeled", outcomes: ["unlabeled"] },
+  ],
   rank: { desc: "most found", asc: "least" },
-  outcomeNote: () => (
-    <>Ranked by the share of each image given a class; there is no per-sample verdict.</>
+  outcomeNote: (verdicts) => (
+    <>
+      Outcomes against every class of the run
+      {verdicts.rationale ? ` — ${verdicts.rationale}` : ""}: a class shown and never found is
+      a miss, a class predicted that the sample does not show is a false class, and a mean IoU
+      below 0.5 is low.
+    </>
   ),
-  Scored: ({ metrics, state }) => (
-    <Headline metrics={metrics} subset={state.subset} keys={SEMANTIC_HEADLINE} />
+  Scored: ({ metrics, state, verdicts }) => (
+    <>
+      <Headline metrics={metrics} subset={state.subset} keys={SEMANTIC_HEADLINE} />
+      <ClassTable metrics={metrics} />
+      <ConfusionPanel metrics={metrics} subset={state.subset} />
+      <OutcomeTally verdicts={verdicts} outcomes={SEMANTIC_OUTCOMES} />
+    </>
   ),
   MetricTables: ({ experimentId, metrics }) => (
     <Metrics
@@ -205,10 +255,17 @@ const SEMANTIC: TaskView = {
       body={(subset, values) => <SemanticSubset subset={subset} metrics={values} />}
     />
   ),
-  Benchmark: () => (
-    <Panel title="Per class">
-      <Empty>Each class&apos;s IoU is in the metric tables on Overview.</Empty>
-    </Panel>
+  Benchmark: ({ verdicts }) => (
+    <OverlapDistribution
+      verdicts={verdicts}
+      words={{
+        present: "Samples that show a class, by mean IoU",
+        empty: "No sample in this subset has truth for every class of the run.",
+        footnote:
+          "Each sample's IoU is the mean over the classes it shows or was given, pooled " +
+          "over its images.",
+      }}
+    />
   ),
 };
 
@@ -232,7 +289,13 @@ function Pending({ title, verdicts }: { title: string; verdicts: Verdicts }) {
   );
 }
 
-function OutcomeTally({ verdicts: report }: { verdicts: Verdicts }) {
+function OutcomeTally({
+  verdicts: report,
+  outcomes = SEGMENTATION_OUTCOMES,
+}: {
+  verdicts: Verdicts;
+  outcomes?: Outcome[];
+}) {
   const title = "What it did, per sample";
   if (report.isPending || report.error) return <Pending title={title} verdicts={report} />;
   const verdicts = report.all;
@@ -241,7 +304,7 @@ function OutcomeTally({ verdicts: report }: { verdicts: Verdicts }) {
   return (
     <Panel title={title}>
       <CountRun
-        counts={SEGMENTATION_OUTCOMES.map((outcome) => [
+        counts={outcomes.map((outcome) => [
           outcome.replace("_", " "),
           count(outcome),
           OUTCOME_TONE[outcome] ?? "unlabeled",
@@ -317,7 +380,19 @@ const BUCKETS = [
   { label: "< 0.25", low: -Infinity, high: 0.25 },
 ];
 
-function OverlapDistribution({ verdicts: report }: { verdicts: Verdicts }) {
+interface OverlapWords {
+  present: string;
+  empty: string;
+  footnote: string;
+}
+
+function OverlapDistribution({
+  verdicts: report,
+  words,
+}: {
+  verdicts: Verdicts;
+  words: OverlapWords;
+}) {
   if (report.isPending || report.error) {
     return <Pending title="Overlap and absence" verdicts={report} />;
   }
@@ -331,7 +406,7 @@ function OverlapDistribution({ verdicts: report }: { verdicts: Verdicts }) {
   if (overlaps.length === 0 && absent.length === 0) {
     return (
       <Panel title="Overlap">
-        <Empty>No sample in this subset has truth for the class.</Empty>
+        <Empty>{words.empty}</Empty>
       </Panel>
     );
   }
@@ -339,7 +414,7 @@ function OverlapDistribution({ verdicts: report }: { verdicts: Verdicts }) {
     <Panel title="Overlap and absence">
       <div className="grid gap-8 lg:grid-cols-2">
         <StackedBars
-          label="Samples that show the class, by IoU"
+          label={words.present}
           rows={BUCKETS.map((bucket) => ({
             label: bucket.label,
             segments: [
@@ -373,10 +448,188 @@ function OverlapDistribution({ verdicts: report }: { verdicts: Verdicts }) {
           ]}
         />
       </div>
-      <p className="mt-4 text-xs text-fg-muted">
-        How the overlap moves with the number of references is a question across runs — draw
-        references with several shot counts and seeds, and compare them.
+      <p className="mt-4 text-xs text-fg-muted">{words.footnote}</p>
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------------ supervised segmentation
+
+const SUBSET_ORDER: Subset[] = ["train", "val", "test"];
+
+interface ClassRow {
+  key: string;
+  name: string;
+  /** The label index the class is drawn with; `null` for background and the mean. */
+  index: number | null;
+  values: Partial<Record<Subset, unknown>>;
+}
+
+function bySubset(
+  entries: MetricSummary[],
+  read: (metrics: MetricValue) => unknown,
+): Partial<Record<Subset, unknown>> {
+  return Object.fromEntries(entries.map((entry) => [entry.subset, read(entry.metrics)]));
+}
+
+function perClass(metrics: MetricValue, name: string): unknown {
+  const table = metrics.per_class_iou;
+  return table !== null && typeof table === "object"
+    ? (table as Record<string, unknown>)[name]
+    : undefined;
+}
+
+/**
+ * Each pinned class's IoU, one column per scored subset — the one table that says which class
+ * the run is good at and whether that holds off its training data. Background and the mean
+ * sit beside them; a class absent from a subset's truth and prediction has no IoU, a dash.
+ */
+export function ClassTable({ metrics }: { metrics: MetricSummary[] }) {
+  const entries = SUBSET_ORDER.flatMap((subset) => {
+    const entry = metrics.find((row) => row.subset === subset);
+    return entry ? [entry] : [];
+  });
+  const first = entries[0];
+  if (!first) return null;
+  const classes = Array.isArray(first.metrics.classes)
+    ? (first.metrics.classes as unknown[]).map(String)
+    : [];
+  const rows: ClassRow[] = [
+    ...classes.map((name, position) => ({
+      key: `class:${name}`,
+      name,
+      index: position + 1,
+      values: bySubset(entries, (values) => perClass(values, name)),
+    })),
+    {
+      key: "background",
+      name: "background",
+      index: null,
+      values: bySubset(entries, (values) => values.background_iou),
+    },
+    {
+      key: "mean",
+      name: "mean over classes",
+      index: null,
+      values: bySubset(entries, (values) => values.mean_iou),
+    },
+  ];
+  const columns: Column<ClassRow>[] = [
+    {
+      key: "class",
+      header: "class",
+      cell: (row) => (
+        <span className={cn("flex items-center gap-1.5", row.index === null && "text-fg-muted")}>
+          {row.index !== null && (
+            <span
+              aria-hidden
+              className="inline-block size-2.5 shrink-0 rounded-sm"
+              style={{ backgroundColor: classColour(row.index) }}
+            />
+          )}
+          {row.name}
+        </span>
+      ),
+    },
+    ...entries.map<Column<ClassRow>>((entry) => ({
+      key: entry.subset,
+      header: `IoU · ${entry.subset}`,
+      numeric: true,
+      cell: (row) =>
+        formatScore(row.values[entry.subset]) ?? <span className="text-fg-subtle">—</span>,
+    })),
+  ];
+  return (
+    <Panel title="IoU per class">
+      <Table
+        columns={columns}
+        rows={rows}
+        rowKey={(row) => row.key}
+        caption="IoU per class and subset"
+      />
+    </Panel>
+  );
+}
+
+/** Tokens at five strengths, literal so the stylesheet is built with them. */
+const HIT_TONE = ["", "bg-normal/10", "bg-normal/25", "bg-normal/45", "bg-normal/65"];
+const MISS_TONE = ["", "bg-defect/10", "bg-defect/25", "bg-defect/45", "bg-defect/65"];
+
+export function toneStep(share: number): number {
+  if (!(share > 0)) return 0;
+  return Math.min(4, 1 + Math.floor(share * 4));
+}
+
+interface ConfusionRow {
+  name: string;
+  counts: number[];
+  total: number;
+}
+
+/**
+ * The stored confusion matrix of one subset, drawn: rows are the truth, columns what the
+ * method gave, each cell its share of the row. The diagonal is toned `normal` and the rest
+ * `defect`, by how much of the row they hold, so where one class is read as another is the
+ * darkest cell off the diagonal. The count is in each cell's title.
+ */
+export function ConfusionPanel({
+  metrics,
+  subset,
+}: {
+  metrics: MetricSummary[];
+  subset: Subset | undefined;
+}) {
+  const entry = metrics.find((row) => row.subset === subset) ?? metrics[metrics.length - 1];
+  const confusion = entry?.metrics.confusion as
+    | { classes?: unknown[]; counts?: unknown[][] }
+    | undefined;
+  const names = (confusion?.classes ?? []).map(String);
+  const counts = (confusion?.counts ?? []).map((row) => row.map((value) => Number(value) || 0));
+  if (!entry || names.length === 0 || counts.length !== names.length) return null;
+
+  const rows: ConfusionRow[] = names.map((name, index) => {
+    const row = counts[index] ?? [];
+    return { name, counts: row, total: row.reduce((sum, value) => sum + value, 0) };
+  });
+  const columns: Column<ConfusionRow>[] = [
+    { key: "truth", header: "truth ↓ · predicted →", cell: (row) => row.name },
+    ...names.map<Column<ConfusionRow>>((name, column) => ({
+      key: `p:${name}`,
+      header: name,
+      numeric: true,
+      cell: (row) => {
+        if (row.total === 0) return <span className="text-fg-subtle">—</span>;
+        const count = row.counts[column] ?? 0;
+        const share = count / row.total;
+        const diagonal = row.name === name;
+        return (
+          <span
+            title={`${count.toLocaleString()} pixels`}
+            className={cn(
+              "inline-block min-w-14 rounded-sm px-1.5 py-0.5",
+              (diagonal ? HIT_TONE : MISS_TONE)[toneStep(share)],
+            )}
+          >
+            {(share * 100).toFixed(1)}%
+          </span>
+        );
+      },
+    })),
+    {
+      key: "pixels",
+      header: "pixels",
+      numeric: true,
+      cell: (row) => <span className="text-fg-muted">{row.total.toLocaleString()}</span>,
+    },
+  ];
+  return (
+    <Panel title={`Confusion · ${entry.subset}`}>
+      <p className="mb-3 text-xs text-fg-muted">
+        Pixels of each true class, by the class the method gave them, as a share of the row.
+        Pixels the truth leaves out are not counted; a class with no true pixels is a row of
+        dashes.
       </p>
+      <Table columns={columns} rows={rows} rowKey={(row) => row.name} caption="Confusion matrix" />
     </Panel>
   );
 }

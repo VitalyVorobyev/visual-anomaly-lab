@@ -36,7 +36,7 @@ describe("the outcome filter", () => {
 
   it("counts a segmentation run's misses, false presences and weak finds as mistakes", () => {
     const state = { ...EMPTY_RESULTS, mistakesOnly: true };
-    for (const outcome of ["miss", "false_presence", "low_iou"]) {
+    for (const outcome of ["miss", "false_class", "false_presence", "low_iou"]) {
       expect(matches(outcome, state)).toBe(true);
     }
     expect(matches("hit", state)).toBe(false);
@@ -56,7 +56,7 @@ describe("the outcome filter", () => {
      * "false negative" and "off target" mutually exclusive buckets, which they are not, and
      * would quietly change what the gallery's counts mean.
      */
-    // Two task vocabularies (anomaly, few-shot segmentation) and nothing else.
+    // Two task vocabularies (anomaly, segmentation) and nothing else.
     expect([...OUTCOMES]).toEqual([
       "tp",
       "fp",
@@ -65,6 +65,7 @@ describe("the outcome filter", () => {
       "hit",
       "low_iou",
       "miss",
+      "false_class",
       "false_presence",
       "correct_absence",
       "unlabeled",
