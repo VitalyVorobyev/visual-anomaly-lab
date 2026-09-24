@@ -88,7 +88,9 @@ def gram_matrix(features: np.ndarray) -> np.ndarray:
 
 def gram_energy(query: np.ndarray, gram: np.ndarray) -> np.ndarray:
     """`(P,)` energy `q^T G q` per query patch, min-max normalised to `[0, 1]` over the image."""
-    energy = np.einsum("pd,de,pe->p", query, gram, query)
+    # A matmul, not a three-operand `einsum`: numpy evaluates the latter as a plain loop,
+    # about 500x slower at DINO widths, and it ran once per image per side.
+    energy = np.sum((query @ gram) * query, axis=1)
     low, high = float(energy.min()), float(energy.max())
     if high <= low:
         return np.zeros_like(energy, dtype=np.float32)
