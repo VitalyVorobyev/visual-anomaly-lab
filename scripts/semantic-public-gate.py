@@ -51,6 +51,7 @@ from anomaly_lab.domain.entities import Subset, Task
 from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.eval.semantic import sample_outcomes
 from anomaly_lab.experiments.service import pin_classes
+from anomaly_lab.experiments.train import MODEL_SUBDIR
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.models.registry import get_model_class
 from anomaly_lab.regions.preparation import PreparedRegionBuild
@@ -166,7 +167,7 @@ def _outcomes(settings: Settings, experiment_id: int) -> dict[str, dict[str, int
 
 def _constants(artifact_dir: Path) -> dict[str, list[float]]:
     """The logit constants `dino_linear_seg` saved beside its head, background first."""
-    state = artifact_dir / "dino_linear_seg.npz"
+    state = artifact_dir / MODEL_SUBDIR / "dino_linear_seg.npz"
     if not state.exists():
         return {}
     with np.load(state, allow_pickle=False) as stored:

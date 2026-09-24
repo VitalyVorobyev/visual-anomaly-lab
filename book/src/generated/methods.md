@@ -16,7 +16,7 @@ This page is generated from the live model registry and checked method metadata.
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
 | `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
 | `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | experimental | no | — |
-| `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | experimental | no | — |
+| `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | supported | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -187,9 +187,9 @@ Fits one colour model to each annotated class and one to background, then gives 
 
 ## DINO linear head (segmentation)
 
-`dino_linear_seg` · **segmentation linear head on frozen DINO** · experimental
+`dino_linear_seg` · **segmentation linear head on frozen DINO** · supported
 
-A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounded sample of annotated pixels; logits are upsampled to the image before the argmax.
+A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounded sample of annotated pixels; logits are upsampled to the image and offset by one constant per class, fitted for IoU on held-out folds, before the argmax.
 
 - Tasks: `semantic_segmentation`
 - Preferred device: `mps`

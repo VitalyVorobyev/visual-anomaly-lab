@@ -251,8 +251,8 @@ def test_the_configuration_is_bounded() -> None:
     with pytest.raises(ValidationError):
         DinoLinearSegConfig.model_validate({"class_balancing": "median"})
     assert DinoLinearSegConfig().class_balancing is ClassBalancing.INVERSE_FREQUENCY
-    assert DinoLinearSegConfig().pixel_sampling is PixelSampling.RASTER
-    assert DinoLinearSegConfig().logit_bias is LogitBias.NONE
+    assert DinoLinearSegConfig().pixel_sampling is PixelSampling.PER_CLASS
+    assert DinoLinearSegConfig().logit_bias is LogitBias.HELD_OUT_IOU
     with pytest.raises(ValidationError):
         DinoLinearSegConfig.model_validate({"logit_bias": "test_prior"})
     with pytest.raises(ValidationError):
