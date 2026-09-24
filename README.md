@@ -7,7 +7,7 @@ export a proven model to ONNX for a Rust consumer.
 Everything runs on your machine. There are no accounts, cloud services, or telemetry. Source images are
 indexed where they already live and are never copied into the application workspace.
 
-![Scored samples filtered to the model's mistakes](docs/images/gallery.jpg)
+![Scored samples filtered to the model's mistakes](book/src/images/gallery.jpg)
 
 ## Five-minute start
 
@@ -33,8 +33,8 @@ In the app:
 5. Open **Samples**, filter to **Mistakes**, and inspect what the model actually found.
 6. Add PatchCore or another method and compare runs from the same dataset workspace.
 
-The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introduction.md)**, beginning with
-[Quick start](docs/book/quick-start.md) and [A new dataset, end to end](docs/book/new-dataset.md).
+The complete walkthrough is in the **[Visual Anomaly Lab book](book/src/introduction.md)**, beginning with
+[Quick start](book/src/quick-start.md) and [A new dataset, end to end](book/src/new-dataset.md).
 
 ## What the workbench gives you
 
@@ -54,7 +54,7 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 - **Verified deployment.** Supported fitted methods export as checksummed ONNX bundles with deterministic
   parity fixtures and an independent Rust/ONNX Runtime reference consumer.
 
-![One sample with prediction and ground truth](docs/images/sample.jpg)
+![One sample with prediction and ground truth](book/src/images/sample.jpg)
 
 ## Included methods
 
@@ -67,9 +67,9 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](docs/book/introdu
 | Learned anomaly synthesis | `glass_anomalib` | Experimental; public gate did not promote it; ONNX export |
 | Frozen-backbone patch memory | `dino_memory` | Ours; a DINOv2/DINOv3 patch memory scored globally, per position, or as a per-position Gaussian. Nothing is trained; no public gate run yet |
 
-See the generated [method catalogue](docs/book/generated/methods.md),
-[selection guide](docs/book/model-selection.md), and checked
-[public benchmark report](docs/book/generated/benchmarks.md) for capabilities, limitations, plots, and the
+See the generated [method catalogue](book/src/generated/methods.md),
+[selection guide](book/src/model-selection.md), and checked
+[public benchmark report](book/src/generated/benchmarks.md) for capabilities, limitations, plots, and the
 evidence behind those roles.
 
 ## Public reference data
@@ -102,13 +102,13 @@ Open <http://localhost:5173>. Interactive API documentation is at <http://127.0.
 
 ## Documentation
 
-- **[The book](docs/book/introduction.md):** user workflows, full pipelines, method choice, benchmarks,
+- **[The book](book/src/introduction.md):** user workflows, full pipelines, method choice, benchmarks,
   ONNX/Rust deployment, and extension guides.
 - **[Architecture handbook](docs/architecture/README.md):** the canonical description of current internals.
-- **[Development](docs/development.md):** contributor setup, checks, safety, and evidence workflows.
+- **[Development](book/src/development.md):** contributor setup, checks, safety, and evidence workflows.
 - **[Roadmap](docs/roadmap.md):** shipped milestones and remaining exit criteria.
 
-Build the local HTML book with `mdbook build` and open `book/index.html`.
+Build the local HTML book with `mdbook build book` and open `site/index.html`.
 
 ## Scope
 

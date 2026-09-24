@@ -9,16 +9,24 @@ from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parents[1]
 LINK = re.compile(r"!?\[[^\]]*\]\(([^)]+)\)")
+# The book links out to docs/ by URL, since mdBook cannot render a file outside its source.
+REPO_BLOB = "https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/"
 SKIP_FILES = {ROOT / "docs" / "userfeedback.md", ROOT / "docs" / "initial-prompt.md"}
 
 
 def _markdown_files() -> list[Path]:
-    files = [ROOT / "README.md", *sorted((ROOT / "docs").rglob("*.md"))]
+    files = [
+        ROOT / "README.md",
+        *sorted((ROOT / "docs").rglob("*.md")),
+        *sorted((ROOT / "book" / "src").rglob("*.md")),
+    ]
     return [path for path in files if path not in SKIP_FILES]
 
 
 def _local_target(source: Path, raw: str) -> Path | None:
     target = raw.strip().strip("<>")
+    if target.startswith(REPO_BLOB):
+        target = "/" + target.removeprefix(REPO_BLOB)
     if not target or target.startswith(("#", "http://", "https://", "mailto:")):
         return None
     path_text = unquote(target.split("#", 1)[0].split("?", 1)[0])

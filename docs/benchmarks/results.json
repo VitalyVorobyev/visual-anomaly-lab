@@ -37,7 +37,7 @@
    "dataset": "VisA official one-class split",
    "prepared": "392 × 392 RGB identity",
    "seed": 20260812,
-   "source": "../../measurements.md",
+   "source": "docs/measurements.md",
    "note": "Same prepared pixels within each class. Dinomaly: 5,000 steps. PatchCore: WRN-50, 256 images, 50,000 candidates, 10% coreset.",
    "rows": [
     {
@@ -88,7 +88,7 @@
    "dataset": "VisA official one-class split",
    "prepared": "288 × 288 RGB identity",
    "seed": 20260812,
-   "source": "../../measurements.md",
+   "source": "docs/measurements.md",
    "note": "Same prepared pixels within each class. GLASS: 5,000 updates, batch 1. PatchCore is the paired reference for this gate.",
    "rows": [
     {
@@ -139,7 +139,7 @@
    "dataset": "VisA official one-class split",
    "prepared": "448 × 448 RGB identity",
    "seed": 20260812,
-   "source": "../../measurements.md",
+   "source": "docs/measurements.md",
    "note": "Same prepared pixels within each class; 448 divides both patch sizes. dino_memory: DINOv2 ViT-S/14-reg4, global_knn, last_two layers, k=1, 256 images, 50,000 candidates, 10% coreset. PatchCore control: WRN-50, same caps. The DINOv3 and per-position ablation rows live in measurements.md; this block is the recorded, ungated pair.",
    "rows": [
     {
@@ -190,7 +190,7 @@
    "dataset": "VisA official one-class split",
    "prepared": "392 × 392 RGB identity",
    "seed": 20260812,
-   "source": "../../measurements.md",
+   "source": "docs/measurements.md",
    "note": "The wrapper's exact protocol: DINOv2 ViT-S/14-reg4 encoder, 5,000 steps, paired PatchCore control (WRN-50, 256 images, 50,000 candidates, 10% coreset). Means match the wrapper's recorded run to the third decimal; parity retires the wrapper.",
    "rows": [
     {
@@ -244,7 +244,7 @@
    "inference_ms": 13.7,
    "peak_rss_gib": 0.82,
    "driver_gib": 0.52,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "Dinomaly",
@@ -253,7 +253,7 @@
    "inference_ms": 42.3,
    "peak_rss_gib": 0.82,
    "driver_gib": 0.62,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "GLASS",
@@ -262,7 +262,7 @@
    "inference_ms": 12.7,
    "peak_rss_gib": 1.04,
    "driver_gib": 1.2,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "GLASS",
@@ -271,7 +271,7 @@
    "inference_ms": 30.9,
    "peak_rss_gib": 1.05,
    "driver_gib": 1.19,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "AnomalyVFM",
@@ -280,7 +280,7 @@
    "inference_ms": 88.4,
    "peak_rss_gib": 3.18,
    "driver_gib": 2.08,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "AnomalyVFM",
@@ -289,7 +289,7 @@
    "inference_ms": 260.5,
    "peak_rss_gib": 3.18,
    "driver_gib": 2.07,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   },
   {
    "method": "AnomalyVFM",
@@ -298,7 +298,7 @@
    "inference_ms": 591.3,
    "peak_rss_gib": 3.18,
    "driver_gib": 2.07,
-   "source": "../../measurements.md"
+   "source": "docs/measurements.md"
   }
  ]
 }

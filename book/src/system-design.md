@@ -65,4 +65,4 @@ trusted model code, and trusted source paths. It is not a sandbox for untrusted 
 Bundle verification protects integrity and path traversal during deployment; it does not make an arbitrary
 ONNX graph safe to execute.
 
-For full component and failure detail, read the canonical [architecture handbook](../architecture/README.md).
+For full component and failure detail, read the canonical [architecture handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/README.md).

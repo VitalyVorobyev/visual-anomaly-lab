@@ -10,7 +10,7 @@ researcher inspect failure modes and establish evidence before building line int
 model. Source images stay where they are; the catalogue stores paths and derived artifacts locally. There
 are no accounts, cloud services, or telemetry.
 
-![Scored samples filtered to mistakes](../images/gallery.jpg)
+![Scored samples filtered to mistakes](images/gallery.jpg)
 
 ## The shortest useful loop
 
@@ -47,6 +47,6 @@ limits visible, so methods can be compared without quietly changing the pixels o
 - Extension authors should begin with [Add a model](add-model.md) or
   [Add preprocessing or localization](add-preprocessing.md).
 
-The [architecture handbook](../architecture/README.md) is the canonical description of current internals.
+The [architecture handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/README.md) is the canonical description of current internals.
 Decision records explain why consequential choices were made; this book concentrates on using and extending
 the instrument.

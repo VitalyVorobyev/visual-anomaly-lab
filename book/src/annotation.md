@@ -46,4 +46,4 @@ Before using masks for pixel metrics:
 4. compare mask area and bounding box against the visible defect;
 5. reopen the committed revision to prove serialization round-trips.
 
-The detailed storage and conflict rules are in the [annotation handbook](../architecture/annotations.md).
+The detailed storage and conflict rules are in the [annotation handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/annotations.md).

@@ -60,7 +60,7 @@ bun run typecheck && bun run test && bunx vite build
 ```
 
 Docs: `uv run --directory backend python ../scripts/check-doc-links.py` and
-`uv run --directory backend python ../scripts/build-book.py --check` when `docs/` changed.
+`uv run --directory backend python ../scripts/build-book.py --check` when `docs/` or `book/` changed.
 Rust, when it changed: `cargo fmt --check` and `cargo clippy --all-targets -- -D warnings` under
 `frontend/src-tauri/` (the shell) or with `--manifest-path deployment/runner/Cargo.toml` (the
 handoff runner), then `uv run --directory backend pytest tests/test_rust_deployment_handoff.py`.

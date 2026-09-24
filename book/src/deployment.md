@@ -87,5 +87,5 @@ parity needs a public source image and the source-to-prepared transform tested a
 - Exercise normal, defect, boundary-sized, grayscale/RGB, and non-square source cases.
 - Treat a changed bundle hash or preparation revision as a new deployed model.
 
-The exact internal contract is in the [deployment handbook](../architecture/deployment.md) and its rationale
-in [ADR-0034](../adr/0034-portable-models-are-verified-deployment-bundles.md).
+The exact internal contract is in the [deployment handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/deployment.md) and its rationale
+in [ADR-0034](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/adr/0034-portable-models-are-verified-deployment-bundles.md).

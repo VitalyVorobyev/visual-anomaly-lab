@@ -233,7 +233,7 @@ jobs:
         run: cargo install mdbook --locked --version 0.5.3
 
       - name: Build the book
-        run: mdbook build
+        run: mdbook build book
 
   shell:
     name: Tauri shell

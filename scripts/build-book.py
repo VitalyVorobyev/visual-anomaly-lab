@@ -13,7 +13,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_SRC = ROOT / "backend" / "src"
 DATA_PATH = ROOT / "docs" / "benchmarks" / "results.json"
-OUTPUT = ROOT / "docs" / "book" / "generated"
+OUTPUT = ROOT / "book" / "src" / "generated"
+REPO_BLOB = "https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/"
 
 
 def _methods(data: dict[str, Any]) -> str:
@@ -158,7 +159,7 @@ def _benchmarks(data: dict[str, Any]) -> tuple[str, dict[str, str]]:
                 f"## {protocol['title']}",
                 "",
                 f"**Protocol:** {protocol['dataset']}; {protocol['prepared']}; seed "
-                f"`{protocol['seed']}`. {protocol['note']} [Full evidence]({protocol['source']}).",
+                f"`{protocol['seed']}`. {protocol['note']} [Full evidence]({REPO_BLOB}{protocol['source']}).",
                 "",
                 f"![{protocol['title']}]({svg_name})",
                 "",
@@ -193,7 +194,7 @@ def _benchmarks(data: dict[str, Any]) -> tuple[str, dict[str, str]]:
         blocks.append(
             f"| {row['method']} | {row['device']} | {row['prepared']}² | "
             f"{row['inference_ms']:.1f} ms | {row['peak_rss_gib']:.2f} GiB | "
-            f"{row['driver_gib']:.2f} GiB | [log]({row['source']}) |"
+            f"{row['driver_gib']:.2f} GiB | [log]({REPO_BLOB}{row['source']}) |"
         )
     blocks.extend(
         [

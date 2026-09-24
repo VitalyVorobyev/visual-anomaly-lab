@@ -3,17 +3,17 @@ title = "Visual Anomaly Lab"
 authors = ["Visual Anomaly Lab contributors"]
 description = "User and extension guide for a local visual anomaly-detection workbench"
 language = "en"
-src = "docs"
+src = "src"
 
 [build]
-build-dir = "book"
+build-dir = "../site"
 create-missing = false
 
 [output.html]
 default-theme = "light"
 preferred-dark-theme = "navy"
 git-repository-url = "https://github.com/VitalyVorobyev/visual-anomaly-lab"
-edit-url-template = "https://github.com/VitalyVorobyev/visual-anomaly-lab/edit/main/{path}"
+edit-url-template = "https://github.com/VitalyVorobyev/visual-anomaly-lab/edit/main/book/src/{path}"
 site-url = "/visual-anomaly-lab/"
 
 [output.html.fold]
