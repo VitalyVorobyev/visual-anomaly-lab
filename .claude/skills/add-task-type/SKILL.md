@@ -1,13 +1,14 @@
 ---
 name: add-task-type
-description: Add or extend a task in visual-anomaly-lab — semantic segmentation, object detection, instance segmentation, or anything else an experiment can be asked to do beside anomaly ranking. Use when the user asks to "add segmentation", "support detection", "add a task", "a supervised method", "a new evaluator", or to make the first plugin for a task that exists but has none. Walks ADR-0039's seams in the order they depend on each other.
+description: Add or extend a task in visual-anomaly-lab — semantic segmentation, object detection, instance segmentation, few-shot segmentation, or anything else an experiment can be asked to do beside anomaly ranking. Use when the user asks to "add segmentation", "support detection", "add a task", "a supervised method", "a new evaluator", or to make the first plugin for a task that exists but has none. Walks ADR-0039's seams in the order they depend on each other.
 ---
 
 # Add a task type
 
-Read first: `docs/adr/0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md` (the
+Read first: `docs/adr/0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md` and,
+for few-shot segmentation, `docs/adr/0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md` (the
 decision and its open questions), `docs/architecture/evaluation.md`, `docs/architecture/methods.md`,
-and the `## Tasks` section of `docs/backlog.md`, which lists what is built and what is not. **Check
+and the `## Few-shot segmentation` and `## Supervised tasks` sections of `docs/backlog.md`, which lists what is built and what is not. **Check
 the backlog before assuming a seam below exists** — the ones marked *(planned)* were decided, not
 built, when this skill was written.
 
