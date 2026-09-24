@@ -1,83 +1,58 @@
-# ADR-0008: Hybrid deep-learning strategy — anomalib now, custom EfficientAD later
+# ADR-0008: Hybrid deep-learning strategy — wrap a maintained library first, own a method later
 
 **Status:** Accepted (2026-08-06)
 
 ## Context
 
-The brief asks for EfficientAD and PatchCore. Both can be obtained two ways: wrap a maintained
-library (anomalib provides both), or implement them from scratch in PyTorch.
+Every published anomaly-detection method this workbench wants can be obtained two ways: wrap a
+maintained library (anomalib provides most of them), or implement it from the paper in PyTorch.
 
-The two options serve different goals. Wrapping gets a working, credible workbench quickly and
-provides a reference implementation whose numbers can be trusted as a baseline. Implementing from
-scratch is where the actual learning about the method lives — and this is a research workbench whose
-purpose includes understanding these methods, not only running them.
+The two serve different goals. A wrapper gets a working, credible method quickly and gives a
+reference whose number can be trusted as a baseline. An implementation of our own is where the
+understanding of the method lives, and it is the only kind the workbench can change, instrument and
+reason about — this is a research workbench, not only a runner.
 
-Compute is a single Apple Silicon Mac. MPS is the available accelerator: no CUDA, no multi-GPU, and
-a PyTorch backend with known operator coverage gaps.
+Compute is a single Apple Silicon Mac. MPS is the accelerator: no CUDA, and a PyTorch backend with
+operator gaps that surface only when a kernel is reached, often mid-training.
+
+The alternatives were to wrap everything (fast, and the workbench never owns a number it can
+explain) or to implement everything from scratch (slow, and with no reference to be measured
+against).
 
 ## Decision
 
-**Both, in sequence, behind the same interface. Ship the wrappers first.** (User decision.)
+**Both, in sequence, behind the one plugin interface (see ADR-0007): a method may enter as a thin
+wrapper, and one we need to reason about is then implemented as our own, under a separate key.**
 
-- **Now:** `efficientad_anomalib` and `patchcore_anomalib` are thin wrappers around anomalib,
-  implementing the `AnomalyModel` ABC of ADR-0007. They translate our config models into anomalib's,
-  run its training/inference, and emit per-image scores and float32 anomaly maps in our format.
-- **Later:** `efficientad_custom` — a from-scratch PyTorch EfficientAD — is a roadmap item, added as
-  a **second implementation behind the same interface**, not a replacement. Because both register
-  under distinct keys and produce identical result shapes, the app can run them on the same split
-  and compare them directly. The custom implementation's correctness is then measurable against the
-  battle-tested one, in-app, on our own data.
-- **MPS-oriented defaults:** device selection prefers MPS with an automatic CPU fallback for
-  unsupported operations; default image sizes are moderate rather than maximal, chosen so a training
-  run fits comfortably in unified memory and completes in a tolerable time on one machine.
+- **A wrapper translates; it does not pass through.** Its configuration is our pydantic model,
+  mapped onto the library's. The library's own option schema never becomes our form or our stored
+  experiment configuration, so a library upgrade cannot rewrite what a past experiment means.
+- **Our implementation is measured against the wrapper as a baseline, not a specification**, and a
+  wrapper that our implementation matches can be retired (see ADR-0029).
+- **A standalone probe runs before any plugin is written against a new library or the
+  accelerator.** It establishes operator coverage on MPS, the memory footprint, and which device
+  each stage belongs on, as a script that can be re-run — not as a discovery made halfway through an
+  integration. Its findings become the plugin's defaults and caps.
+- **Defaults are MPS-oriented.** A method prefers MPS where its tensor work benefits, falls back to
+  the CPU when the device or an operator is unavailable, and uses moderate input sizes so a run
+  fits unified memory in a tolerable time.
+- **The deep-learning dependencies sit behind an optional extra**, so everything else — the floor
+  method, evaluation, and every other test — runs without torch.
 
 ## Consequences
 
-A working end-to-end deep-learning path exists early, so the rest of the workbench (jobs, results,
-evaluation, comparison UI) can be built and validated against real model behaviour rather than
-stubs. When the custom implementation arrives, it inherits a fully built evaluation and comparison
-apparatus, and "is my implementation right?" becomes a question the tool itself answers. If the
-custom version never gets written, the product is still complete against the brief.
+Real deep-learning behaviour exists before an in-house implementation does, so jobs, results and
+comparison are built against it rather than stubs, and every in-house method inherits a finished
+evaluation and comparison apparatus plus a baseline to beat.
 
-Negative consequences, accepted honestly:
-
-- **A heavy dependency.** anomalib pulls PyTorch Lightning and a large transitive tree into the
-  backend. Install size and cold-start import time grow substantially, and Lightning's abstractions
-  sit between us and the training loop, making failures harder to diagnose and progress reporting
-  awkward to route into our `TrainContext` callbacks (ADR-0007).
-- **API churn.** anomalib has broken its public API between minor versions before. Version pinning
-  is mandatory, upgrades will require wrapper rework, and our wrappers will accumulate
-  version-conditional code.
-- **EfficientAD needs an ImageNet subset.** Training requires downloading an external dataset — a
-  first-run network dependency in a tool that is otherwise strictly local (ADR-0003), and a manual
-  setup step that will confuse anyone who expects offline operation.
-- **MPS is the least-tested PyTorch backend.** Silent numerical differences, unimplemented
-  operators, and memory behaviour unlike CUDA are all plausible; some anomalib configurations may
-  simply not run, or may fall back to CPU and be slow enough to be impractical.
-- **Two implementations of one algorithm is ongoing maintenance.** Once `efficientad_custom` exists,
-  divergence between the two is a permanent source of "which one is wrong?" investigations, and the
-  interface must keep accommodating both.
-- **Wrapper leakage.** Config models risk becoming pass-throughs of anomalib's own options, which
-  would couple our UI and stored experiment configs to a third-party schema.
-
-## Changelog
-
-**2026-08-23 — the EfficientAD leg of "wrappers first, custom later" is complete, and the
-wrapper is retired.** `efficientad_anomalib` shipped first, as this record set out to do;
-`efficientad_custom` then shipped behind the same interface and, per ADR-0029, became the
-implementation this workbench measures and improves rather than a second copy of a known
-number. With the in-house implementation established and preferred, the wrapper no longer earns
-its maintenance cost (API churn, Lightning coupling, a heavy dependency) and has been removed
-from the registry; its recorded numbers remain in `docs/measurements.md` as a historical
-baseline. `patchcore_anomalib`, `dinomaly_anomalib` and `glass_anomalib` are unaffected — the
-wrappers-first strategy stands for them.
-
-**2026-08-24 — the Dinomaly leg follows the same arc, and the second of the two anomalib
-wrappers this record shipped is now retired.** `dinomaly_anomalib` shipped first, as this
-record set out to do; `dinomaly_custom` then shipped behind the same interface and, per
-ADR-0029's pattern extended a second time, became the implementation this workbench measures
-and improves. It reached VisA parity with the wrapper's recorded run (means matching to the
-third decimal on all three metrics), so under the predeclared rule the wrapper has been
-removed from the registry; its recorded numbers remain in `docs/measurements.md` as a
-historical baseline. `patchcore_anomalib` and `glass_anomalib` are the two methods still wrapped
-through anomalib — the wrappers-first strategy stands for them.
+- **A heavy dependency.** anomalib pulls in PyTorch Lightning and a large transitive tree. Install
+  size and import time grow, and Lightning's abstractions sit between us and the training loop,
+  making failures harder to diagnose and progress awkward to route into our contexts.
+- **API churn.** The library has broken its public API between minor versions; pinning is
+  mandatory and upgrades mean wrapper rework.
+- **Two implementations of one algorithm are ongoing maintenance** until the wrapper retires, and a
+  retired wrapper's baseline survives only as a recorded number that cannot be re-run.
+- **MPS is the least-tested PyTorch backend.** Silent numerical differences and unimplemented
+  operators are plausible; a probe run once can go stale as PyTorch moves.
+- **Some methods need external assets** — pretrained weights, a penalty image set — which is a
+  first-run network dependency in a tool that is otherwise local.

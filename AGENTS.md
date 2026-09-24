@@ -49,8 +49,7 @@ comparing them under one evaluation protocol.
 - `docs/architecture/` — **the handbook: how the system works now.** One page per area — `README.md`
   (overview + components), `repository.md`, `domain-model.md`, `import.md`, `methods.md`,
   `annotations.md`, `diagnostics.md`, `jobs.md`, `evaluation.md`, `media.md`, `deployment.md`,
-  `frontend.md`, `security.md`. **Read this
-  first**; it replaced `system-design.md`, which no longer exists. Use its **canonical entity names
+  `frontend.md`, `security.md`. **Read this first.** Use its **canonical entity names
   exactly**: `Dataset`, `Channel`, `Sample`, `Image`, `Split`, `SplitAssignment`, `Experiment`, `Job`,
   `ImageResult`, `SampleResult`, `MetricSet`. Pages carry no status and are **edited freely** when the
   code changes — updating one is part of the change, not a follow-up.
@@ -59,14 +58,20 @@ comparing them under one evaluation protocol.
 - `docs/backlog.md` — the open task list, and nothing that has shipped.
 - `docs/measurements.md` — **the numbers that still decide something**: each predeclared gate, its
   protocol and its verdict. Cite it rather than restating a figure.
-- `docs/adr/` — **27 records, every one of them live** (`docs/adr/README.md` is the index). A record
+- `docs/adr/` — **every record is live** (`docs/adr/README.md` is the index). A record
   captures a choice **that had a live alternative**; the bar is *would a competent engineer plausibly
   have chosen otherwise, and would changing it now cost more than a refactor?* A contract detail, a
   helper, or a read path for something already decided is **handbook material, not a new ADR**.
-  **Records are amended** with a dated `## Changelog` entry; only a **reversal** gets a new number
-  that supersedes explicitly. A record whose truth has moved into the handbook is **removed**, with
+  **Records are edited in place** and carry no changelog, narrative or measured numbers — git holds
+  the history, `measurements.md` the figures; only a **reversal** gets a new number that supersedes
+  explicitly. A record whose truth has moved into the handbook is **removed**, with
   its citations repointed in the same change (ADR-0030). Numbers are never reused, so a surviving
   record keeps the number it has always had.
+- **Every document says what is true or what was decided, never what happened.** No "used to", no
+  milestone tags, no bug stories, no PR narrative — that is what `git log` is for.
+- `book/` — the mdBook **user and extension guide** (`book/src/`, built to the gitignored `site/`).
+  It links to `docs/` by repository URL rather than rendering it; `book/src/generated/` is written
+  by `scripts/build-book.py` and never edited by hand.
 - When the handbook and a record disagree, the **handbook is right about what the code does** and the
   **record is right about why it was chosen**.
 - **The design tokens live in `@vitavision/lab-ui` (ADR-0021)**, not in this repo: colour, type and
@@ -92,7 +97,7 @@ comparing them under one evaluation protocol.
   with the anomalib wrapper it was measured against — the wrapper has since retired), `glass_anomalib`
   (learned anomaly synthesis), `dino_memory` (ours; a frozen DINOv2/DINOv3 patch memory that is a
   coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
-  complete and tested, with no public gate run against it yet) and `subspace_ad` (a PCA of normal
+  cleared its paired VisA gate, `docs/measurements.md`) and `subspace_ad` (a PCA of normal
   patch appearance over the same frozen encoders; nothing is trained, and **its defaults are the
   verdict of a sweep that ran outside the application**, ADR-0038). A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are

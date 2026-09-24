@@ -11,6 +11,7 @@
 - [Annotation](annotation.md)
 - [Object regions and preprocessing](preprocessing.md)
 - [Model assets and offline replay](model-assets.md)
+- [Distilling an EfficientAD teacher](teacher.md)
 - [Experiments and jobs](experiments.md)
 - [Inference, evaluation, and comparison](evaluation.md)
 - [Portable ONNX deployment](deployment.md)

@@ -4,75 +4,59 @@
 
 ## Context
 
-The brief requires that "model implementations be isolated behind a common interface so that
-additional methods can be added later without modifying the rest of the application", and that the
-evaluation layer stay independent of individual models.
+Methods must be isolated behind one interface, so that a new one can be added without touching the
+rest of the application, and evaluation must stay independent of any particular method.
 
-The three initial methods are genuinely dissimilar. The classical baseline is CPU-only, trains in
-seconds, is deliberately specialized to the showcase dataset's circular parts, and wants to see all
-channels of a sample. PatchCore builds a memory bank; EfficientAD trains a student-teacher network on
-a GPU for minutes and needs an ImageNet subset. A fourth, `efficientad_custom`, will later reimplement
-EfficientAD from scratch (ADR-0008). An interface that assumed any one of these shapes would force
-the others into it.
+The methods are genuinely dissimilar. A pixel-statistics floor trains in seconds on the CPU. A
+memory-bank method fits nothing and builds a bank. A student-teacher network trains for minutes on
+the accelerator and needs pretrained assets. Some want every channel of a sample; one would be
+specific to a single dataset's geometry. An interface shaped after any one of them forces the
+others into it.
 
-The differences are also not merely internal: the UI must render a configuration form per model,
-decide whether to offer an anomaly-map overlay, and know whether a "train" step exists at all.
+The differences are not only internal: the UI must render a configuration form per method, decide
+whether to offer an anomaly-map overlay, and know whether a train step exists at all.
+
+The alternatives were per-method routes and screens (simple for two methods, unbounded after), or
+a UI that branches on the method's name.
 
 ## Decision
 
-**A single `AnomalyModel` abstract base class, plus declarative capability flags, plus a name-keyed
+**One `AnomalyModel` abstract base class, declarative capability flags, and a name-keyed
 registry.**
 
-- **Lifecycle:** `fit(...)`, `predict(...)`, `save(path)`, `load(path)`.
-- **Configuration:** `config_model()` returns a **pydantic model**. Its JSON Schema is served to the
-  frontend, which **auto-generates the configuration form**. Adding a hyperparameter is a Python
-  field, not a UI change.
-- **Capabilities:** a `Capabilities` struct declaring `requires_training`,
-  `produces_anomaly_map`, `channel_aware`, `dataset_specific`, `preferred_device`. The UI and the
-  job layer branch on these flags rather than on model names.
-- **Registry:** models register under stable keys — `classical_circular`, `efficientad_anomalib`,
-  `patchcore_anomalib`, `efficientad_custom` — which are what an Experiment persists (ADR-0005).
-- **Contexts:** `TrainContext` and `InferContext` carry a progress callback, a cancellation check,
-  and a logger. A model reports progress and honours cancellation by calling these; it knows nothing
-  about subprocesses, queues, or WebSockets (ADR-0009).
+- **Lifecycle:** `fit`, `predict`, `save`, `load`.
+- **Configuration** is a pydantic model. Its JSON Schema is served to the frontend, which generates
+  the form. A hyperparameter is a Python field, never a UI change.
+- **Capabilities** are declared flags — whether the method trains, produces a map, produces
+  diagnostics, is channel-aware, is dataset-specific, can resume, can export, which device it
+  prefers. The UI and the job layer branch on flags, **never on a registry key**.
+- **The registry** maps stable keys to plugins; the key is what an experiment persists (see
+  ADR-0005). It loads plugins lazily, so a heavy import stays inside its plugin.
+- **Contexts** carry progress, cancellation and logging into `fit` and `predict`. A plugin knows
+  nothing about subprocesses, queues or WebSockets (see ADR-0009).
+- **`predict` returns a per-image score and, optionally, a per-image anomaly map.** Reducing a
+  sample's images to one score is the evaluation layer's job (see ADR-0011); a channel-aware method
+  may consult channel metadata but still emits per-image results.
+- **Maps are stored raw, as float32 `.npy`** (see ADR-0004). Colormap, normalization and blending
+  are applied at view time and never baked into stored data.
 
-**Contract:** `predict` returns a **per-image** score, and optionally a per-image anomaly map.
-Cross-channel aggregation to a sample-level score is **not** the model's job — it belongs to the
-evaluation layer (see ADR-0011). A `channel_aware` model may consult channel metadata internally
-(the classical baseline builds per-channel references), but it still emits per-image results.
-
-**Anomaly maps** are written as **float32 `.npy`** (ADR-0004) as the source of truth. Colormapped
-PNGs are rendered on demand for display; overlay opacity is a UI control, applied at view time.
-Nothing about colormap, normalization, or blending is baked into stored data.
+A new method is one module and one registry entry. If it needs a route, a schema change or a line
+of TypeScript, the boundary is wrong and is fixed there, not in the caller.
 
 ## Consequences
 
-A new method is a file plus a registry entry: no route, schema, or UI change. Two implementations of
-the same algorithm can coexist behind one key each and be compared inside the app — the point of
-ADR-0008. Because scores stay per-image and maps stay raw, evaluation and visualization decisions
-remain changeable after the expensive computation has been done.
+Several methods, and several implementations of one algorithm, coexist under their own keys and are
+compared inside the app under one protocol. Because scores stay per-image and maps stay raw,
+evaluation and visualization choices remain open after the expensive computation is done.
 
-Negative consequences, accepted honestly:
-
-- **The interface is designed from three examples.** A method that does not fit `fit`/`predict` — an
-  online or few-shot learner, or one needing negative examples during training — will strain it, and
-  the first such addition will likely force a breaking change to the ABC.
-- **Capability flags will proliferate.** Every new "the UI needs to know whether…" becomes a flag;
-  the struct is a growing, weakly-typed catalogue of exceptions and will eventually encode
-  distinctions no longer aligned with reality.
-- **Auto-generated forms are generic forms.** JSON Schema gives us field types and ranges, not
-  conditional visibility, grouping, or good defaults presentation. The result will look plainer
-  than a hand-built screen — the brief asks for a professional engineering tool, and this is a
-  concession against that.
-- **`dataset_specific=True` is a legitimizing label for non-generalizing code.** It is honest, but
-  it makes it easy to add more special-cased methods without confronting the cost.
-- **Progress and cancellation are cooperative.** A model that never calls the cancellation check
-  cannot be stopped politely; enforcement lives entirely in ADR-0009's process boundary.
-- **Storage cost of raw maps** is significant (~5 MB per 1280x1024 float32 map).
-
-## Changelog
-
-**2026-08-23 — `efficientad_anomalib` retired from the registry.** The key list above named
-`efficientad_anomalib` among the stable registry keys; that method — the anomalib wrapper — is
-no longer registered (ADR-0029 changelog). The decision here (a stable-key registry, capability
-flags, no route or schema per method) is unchanged; only the roster is smaller.
+- **The interface was designed from a few examples.** A method that does not fit `fit`/`predict` —
+  online, few-shot, or trained on negatives — will strain it, and may force a breaking change.
+- **Capability flags proliferate.** Every "the UI needs to know whether…" becomes a flag, and the
+  struct is a growing, weakly-typed catalogue of exceptions. Re-read this before adding one.
+- **Generated forms are generic forms.** JSON Schema gives types and bounds, not conditional
+  visibility or grouping; the result is plainer than a hand-built screen.
+- **`dataset_specific` legitimizes non-generalizing code.** It is honest, and it makes adding more
+  special cases easy.
+- **Progress and cancellation are cooperative.** A plugin that never checks cannot be stopped
+  politely; enforcement lives in ADR-0009's process boundary.
+- **Raw maps cost storage**, several megabytes per full-resolution map.

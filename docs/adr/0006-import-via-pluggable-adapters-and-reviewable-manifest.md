@@ -4,63 +4,51 @@
 
 ## Context
 
-The reference dataset is not tidy. Channel folders appear as `Bright`, `BrightField`, and
-`Brightfield`; `Dark`/`DarkField`/`Darkfield`; `Dome`/`DomeIllumination`. Labels are encoded as
-folder names in `set1`/`set2` but absent in `unsorted/`. Most groups have three channels, one has
-two, and another uses machine-generated timestamped filenames that do not group by stem at all.
-Numeric IDs repeat across groups.
+Real acquisition folders are not tidy. In the showcase dataset one channel appears under several
+spellings, labels are folder names in some groups and absent in others, most parts have three
+views and some two, one group uses timestamped filenames that do not group by stem, and numeric IDs
+repeat across groups. Public benchmarks bring their own layouts: class folders, CSV tables,
+official split files.
 
-Any import routine that hard-codes this layout will break on the next dataset — and the brief
-forbids assuming the acquisition setup generalizes. At the same time, a fully automatic importer
-that silently guesses would quietly produce a corrupt dataset: a mis-grouped part is a labelling
-error that propagates into every experiment run afterwards.
+An importer that hard-codes one layout breaks on the next dataset. A fully automatic importer that
+silently guesses produces a corrupt dataset instead: a mis-grouped part is a labelling error that
+propagates into every experiment run afterwards. The alternatives were exactly those two — one
+built-in layout, or automatic inference with no review.
 
 ## Decision
 
-**Import is a two-phase operation — scan, then commit — mediated by an editable adapter and a
-reviewable manifest.**
+**Import is two-phase — scan, then commit — mediated by named adapters and a reviewable manifest.**
 
 1. **Scan.** A named adapter walks a dataset root and proposes a structure without touching the
-   database. The first adapter, `channel_folders`, recognizes label folders (`defect` /
-   `no-defect`), canonicalizes channel folder names through an **editable mapping** (fuzzy match to
-   a canonical set, with unknown names surfaced rather than dropped), and groups images by filename
-   stem **within a capture group**. Adapters are registered by name; adding a layout means adding
-   an adapter, not editing the importer.
-2. **Manifest.** The scan emits a JSON manifest: proposed datasets, channels, samples, images,
-   labels, plus a **warnings** list. Warnings are informative, not fatal — a sample with two
-   channels is a *warning*, never an error (ADR-0005), and files that could not be grouped (the
-   timestamped ones) are surfaced individually so the operator can decide.
-3. **Review.** The manifest is presented in the UI. The operator inspects the proposal, corrects
-   channel canonicalization, resolves ungrouped files, and adjusts labels before anything is
-   written.
-4. **Commit.** The accepted manifest creates the database rows and is **persisted verbatim** to
-   `data/manifests/` so the import is reproducible and auditable after the fact.
+   database. Adapters are registered by name, and each declares its options as a pydantic model
+   whose JSON Schema drives the import form. A new layout is a new adapter, not an edit to the
+   importer or the UI.
+2. **Manifest.** The scan emits a manifest: proposed channels, samples, images and labels, plus
+   **warnings**. Warnings are informative, not fatal — a two-view part is a warning, never an error
+   (see ADR-0005) — and files that could not be grouped are surfaced individually.
+3. **Review.** The operator inspects the proposal, corrects channel canonicalization, resolves
+   ungrouped files and adjusts labels before anything is written. Channel canonicalization is an
+   **editable mapping**, not code.
+4. **Commit.** The accepted manifest creates the rows and is **persisted verbatim**, so the import
+   is reproducible and auditable.
 
-**Images are never copied** (ADR-0022). At import, a **sha256** of each file is recorded; a separate
-verify operation re-hashes the referenced files later to detect moved, replaced, or corrupted
-source images.
+**Images are never copied** (see ADR-0022). A **sha256** of each file is recorded at import, and a
+separate verify operation re-hashes later to detect moved, replaced or corrupted sources.
 
 ## Consequences
 
-The messiness of real acquisition folders is handled by data (an editable mapping, a reviewable
-manifest) rather than by code branches. A new dataset with different conventions costs one adapter.
-Because the committed manifest is stored, "how did this dataset come to look like this?" is
-answerable months later, and a re-import can be replayed. Hashing gives us an integrity check that
-distinguishes "the file changed" from "the model changed" when results stop reproducing.
+Messy acquisition folders are handled by data — a mapping and a manifest — rather than code
+branches, and a new convention costs one adapter. "How did this dataset come to look like this?" is
+answerable later from the stored manifest. The hash separates "the file changed" from "the model
+changed" when results stop reproducing.
 
-Negative consequences, accepted honestly:
-
-- **Import is no longer one click.** Every dataset requires a human review pass. For a fully regular
-  dataset this is pure ceremony, and it will be tempting to click through without reading — at which
-  point the review step provides false assurance rather than safety.
-- **The manifest is a third representation.** Folder layout, manifest JSON, and database rows can
-  all disagree after the fact. The manifest records what was *proposed and accepted*, not what the
-  database currently holds; edits made after import are invisible to it.
-- **Fuzzy channel matching can be confidently wrong.** Two genuinely different channels with similar
-  names could be merged. The editable mapping is the escape hatch, but only if someone notices.
-- **Referencing in place makes the DB fragile to filesystem moves.** Renaming a folder breaks every
-  image path; the sha256 verify detects the damage but does not repair it, and no re-link tool is
-  planned initially.
-- **Hashing 3.2 GB costs time.** A full import reads every byte of the dataset — minutes, not
-  seconds — and repeats that cost on each verify.
-- **Adapter registry adds indirection** for what is, today, exactly one adapter.
+- **Import is not one click.** Every dataset gets a review pass. For a regular dataset that is
+  ceremony, and clicking through without reading turns it into false assurance.
+- **The manifest is a third representation.** Folder layout, manifest and database can all
+  disagree; the manifest records what was proposed and accepted, not what the database holds now.
+- **Fuzzy channel matching can be confidently wrong.** Two different channels with similar names
+  can be merged; the editable mapping helps only if someone notices.
+- **Reference in place is fragile to filesystem moves.** Renaming a folder breaks every path; verify
+  detects the damage and does not repair it.
+- **Hashing reads every byte** at import and again at each verify, which on a large dataset is
+  minutes, not seconds.

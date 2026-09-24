@@ -1,652 +1,392 @@
-# Model plugin interface
+# Methods
 
-Every anomaly-detection method is a plugin behind one interface (ADR-0007). The rest of the application knows
-only this interface and the registry key.
+Every anomaly-detection method is a plugin behind one interface (ADR-0007). The rest of the application
+knows only this interface and the registry key; a new method is one module and one entry in
+`models/registry.py`, with no route, schema or TypeScript.
+
+## Plugin interface
 
 ```python
 # backend/src/anomaly_lab/models/base.py
 
 class Capabilities(BaseModel):
-    tasks: list[Task]                # ADR-0039; defaults to [anomaly], so no older plugin changed
-    requires_training: bool          # PatchCore/EfficientAD yes; a pure-reference method may say no
-    produces_anomaly_map: bool       # drives whether the UI offers overlay controls
-    produces_diagnostics: bool       # drives whether the UI offers the inspector views (ADR-0018)
-    channel_aware: bool              # model consumes channel metadata internally
-    dataset_specific: bool           # True for classical_circular — surfaced as a UI warning
-    portable_formats: list[Literal["onnx"]] # only parity-proven method exporters
-    preferred_device: Literal["cpu", "mps", "cuda"]
-
+    tasks: list[Task] = [Task.ANOMALY]  # ADR-0039; an experiment is refused for an unlisted task
+    requires_training: bool = True      # a fitted memory counts as training
+    produces_anomaly_map: bool = True   # drives whether the UI offers overlay controls
+    produces_diagnostics: bool = False  # drives the inspector views (diagnostics.md)
+    channel_aware: bool = False         # the model *may* read ImageRecord.channel
+    dataset_specific: bool = False      # surfaced as a UI warning
+    supports_resume: bool = False       # must agree with the SupportsResume protocol
+    portable_formats: list[PortableFormat] = []  # only parity-proven exporters (ADR-0034)
+    preferred_device: Device = Device.CPU
 
 class ImageRecord(BaseModel):
     image_id: int
     sample_id: int
-    channel: str | None              # canonical channel name, None for single-view datasets
-    path: Path                       # absolute path to the pinned prepared PNG, read-only
-
+    channel: str | None        # canonical channel name, None for single-view datasets
+    path: Path                 # absolute path to the pinned prepared PNG, read-only
 
 class Prediction(BaseModel):
     image_id: int
-    score: float                     # higher = more anomalous
-    anomaly_map: Path | None         # float32 .npy written into ctx.artifact_dir / "maps"
+    score: float               # higher = more anomalous
+    anomaly_map: Path | None   # float32 .npy
     inference_ms: float
 
-
-class AnomalyModel(Protocol):
+class AnomalyModel(ABC):
+    title: ClassVar[str]; summary: ClassVar[str]
     @classmethod
     def config_model(cls) -> type[BaseModel]: ...
     @classmethod
     def capabilities(cls) -> Capabilities: ...
-
+    @classmethod
+    def availability(cls) -> Availability: ...   # available by default
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None: ...
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]: ...
     def save(self, artifact_dir: Path) -> None: ...
     def load(self, artifact_dir: Path) -> None: ...
-
-
-# The registry is a table of *lazy loaders*, so opening the method picker does not import
-# torch. That only holds while each plugin keeps its heavy imports inside its functions.
-LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
-    "pixel_reference":       _pixel_reference,       # numpy + Pillow, the floor
-    "efficientad_custom":    _efficientad_custom,    # ours; the anomalib wrapper baseline is retired (ADR-0029)
-    "patchcore_anomalib":    _patchcore_anomalib,    # bounded memory-bank reference
-    "dinomaly_custom":       _dinomaly_custom,       # ours; the anomalib wrapper baseline is retired (ADR-0029)
-    "glass_anomalib":        _glass_anomalib,        # experimental learned synthesis
-    "dino_memory":           _dino_memory,           # ours; frozen DINO patch memory, three scoring rules
-    # "classical_circular":  M8, optional (ADR-0015)
-}
 ```
 
-A method whose optional dependencies are missing reports `availability.available = false` with the
-command that installs them, and is **listed rather than hidden**: "why can't I pick EfficientAD"
-should be answerable from the screen.
+Two optional structural protocols sit beside the ABC rather than on it, so no method carries a stub it
+cannot honestly implement:
 
-Portable export is a second, optional structural protocol rather than another abstract method on every
-model. A class lists `onnx` only when its fitted instance implements `SupportsOnnxExport` and its graph has
-passed the generic Python-versus-runtime parity gate. The API and UI branch on that capability, never on the
-registry key. See [portable deployment](deployment.md).
+- **`SupportsResume`** (`completed_steps`, `fit_more`) — continued training ([jobs](jobs.md)). The train
+  handler checks it agrees with `supports_resume` and refuses a mismatch by name. A method that cannot
+  resume exactly (no optimizer state) refuses rather than restarting its optimizer.
+- **`SupportsOnnxExport`** (`deployment/protocol.py`) — a class lists `onnx` only when its fitted
+  instance implements this and its graph has passed the generic Python-versus-runtime parity gate. The
+  API and UI branch on the capability, never on the registry key ([deployment](deployment.md)). A format
+  that holds for only some configurations is not claimed, because the offer is made from the registry
+  before any configuration is read.
 
-## Schema-driven configuration
+### Registry and availability
 
-`config_model()` returns a **pydantic model**, which the API exposes as JSON Schema at
-`GET /api/experiments/model-types`. The frontend renders the experiment configuration form **directly from
-that schema** — field types, defaults, ranges and descriptions all come from the Python side. Adding a
-hyperparameter to a model therefore requires no frontend change at all, which is what makes "add a method
-without touching the rest of the app" true in practice rather than aspirational.
+`LOADERS` in `models/registry.py` is a table of **lazy loaders**, so opening the method picker does not
+import torch. That holds only while every plugin keeps its heavy imports inside its functions.
 
-## Contexts
+A method whose optional dependencies (the `dl` extra) are missing reports `availability.available = false`
+with the command that installs them, and is **listed, not hidden**, so "why can't I pick this method" is
+answerable from the screen.
 
-`TrainContext` and `InferContext` carry everything a long-running plugin needs and must not invent for itself:
+### Schema-driven configuration
 
-- **`artifact_dir`** — the experiment's directory; the only place a model writes its own outputs;
-- **`cache_dir`** — shared, app-managed storage for downloaded assets (pretrained weights, the ImageNette
-  penalty set). Separate from `artifact_dir` because these belong to the *method* and are reused across every
-  experiment that runs it — a copy per run would be absurd;
-- **`preprocessing`** — the prepared size and colour policy every method is made to share (below);
-- **`progress(fraction, message)`** — forwarded to the job event stream ([the job system](jobs.md));
-- **`metric(name, value, step)`** — scalar series; becomes a `metric` event, which is what per-epoch losses use;
-- **`should_cancel()` / `raise_if_cancelled()`** — cooperative cancellation, polled at batch boundaries;
-- **`log`** — structured logger whose records become `log` events in the job stream;
-- **`emit_diagnostic(...)`** — the diagnostics contract (below, ADR-0018);
-- `TrainContext.val` — the held-out normals, **empty when the split has no `val` subset**;
-- `InferContext.write_map(image_id, array)` — projects through the pinned image transform, persists one
-  source-frame float32 map and accumulates the finite run display range.
+`config_model()` returns a pydantic model exposed as JSON Schema at `GET /api/experiments/model-types`.
+The experiment form is rendered from that schema — types, defaults, bounds, descriptions — so a new
+hyperparameter needs no frontend change ([frontend](frontend.md)). A default lives in Python alone: an
+untouched field is sent as unset.
 
-Everything above is *injected* (handbook frontend.md). Models never touch SQLite, never read application settings, and
-never write outside `artifact_dir` and `cache_dir` — which is also what makes a plugin unit-testable with a
-`NullReporter` and no job system at all.
+### Contexts
 
-## Spatial input is configuration of the experiment, not of the model
+`TrainContext` and `InferContext` inject everything a plugin must not invent for itself:
 
-A comparison between two methods only means something if they were shown the same pixels. Left to themselves
-the libraries disagree, and the resulting difference in AUROC would partly measure the resize.
+- `artifact_dir` — the experiment's directory, the only place a model writes its own outputs;
+- `cache_dir` — shared app-managed storage for downloaded assets (weights, the ImageNette penalty set),
+  reused by every experiment of a method;
+- `preprocessing` — the prepared size and colour policy (below);
+- `progress(fraction, message)`, `metric(name, value, step)`, `log` — become job events
+  ([jobs](jobs.md));
+- `should_cancel()` / `raise_if_cancelled()` — cooperative cancellation, polled at batch boundaries;
+- `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract (ADR-0018);
+- `TrainContext.val` — held-out normals, empty when the split has no `val` subset;
+- `InferContext.write_map(image_id, array)` — projects a prepared-frame map to source coordinates,
+  persists it as float32 and accumulates the run's finite display range.
+
+Models never touch SQLite, never read application settings, and never write outside `artifact_dir` and
+`cache_dir`, which is what makes a plugin testable with a `NullReporter` and no job system.
+
+## Preprocessing
+
+**Spatial input is configuration of the experiment, not of the model.** A comparison means something only
+if both methods saw the same pixels.
 
 Every `Experiment` pins a complete `RegionProfileRevision` build by profile id and manifest digest.
-`SpatialTransform` records a clipped half-open source crop, the actual integer contain-resize, and symmetric
-edge padding. All plugins receive the build's lossless prepared PNG paths and decode them through
-`load_array`; that function applies colour policy and verifies the frozen size but is forbidden to resize.
-A model that opens another path is a bug, not a variation.
-
-Plugins emit maps in prepared coordinates. The injected `InferContext.write_map` projects them through the
-image's recorded transform before persistence, so stored maps, source masks and UI overlays share source
-coordinates. Pixels outside the selected crop are `NaN`: rendering makes them transparent, while evaluation
-keeps them in the denominator at the score floor and reports their defect/normal counts. A crop cannot improve
-its metric by hiding a defect. There is no mixed rollout and no method-specific localisation code.
-
-## Region extractor plugins
-
-Spatial localisation has its own lazy `RegionExtractor` registry rather than becoming a model option. An
-extractor receives one source RGB array and returns one source pixel-edge box or an explicit failure. Its
-pydantic configuration schema drives the client exactly as model schemas do; adding an extractor is one
-module and one registry entry. The four current entries represent the value test rather than four promises
-of equal quality:
-
-- `identity` is the full-source control;
-- `center_crop` is a fixed fractional window around a configured centre — content-free by design, for
-  repeatably fixtured acquisitions where content-based extraction disagrees between the channels of one
-  grouped sample (measured on the first grouped dataset: a dark-field channel's glow pulled its Otsu box
-  ~35% wider than its bright-field sibling's on every sample, which would misregister any per-position
-  channel fusion). A deterministic window is the only extractor identical across channels by construction;
-- `foreground_threshold` estimates background luminance from the border, thresholds absolute contrast on a
-  bounded analysis grid, and returns the largest connected component;
-- `mobile_sam` uses the verified TinyViT checkpoint and a bounded automatic prompt grid, then selects the
-  largest mask inside configured area/quality limits. Torch and MobileSAM imports remain inside construction.
-
-Extractor confidence is method-specific and cannot be compared between registry entries. Profile preview
-reports coverage, box geometry, runtime and failures; it does not turn those confidence values into a shared
-score they are not.
-
-Preview selects at most 24 images evenly across the dataset and writes no prepared pixels. Full build is a
-single cancellable `region_prepare` job: it writes into a job-specific staging directory, records successful
-and failed images in a deterministic JSON-lines manifest, then atomically publishes the build. A completed
-materialisation is immutable; rebuilding requires a new profile revision. Each successful entry pins the
-source digest, realised transform, extractor metadata and prepared-image digest. The summary retains a bounded
-visual-audit sample and failure examples;
-the dataset-local **Prepare** screen overlays each source crop and can switch to the materialised pixels.
-MobileSAM attempts MPS for the first real image and transparently reconstructs on CPU after an MPS runtime
-failure; that chosen device is reported as extractor metadata rather than hidden.
-
-### Standardizing for a backbone is the model's business, not the bridge's
-
-The bridge decides the pinned spatial artifact and colour, and stops there. What a method then does with those pixels is
-part of the method: `efficientad_nets.imagenet_normalize` applies ImageNet statistics inside `forward`, and
-that is not a second preprocessing, it is the network's first layer.
-
-**`expand_planes` sits on the same side of the seam**, for the same reason. How many planes a backbone's first
-convolution wants is a property of that backbone, not of the experiment. Under `color=grayscale`, `load_array`
-returns one plane and the five methods with three-channel backbones call `expand_planes(chw, 3)` themselves.
-Putting the expansion in `load_array` instead would be worse than the duplication it removes: `grayscale` and
-`rgb` would then produce identical arrays for a mono file, so the experiment would record a colour choice that
-changed nothing, and `pixel_reference` — which genuinely consumes whatever it is given — would build its
-reference stack over three identical copies of every image.
-
-The same replication happens **inside the exported ONNX graph** rather than in the export harness, so a
-bundle's declared input really is `preprocessing.channels` and the host is not left with a shape to fix up.
-
-The seam matters because **the two libraries put it in different places**, and one of them is invisible when
-it is wrong. `efficientad_custom` normalizes inside the model, so it is handed `load_array`'s
-`[0, 1]` array unchanged. anomalib's PatchCore does **not** — `Patchcore.configure_pre_processor` puts the
-`Normalize` in the Lightning pre-processor, which none of these wrappers use — so `patchcore_anomalib`
-applies it itself, from `IMAGENET_MEAN` / `IMAGENET_STD` in `preprocessing.py`. Feeding an ImageNet backbone
-unnormalized pixels does not fail: it runs, produces maps, and quietly scores features from outside the
-distribution the backbone was trained on.
-
-## Bounding a memory-bank method
-
-`pixel_reference` caps how many normals build its median and `efficientad_*` cap how many fit their
-quantiles. Both are one number over a pass whose value saturates. **PatchCore is the case where the bound is
-the design**, because its cost is not a step budget at all — it holds every training patch at once and then
-runs a selection whose loop count is the size of the bank.
-
-Measured by `scripts/patchcore-smoke-test.py` at 256×256 with `wide_resnet50_2` and `layer2+layer3`, read
-from a real forward pass rather than derived from an assumed stride:
-
-| quantity | measured |
-| --- | --- |
-| patch grid / embedding width | 32×32 = 1024 patches, 1536 dims |
-| per image | 6.29 MB |
-| a ~900-image VisA class | 921 600 patches = **5.66 GB** before any selection |
-| backbone forward | **7.0 ms/image on MPS**, 19.3 on CPU |
-| greedy iteration at N=100 000 | 7.16 ms on MPS, **2.46 ms on CPU** |
-| greedy total at `coreset_ratio` 0.1 | 1.2 s at N=25 000, 24.6 s at 100 000, 150.8 s at 250 000 |
-| nearest-neighbour search, 10 000-vector bank | 14.5 ms/image on MPS, 13.1 on CPU |
-
-Three things follow, and each is a rule rather than a tuning.
-
-**Two independent caps, applied in a fixed order.** `max_bank_images` bounds the backbone pass;
-`max_candidate_vectors` bounds the store and, with it, the selection — whose total cost is *quadratic*, since
-both the iteration count and the work per iteration grow with N. Images are dropped first and patches thinned
-second, never the reverse: patches inside one image overlap through the 3×3 pooling and are largely
-redundant, while two images differ by whatever the process actually varies. `plan_bank` resolves both before
-the pass and its numbers go into the job log, so a footprint is known before it is paid for. It is pure and
-torch-free for the same reason `introspect.build_tree` is: the arithmetic that decides whether the machine
-survives is checked by the CI job that has no torch.
-
-**The selection runs on the CPU even when the rest runs on MPS.** The loop is one norm over a tall thin
-tensor, an argmax and a scatter — too little arithmetic to cover per-iteration dispatch — so the device that
-wins the forward pass loses the selection threefold. Nothing in the application would have shown this: the
-run finishes and the bank is correct, it is merely three times slower than it needed to be.
-
-**The loop itself is ours, and the rule is not.** anomalib's `KCenterGreedy` returns when it is finished and
-not before, so a job reports no progress and ignores cancellation for as long as it runs. Every other long
-operation here stops within one step. So the projection and the distance stay anomalib's, the iteration order
-is identical, and `test_dl_patchcore.py::test_the_greedy_selection_matches_anomalib` pins that the same
-features and the same starting point produce the same indices. The loop lives in `models/coreset.py`
-rather than in the plugin, because it is torch-only and an in-house method — which may not import
-anomalib at all — should be able to reuse it. `patchcore_anomalib` re-exports it under its own name, so
-nothing about the selection moved except the file it is written in.
-
-### A seed only means something if it reaches every stream
-
-Writing that pin found the bug worth finding. `SparseRandomProjection` draws its sparsity pattern through
-scikit-learn's `sample_without_replacement`, whose `random_state` defaults to `None` — **numpy's global RNG,
-which `torch.manual_seed` does not touch** — and anomalib constructs it with no `random_state` at all. Its
-coreset is therefore not reproducible: same seed, same data, a different memory bank, and nothing anywhere
-saying so.
-
-This is M6's finding arriving in a different library. There it was weight initialisation drawing from torch's
-global stream, so `seed` controlled the training order over *different* initial weights and two runs of one
-configuration were not one experiment. The shape is the same and so is the consequence: a `seed` field on the
-experiment form that does not control the result puts unattributable noise under every comparison built on
-it. `patchcore_anomalib` pins both streams, and a test asserts the bank is identical across two fits at one
-seed and different at another — both directions, because pinning a seed is only meaningful if changing it
-changes the answer.
-
-## A frozen backbone can be a bank, a window, or a distribution
-
-`dino_memory` is the second method whose cost is a memory footprint rather than a step budget, and the
-first in-house one built on the shared frozen-encoder table in `models/dino_backbone.py`. Nothing is
-trained. A frozen DINOv2 or DINOv3 encoder produces L2-normalized patch features for the training
-normals, those features become a memory, and a test patch is scored by how far it is from that memory.
-What is new is not the encoder — it is that **what the memory is** is a field.
-
-**Three scoring rules on one axis.** `scoring` is a single enum with three values:
-
-| value | the memory | what it can see |
-| --- | --- | --- |
-| `global_knn` | one coreset bank over every position of every image | position-blind: a pattern that is normal *somewhere* is normal everywhere. PatchCore's rule, over transformer features. |
-| `local_knn` | one small bank per patch position, searched over a `window_radius` neighbourhood | registration-aware: a pattern in the wrong place is an anomaly. |
-| `local_gaussian` | one shrunk Gaussian per patch position, scored by Mahalanobis distance | PaDiM's rule, over the same features: the memory is a distribution rather than a set of examples. |
-
-**One axis rather than a layout × distance product**, because that product has an invalid cell. A
-*global* Gaussian over every patch of every image is one distribution fitted to the union of everything
-the encoder ever sees, which is not a model of normality but a model of the dataset's marginal. Three
-named values say what can actually be run, and the picker generated from the schema shows exactly those
-three. The cost is stated in ADR-0037: a fourth genuine combination would need a new enum value rather
-than a new checkbox.
-
-`test_dl_dino_memory.py::test_a_per_position_bank_finds_what_a_global_bank_explains_away` is what keeps
-the axis honest. Every training image carries a dark square at one position and a bright square at
-another, so both appearances are in the memory; the test image has the bright square at the dark one's
-position. Nothing new has appeared — something has moved. The global bank finds the misplaced patch's
-twin elsewhere and reports 0.97× (the anomalous image scores slightly *lower* than a normal one); the
-per-position bank scores it about twenty times higher.
-
-**The window is an offset loop, not a gather.** `local_knn` iterates `(2r+1)²` offsets, taking aligned
-sub-rectangles of the query grid against the bank grid and running one `einsum("rcd,rckd->rck")` per
-offset, then an elementwise minimum. An `unfold` that materialized every window's neighbours at once
-would hold `(2r+1)²·P·K·D` floats — about 900 MB at r=1, P=1024, K=64 and a 384-wide feature, and 1.8 GB
-at 768 — where the loop holds one `(P, K, D)` view at a time and reuses the bank in place. Border
-positions have fewer valid offsets, so the result falls back to the `(0, 0)` offset: a border patch is
-scored against its own position, never against nothing.
-
-**The covariance fit is CPU float64**, and that is a smoke-test verdict rather than a preference
-(`scripts/dino-memory-smoke-test.py`, ADR-0008). Batched Cholesky is 16× slower on MPS where the kernel
-exists at all, and a covariance fitted from fewer samples than dimensions is exactly where float32 stops
-being enough. The same script places the rest: the encoder forward wants MPS (~2×); `topk` over a
-100 000-wide row is ~7× slower on MPS *and* breaks exact ties the other way, so neighbour selection is on
-the CPU and a neighbour index is never a cross-device identity; the distance/einsum kernels and the map
-post-processing run wherever their tensors already are. Since every bank is CPU-resident, everything
-after the forward pass is on the CPU by construction and needs no branch.
-
-A position sees `per_position_images` samples of `mahalanobis_dims` dimensions, so its raw covariance is
-singular **in the ordinary case, not a degenerate one**. `MemoryPlan.sample_deficit` is a field rather
-than a sentence in a log line, so both the plan table and a test can assert how far short of full rank a
-fit is. Shrinkage is what makes the inverse exist: `Σ = (1 − λ)S + λ(tr S/d)I`, with λ from the
-closed-form Ledoit-Wolf 2004 estimator or from `ridge_epsilon`. **The ridge is scale-aware on purpose.**
-These features are unit vectors, so a per-position covariance has entries orders of magnitude below
-0.01; an absolute `S + 0.01·I` would be the identity with a rounding error attached, and the Mahalanobis
-distance would quietly become a Euclidean one that still runs and still produces maps.
-
-**Bounded before it runs, with no probe.** `plan_memory` is pure and torch-free like `plan_bank`, and it
-goes one step further: the grid comes from `patch_grid`'s arithmetic and the feature width from the
-backbone table times the number of layers read, so `describe()` reaches the job log before the encoder is
-even constructed. The price is a check — the first real batch verifies the grid and the width and refuses
-a disagreement, so the announced footprint is a measurement rather than a hope. The caps compose in the
-same fixed order PatchCore uses: **units first, then patches within each surviving unit**.
-
-**Channel fusion is where "channel count is data, never schema" becomes a number.** `channel_fusion`
-has two values. `per_image` pools every channel image into one memory and scores each image on its own —
-which, unlike `pixel_reference`'s pooled median, is not a desensitization, because a dark-field patch
-simply finds dark-field neighbours rather than inflating a shared scale. `feature_concat` makes the
-**unit of banking a sample**: its per-channel vectors are concatenated in a stable order and the result
-is L2-normalized again, so each channel contributes `1/√C` and the squared distance between two fused
-vectors is the *average* of the per-channel squared distances rather than their sum. A four-channel
-sample therefore scores on the same scale as a two-channel one, and a one-channel group is *exactly*
-`per_image` — the same call with `C = 1`, where normalizing an already-unit vector is the identity.
-
-The channel order is `tuple(sorted(...))` over the dataset's channel names, computed by a pure
-`channel_order` function. A fused vector's meaning is positional, so an order that depended on a query's
-row order would make two runs of one dataset silently incomparable. Every sample must present exactly
-the fitted channel set; a missing or unseen channel **refuses by name**, naming the sample, what it
-presents and what was expected — `pixel_reference`'s voice one level up. There is no fallback, because a
-gap in a fused vector is not a shorter vector, it is a different one.
-
-**A known limitation, with a backlog item behind it.** `experiments/diagnose.py` scores a *single*
-record, so asking a multi-channel `feature_concat` model about one image lands in that same channel
-refusal rather than producing a diagnostic. The refusal is readable and names the sample, which is the
-part that matters until diagnose can pass a whole sample group.
-
-`portable_formats` is empty rather than conditional: `feature_concat` has no single-input graph at all,
-and the export offer is made from the registry before any configuration is read, so a format that is
-true for one configuration of a method is worse than an absent one. `capabilities().channel_aware` is
-`True` regardless of `channel_fusion`, because the flag says the model *may* consume channel metadata
-and the field decides whether it does. No public-data quality gate has been run yet; see
-[roadmap.md](../roadmap.md).
-
-## A frozen backbone can also be a subspace, and the window is a fraction of depth
-
-`subspace_ad` is the same frozen encoder again with a different question asked of it. Instead of
-keeping the training patches and measuring a distance to them, it keeps what they *span*: patch tokens
-are mean-pooled over a band of transformer blocks, PCA is fitted to the normals, and a patch scores the
-squared length of the part of itself the leading subspace cannot reconstruct. A fitted model is a mean
-vector and an orthonormal basis. Nothing is trained, nothing is stepped, and a fit over sixteen images
-finishes in under a minute.
-
-**The layer band is expressed as a position in the encoder's depth, not as a count of layers**, and
-that is the one design decision here that was measured rather than chosen. `dino_backbone.LayerBand`
-carries both readings — a relative band between two depth fractions, or a fixed count of blocks ending
-at one — because the source paper's "layers 22–28 of 40" is simultaneously both and they coincide only
-on a forty-block encoder. Measured at twelve and twenty-four blocks, the fixed count loses 6.5 points
-of image AUROC on ViT-S, 1.5 on ViT-B and nothing on ViT-L. A method that hard-codes seven layers is
-therefore choosing a different window on every backbone it is offered, and choosing worst on the small
-fast encoder a user reaches for first. `LayerWindow` is the picker that names the nine windows; the
-default is `upper_half`, which won at both depths and won by more on the deeper one.
-
-**Two identities make three of the four axes free**, and they are why the defaults could be chosen by
-measurement at all. Because the basis is orthonormal, a patch's score at rank *r* is `‖x−µ‖²` minus a
-prefix of the squared projection coefficients — so every `variance` threshold is one `cumsum` away from
-the same projection, and a stored fit answers at every threshold without refitting. Because the image
-score is the mean of the top `tail_fraction` of patch scores, it is a prefix mean of the sorted map, so
-every ρ is one sort away. Only the encoder forward and the prepared size genuinely cost anything. The
-arithmetic lives in `models/subspace.py` and `models/score_map.py` and is **shared with the sweep that
-chose the defaults** (ADR-0038), so a number the campaign measured and a number a run here measures
-differ by the experiment rather than by a second implementation.
-
-**The capacity verdict is the one that did not transfer**, and it is worth knowing before spending on
-a backbone. ViT-L beats ViT-B by +0.0249 ★ on VisA, winning eleven categories of twelve — and by
--0.0002 on MVTec-AD, which is a tie, for roughly twice the compute. It stays the default because it
-is never worse; it is not a default that pays for itself on every dataset.
-
-**One subspace per channel.** Two views of one part share no normal appearance — a bright-field and a
-dark-field frame of the same object look nothing alike — so pooling them into one covariance would fit
-a subspace spanning both, against which neither is far from normal. `capabilities().channel_aware` is
-`True`, an image is scored against its own channel's subspace, and a channel the model was not fitted
-on **refuses by name**.
-
-**The few-shot protocol is the paper's, the cap is ours.** Each training image is augmented with
-`rotations` random rotations, which is how a one-shot fit gets enough patches for a covariance at all;
-the corners a rotation invents are admitted or excluded by `rotation_fill`. `rotations=0` is the
-setting for a part whose orientation carries meaning — the source paper excludes one MVTec category on
-exactly that ground, and here that is a field rather than a carve-out. `max_fit_images` bounds the fit
-at sixteen images sampled with `evenly_spaced`, and says in the log when it dropped any: the cost of a
-fit is `(1 + rotations)` forward passes per image and the covariance itself is free, so this is the
-only number that decides how long a fit takes.
-
-**A random encoder is not enough for this method, and that is a measured difference from
-`dino_memory`.** On the stamped-defect fixture the published DINOv2 ViT-S weights give AUROC 1.00 and a
-seeded random ViT gives 0.56; on an untrained encoder the pooled features of `last`, `last_four` and
-`upper_half` also agree to five significant figures, so the window axis is invisible there too. A
-nearest-neighbour bank works on random features because any metric space gives it a distance; a PCA
-residual needs variance directions that mean something. `test_dl_subspace_ad_plugin.py` is therefore
-hermetic about plumbing and silent about accuracy, and the detection claim is asserted on arrays in
-`test_subspace_ad_math.py` and measured on real data in [`measurements.md`](../measurements.md).
-
-## A reconstruction method needs a fixed training horizon
-
-`dinomaly_anomalib` — a frozen registered DINOv2 encoder and anomalib's bottleneck and eight-layer
-decoder, trained through this plugin's bounded batch-1 loop — was measured against `dinomaly_custom`,
-the in-house implementation below, on the VisA gate. Means matched to the third decimal on all three
-metrics, so under the predeclared rule the wrapper retired the way `efficientad_anomalib` did
-(ADR-0008, ADR-0029) and the module is gone from the registry. Its recorded numbers stand as the
-historical baseline row in [`measurements.md`](../measurements.md); the design points it established —
-the fixed training horizon among them — live on in `dinomaly_custom`, described next.
-
-## The same method again, ours, and what that buys
-
-`dinomaly_custom` is the in-house implementation of Dinomaly, and it was built **beside** the wrapper
-rather than instead of it. That is ADR-0029's pattern executed a second time: a wrapper establishes
-that a family is worth having and becomes the baseline; an implementation we own is what turns every
-decision inside it into a field on a form. This implementation reached parity on the wrapper's exact
-VisA protocol, so the wrapper retired under the predeclared rule — see
-[`measurements.md`](../measurements.md) for the verdict.
-
-`models/dinomaly_custom.py` holds the configuration, the plan, the bounded pass and the checkpoint;
-`models/dinomaly_nets.py` holds the `nn.Module`s, the hard-mined loss, StableAdamW and the map rule —
-the same split `efficientad_custom`/`efficientad_nets` established. **Neither file imports anomalib.**
-A second reading of one library is not a second implementation, so that boundary is what makes the
-head-to-head mean anything at all.
-
-**What was shared with the wrapper, deliberately.** The encoder table in `models/dino_backbone.py`,
-whose default entry is the registered DINOv2 anomalib pins — so an untouched run still matches the
-wrapper's recorded protocol. The warm-cosine schedule: a 100-step linear warm-up to 2e-3 then a cosine
-to 2e-4 over a fixed 5,000-step horizon, which was the *same function* as the wrapper's rather than one
-that agreed at one setting. The image-score rule, including its wart: the map is resampled to a fixed
-256², smoothed with a 5-tap Gaussian at σ = 4, and the hottest one percent is averaged. And the pass
-discipline — plan before the first forward, cancellation every step, absolute step numbering in the
-metric stream, exact continuation.
-
-**What was genuinely different, and it was two things.**
-
-| | anomalib wrapper (retired) | `dinomaly_custom` |
-| --- | --- | --- |
-| encoder | `vit_small_patch14_reg4_dinov2`, hard-coded | any entry in the shared `DinoBackbone` table, including the two DINOv3 ones |
-| decoder depth | fixed at 8 | `2 … 12`, and the fusion groups follow |
-| ONNX export | yes | not yet |
-
-Depth was the sharper of the two, because it was a bug the wrapper inherited rather than a feature it
-lacked. anomalib's constructor accepts a `decoder_depth` and then indexes the literal
-`[[0, 1, 2, 3], [4, 5, 6, 7]]` for both sides of the comparison, so any value but eight fails. Here
-`fuse_groups(count)` derives the split, so a four-block decoder fuses outputs 0-1 against 2-3 while the
-encoder keeps its own 0-3 / 4-7 halves — the encoder always contributes eight target layers whatever the
-decoder does. `test_a_four_block_decoder_trains_and_produces_maps` runs the claim rather than asserting it.
-
-The encoder field is run rather than asserted too. DINOv2 resolves to timm's `VisionTransformer` and
-DINOv3 to its `Eva` — a different class, a different patch size, a rotary position embedding and its own
-`forward_intermediates` — and `test_the_other_encoder_family_runs_on_the_same_pixels` trains and scores
-through the DINOv3 path with no branch anywhere in the plugin. It stays hermetic because
-`pretrained_encoder=False` builds the same architecture from the seed, so a licence-gated encoder is
-exercised structurally without an account or a download.
-
-**Three bring-up pins are the evidence the port landed**, and they are worth naming because they are
-unusual: all three demand **bit-exact** agreement, `atol=0`.
-
-- `test_our_encoder_path_is_the_shared_backbone_module_exactly` — `dino_backbone.extract_layer_tokens`
-  over `load_backbone` is identical to calling timm's `forward_intermediates` directly. The shared module
-  is the single source of encoder truth and this method carries no second one.
-- `test_one_training_step_matches_anomalib_exactly` — identical weights in, and the loss, every gradient
-  and every weight after one StableAdamW step come out identical. It imports anomalib, which the plugin
-  may not.
-- `test_the_map_and_the_score_match_anomalib_exactly` — the anomaly map and the top-one-percent score,
-  which also pins the separable Gaussian here against the kornia-backed blur upstream.
-
-**They are retirable by replacement only.** They exist to prove the port landed, not to freeze it: when a
-deliberate divergence is chosen the pin is *replaced* by a test of the new behaviour plus a measurement
-saying the change was worth it. Loosening a bit-exact pin into a tolerance is how a port stops being one.
-
-`extract_layer_tokens` is the one addition the shared backbone module needed, and it is the sibling of
-`extract_patch_features` rather than a flag on it: no final norm, prefix tokens kept, no per-layer L2
-normalisation. All three differences are load-bearing — a reconstruction *target* must not be normalised
-onto a sphere, the decoder attends over the class and register tokens, and the layers here are averaged
-in groups rather than concatenated. `BackboneSpec` also gained `num_heads`, so the plan can state the
-decoder's shape before torch is imported; `DinomalyNet` cross-checks the table against the constructed
-model rather than trusting it.
-
-**The export asymmetry is stated rather than hidden.** `portable_formats` is empty: the graph is not the
-hard part, the generic Python-versus-runtime parity gate is what has to be written and run, and an export
-offer is made from the registry before any configuration is read — so claiming a format that has not
-passed that gate is worse than an absent one. It is on [backlog.md](../backlog.md).
-
-One finding fell out of writing the pins, in the shape M6 and M7 both found. The wrapper built its
-optimizer from `[p for p in model.parameters() if p.requires_grad]`, and anomalib's `TimmFeatureExtractor`
-never clears the encoder's flags — so that filter hands the optimizer the encoder's 22 million parameters
-as well. Harmless today, because the encoder runs under `no_grad` and StableAdamW skips a parameter with
-no gradient, and not harmless the first time somebody adds a global gradient clip.
-`DinomalyNet.trainable_parameters` takes the bottleneck and the decoder **by name** for that reason, and
-a test records the difference.
-
-## A learned-synthesis method needs a bounded reference frame
-
-`glass_anomalib` keeps anomalib's GLASS network, Perlin local synthesis, Gaussian global
-synthesis, gradient-ascent mining, losses and anomaly-map rule. The plugin supplies the
-finite batch-1 loop, cancellation, shared prepared pixels and exact continuation. The
-pretrained WRN-50 is frozen; only the feature projection and discriminator are optimized.
-
-Global synthesis is defined relative to a centre in the projected normal-feature space.
-Upstream recomputes that centre over the entire training loader at every epoch boundary,
-which makes an otherwise finite step budget hide a dataset-sized pass. Here
-`center_images` bounds the pass and `evenly_spaced` preserves acquisition-range coverage;
-the plan prints both retained and omitted counts before loading torch.
-`center_refresh_steps` is an absolute step schedule. A continuation at step 650 therefore
-uses the saved centre until the same next refresh as an uninterrupted run, while a
-continuation exactly on a refresh boundary recomputes it. The checkpoint carries both
-optimizers, the current centre, CPU/MPS synthesis RNG, NumPy image-order stream and the
-completed step; a test pins 2+1 steps to the exact state of three uninterrupted steps.
-
-The optional Describable Textures Dataset is not an implicit dependency. Built-in Perlin
-synthesis is the first default and needs no corpus. DTD has a named public URL and SHA-256
-in the measurement record, but becomes app-managed storage only if a paired public-data
-ablation shows value. Likewise, the upstream per-category `svd` switch is exposed only as
-the generic `synthesis_anchor` experiment control; no dataset name enters the method.
-Resource evidence and the external-asset policy are recorded in
-[`measurements.md`](../measurements.md). The bounded paired public gate missed
-its image-level quality floor, so the method remains available as an explicitly experimental
-comparison rather than the recommended learned-synthesis reference.
-Its portable graph embeds ImageNet normalization, the fitted projection and discriminator, and emits both
-the source-sized prepared-frame map and GLASS's own image score. Direct ONNX Runtime parity pins both
-outputs; experimental quality status does not weaken the deployment contract.
-
-## A downloaded asset can be a hyperparameter
-
-EfficientAD cannot train from a dataset alone: it needs a **pretrained teacher**, distilled from a
-WideResNet on ImageNet. That looks like a fixed public constant, and it was treated as one. It is not.
-
-A teacher is the *output of somebody's distillation run*, and two people who each did that honestly
-ship different weights. Measured: anomalib's `pretrained_teacher_small.pth` and the teacher bundled
-with [nelson1425/EfficientAD](https://github.com/nelson1425/EfficientAD) have identical architecture
-and identical tensor shapes, and differ element by element by up to **1.4 in absolute value**. They
-are two different networks, not one file under two names — and the second is the one whose repository
-reports reproducing the paper (MVTec AD 99.1, VisA 98.2).
-
-So which teacher is loaded is **configuration of the experiment**, `teacher_source`, and both URLs
-live in `efficientad_assets.py` under separate cache subdirectories so a run can be repeated against
-either without a refetch. Two consequences worth stating:
-
-- **The two published files are keyed differently**, because the two reference codebases build the
-  same network differently: anomalib names its layers (`conv1.weight` …) and nelson1425 builds an
-  `nn.Sequential`, so its file is keyed by *position* (`0`, `3`, `6`, `8` — the gaps are ReLUs and
-  pools). `load_pdn_weights` maps the positional layout **by order of appearance**, never by parsing
-  the indices, and validates every shape before loading. A shuffled mapping would load without
-  complaint and produce a plausible, wrong teacher.
-- **Matching shapes is not the same claim as being the same network**, so the architecture itself is
-  pinned: `test_our_pdn_is_the_reference_pdn` builds the reference's `nn.Sequential` from its own
-  source, loads one set of weights into both, and compares outputs — for both widths and with
-  padding on and off. Two networks can share every parameter shape and differ in where the ReLUs and
-  pools sit, and that mistake is invisible from the outside. The same test pins the one genuine
-  difference: **ours standardizes with ImageNet statistics inside `forward` and the reference does it
-  in its dataset transform**. Same function, different seam — and a teacher fed unnormalized pixels
-  would also load without complaint.
-- **The reproduction's URL is pinned to a commit**, not to `main`. An asset that changes upstream
-  must be a checksum failure naming the file, not a silent change of teacher between two runs that
-  read as comparable.
-
-This is the general shape, not a special case: anything downloaded that a number depends on is an
-input to the experiment, and belongs in its configuration where the comparison screen can show it.
-
-**Some of those inputs are licensed, and a licence is not a config field.** `dino_memory`'s `backbone`
-menu holds five frozen encoders, and two of them — the DINOv3 entries — resolve to weights under Meta's
-DINOv3 licence: access must be requested on a Hugging Face model page and approved for an account before
-anything will download. That is a *permission the user already holds or does not*, so it reaches the
-method as an **ambient `HF_TOKEN`** and never as a field on a form. Putting a token in the experiment
-configuration would store a credential in the database, print it into job logs, and carry it into every
-comparison export — for a value that is not an input to the experiment at all.
-
-What the plugin owes instead is a readable failure. `dino_backbone._gated_failure_message` turns a 401
-into three sentences: which encoder resolves to which gated weights, where to request access, and which
-ungated Apache-2.0 encoders need no account at all. The token's value is never read, stored or printed —
-what the message says is that one is needed. The default is deliberately one of the ungated three, so a
-fresh machine gets a result rather than a 401, and `test_models.py` asserts which entries are ungated as
-a property of the table rather than as a note in a docstring.
-
-**PatchCore inherits the whole argument.** Its backbone is timm's pretrained `wide_resnet50_2`, resolved
-through the HuggingFace hub and equally somebody's training run, so `backbone` and `pretrained_backbone` are
-configuration and `allow_downloads` refuses a fetch by name. The difference is what gets stored: EfficientAD's
-teacher is small enough to live in the checkpoint, while a backbone is 260 MB per experiment and a comparison
-holds several. So `patchcore.pt` carries a **sha256 fingerprint** of the backbone instead, and `load` refuses
-a mismatch naming the backbone. The bank was selected in the old feature space, so distances against new
-weights are not comparable — and without the check, the checkpoint would load, inference would run, and the
-number would be plausible and wrong.
-
-## Diagnostics
-
-A method that declares `produces_diagnostics` can show what it did as well as what it concluded, by
-pushing into a self-describing index the UI renders **by `kind`, never by method name**. That is one
-capability flag and one context method; the whole contract — authoring, the two read paths, the
-architecture tree, on-demand entries and deletion — is on its own page:
-**[diagnostics](diagnostics.md)**.
-
-## Contract: scores are per-image
-
-> **Models emit per-image scores. Cross-channel aggregation belongs to the evaluation layer ([the evaluation layer](evaluation.md)).**
-
-This is the seam that keeps evaluation model-independent. A model *may* use channel metadata internally —
-`ImageRecord.channel` is provided — but it still returns one `Prediction` per input image. No model decides
-how a part's three views combine into a sample-level verdict; that policy lives in one place and is applied
-identically to every method.
-
-Two methods declare `channel_aware` and mean it, in two different ways.
-
-`pixel_reference` was the first. Its
-`reference_scope` defaults to `channel`, fitting one per-pixel median and MAD per illumination. That is a
-correctness fix rather than a refinement: a single reference pooled over several illuminations has a
-per-pixel MAD dominated by the difference *between* the channels, so every deviation is divided by an inflated
-scale and a real defect is flattened towards the same z-value as ordinary noise. The baseline still runs,
-still produces maps, and quietly stops being able to tell them apart. `dataset` scope is the old behaviour and
-is what single-view data wants, where the two are identical anyway.
-
-Scoring a channel that was never fitted **raises, naming the channel**. Falling back to another channel's
-reference would produce a confident-looking map of nothing but the difference between two illuminations. And
-because one static graph carries one reference tensor, `export_onnx` refuses a multi-reference bank by name —
-refused inside the plugin, so no route has to branch on a method's own configuration.
-
-`dino_memory` is the second, and it reads the metadata rather than partitioning on it: under
-`channel_fusion=feature_concat` a sample's channel images become **one** fused vector per patch
-position, so a part is scored once across all its views — and the plugin still returns one `Prediction`
-per input image, with the sample's map written to each of them through its own projection. The seam
-holds either way: neither method decides how a part's views combine into a sample-level verdict.
-
-## Anomaly map storage
-
-Anomaly maps are written as **float32 `.npy`** arrays — the source of truth, lossless, directly usable for
-recomputing statistics or (later) pixel-level metrics against masks. The API renders **colormapped PNGs on
-demand** at `GET /api/images/{image_id}/anomaly-map?experiment_id=…`, caching the rendered PNG. Overlay
-opacity is applied in CSS by the UI, never baked into the served image, so the opacity slider is instant and
-requires no server round-trip.
+`SpatialTransform` records a clipped half-open source crop, an integer contain-resize and symmetric edge
+padding. Every plugin receives the build's lossless prepared PNG paths and decodes them through
+`models/preprocessing.load_array`, which applies the colour policy and verifies the frozen size but never
+resizes. A model that opens another path is a bug.
+
+Plugins emit maps in prepared coordinates; `InferContext.write_map` projects them through the image's
+recorded transform, so stored maps, source masks and overlays share source coordinates. Pixels outside the
+crop are `NaN`: rendered transparent, and kept by evaluation in the denominator at the score floor with
+their defect/normal counts reported — a crop cannot improve its metric by hiding a defect.
+
+**Backbone standardization belongs to the model.** ImageNet normalization is the network's first layer
+(`efficientad_nets.imagenet_normalize` inside `forward`; `patchcore_anomalib` applies `IMAGENET_MEAN` /
+`IMAGENET_STD` from `preprocessing.py` itself, because anomalib puts it in a Lightning pre-processor these
+wrappers do not use). Unnormalized pixels do not fail — they score features from outside the backbone's
+distribution.
+
+**`expand_planes` is on the model's side too.** Under `color=grayscale`, `load_array` returns one plane and
+each three-channel backbone calls `expand_planes(chw, 3)` itself. Expanding in `load_array` would make
+`grayscale` and `rgb` identical for a mono file and give `pixel_reference` three copies of every image.
+Exported ONNX graphs replicate internally, so a bundle's declared input is `preprocessing.channels`.
+
+### Region extractors
+
+Localisation has its own lazy `RegionExtractor` registry (`regions/registry.py`) rather than being a model
+option. An extractor receives one source RGB array and returns one source pixel-edge box or an explicit
+failure; its pydantic schema drives the client as model schemas do.
+
+- `identity` — the full-source control;
+- `center_crop` — a fixed fractional window around a configured centre, content-free by design and the
+  only extractor identical across the channels of one grouped sample by construction; content-based
+  extraction can disagree between channels and misregister per-position channel fusion;
+- `foreground_threshold` — border-estimated background, absolute-contrast threshold on a bounded grid,
+  largest connected component;
+- `mobile_sam` — the verified TinyViT checkpoint with a bounded automatic prompt grid, largest mask
+  within area/quality limits. It tries MPS and falls back to CPU after an MPS runtime failure, reporting
+  the chosen device as extractor metadata.
+
+Extractor confidence is method-specific and not comparable between entries. Preview samples at most 24
+images evenly and writes no pixels. A full build is one cancellable `region_prepare` job that writes to a
+job-specific staging directory, records successes and failures in a deterministic JSON-lines manifest, and
+publishes atomically. A build is immutable; rebuilding needs a new profile revision. Each entry pins the
+source digest, realised transform, extractor metadata and prepared-image digest. The dataset's
+**Prepare** screen overlays each crop and can switch to the prepared pixels. The default-profile verdict
+is in [measurements](../measurements.md).
+
+## Seeding
+
+A `seed` field that does not control the result puts unattributable noise under every comparison. Seeds
+must reach **every** random stream, including those libraries hide: scikit-learn's
+`SparseRandomProjection` draws from numpy's global RNG, which `torch.manual_seed` does not touch, and
+torch's global stream drives weight init. Every method pins all its streams, and its tests assert
+reproducibility in both directions — same seed identical, different seed different.
+
+## Memory planning
+
+Anything whose cost is linear in the dataset and whose value saturates is capped, sampled with
+`models.base.evenly_spaced` (never the first N), and the cap is logged with what was dropped.
+
+For memory-bank methods the bound is the design. A plan is resolved **before** the pass by a pure,
+torch-free function — `plan_bank` (PatchCore) and `plan_memory` (`dino_memory`) — whose `describe()` goes
+into the job log, so the footprint is known before it is paid for and the arithmetic is tested by the
+torch-free CI job. Caps compose in a fixed order: **images (units) first, then patches within each
+surviving image**, because patches inside one image overlap and are redundant while images differ by
+what the process varies.
+
+Greedy coreset selection is quadratic in the candidate pool. The loop lives in `models/coreset.py`
+(torch-only, anomalib-free, so in-house methods reuse it), reports progress and honours cancellation, and
+keeps anomalib's projection, distance and iteration order —
+`test_dl_patchcore.py::test_the_greedy_selection_matches_anomalib` pins identical indices. It runs on
+**CPU** even when the backbone is on MPS: a tight loop of small kernels is dispatch-bound. Footprint
+figures are in [measurements](../measurements.md).
 
 ## Device policy
 
-Defaults target Apple Silicon: `preferred_device = "mps"` for the DL adapters, `"cpu"` for the classical
-baseline (ADR-0008). Device is resolved at job start with a graceful fallback to CPU when MPS is unavailable
-or an operator is unimplemented, and the resolved device is recorded in the job log.
+`preferred_device` is where the tensor work goes: `mps` for the deep methods, `cpu` for `pixel_reference`
+(ADR-0008). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
+missing, and is recorded in the job log. A stage inside a method may be placed elsewhere when a smoke
+test (`scripts/mps-smoke-test.py`, `scripts/patchcore-smoke-test.py`,
+`scripts/dino-memory-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
+because the run finishes with correct numbers either way.
 
-**A method's preferred device is not necessarily right for every stage inside it.** `patchcore_anomalib`
-prefers MPS and keeps its backbone there, and pins its coreset selection to the CPU regardless — measured
-three times faster, because a loop that does too little arithmetic per iteration is dominated by dispatch
-rather than by compute. The rule this generalizes to: `preferred_device` is where the *tensor work* goes, and
-a tight Python-driven loop over small kernels is a reason to measure rather than to inherit.
+**A probe runs before a plugin is written** (ADR-0008). Before wrapper or method code targets a new
+library, or a new stage targets the accelerator, a standalone `scripts/<name>-smoke-test.py` exercises it;
+what it finds (an operator missing on MPS, a stage faster on CPU, a footprint) becomes the plugin's
+defaults, device placement and caps.
 
-`dino_memory` is the second instance and the one that shows the rule is not only about loops. Its
-encoder forward wants MPS, its neighbour selection is on the CPU (~7× faster, and the tie-break differs
-across devices, so a neighbour index is never a cross-device identity), and its covariance fit is CPU
-float64 — batched Cholesky is 16× slower on MPS where the kernel exists at all, and float32 is not
-enough for a covariance fitted from fewer samples than dimensions. Three stages, three placements, one
-`preferred_device`. All of it comes from `scripts/dino-memory-smoke-test.py`, which ran before the
-plugin was written (ADR-0008): nothing in the application would have revealed any of it, because a run
-finishes and the numbers are correct on whichever device it used.
+## Downloaded assets and licences
 
-## Classical baseline
+Anything downloaded that a number depends on is an input to the experiment and belongs in its
+configuration. Pretrained weights are somebody's training run: two published EfficientAD teachers share
+architecture and shapes and still differ element-wise, so `teacher_source` is a field. `allow_downloads`
+refuses a fetch by name. URLs are pinned to a commit and checksummed, so an upstream change fails naming
+the file.
 
-`classical_circular` is the non-neural reference method. It was originally planned as the vertical slice's
-first model, on the grounds that it needs no training infrastructure, no GPU and no external framework. That
-ordering has been **superseded**: making the *showcase-specific* method the first one contradicted the
-universal goal, so the slice is now proven with a dataset-agnostic method and a dataset-agnostic floor
-baseline, and this method is scheduled later as an optional milestone. In outline: a **circle
-fit** on the part boundary with a **prior-based fallback** when the fit is poor; the resulting geometry is
-**shared across all channels of a sample**, since the views are near-simultaneous images of the same physical
-object; a **polar transform** about the fitted centre turns rotation into translation; **FFT angular
-correlation** recovers orientation; a **per-channel median/MAD reference** is built from the training normals;
-and scoring is a **percentile of the per-pixel z-score** map. It runs in seconds per sample on CPU. This
-method is explicitly `dataset_specific = True` (above) — it is showcase-dataset-specific (circular parts),
-exploiting the part's circular geometry, which the deep methods must not.
+A backbone too large to store per experiment travels as a **sha256 fingerprint** in the checkpoint, and
+`load` refuses a mismatch naming the backbone — a bank selected in one feature space is meaningless
+against other weights.
+
+**A licence is not a config field.** The two DINOv3 entries of the shared `DinoBackbone` table
+(`models/dino_backbone.py`) resolve to gated weights; access reaches the method as an ambient `HF_TOKEN`,
+never as a form field (which would store a credential in the database, logs and exports).
+`dino_backbone._gated_failure_message` turns a 401 into which weights are gated, where to request access,
+and which ungated Apache-2.0 encoders need no account. The token value is never read, stored or printed.
+Defaults are ungated, and `test_models.py` asserts which entries are.
+
+## Per-image scores
+
+> **Models emit per-image scores. Cross-channel aggregation belongs to the [evaluation layer](evaluation.md).**
+
+A model may read `ImageRecord.channel`, but it returns one `Prediction` per input image, and no model
+decides how a part's views combine into a sample verdict. A channel-aware method that is asked to score a
+channel it was not fitted on **refuses by name**; falling back to another channel's reference would
+produce a confident map of the difference between two illuminations.
+
+## Anomaly maps
+
+Maps are stored as **float32 `.npy`** — lossless, the source of truth for statistics and pixel metrics.
+The API renders colormapped PNGs on demand at `GET /api/images/{image_id}/anomaly-map?experiment_id=…`
+and caches them. Overlay opacity is applied in CSS, never baked into the image ([media](media.md)).
+
+## Diagnostics
+
+A method declaring `produces_diagnostics` pushes entries into a self-describing index the UI renders by
+`kind`, never by method name. The whole contract is on **[diagnostics](diagnostics.md)**.
+
+## Shipped methods
+
+| key | family | trains | resume | channel-aware | ONNX | device |
+| --- | --- | --- | --- | --- | --- | --- |
+| `pixel_reference` | per-pixel median/MAD | fit | no | yes | yes | cpu |
+| `efficientad_custom` | student–teacher + autoencoder | yes | yes | no | yes | mps |
+| `patchcore_anomalib` | coreset memory bank | fit | no | no | yes | mps |
+| `dinomaly_custom` | feature reconstruction | yes | yes | no | no | mps |
+| `glass_anomalib` | learned anomaly synthesis | yes | yes | no | yes | mps |
+| `dino_memory` | frozen DINO patch memory | fit | no | yes | no | mps |
+| `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
+
+Gate verdicts for each are in [measurements](../measurements.md).
+
+### `pixel_reference`
+
+The floor: numpy + Pillow, no torch. A per-pixel median and MAD over the training normals; a test image
+becomes a z-map, smoothed, and scored by a percentile.
+
+- `reference_scope` — `channel` (default) fits one reference per channel; `dataset` pools. Pooling
+  illuminations inflates the MAD with the difference *between* channels and flattens real defects to noise.
+- `max_reference_images` (128), `smoothing_sigma`, `score_percentile` (99.5), `mad_floor`.
+- ONNX: one static graph carries one reference, so `export_onnx` refuses a multi-reference bank by name
+  inside the plugin.
+
+### `efficientad_custom`
+
+EfficientAD, implemented in-house (`efficientad_custom.py` for config, loop and checkpoint;
+`efficientad_nets.py` for modules). A PDN student distils a frozen pretrained teacher, plus an autoencoder
+branch; defaults reproduce the published algorithm, and each departure is a field (ADR-0028).
+
+- `model_size` (`small`/`medium`), `max_steps`, `learning_rate`, `weight_decay`, `seed`.
+- `teacher_source` — `nelson1425` (default), `distilled` (a teacher produced by a `distill` job, named in
+  `distilled_teacher`; see [teacher distillation](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/book/src/teacher.md)), or `anomalib` (kept so
+  recorded runs stay reproducible, listed last). Assets live in `efficientad_assets.py` under separate cache
+  subdirectories. The positional nelson1425 layout is mapped by order of appearance with every shape
+  validated, and `test_our_pdn_is_the_reference_pdn` pins the architecture against the reference source.
+- `use_penalty`, `hard_quantile`, `student_teacher_weight`, `score_reduction` / `score_top_k`.
+- **A distilled teacher is a model asset, not an experiment.** The `distill` job (`models/distill.py`)
+  trains a PDN by MSE against a frozen source patch-aggregated to the PDN's output width and grid; the
+  source is a `FeatureSource` (`models/teacher_distill.py`), of which `WideResNet101Source` is the only
+  implementation. It is resumable, and writes weights, the source's feature-normalization statistics and
+  its config. `fit_more` refuses a checkpoint whose recorded teacher differs from the configured one.
+- Bounds: `quantile_images` and `quantile_pixel_budget` cap the score-normalization fit;
+  `calibration_holdout` fits it on held-out normals. 256 px is a hard floor, checked before training.
+- The diagnostic keys are a frozen set the views depend on,
+  `test_dl_efficientad_custom.py::test_the_diagnostic_keys_are_the_ones_the_views_expect`.
+
+### `patchcore_anomalib`
+
+anomalib's PatchCore: pretrained backbone features in a coreset memory bank; nothing is trained, and
+there are no steps to continue.
+
+- `backbone` (`wide_resnet50_2`), `layer_set`, `pretrained_backbone`, `allow_downloads`, `num_neighbors`,
+  `blur_sigma`, `seed` (coreset start, random projection, both RNG streams).
+- Bounds: `max_bank_images` caps the backbone pass, `max_candidate_vectors` the store and the quadratic
+  selection; `coreset_ratio` sets the bank size. `plan_bank` prints both before the pass.
+- The checkpoint `patchcore.pt` stores the bank and a backbone fingerprint, not the backbone.
+
+### `dinomaly_custom`
+
+Dinomaly, implemented in-house: a frozen DINO encoder, a trainable bottleneck and decoder that reconstruct
+the encoder's grouped intermediate layers, and a map from the reconstruction error.
+`dinomaly_custom.py` holds config, plan, pass and checkpoint; `dinomaly_nets.py` the modules, hard-mined
+loss, StableAdamW and map rule. **Neither imports anomalib.**
+
+- `encoder` — any `DinoBackbone` entry (default DINOv2 ViT-S/14-reg4). Encoder tokens come from
+  `dino_backbone.extract_layer_tokens`: no final norm, prefix tokens kept, no per-layer L2 normalisation.
+- `decoder_depth` (2–12, default 8) — `fuse_groups(count)` derives the decoder's fusion groups; the
+  encoder always contributes eight target layers.
+- `max_steps` (5000, a fixed horizon) with a 100-step warm-up to `learning_rate` and cosine decay;
+  `batch_size`, `weight_decay`, `hard_mining_fraction`, `dropout`, `map_blur_sigma`,
+  `pretrained_encoder`, `allow_downloads`, `seed`.
+- Score: the map is resampled to 256², Gaussian-smoothed (σ = 4) and the hottest one percent averaged.
+- `DinomalyNet.trainable_parameters` takes the bottleneck and decoder by name, so the frozen encoder never
+  reaches the optimizer.
+- Bit-exact pins (`atol=0`) against the shared backbone and anomalib's step and map are replaced, never
+  loosened, when a divergence is chosen deliberately.
+- ONNX: not yet; the parity gate is on [backlog.md](../backlog.md).
+
+### `glass_anomalib`
+
+GLASS: anomalib's network, Perlin local synthesis, Gaussian global synthesis with gradient-ascent mining,
+losses and map rule, driven by this plugin's finite batch-1 loop. The pretrained WRN-50 is frozen; only the
+projection and discriminator train. **Experimental**: it missed its image-level gate
+([measurements](../measurements.md)).
+
+- `max_steps`, `mining_steps`, `learning_rate`, `allow_downloads`, `seed`.
+- `synthesis_anchor` — the generic replacement for upstream's per-category `svd` switch; no dataset name
+  enters the method.
+- Bounds: the global-synthesis centre is computed over `center_images` normals (evenly spaced) rather than
+  the whole training set, and refreshed on an absolute `center_refresh_steps` schedule, so a continuation
+  refreshes exactly where an uninterrupted run would. The checkpoint carries both optimizers, the centre,
+  the synthesis and image-order RNG states and the completed step.
+- The Describable Textures Dataset is not a dependency; built-in Perlin synthesis needs no corpus.
+- ONNX: the graph embeds ImageNet normalization, projection and discriminator and emits both the map and
+  GLASS's own image score; runtime parity pins both.
+
+### `dino_memory`
+
+A frozen DINOv2/DINOv3 encoder whose L2-normalized patch features for the training normals become a
+memory; a test patch scores by its distance to it (ADR-0037). Nothing is trained.
+
+- `backbone` (default ungated DINOv2 ViT-S/14-reg4), `layers` (`last_two`), `pretrained_backbone`,
+  `allow_downloads`, `blur_sigma`, `score_percentile`, `feature_batch_size`, `seed`.
+- `scoring` — one enum, because a layout × distance product has an invalid cell (a global Gaussian models
+  the dataset's marginal, not normality):
+
+  | value | the memory | sees |
+  | --- | --- | --- |
+  | `global_knn` | one coreset bank over all positions | position-blind (PatchCore's rule) |
+  | `local_knn` | one bank per patch position, searched over `window_radius` | a normal pattern in the wrong place |
+  | `local_gaussian` | one shrunk Gaussian per position, Mahalanobis distance | PaDiM's rule |
+
+  `test_a_per_position_bank_finds_what_a_global_bank_explains_away` keeps the axis honest.
+- `local_knn` loops over `(2r+1)²` offsets with one einsum each rather than materialising every window;
+  a border position falls back to its own offset.
+- `local_gaussian` fits a covariance of `mahalanobis_dims` from `per_position_images` samples — singular in
+  the ordinary case, recorded as `MemoryPlan.sample_deficit`. `shrinkage` is Ledoit-Wolf or a ridge whose
+  `ridge_epsilon` is a fraction of the trace (an absolute ridge would swamp unit-vector covariances and turn
+  Mahalanobis into Euclidean). The fit runs in CPU float64.
+- `channel_fusion` — `per_image` (default) pools every channel image into one memory and scores each image;
+  `feature_concat` banks a **sample**: per-channel vectors concatenated in `channel_order` (sorted names)
+  and re-normalized, so each channel contributes `1/√C` — the fused squared distance is the *mean* of the
+  per-channel ones, so the score scale does not depend on channel count — and a one-channel group equals
+  `per_image`. `channel_aware` is declared unconditionally. A sample
+  missing or adding a channel refuses by name. `diagnose` scores a single record, so a multi-channel
+  `feature_concat` model refuses a single-image diagnosis (backlog).
+- Bounds: `plan_memory` derives grid and width from arithmetic before the encoder is built, then the first
+  batch verifies both. `max_bank_images`, `per_position_images`, `max_candidate_vectors`, `coreset_ratio`.
+  Neighbour selection runs on CPU (MPS `topk` is slower and breaks ties differently); only the encoder
+  forward uses MPS.
+- ONNX: none, unconditionally — `feature_concat` has no single-input graph, and the export offer is read
+  from the registry before any config exists.
+
+### `subspace_ad`
+
+The same frozen encoders asked a different question: patch tokens are mean-pooled over a band of blocks,
+PCA is fitted to the normals, and a patch scores the squared residual the leading subspace cannot
+reconstruct. A fitted model is a mean and an orthonormal basis. **Experimental**: its defaults come from a
+sweep run outside the application (ADR-0038) and its promotion gate is open.
+
+- `backbone` (default DINOv2 ViT-L/14), `pretrained_backbone`, `allow_downloads`, `seed`.
+- `layers` — a `LayerWindow` (default `upper_half`) expressed as a fraction of depth
+  (`dino_backbone.LayerBand`), because a fixed block count picks a different window on every encoder.
+- `variance` (0.99) and `tail_fraction` (the image score is the mean of the top fraction of patch scores),
+  `smoothing_sigma`. The arithmetic in `models/subspace.py` and `models/score_map.py` is shared with the
+  sweep, so a stored fit answers every `variance` by a `cumsum` and every `tail_fraction` by a sort.
+- `rotations` (30) random rotations per training image with `rotation_fill` for the invented corners;
+  `rotations=0` for parts whose orientation carries meaning.
+- Bounds: `max_fit_images` (16, evenly spaced, drops logged); a fit costs `(1 + rotations)` forwards per
+  image.
+- One subspace per channel; an unfitted channel refuses by name. It needs pretrained weights — a random
+  encoder gives it no meaningful variance directions — so plugin tests cover plumbing and accuracy is
+  asserted in `test_subspace_ad_math.py`.
+- ONNX: none.
+
+### `classical_circular` (optional, not built)
+
+The one method allowed to assume the showcase dataset's geometry, declared `dataset_specific = True`: a
+circle fit on the part boundary with a prior-based fallback, geometry shared across a sample's channels, a
+polar transform about the centre, FFT angular correlation for orientation, a per-channel median/MAD
+reference, and a percentile of the per-pixel z-score as the score. CPU only.
 
 ---
 
