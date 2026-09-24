@@ -25,12 +25,9 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Evaluator and the torch-free floor** (L, split before starting):
-      - The evaluator reports foreground IoU and Dice, boundary F1 (with the tolerance printed),
-        false-positive rate on absent images, recall on present images, small-region recall,
-        presence ROC-AUC and latency, all in constant memory.
-      - `color_prototype` is a numpy colour prototype, so the whole slice runs in the torch-free
-        CI job.
+- [ ] **`color_prototype`, the torch-free floor** (M): a numpy colour prototype that declares
+      `few_shot_segmentation`, so the whole slice — create, train on references, score,
+      evaluate — runs in the torch-free CI job.
 - [ ] **Shared DINO encoding, debiasing and refinement** (M):
       - One encoding path in `dino_backbone.py`, taken out of `dino_memory`.
       - A positional-debias transform (INSID3), available to every frozen-DINO method.

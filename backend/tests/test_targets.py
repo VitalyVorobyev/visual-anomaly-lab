@@ -21,9 +21,7 @@ from anomaly_lab.annotations.class_truth import (
 )
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.repositories import experiments as experiments_repo
-from anomaly_lab.db.repositories import splits as splits_repo
-from anomaly_lab.domain.entities import JobKind, Subset, Task
+from anomaly_lab.domain.entities import JobKind, Task
 from anomaly_lab.eval.evaluators import evaluator_for
 from anomaly_lab.experiments.context import ExperimentJobError
 from anomaly_lab.models.base import (
@@ -37,7 +35,13 @@ from anomaly_lab.models.diagnostics import DiagnosticWriter
 from anomaly_lab.models.pixel_reference import PixelReferenceModel
 from anomaly_lab.models.preprocessing import PreprocessingConfig, load_mask
 
-from .conftest import FIXTURE_SIZE, Fixture, create_experiment, run_handler
+from .conftest import (
+    FIXTURE_SIZE,
+    Fixture,
+    create_experiment,
+    create_few_shot_experiment,
+    run_handler,
+)
 
 
 def _sample_of(settings: Settings, image_id: int) -> int:
@@ -72,55 +76,12 @@ def test_an_anomaly_fit_is_given_no_targets(
     assert seen["targets"] is None
 
 
-def _few_shot_run(
-    client: TestClient, settings: Settings, seeded: Fixture, references: list[int]
-) -> int:
-    """A few-shot experiment row on a manual split, written past the create guard.
-
-    No method declares the task yet, so `create_experiment` refuses it. The train handler is
-    what is under test, and it reads the row as stored; the anomaly run is only there to
-    build the region profile the row pins.
-    """
-    anomaly = create_experiment(client, seeded)
-    with connection(settings.db_path) as conn:
-        base = experiments_repo.get_experiment(conn, anomaly["id"])
-        assert base is not None
-        split = splits_repo.create_split(
-            conn,
-            seeded.dataset_id,
-            name="references",
-            strategy="manual",
-            seed=0,
-            params={"strategy": "manual", "sample_ids": references},
-            assignments={
-                sample: Subset.TRAIN if sample in references else Subset.TEST
-                for sample in splits_repo.list_sample_ids(conn, seeded.split_id)
-            },
-        )
-        row = experiments_repo.create_experiment(
-            conn,
-            name="few-shot",
-            dataset_id=seeded.dataset_id,
-            split_id=split.id,
-            region_profile_id=base.region_profile_id,
-            region_manifest_sha256=base.region_manifest_sha256,
-            model_type="pixel_reference",
-            task=Task.FEW_SHOT_SEGMENTATION.value,
-            target_label="defect",
-            model_config=base.model_config_,
-            preprocessing_config=base.preprocessing_config,
-            eval_config={},
-            artifact_dir="",
-        )
-    return row.id
-
-
 def test_a_few_shot_fit_gets_every_answered_reference_and_its_mask(
     client: TestClient, settings: Settings, seeded: Fixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     seen = _capture_fit(monkeypatch)
     defect, normal = seeded.defect_image_ids[0], seeded.normal_image_ids[0]
-    run_id = _few_shot_run(
+    run_id = create_few_shot_experiment(
         client, settings, seeded, [_sample_of(settings, defect), _sample_of(settings, normal)]
     )
     result = run_handler(settings, JobKind.TRAIN, {"experiment_id": run_id})
@@ -151,7 +112,7 @@ def test_a_reference_without_truth_for_the_class_is_left_out_by_name(
             "UPDATE sample SET label = 'unlabeled' WHERE id = ?",
             (_sample_of(settings, seeded.normal_image_ids[0]),),
         )
-    run_id = _few_shot_run(
+    run_id = create_few_shot_experiment(
         client,
         settings,
         seeded,
@@ -171,7 +132,9 @@ def test_a_few_shot_run_with_no_answered_reference_is_refused(
             "UPDATE sample SET label = 'unlabeled' WHERE id = ?",
             (_sample_of(settings, unlabelled),),
         )
-    run_id = _few_shot_run(client, settings, seeded, [_sample_of(settings, unlabelled)])
+    run_id = create_few_shot_experiment(
+        client, settings, seeded, [_sample_of(settings, unlabelled)]
+    )
     with pytest.raises(ExperimentJobError, match=r"no reference .* has ground truth for 'defect'"):
         run_handler(settings, JobKind.TRAIN, {"experiment_id": run_id})
 

@@ -10,9 +10,11 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 
 It never imports a model module and never re-runs inference, so every method is evaluated by the same code.
 
-**The evaluator is chosen by task** (ADR-0039) from the table in `eval/evaluators.py`. This page describes
-the `anomaly` evaluator, `eval/runner.py`. The `infer` job and re-evaluation both call
-`evaluator_for(experiment.task)`, and a task with no entry cannot be created.
+**The evaluator is chosen by task** (ADR-0039) from the table in `eval/evaluators.py`. Most of this page
+describes the `anomaly` evaluator, `eval/runner.py`; [few-shot segmentation](#few-shot-segmentation) has
+its own section. The `infer` job, re-evaluation and the staleness check all go through
+`evaluator_for(experiment.task)`, and a task with no entry cannot be created. Each evaluator names a
+`headline` metric (`sample_roc_auc`, `foreground_iou`), which the `infer` log prints per subset.
 
 ## Channel selection
 
@@ -218,6 +220,37 @@ tolerates an empty subset:
   it used instead;
 - threshold selection returns the highest normal score in the subset **and the sentence explaining that
   choice**, printed under the slider.
+
+## Few-shot segmentation
+
+`eval/segmentation.py` scores one class against background (ADR-0040). Its inputs are the same kind of stored
+facts: each image's presence `score`, its map or written mask, and the class truth that
+`annotations/class_truth.py` resolves per image.
+
+- **Per image.** No sample-level rule for a class on a multi-channel part has been decided, so every count
+  is of images and every rate is named `image_*`. The sample rows are still rebuilt from presence scores,
+  so the ranked list and the gallery work unchanged.
+- **Unlabelled images are excluded and counted** in `images.unlabeled`. A scored image with neither a map
+  nor a mask is counted in `images.without_prediction`, not scored as empty.
+- **The prediction** is the method's own mask (`maps/<id>.mask.png`) when it wrote one. Otherwise it is
+  the map, read as foreground probability and cut by one fixed rule, `foreground probability >= 0.5`.
+  The rule's name and value are stored beside the metrics (ADR-0028). Pixels a region crop left uncovered
+  are background.
+- **Pixel metrics are pooled counts**, in constant memory:
+  - `foreground_iou` and `foreground_dice` over every answered image, so a false positive on an absent
+    image counts;
+  - `boundary_f1`: boundary pixels matched within `boundary_tolerance_px` (2) either way.
+- **Image metrics**:
+  - `image_present_recall`: a present image whose predicted region touches the truth;
+  - `image_absent_false_positive_rate`: an absent image with any predicted pixel;
+  - `image_small_region_recall`: present images whose region is at most `small_region_fraction` (1%) of
+    the frame;
+  - `image_presence_roc_auc`: presence scores against present and absent, threshold-free;
+  - `timing`.
+
+  Each is `None` when its denominator is empty.
+- **The ground-truth digest** hashes the class and each image's pinned answer, so a completed revision,
+  a relabelled sample or a new class table makes the stored metrics read as stale.
 
 ## Run audit
 

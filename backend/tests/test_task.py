@@ -49,7 +49,7 @@ def test_the_anomaly_evaluator_is_the_runner_unchanged(monkeypatch: pytest.Monke
 
 
 def test_a_task_without_an_evaluator_is_named_not_guessed() -> None:
-    assert set(EVALUATORS) == {Task.ANOMALY}
+    assert set(EVALUATORS) == {Task.ANOMALY, Task.FEW_SHOT_SEGMENTATION}
     assert not has_evaluator(Task.OBJECT_DETECTION)
     with pytest.raises(UnsupportedTaskError, match="object_detection"):
         evaluator_for(Task.OBJECT_DETECTION)

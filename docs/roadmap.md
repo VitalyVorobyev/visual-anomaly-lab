@@ -68,10 +68,9 @@ application.
   and frozen DINOv3 feature matching segments it in new images, with absence as a first-class
   answer. Built so far: the task value, the target class on the experiment, the `manual` and `few_shot`
   reference splits, per-class coverage, class-index masks with a pinned class table, references reaching
-  `fit` as targets, and predicted masks. No method or evaluator declares the task yet, so a run of it is
-  refused. Still open:
+  `fit` as targets, predicted masks, and an evaluator for masks and presence. No method declares the task
+  yet, so a run of it is refused. Still open:
   - a torch-free floor and two DINO methods;
-  - an evaluator for masks and presence;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
 
   The order is in [backlog.md](backlog.md).
