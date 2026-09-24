@@ -44,6 +44,8 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
       any other way makes every comparison against it partly a measurement of its resize.
 - [ ] Standardisation for a backbone is the model's business (methods.md, "Standardizing for a
       backbone"), read from the backbone's own config.
+- [ ] Anything the method cannot read — a patch size the frame does not divide, a channel count —
+      is refused in `check_input`, so creation says so instead of a job failing at fit.
 - [ ] `Capabilities` declares what is true — `requires_training`, `supports_resume` (then also
       satisfy `SupportsResume`), `produces_diagnostics`, `channel_aware`, `preferred_device`.
       `portable_formats` stays **empty** until an export parity gate has passed.

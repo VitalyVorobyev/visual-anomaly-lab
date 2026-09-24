@@ -415,6 +415,17 @@ class AnomalyModel(ABC):
         return Availability()
 
     @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        """Raise `ValueError`, with a reason a reader can act on, for input this method cannot read.
+
+        Called when an experiment is created (and when the reference studio previews), so a
+        combination that could only fail at fit — a patch size the prepared frame does not
+        divide — is refused on the create screen by name rather than minutes into a job. Any
+        input by default.
+        """
+        return
+
+    @classmethod
     def build(cls, config: dict[str, Any]) -> AnomalyModel:
         """Validate a stored config mapping into this method's own config type."""
         return cls(cls.config_model().model_validate(config))

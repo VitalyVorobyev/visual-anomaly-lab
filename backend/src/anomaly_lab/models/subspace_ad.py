@@ -276,6 +276,12 @@ class SubspaceAdModel(AnomalyModel):
         return SubspaceAdConfig
 
     @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        if not isinstance(config, SubspaceAdConfig):
+            raise TypeError(f"expected SubspaceAdConfig, got {type(config).__name__}")
+        validate_prepared_size(config.backbone, preprocessing.width, preprocessing.height)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             requires_training=True,

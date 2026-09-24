@@ -122,6 +122,13 @@ def resolve(settings: Settings, spec: PreviewSpec) -> Resolved:
         summary = read_build_summary(settings, profile.id)
         if summary is None or summary.failed:
             raise PreviewError(f"region profile {profile.id} has no complete build")
+        try:
+            model_class.check_input(
+                model_class.config_model().model_validate({}),
+                PreprocessingConfig(width=profile.prepared_width, height=profile.prepared_height),
+            )
+        except ValueError as exc:
+            raise PreviewError(str(exc)) from exc
         build = load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
         images = _split_images(conn, sorted(set(spec.references)))
         truths = resolve_class_truth(

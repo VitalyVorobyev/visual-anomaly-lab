@@ -832,6 +832,12 @@ class DinoMemoryModel(AnomalyModel):
         return DinoMemoryConfig
 
     @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        if not isinstance(config, DinoMemoryConfig):
+            raise TypeError(f"expected DinoMemoryConfig, got {type(config).__name__}")
+        validate_prepared_size(config.backbone, preprocessing.width, preprocessing.height)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             # A memory is *fitted* even though nothing is trained: there is a pass over the

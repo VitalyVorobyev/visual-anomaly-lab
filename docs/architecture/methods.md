@@ -40,11 +40,17 @@ class AnomalyModel(ABC):
     def capabilities(cls) -> Capabilities: ...
     @classmethod
     def availability(cls) -> Availability: ...   # available by default
+    @classmethod
+    def check_input(cls, config, preprocessing) -> None: ...   # any input by default
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None: ...
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]: ...
     def save(self, artifact_dir: Path) -> None: ...
     def load(self, artifact_dir: Path) -> None: ...
 ```
+
+**`check_input` refuses at creation what could only fail at fit.** `create_experiment` and the reference
+studio's preview call it with the frozen config and prepared size, and a `ValueError` becomes a 422 that
+names the reason. The frozen-DINO methods use it for a patch size the prepared frame does not divide.
 
 Two optional structural protocols sit beside the ABC rather than on it, so no method carries a stub it
 cannot honestly implement:

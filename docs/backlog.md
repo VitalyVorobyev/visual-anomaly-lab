@@ -25,10 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Refuse an input a method cannot read, at creation** (S): a DINO method on a prepared size its
-      patch does not divide is created, and fails at fit. A plugin classmethod that checks the frozen
-      preprocessing, called by `create_experiment`, would refuse it on the create screen and in the
-      studio by name — no route or TypeScript learns about patch sizes.
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
 
