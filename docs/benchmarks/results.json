@@ -32,6 +32,10 @@
   "color_prototype": {
    "family": "few-shot colour prototype",
    "maturity": "experimental"
+  },
+  "fss_dino": {
+   "family": "few-shot DINO prototypes",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [
