@@ -159,8 +159,7 @@ export function ExperimentRoute() {
           <div className="flex items-center gap-3">
             {/* Only once there is something to compare: the picker opens with this run
                 chosen and every other run of its split beside it. */}
-            {/* Compare reads anomaly runs only, so it is not offered where it would refuse. */}
-            {hasScores && detail.task === "anomaly" && (
+            {hasScores && (
               <Link
                 to={`/compare?ids=${detail.id}`}
                 className="rounded-sm text-xs font-medium text-fg-muted transition-colors hover:text-signal focus-visible:outline-2 focus-visible:outline-signal"

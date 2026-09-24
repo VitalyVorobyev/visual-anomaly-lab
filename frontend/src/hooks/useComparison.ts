@@ -13,6 +13,7 @@ import { api, unwrap } from "../api/client";
 import type {
   ComparisonReport,
   CurveSet,
+  FewShotComparison,
   ImageScore,
   OperatingPoint,
   SplitDetail,
@@ -20,16 +21,35 @@ import type {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
+/**
+ * Few-shot runs of one class side by side (ADR-0040), which may learn from different
+ * reference draws — the comparison the anomaly one refuses.
+ */
+export function useFewShotComparison(ids: number[], enabled: boolean) {
+  return useQuery<FewShotComparison>({
+    queryKey: queryKeys.fewShotComparison(ids),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/compare/few-shot", { params: { query: { ids } } }),
+        "the few-shot comparison",
+      ),
+    enabled: enabled && ids.length >= 2,
+  });
+}
+
 export function useComparison({
   ids,
   subset,
   at,
   recallTarget,
+  enabled = true,
 }: {
   ids: number[];
   subset: Subset | undefined;
   at: OperatingPoint;
   recallTarget: number;
+  /** Off for a few-shot selection, which `useFewShotComparison` reads instead. */
+  enabled?: boolean;
 }) {
   return useQuery<ComparisonReport>({
     queryKey: queryKeys.comparison(ids, subset, at, recallTarget),
@@ -50,7 +70,7 @@ export function useComparison({
     // Fewer than two runs is not an error state, it is the empty state of the picker. The
     // server would answer 422 and the screen would show a failure the reader caused by
     // arriving.
-    enabled: ids.length >= 2,
+    enabled: enabled && ids.length >= 2,
   });
 }
 

@@ -143,12 +143,22 @@ export function OperatingTable({
  * *row* is a metric and a *column* is a run, so the header carries run identity and every
  * cell in a row is the same quantity. `Table` builds the other way round.
  */
-function Grid({
+/** A column's heading: a run's name, its method key, and one more line of its own. */
+export interface GridRun {
+  id: number;
+  name: string;
+  model_type: string;
+  threshold_rationale?: string;
+  /** Printed under the method key — a few-shot run's reference draw, say. */
+  note?: string;
+}
+
+export function Grid({
   runs,
   rationale = false,
   children,
 }: {
-  runs: ComparedRun[];
+  runs: GridRun[];
   /** Print each run's threshold rationale under its name. */
   rationale?: boolean;
   children: React.ReactNode;
@@ -167,6 +177,9 @@ function Grid({
                 <span className="block font-mono text-[11px] text-fg-subtle">
                   {run.model_type}
                 </span>
+                {run.note && (
+                  <span className="block font-mono text-[11px] text-fg-muted">{run.note}</span>
+                )}
                 {rationale && (
                   <span className="mt-1 block text-[11px] leading-snug font-normal text-fg-muted">
                     {run.threshold_rationale || "—"}
@@ -182,7 +195,7 @@ function Grid({
   );
 }
 
-function SectionRows({ title, rows }: { title?: string; rows: ComparisonRow[] }) {
+export function SectionRows({ title, rows }: { title?: string; rows: ComparisonRow[] }) {
   return (
     <tbody>
       {title && (

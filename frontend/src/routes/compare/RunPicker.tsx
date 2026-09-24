@@ -50,11 +50,7 @@ export function RunPicker({
      line whose reason lived in a tooltip, and the reason is one sentence for all of them. */
   const groups = groupRuns(rows);
   const visible =
-    anchor === undefined
-      ? groups
-      : groups.filter(
-          (group) => group.datasetId === anchor.dataset_id && group.splitId === anchor.split_id,
-        );
+    anchor === undefined ? groups : groups.filter((group) => group.key === groupKey(anchor));
   const hidden = groups
     .filter((group) => !visible.includes(group))
     .reduce((count, group) => count + group.runs.length, 0);
@@ -62,11 +58,13 @@ export function RunPicker({
   return (
     <div className="flex flex-col gap-4">
       {visible.map((group) => (
-        <div key={`${group.datasetId}/${group.splitId}`} className="flex flex-col gap-1.5">
+        <div key={group.key} className="flex flex-col gap-1.5">
           <h3 className="text-xs font-semibold text-fg-muted">
             {names.get(group.datasetId) ?? `dataset ${group.datasetId}`}
             <span className="ml-2 font-mono text-[11px] text-fg-subtle">
-              {splitNames.get(group.splitId) ?? `split ${group.splitId}`}
+              {group.targetLabel !== null
+                ? `few-shot · ${group.targetLabel}`
+                : (splitNames.get(group.splitId) ?? `split ${group.splitId}`)}
             </span>
           </h3>
           {group.runs.map((run) => (
@@ -84,14 +82,14 @@ export function RunPicker({
 
       {hidden > 0 && (
         <p className="text-xs text-fg-subtle">
-          {hidden === 1 ? "1 run" : `${hidden} runs`} on other datasets or splits not shown —
-          their numbers cover different samples. Clear the selection to see every run.
+          {hidden === 1 ? "1 run" : `${hidden} runs`} on other datasets, splits or classes not
+          shown — their numbers answer a different question. Clear the selection to see every run.
         </p>
       )}
 
       <p className="text-xs text-fg-muted">
         {selected.length < 2
-          ? "Pick at least two runs of the same split."
+          ? "Pick at least two runs of the same split, or of the same class for few-shot runs."
           : `${selected.length} of ${MAX_RUNS} selected.`}
       </p>
     </div>
@@ -99,18 +97,38 @@ export function RunPicker({
 }
 
 interface RunGroup {
+  key: string;
   datasetId: number;
   splitId: number;
+  /** The class of a group of few-shot runs, which share it rather than a split. */
+  targetLabel: string | null;
   runs: ExperimentSummary[];
+}
+
+/**
+ * The boundary of what can be compared: an anomaly run's dataset and split, or a few-shot
+ * run's dataset and class — its draws of references are the thing being compared.
+ */
+function groupKey(run: ExperimentSummary): string {
+  return run.task === "few_shot_segmentation"
+    ? `${run.dataset_id}/few-shot/${run.target_label ?? ""}`
+    : `${run.dataset_id}/${run.split_id}`;
 }
 
 function groupRuns(rows: ExperimentSummary[]): RunGroup[] {
   const groups = new Map<string, RunGroup>();
   for (const run of rows) {
-    const key = `${run.dataset_id}/${run.split_id}`;
+    const key = groupKey(run);
     const found = groups.get(key);
     if (found) found.runs.push(run);
-    else groups.set(key, { datasetId: run.dataset_id, splitId: run.split_id, runs: [run] });
+    else
+      groups.set(key, {
+        key,
+        datasetId: run.dataset_id,
+        splitId: run.split_id,
+        targetLabel: run.task === "few_shot_segmentation" ? (run.target_label ?? "") : null,
+        runs: [run],
+      });
   }
   return [...groups.values()];
 }

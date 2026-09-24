@@ -241,9 +241,18 @@ refusal on the row. Threshold-independent metrics compare directly; threshold-de
 config diff calling out preprocessing, a disagreement-filtered sample table, and a map view sharing one cut
 *fraction* and one `StageView` across panes. `StageView.scale` is absolute (CSS pixels per image pixel),
 which is correct because every pane draws the same image. Localization verdicts and `peak` layers are per
-pane. `GET /api/compare?ids=&subset=&at=`. Compare reads anomaly runs only: a few-shot run is refused by
-name on the picker's row and by the route, because a column of its scores beside an anomaly reading
-would look right and mean nothing.
+pane. `GET /api/compare?ids=&subset=&at=`.
+
+**Few-shot comparison** (`routes/compare/FewShotCompare.tsx`, `GET /api/compare/few-shot?ids=`). The first run
+picked decides which comparison it is. Few-shot runs of one dataset and one class compare **across
+reference draws**, so their splits may differ where the anomaly comparison refuses it; the picker groups
+them by class, and `refusalReason` refuses another task or another class by name. It shows three things:
+- **Foreground IoU by method and shot count:** the mean over draws ± their spread, which is how much the
+  answer depends on which references were chosen.
+- **Every segmentation metric per run**, on the anomaly table's own grid, each column naming its reference
+  count and seed.
+- **Where they disagree:** the test queries every run scored (a run's own references are no one's query),
+  with each run's outcome and IoU, linked to that run's sample page.
 
 ## Cross-cutting rules
 

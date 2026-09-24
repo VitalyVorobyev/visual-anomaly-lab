@@ -22,10 +22,12 @@ import type { Subset } from "../api/client";
 import type { CompareState, CompareView } from "../api/compareState";
 import { readCompareState, toggleRun, writeCompareState } from "../api/compareState";
 import { Callout, Disclosure, Empty, ErrorBox, NumberInput, PageHeader, Panel, ReadoutStrip, SegmentedControl, Select, SkeletonRows, Tabs } from "@vitavision/lab-ui";
-import { useComparison } from "../hooks/useComparison";
+import { useComparison, useFewShotComparison } from "../hooks/useComparison";
+import { useExperiments } from "../hooks/useExperiments";
 import { AgreementTable } from "./compare/AgreementTable";
 import { CompareCurves } from "./compare/CompareCurves";
 import { ConfigDiff } from "./compare/ConfigDiff";
+import { FewShotCompare } from "./compare/FewShotCompare";
 import { MetricTable, OperatingTable } from "./compare/MetricTable";
 import { RunPicker } from "./compare/RunPicker";
 
@@ -36,20 +38,30 @@ export function CompareRoute() {
     setParams(writeCompareState({ ...state, ...next }), { replace: true });
   };
 
+  // The first run picked decides which comparison this is (ADR-0040): anomaly runs of one
+  // split at an operating point, or few-shot runs of one class across reference draws.
+  const experiments = useExperiments();
+  const anchor = experiments.data?.find((run) => run.id === state.ids[0]);
+  const fewShot = anchor?.task === "few_shot_segmentation";
   const comparison = useComparison({
     ids: state.ids,
     subset: state.subset,
     at: state.at,
     recallTarget: state.recallTarget,
+    enabled: anchor !== undefined && !fewShot,
   });
-  const report = comparison.data;
+  const fewShotComparison = useFewShotComparison(state.ids, fewShot);
+  const report = fewShot ? undefined : comparison.data;
+  const segmentation = fewShot ? fewShotComparison.data : undefined;
+  const pending = fewShot ? fewShotComparison.isPending : comparison.isPending;
+  const failure = fewShot ? fewShotComparison.error : comparison.error;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
         title="Compare"
         meta={
-          report && (
+          report ? (
             <ReadoutStrip
               items={[
                 { label: "dataset", value: report.dataset_name },
@@ -57,7 +69,15 @@ export function CompareRoute() {
                 { label: "subset", value: report.subset },
               ]}
             />
-          )
+          ) : segmentation ? (
+            <ReadoutStrip
+              items={[
+                { label: "dataset", value: segmentation.dataset_name },
+                { label: "class", value: segmentation.target_label },
+                { label: "subset", value: "test" },
+              ]}
+            />
+          ) : undefined
         }
       />
 
@@ -77,13 +97,16 @@ export function CompareRoute() {
 
       {state.ids.length < 2 && (
         <Empty>
-          Pick at least two runs of the same dataset and split. Runs on different data are
-          not comparable, so they cannot be selected together.
+          Pick at least two runs of the same dataset and split — or, for few-shot
+          segmentation, of the same class. Runs on different data are not comparable, so they
+          cannot be selected together.
         </Empty>
       )}
 
-      {comparison.isPending && state.ids.length >= 2 && <SkeletonRows rows={6} />}
-      {comparison.error && <ErrorBox>{comparison.error.message}</ErrorBox>}
+      {pending && state.ids.length >= 2 && <SkeletonRows rows={6} />}
+      {failure && <ErrorBox>{failure.message}</ErrorBox>}
+
+      {segmentation && <FewShotCompare report={segmentation} />}
 
       {report && (
         <>

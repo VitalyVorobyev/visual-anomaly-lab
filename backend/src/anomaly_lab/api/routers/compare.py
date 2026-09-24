@@ -49,6 +49,7 @@ from anomaly_lab.eval.compare import (
     resolve_threshold,
 )
 from anomaly_lab.eval.evaluators import evaluator_for
+from anomaly_lab.eval.segmentation import sample_outcomes
 from anomaly_lab.eval.threshold import ConfusionCounts, report
 from anomaly_lab.media.overlay import read_display_range
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -276,14 +277,13 @@ def _selected(conn: sqlite3.Connection, ids: list[int]) -> list[Experiment]:
     for experiment in experiments:
         # Every comparison here is read at thresholds against normal/defect labels. A
         # few-shot segmentation run is measured against its class truth instead (ADR-0040),
-        # and a column of its scores beside an anomaly reading would look right and mean
-        # nothing, so it is refused by name until Compare reads that task.
+        # and is compared by `compare_few_shot` below.
         if experiment.task is not Task.ANOMALY:
             raise HTTPException(
                 status_code=422,
                 detail=(
-                    f"'{experiment.name}' is a {experiment.task.value} run; Compare reads "
-                    "anomaly runs only"
+                    f"'{experiment.name}' is a {experiment.task.value} run; this comparison "
+                    "reads anomaly runs, and few-shot runs are compared at /api/compare/few-shot"
                 ),
             )
 
@@ -460,3 +460,190 @@ def _trained_after_scoring(conn: sqlite3.Connection, experiment: Experiment) -> 
         and job.finished_at is not None
     ]
     return bool(trained_at) and max(trained_at) > max(scored_at)
+
+
+# ---------------------------------------------------------------------------- few-shot
+
+
+class FewShotRun(BaseModel):
+    """One few-shot segmentation run as a column: its reference draw and its test metrics."""
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    name: str
+    model_type: str
+    status: ExperimentStatus
+    split_id: int
+    split_name: str | None = None
+    references: int = Field(description="Samples in the split's `train` subset: the shot count.")
+    seed: int | None = Field(
+        default=None, description="The draw's seed, for a `few_shot` split; null for `manual`."
+    )
+    region_profile_id: int
+    scored: bool
+    metrics: dict[str, Any] = Field(default_factory=dict)
+    ground_truth_stale: bool = False
+
+
+class FewShotSample(BaseModel):
+    """A query every run scored, with each run's outcome and IoU, index-aligned with `runs`."""
+
+    model_config = API_MODEL_CONFIG
+
+    sample_id: int
+    group_key: str
+    external_id: str
+    outcomes: list[str]
+    ious: list[float | None]
+    agree: bool
+
+
+class FewShotComparison(BaseModel):
+    """N few-shot runs of one class, which may learn from different reference draws."""
+
+    model_config = API_MODEL_CONFIG
+
+    dataset_id: int
+    dataset_name: str | None = None
+    target_label: str
+    runs: list[FewShotRun] = Field(default_factory=list)
+    samples: list[FewShotSample] = Field(
+        default_factory=list,
+        description=(
+            "The test queries every run scored — a run's own references are not queries, so "
+            "samples one draw learned from are left out of everyone's rows."
+        ),
+    )
+    warnings: list[str] = Field(default_factory=list)
+
+
+def _few_shot_selected(conn: sqlite3.Connection, ids: list[int]) -> list[Experiment]:
+    """Few-shot runs of one dataset and one class; their splits may differ, by design."""
+    if len(ids) < 2:
+        raise HTTPException(status_code=422, detail="a comparison needs at least two experiments")
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="the same experiment was selected twice")
+    if len(ids) > MAX_RUNS:
+        raise HTTPException(
+            status_code=422, detail=f"at most {MAX_RUNS} experiments can be compared at once"
+        )
+    experiments: list[Experiment] = []
+    for experiment_id in ids:
+        found = experiments_repo.get_experiment(conn, experiment_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
+        if found.task is not Task.FEW_SHOT_SEGMENTATION:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{found.name}' is a {found.task.value} run, not a few-shot one",
+            )
+        experiments.append(found)
+    first = experiments[0]
+    for other in experiments[1:]:
+        if other.dataset_id != first.dataset_id:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{other.name}' is on a different dataset from '{first.name}'",
+            )
+        if other.target_label != first.target_label:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{other.name}' segments {other.target_label!r}, not "
+                    f"{first.target_label!r}; runs of different classes are different questions"
+                ),
+            )
+    return experiments
+
+
+@router.get("/few-shot", summary="Few-shot segmentation runs of one class side by side")
+def compare_few_shot(
+    request: Request,
+    ids: Annotated[
+        list[int],
+        Query(description="Experiment ids, in the order the columns should appear."),
+    ],
+) -> FewShotComparison:
+    """Runs of one class, including runs that learned from different references (ADR-0040).
+
+    The question is how the answer moves with the references — how many, and which — so the
+    split is allowed to differ where the anomaly comparison refuses it. What stays fixed is
+    the class, and what is compared is `test`: the stored metrics, and each shared query's
+    outcome under each run.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        experiments = _few_shot_selected(conn, ids)
+        first = experiments[0]
+        runs: list[FewShotRun] = []
+        outcomes = []
+        for run in experiments:
+            split = splits_repo.get_split(conn, run.split_id)
+            scored = Subset.TEST in results_repo.scored_subsets(conn, run.id)
+            summary = _metrics_for(conn, run, Subset.TEST) if scored else None
+            runs.append(
+                FewShotRun(
+                    id=run.id,
+                    name=run.name,
+                    model_type=run.model_type,
+                    status=run.status,
+                    split_id=run.split_id,
+                    split_name=split.name if split else None,
+                    references=len(splits_repo.list_sample_ids(conn, run.split_id, Subset.TRAIN)),
+                    seed=split.seed if split and split.strategy == "few_shot" else None,
+                    region_profile_id=run.region_profile_id,
+                    scored=scored,
+                    metrics=summary.metrics if summary else {},
+                    ground_truth_stale=summary.ground_truth_stale if summary else False,
+                )
+            )
+            outcomes.append(
+                {
+                    verdict.sample_id: verdict
+                    for verdict in sample_outcomes(conn, run, Subset.TEST).samples
+                }
+                if scored
+                else {}
+            )
+        dataset = datasets_repo.get_dataset(conn, first.dataset_id)
+
+    shared = set.intersection(*(set(found) for found in outcomes)) if outcomes else set()
+    samples: list[FewShotSample] = []
+    for sample_id in sorted(shared):
+        row = [found[sample_id] for found in outcomes]
+        names = [verdict.outcome for verdict in row]
+        samples.append(
+            FewShotSample(
+                sample_id=sample_id,
+                group_key=row[0].group_key,
+                external_id=row[0].external_id,
+                outcomes=names,
+                ious=[verdict.iou for verdict in row],
+                agree=len(set(names)) == 1,
+            )
+        )
+
+    warnings: list[str] = []
+    if len({run.region_profile_id for run in experiments}) > 1:
+        warnings.append(
+            "These runs read different region profiles, so their pixels differ as well as "
+            "their references."
+        )
+    unscored = [run.name for run in runs if not run.scored]
+    if unscored:
+        warnings.append(f"Not scored on test yet: {', '.join(unscored)}.")
+    stale = [run.name for run in runs if run.ground_truth_stale]
+    if stale:
+        warnings.append(
+            f"Ground truth changed after metrics were computed for {', '.join(stale)}. "
+            "Recompute those runs before comparing them."
+        )
+    return FewShotComparison(
+        dataset_id=first.dataset_id,
+        dataset_name=dataset.name if dataset else None,
+        target_label=first.target_label or "",
+        runs=runs,
+        samples=samples,
+        warnings=warnings,
+    )

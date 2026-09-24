@@ -119,6 +119,7 @@ export const queryKeys = {
    * The operating point is in the key because it is not a display preference: it decides
    * every confusion matrix in the response.
    */
+  fewShotComparison: (ids: readonly number[]) => ["compare", "few-shot", [...ids]] as const,
   comparison: (
     ids: readonly number[],
     subset: Subset | undefined,
