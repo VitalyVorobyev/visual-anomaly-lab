@@ -38,7 +38,7 @@ from anomaly_lab.annotation_interchange import (
     shapes_from_labelme,
     shapes_from_png,
 )
-from anomaly_lab.annotation_render import AnnotationRenderError, render_binary_mask
+from anomaly_lab.annotation_render import AnnotationRenderError, RenderedTruth, render_truth
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import Transaction, connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
@@ -246,22 +246,40 @@ def _revision_destination(settings: Settings, image_id: int, revision_no: int) -
     return destination
 
 
+def _class_mask_destination(mask_destination: Path) -> Path:
+    """The class-index mask sits beside the binary one it was rendered with."""
+    return mask_destination.with_name(f"{mask_destination.stem}.classes.png")
+
+
 def _render(
+    conn: sqlite3.Connection,
+    dataset_id: int,
     document: AnnotationDocument,
     destination: Path,
     *,
     source_mask_path: Path | None,
     source_mask_sha256: str | None,
-) -> str:
+) -> RenderedTruth:
+    classes = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
     try:
-        return render_binary_mask(
+        return render_truth(
             document,
             destination,
+            _class_mask_destination(destination),
+            classes=classes,
             source_mask_path=source_mask_path,
             source_mask_sha256=source_mask_sha256,
         )
     except AnnotationRenderError as exc:
         raise ConflictError(str(exc)) from exc
+
+
+def _class_mask(destination: Path, rendered: RenderedTruth) -> annotations_repo.ClassMask:
+    return annotations_repo.ClassMask(
+        path=str(_class_mask_destination(destination)),
+        sha256=rendered.class_mask_sha256,
+        table=rendered.class_table,
+    )
 
 
 # --- The draft lifecycle, once ---------------------------------------------------------
@@ -456,7 +474,7 @@ class ImageDrafts(DraftUnit[AnnotationDraft, AnnotationDraftState]):
 
         Deliberately does not hash or record anything: a read must not write, and the
         imported mask's digest is verified where it is pinned (the create) and again where
-        it is consumed (`render_binary_mask` at completion), which are the two places that
+        it is consumed (`render_truth` at completion), which are the two places that
         matter.
         """
         image = images_repo.get_image(conn, unit_id)
@@ -550,7 +568,10 @@ class ImageDrafts(DraftUnit[AnnotationDraft, AnnotationDraftState]):
             destination = _revision_destination(settings, image_id, next_no)
             # Registered before the render, so a render that fails part-way leaves nothing.
             tx.remove_on_rollback(destination)
-            mask_sha256 = _render(
+            tx.remove_on_rollback(_class_mask_destination(destination))
+            rendered = _render(
+                conn,
+                dataset_id,
                 draft.document,
                 destination,
                 source_mask_path=Path(draft.source_mask_path) if draft.source_mask_path else None,
@@ -561,7 +582,8 @@ class ImageDrafts(DraftUnit[AnnotationDraft, AnnotationDraftState]):
                 draft,
                 document_sha256=_document_sha256(draft.document),
                 mask_path=str(destination),
-                mask_sha256=mask_sha256,
+                mask_sha256=rendered.mask_sha256,
+                class_mask=_class_mask(destination, rendered),
             )
 
     def import_file(
@@ -760,17 +782,24 @@ class SampleDrafts(DraftUnit[AnnotationSampleDraft, AnnotationSampleDraftState])
                     draft.document,
                     document_sha256=document_sha256,
                     mask_path=str(path),
-                    mask_sha256=mask_sha256,
+                    mask_sha256=rendered.mask_sha256,
+                    class_mask=_class_mask(path, rendered),
                 )
-                for image, path, mask_sha256 in _fan_out(tx, settings, draft.document, images)
+                for image, path, rendered in _fan_out(
+                    tx, settings, dataset_id, draft.document, images
+                )
             ]
             annotations_repo.delete_sample_draft(conn, sample_id)
         return revisions
 
 
 def _fan_out(
-    tx: Transaction, settings: Settings, document: AnnotationDocument, images: list[Image]
-) -> list[tuple[Image, Path, str]]:
+    tx: Transaction,
+    settings: Settings,
+    dataset_id: int,
+    document: AnnotationDocument,
+    images: list[Image],
+) -> list[tuple[Image, Path, RenderedTruth]]:
     """One rendering, copied to each image's next revision path.
 
     The digest is therefore identical across the fan-out, which is what makes "these
@@ -779,22 +808,30 @@ def _fan_out(
     continues counting from where it stopped. Every file is registered for removal if the
     transaction does not commit.
     """
-    written: list[tuple[Image, Path, str]] = []
-    rendered: Path | None = None
-    mask_sha256 = ""
+    written: list[tuple[Image, Path, RenderedTruth]] = []
+    first: tuple[Path, RenderedTruth] | None = None
     for image in images:
         next_no = annotations_repo.next_revision_no(tx.conn, image.id)
         destination = _revision_destination(settings, image.id, next_no)
-        if rendered is None:
-            mask_sha256 = _render(
-                document, destination, source_mask_path=None, source_mask_sha256=None
+        tx.remove_on_rollback(destination)
+        tx.remove_on_rollback(_class_mask_destination(destination))
+        if first is None:
+            first = (
+                destination,
+                _render(
+                    tx.conn,
+                    dataset_id,
+                    document,
+                    destination,
+                    source_mask_path=None,
+                    source_mask_sha256=None,
+                ),
             )
-            rendered = destination
         else:
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(rendered, destination)
-        tx.remove_on_rollback(destination)
-        written.append((image, destination, mask_sha256))
+            shutil.copyfile(first[0], destination)
+            shutil.copyfile(_class_mask_destination(first[0]), _class_mask_destination(destination))
+        written.append((image, destination, first[1]))
     return written
 
 

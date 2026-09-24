@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -137,6 +137,16 @@ class AnnotationSampleDraft(BaseModel):
     updated_at: str
 
 
+class ClassTableEntry(BaseModel):
+    """One class as a completed revision pinned it: its index in the class mask, and its area."""
+
+    model_config = API_MODEL_CONFIG
+
+    key: str
+    index: int = Field(ge=1, le=255)
+    pixels: int = Field(ge=0)
+
+
 class AnnotationRevision(BaseModel):
     model_config = API_MODEL_CONFIG
 
@@ -150,4 +160,21 @@ class AnnotationRevision(BaseModel):
     source_mask_id: int | None = None
     source_mask_path: str | None = None
     source_mask_sha256: str | None = None
+    class_mask_path: str | None = Field(
+        default=None,
+        description="The class-index PNG: each pixel is a class-table index, 0 is background.",
+    )
+    class_mask_sha256: str | None = None
+    class_table: list[ClassTableEntry] | None = Field(
+        default=None,
+        description=(
+            "Every class the dataset had at completion, with its index and pixel count. Null "
+            "for a revision completed before class masks were written."
+        ),
+    )
     completed_at: str
+
+    @field_validator("class_table", mode="before")
+    @classmethod
+    def _decode_class_table(cls, value: object) -> object:
+        return json.loads(value) if isinstance(value, str) else value
