@@ -19,7 +19,9 @@ from anomaly_lab.datasets.splitting import (
     SplitParams,
     SplitPlanError,
     SplitStrategy,
+    plan_few_shot_split,
     plan_imported_split,
+    plan_manual_split,
     plan_split,
 )
 from anomaly_lab.datasets.storage import (
@@ -28,6 +30,7 @@ from anomaly_lab.datasets.storage import (
     load_manifest_file,
 )
 from anomaly_lab.db.connection import connection
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.domain.entities import Dataset, Split, Subset
@@ -123,7 +126,8 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
 
     The `imported` strategy instead reads the partition out of the manifest the dataset
     was committed from, because a benchmark's published number is only comparable against
-    the benchmark's own partition.
+    the benchmark's own partition. `manual` and `few_shot` hold a few-shot task's
+    references in `train` and everything else in `test` (ADR-0040).
     """
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -145,6 +149,23 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
                 # Record which import asserted this partition, so the split stays
                 # traceable to the file that decided it rather than to a seed it ignored.
                 params = params.model_copy(update={"manifest_id": manifest_id})
+            elif params.strategy is SplitStrategy.MANUAL:
+                assignments = plan_manual_split(conn, body.dataset_id, params.sample_ids)
+            elif params.strategy is SplitStrategy.FEW_SHOT:
+                # The params validator requires both for this strategy.
+                assert params.label_key is not None and params.shots is not None
+                known = {label.key for label in annotations_repo.list_labels(conn, dataset.id)}
+                if params.label_key not in known:
+                    raise SplitPlanError(
+                        f"dataset {dataset.id} has no annotation class {params.label_key!r}"
+                    )
+                assignments = plan_few_shot_split(
+                    conn,
+                    body.dataset_id,
+                    seed=body.seed,
+                    label_key=params.label_key,
+                    shots=params.shots,
+                )
             else:
                 assignments = plan_split(conn, body.dataset_id, seed=body.seed, params=params)
         except SplitPlanError as exc:

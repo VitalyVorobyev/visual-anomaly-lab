@@ -23,6 +23,11 @@ figure that resembles theirs without being comparable to it, so `plan_imported_s
 reproduces the source's partition verbatim — including a partition with no `val` subset at
 all, which the official one-class protocols generally are. Everything downstream therefore
 has to treat an empty `val` as ordinary rather than as a broken split.
+
+The `manual` and `few_shot` strategies partition for a few-shot task (ADR-0040), where
+`train` is a handful of references and `test` is every other sample. `manual` takes the
+references as listed; `few_shot` draws `shots` of the samples that show one class, under the
+seed, so the same request with three seeds is three reference draws. Neither has a `val`.
 """
 
 from __future__ import annotations
@@ -35,8 +40,9 @@ from enum import StrEnum
 from pydantic import BaseModel, Field, model_validator
 
 from anomaly_lab.datasets.manifest import Manifest
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import samples as samples_repo
-from anomaly_lab.domain.entities import Label, Sample, Subset
+from anomaly_lab.domain.entities import ClassPresence, Label, Sample, Subset
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 
@@ -44,6 +50,10 @@ class SplitStrategy(StrEnum):
     NORMAL_ONLY_TRAIN = "normal_only_train"
     IMPORTED = "imported"
     """Take the partition the source dataset published, rather than drawing one."""
+    MANUAL = "manual"
+    """Few-shot references chosen by hand: `sample_ids` train, everything else tests."""
+    FEW_SHOT = "few_shot"
+    """Few-shot references drawn under the seed from the samples that show `label_key`."""
 
 
 class SplitPlanError(Exception):
@@ -104,11 +114,37 @@ class SplitParams(BaseModel):
         ),
     )
 
+    sample_ids: list[int] = Field(
+        default_factory=list,
+        description="For `manual` only: the reference samples, which form `train`.",
+    )
+    label_key: str | None = Field(
+        default=None,
+        description="For `few_shot` only: the annotation class the references must show.",
+    )
+    shots: int | None = Field(
+        default=None,
+        ge=1,
+        description="For `few_shot` only: how many references to draw.",
+    )
+
     @model_validator(mode="after")
     def _normals_must_add_up(self) -> SplitParams:
-        # The fractions are meaningless for `imported`, where the source dataset already
-        # decided. They keep their defaults rather than being rejected, so that the stored
-        # params of an imported split do not read as if ratios were applied.
+        # The fractions are meaningless for `imported`, `manual` and `few_shot`, where
+        # something other than a ratio decides. They keep their defaults rather than being
+        # rejected, so that the stored params do not read as if ratios were applied.
+        if self.strategy is SplitStrategy.MANUAL:
+            if not self.sample_ids:
+                raise ValueError("a manual split needs at least one reference in sample_ids")
+            if len(set(self.sample_ids)) != len(self.sample_ids):
+                raise ValueError("sample_ids lists a sample twice")
+            return self
+        if self.strategy is SplitStrategy.FEW_SHOT:
+            if not self.label_key:
+                raise ValueError("a few_shot split needs the label_key its references show")
+            if self.shots is None:
+                raise ValueError("a few_shot split needs the number of shots to draw")
+            return self
         if self.strategy is SplitStrategy.IMPORTED:
             return self
         if self.train_normal_fraction + self.val_normal_fraction > 1.0:
@@ -241,6 +277,59 @@ def plan_imported_split(
         _hold_out_from_train(conn, dataset_id, assignments, seed, holdout_from_train)
 
     return assignments
+
+
+def plan_manual_split(
+    conn: sqlite3.Connection, dataset_id: int, sample_ids: list[int]
+) -> dict[int, Subset]:
+    """The listed samples are the references; every other sample is a query."""
+    everything = samples_repo.list_samples(conn, dataset_id, limit=_ALL, offset=0)
+    known = {sample.id for sample in everything}
+    foreign = sorted(set(sample_ids) - known)
+    if foreign:
+        msg = f"samples {foreign} are not in dataset {dataset_id}"
+        raise SplitPlanError(msg)
+    references = set(sample_ids)
+    return {
+        sample.id: Subset.TRAIN if sample.id in references else Subset.TEST for sample in everything
+    }
+
+
+def plan_few_shot_split(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    *,
+    seed: int,
+    label_key: str,
+    shots: int,
+) -> dict[int, Subset]:
+    """Draw `shots` references from the samples that show the class; the rest are queries.
+
+    Seeded and consumed in sorted id order, so the same request reproduces the same draw,
+    and a different seed is a different draw of the same size — which is what makes
+    sensitivity to the choice of references measurable.
+    """
+    presence = annotations_repo.class_presence(conn, dataset_id, label_key)
+    if not presence:
+        msg = f"dataset {dataset_id} has no samples to split"
+        raise SplitPlanError(msg)
+    candidates = sorted(
+        sample_id for sample_id, found in presence.items() if found is ClassPresence.PRESENT
+    )
+    if len(candidates) < shots:
+        msg = (
+            f"{shots} references of {label_key!r} were asked for, but only "
+            f"{len(candidates)} samples show it in a completed annotation"
+        )
+        raise SplitPlanError(msg)
+
+    rng = random.Random(seed)
+    rng.shuffle(candidates)
+    references = set(candidates[:shots])
+    return {
+        sample_id: Subset.TRAIN if sample_id in references else Subset.TEST
+        for sample_id in presence
+    }
 
 
 def _hold_out_from_train(

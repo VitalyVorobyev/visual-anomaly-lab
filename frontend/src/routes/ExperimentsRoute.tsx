@@ -435,9 +435,15 @@ function formatDate(value: string): string {
 
 type ConfigTab = "method" | "preprocessing" | "evaluation";
 
-const TASK_ORDER: Task[] = ["anomaly", "semantic_segmentation", "object_detection"];
+const TASK_ORDER: Task[] = [
+  "anomaly",
+  "few_shot_segmentation",
+  "semantic_segmentation",
+  "object_detection",
+];
 const TASK_LABEL: Record<Task, string> = {
   anomaly: "Anomaly detection",
+  few_shot_segmentation: "Few-shot segmentation",
   semantic_segmentation: "Segmentation",
   object_detection: "Object detection",
 };

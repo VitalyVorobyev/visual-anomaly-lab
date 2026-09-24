@@ -27,6 +27,7 @@ from anomaly_lab.annotations.service import (
     AnnotationDraftState,
     AnnotationSampleDraftState,
     AnnotationScopeState,
+    ClassCoverage,
     CopyRegionsResult,
 )
 from anomaly_lab.config import Settings
@@ -106,6 +107,15 @@ def create_annotation_label(
     request: Request, dataset_id: int, body: AnnotationLabelCreate
 ) -> AnnotationLabel:
     return service.create_label(_settings(request), dataset_id, body)
+
+
+@router.get(
+    "/api/datasets/{dataset_id}/annotation-labels/coverage",
+    summary="How many samples show, lack, or have no answer for each class",
+)
+def get_class_coverage(request: Request, dataset_id: int) -> list[ClassCoverage]:
+    """Per class, in samples: what a few-shot run can take references from and test on."""
+    return service.class_coverage(_settings(request), dataset_id)
 
 
 @router.put(

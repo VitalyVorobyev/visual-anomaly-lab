@@ -133,6 +133,9 @@ be regenerated exactly — a seed alone reproduces nothing without its fractions
   recorded in `params.manifest_id`, so a number computed here is comparable to the published one. Samples
   the manifest does not place are left *out* of the split, not swept into `test`: adding samples the
   benchmark never scored would change every metric's denominator.
+- **`manual`** and **`few_shot`** — a few-shot task's references in `train` and every other sample in
+  `test`, with no `val` (ADR-0040). `manual` takes `params.sample_ids`; `few_shot` draws `params.shots`
+  samples that show `params.label_key`, under the seed, so three seeds are three reference draws.
 
 ### SplitAssignment
 
@@ -156,14 +159,18 @@ drift.
 ### Experiment
 
 `id`, `name`, `dataset_id`, `split_id`, `region_profile_id`, `region_manifest_sha256`, `model_type`, `task`,
-`model_config` (JSON), `preprocessing_config` (JSON), `eval_config` (JSON), `channels` (JSON), `status`,
+`target_label`, `model_config` (JSON), `preprocessing_config` (JSON), `eval_config` (JSON), `channels` (JSON), `status`,
 `artifact_dir`, `created_at`, `notes`.
 
 **Configuration is frozen at creation.** There is no separate `Run` entity: different settings make a *new*
 experiment, so every result row is attributable to one immutable configuration.
 
-- `task ∈ {anomaly, semantic_segmentation, object_detection}` (ADR-0039). Creation refuses a method whose
-  `Capabilities.tasks` does not list the task, and a task with no registered evaluator.
+- `task ∈ {anomaly, few_shot_segmentation, semantic_segmentation, object_detection}` (ADR-0039). Creation
+  refuses a method whose `Capabilities.tasks` does not list the task, and a task with no registered
+  evaluator.
+- `target_label` is the annotation class a targeted task segments, and is null for `anomaly`
+  (ADR-0040). Creation refuses a class the dataset does not have, a `few_shot` split drawn for another
+  class, and a reference in `train` that does not show the class.
 - `channels` is a JSON array of channel **names** this run reads; `[]` means every channel. Names, because a
   frozen record must stay readable in a job log (`["bright"]` says what `[17]` does not), and
   `ImageRecord.channel` at the plugin boundary is a name too. An unknown name is refused at creation (422),

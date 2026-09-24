@@ -23,6 +23,20 @@ reorders one through `PUT .../annotation-labels/{key}`. There is no delete: regi
 class. The seeded `defect` class is magenta (`#c026d3`): legible over metal, plastic and dark field, not
 read as an error state, and distinct from the teal `signal` selection outline.
 
+**A class's truth includes its absence** (ADR-0040). `annotations_repo.presence_by_class` answers, per
+sample, whether a class is present, absent or unlabelled:
+
+- An image's newest completed revision decides it. The class is present when the document adds a region
+  of it (or, for `defect`, starts from the source mask), and absent when it does not — for a class that
+  existed when the revision was completed. A class created later is unlabelled there: it was never in
+  front of the annotator.
+- Without a revision, only `defect` has an answer: an imported ground-truth mask is present, and a sample
+  labelled normal is absent. Every other class is unlabelled.
+- A sample shows the class when any of its images does, and is absent only when all of them are.
+
+`GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class. It is what a few-shot
+split draws references from, and what a run on the class can test on.
+
 ## Document contract
 
 An annotation document is JSON schema version 1 in **source-image pixel coordinates**. It pins

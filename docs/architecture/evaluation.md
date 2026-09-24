@@ -198,13 +198,16 @@ timing — are the stored `MetricSet`s. Scores are never compared as values (ADR
 ## Splits
 
 Splits are assigned at **sample** level, so a part's channels never straddle subsets
-([domain model](domain-model.md)). Two strategies:
+([domain model](domain-model.md)). Two strategies serve `anomaly`:
 
 - **`normal_only_train`** — drawn here, seeded and stratified by capture group so an acquisition-batch
   effect cannot land on one side. Fractions are form fields: typically train of normals only, validation of
   held-out normals plus some defects for threshold selection, and the rest as test.
 - **`imported`** — the partition the benchmark published, read from the committed manifest
   ([import](import.md)). Only this makes a number comparable to a paper's.
+
+A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
+and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
 
 **A missing `val` subset is normal.** VisA's official protocol has train and test only, so every layer
 tolerates an empty subset:

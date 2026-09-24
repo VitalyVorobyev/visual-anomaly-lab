@@ -25,12 +25,9 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Task and reference splits** (M): `Task.FEW_SHOT_SEGMENTATION`, with the target class frozen
-      on the experiment; split strategies `manual` (explicit sample ids) and `few_shot`
-      (`label_key`, `shots`, `seed`); readiness per task.
 - [ ] **Class-index truth** (M): completion writes a class-index PNG beside the binary mask, and
-      the revision pins its class table in a new migration. Absence is a completed revision
-      without the class.
+      the revision pins its class table in a new migration. Presence then reads the rendered class
+      pixels, so a region cut away entirely no longer counts as the class.
 - [ ] **Targets and masks** (M): `TrainContext.targets` as a `TargetProvider` (`None` for
       `anomaly`), mapped into the prepared frame; a task-owned training-set policy in
       `run_train_job`; `InferContext.write_mask` beside `write_map`; a log headline chosen by task.
@@ -51,7 +48,7 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
       `refine`. Presence is calibrated from the foreground evidence, region size and margin.
 - [ ] **The workflow: Data · Truth · Runs** (M):
       - The dataset nav is regrouped into three stages.
-      - Readiness is shown per task in the band.
+      - Readiness is shown per task in the band, from the class coverage read.
       - Create experiment asks for the task first.
 - [ ] **Task-specific result bodies** (M):
       - A `taskViews` registry keyed by task supplies the bodies of Overview, Samples, Benchmark
