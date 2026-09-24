@@ -151,16 +151,20 @@ export function toggleRun(ids: number[], id: number): number[] {
  * checked here — that one is legitimate, and the report warns about it loudly instead.
  */
 export function refusalReason(
-  candidate: { id: number; dataset_id: number; split_id: number; status?: string; task?: string },
-  anchor: { dataset_id: number; split_id: number } | undefined,
+  candidate: {
+    id: number;
+    dataset_id: number;
+    split_id: number;
+    status?: string;
+    task?: string;
+    target_label?: string | null;
+  },
+  anchor:
+    | { dataset_id: number; split_id: number; task?: string; target_label?: string | null }
+    | undefined,
   selected: number[],
 ): string | null {
   if (selected.includes(candidate.id)) return null;
-  // Compare reads runs at thresholds against normal/defect labels; a few-shot run is measured
-  // against its class truth, and would sit in the table looking right and meaning nothing.
-  if (candidate.task !== undefined && candidate.task !== "anomaly") {
-    return "A segmentation run. Compare reads anomaly runs only.";
-  }
   // First, because it is true whatever else is selected: a run with no fitted model has no
   // scores, and a column of dashes is not a comparison.
   if (candidate.status !== undefined && candidate.status !== "trained") {
@@ -174,6 +178,16 @@ export function refusalReason(
   if (anchor === undefined) return null;
   if (candidate.dataset_id !== anchor.dataset_id) {
     return "A different dataset. Runs on different data are not comparable.";
+  }
+  if ((candidate.task ?? "anomaly") !== (anchor.task ?? "anomaly")) {
+    return "A different task. An anomaly run and a segmentation run answer different questions.";
+  }
+  // A few-shot comparison is *across* reference draws (ADR-0040), so the split may differ;
+  // what may not is the class.
+  if (anchor.task === "few_shot_segmentation") {
+    return candidate.target_label === anchor.target_label
+      ? null
+      : "A different class. Runs of different classes are different questions.";
   }
   if (candidate.split_id !== anchor.split_id) {
     return "A different split of this dataset, so the numbers cover different samples.";

@@ -88,13 +88,15 @@ describe("choosing which runs to compare", () => {
 
   it("allows anything while nothing is selected", () => {
     expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1 }, undefined, [])).toBeNull();
+    const fewShot = { dataset_id: 1, split_id: 4, task: "few_shot_segmentation", target_label: "scratch" };
+    // Few-shot runs of one class compare across reference draws: the split may differ.
+    expect(refusalReason({ id: 2, ...fewShot, split_id: 5 }, fewShot, [1])).toBeNull();
     expect(
-      refusalReason(
-        { id: 1, dataset_id: 1, split_id: 1, task: "few_shot_segmentation" },
-        undefined,
-        [],
-      ),
-    ).toContain("anomaly runs only");
+      refusalReason({ id: 2, ...fewShot, target_label: "dent" }, fewShot, [1]),
+    ).toContain("different class");
+    expect(
+      refusalReason({ id: 2, dataset_id: 1, split_id: 4, task: "anomaly" }, fewShot, [1]),
+    ).toContain("different task");
   });
 
   it("refuses a run that has nothing to compare", () => {

@@ -38,9 +38,6 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
       confirm the class absent.
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
-- [ ] **Compare for few-shot runs** (M): runs of one class and one reference-split family side by
-      side, the overlap against the number of references across draws (shots × seeds), and the
-      samples they disagree on. Compare refuses few-shot runs until then.
 
 Later, each behind the gate above:
 - A cross-domain public few-shot dataset.

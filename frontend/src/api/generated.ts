@@ -382,6 +382,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/compare/few-shot": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Few-shot segmentation runs of one class side by side
+         * @description Runs of one class, including runs that learned from different references (ADR-0040).
+         *
+         *     The question is how the answer moves with the references — how many, and which — so the
+         *     split is allowed to differ where the anomaly comparison refuses it. What stays fixed is
+         *     the class, and what is compared is `test`: the stored metrics, and each shared query's
+         *     outcome under each run.
+         */
+        get: operations["compare_few_shot_api_compare_few_shot_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets": {
         parameters: {
             query?: never;
@@ -3132,6 +3157,85 @@ export interface components {
             /** Path */
             path: string;
         };
+        /**
+         * FewShotComparison
+         * @description N few-shot runs of one class, which may learn from different reference draws.
+         */
+        FewShotComparison: {
+            /** Dataset Id */
+            dataset_id: number;
+            /** Dataset Name */
+            dataset_name: string | null;
+            /** Target Label */
+            target_label: string;
+            /** Runs */
+            runs: components["schemas"]["FewShotRun"][];
+            /**
+             * Samples
+             * @description The test queries every run scored — a run's own references are not queries, so samples one draw learned from are left out of everyone's rows.
+             */
+            samples: components["schemas"]["FewShotSample"][];
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * FewShotRun
+         * @description One few-shot segmentation run as a column: its reference draw and its test metrics.
+         */
+        FewShotRun: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Model Type */
+            model_type: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /** Split Id */
+            split_id: number;
+            /** Split Name */
+            split_name: string | null;
+            /**
+             * References
+             * @description Samples in the split's `train` subset: the shot count.
+             */
+            references: number;
+            /**
+             * Seed
+             * @description The draw's seed, for a `few_shot` split; null for `manual`.
+             */
+            seed: number | null;
+            /** Region Profile Id */
+            region_profile_id: number;
+            /** Scored */
+            scored: boolean;
+            /** Metrics */
+            metrics: {
+                [key: string]: unknown;
+            };
+            /**
+             * Ground Truth Stale
+             * @default false
+             */
+            ground_truth_stale: boolean;
+        };
+        /**
+         * FewShotSample
+         * @description A query every run scored, with each run's outcome and IoU, index-aligned with `runs`.
+         */
+        FewShotSample: {
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            /** Outcomes */
+            outcomes: string[];
+            /** Ious */
+            ious: (number | null)[];
+            /** Agree */
+            agree: boolean;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -5732,6 +5836,38 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ComparisonReport"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_few_shot_api_compare_few_shot_get: {
+        parameters: {
+            query: {
+                /** @description Experiment ids, in the order the columns should appear. */
+                ids: number[];
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FewShotComparison"];
                 };
             };
             /** @description Validation Error */

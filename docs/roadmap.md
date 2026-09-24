@@ -75,11 +75,11 @@ application.
   adaptation and refinement are each a field. The dataset workspace is grouped as Data · Truth · Runs,
   its band says per task what is still needed, the create screen asks for the task first, and the
   Splits tab draws references for a class. A segmentation run's results are read in its own terms —
-  overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline. Still open:
+  overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline — and Compare
+  reads runs of one class across reference draws. Still open:
   - the public gate that decides between the methods;
   - the reference studio's live preview and its accept / fix / mark-absent loop (choosing references
     by eye and freezing them into a run is built);
-  - Compare for few-shot runs, which it refuses today.
 
   The order is in [backlog.md](backlog.md).
 - **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.

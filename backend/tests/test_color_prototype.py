@@ -203,4 +203,49 @@ def test_the_whole_few_shot_slice_runs_without_torch(
     # Compare reads anomaly runs at thresholds; a few-shot run is refused by name.
     compared = client.get("/api/compare", params={"ids": [anomaly_id, created["id"]]})
     assert compared.status_code == 422
-    assert "Compare reads anomaly runs only" in compared.text
+    assert "/api/compare/few-shot" in compared.text
+
+
+def test_few_shot_runs_of_one_class_compare_across_reference_draws(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    anomaly = create_experiment(client, seeded)
+    runs = []
+    for shots, seed in ((1, 0), (2, 5)):
+        split = client.post(
+            "/api/splits",
+            json={
+                "dataset_id": seeded.dataset_id,
+                "name": f"{shots} shots seed {seed}",
+                "seed": seed,
+                "params": {"strategy": "few_shot", "label_key": "defect", "shots": shots},
+            },
+        ).json()
+        run = create_experiment(
+            client,
+            seeded,
+            name=f"colour {shots}",
+            split_id=split["id"],
+            model_type="color_prototype",
+            task="few_shot_segmentation",
+            target_label="defect",
+            config={},
+        )
+        run_handler(settings, JobKind.TRAIN, {"experiment_id": run["id"]})
+        run_handler(settings, JobKind.INFER, {"experiment_id": run["id"]})
+        runs.append(run["id"])
+
+    report = client.get("/api/compare/few-shot", params={"ids": runs})
+    assert report.status_code == 200, report.text
+    body = report.json()
+    assert body["target_label"] == "defect"
+    assert [run["references"] for run in body["runs"]] == [1, 2]
+    assert [run["seed"] for run in body["runs"]] == [0, 5]
+    assert all(run["metrics"]["foreground_iou"] is not None for run in body["runs"])
+    # Queries both runs scored: everything but the union of their references.
+    assert 14 - 3 <= len(body["samples"]) <= 14 - 2
+    assert all(len(sample["outcomes"]) == 2 for sample in body["samples"])
+
+    mixed = client.get("/api/compare/few-shot", params={"ids": [runs[0], anomaly["id"]]})
+    assert mixed.status_code == 422
+    assert "not a few-shot one" in mixed.text
