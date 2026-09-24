@@ -321,12 +321,10 @@ def read_mask(
     transform: SpatialTransform | None = None
     manifest = ""
     with connection(settings.db_path) as conn:
-        try:
-            truth = annotations_repo.resolve_ground_truth_masks(
-                conn, [image_id], verify_bytes=True
-            ).get(image_id)
-        except annotations_repo.GroundTruthDriftError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # A drifted truth file raises `GroundTruthDriftError`, rendered as 409.
+        truth = annotations_repo.resolve_ground_truth_masks(
+            conn, [image_id], verify_bytes=True
+        ).get(image_id)
         if prepared_for is not None:
             transform, manifest = _pinned_transform(conn, settings, prepared_for, image_id)
     if truth is None:

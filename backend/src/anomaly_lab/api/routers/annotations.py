@@ -47,6 +47,13 @@ from anomaly_lab.domain.annotations import (
     BitmapShape,
 )
 from anomaly_lab.domain.entities import AnnotationScope, Image
+from anomaly_lab.errors import (
+    ConflictError,
+    GoneError,
+    InvalidInputError,
+    NotFoundError,
+    StaleVersionError,
+)
 from anomaly_lab.media.decode import UnreadableImageError, sha256_of
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -109,7 +116,7 @@ def _set_sample_draft_etag(response: Response, draft: AnnotationSampleDraft) -> 
 def _annotation_scope(conn: sqlite3.Connection, dataset_id: int) -> AnnotationScope:
     dataset = datasets_repo.get_dataset(conn, dataset_id)
     if dataset is None:  # pragma: no cover - callers resolved the id from a row
-        raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+        raise NotFoundError(f"no dataset with id {dataset_id}")
     return dataset.annotation_scope
 
 
@@ -121,28 +128,22 @@ def _require_image_scope(conn: sqlite3.Connection, dataset_id: int) -> None:
     neither would detect the other.
     """
     if _annotation_scope(conn, dataset_id) is AnnotationScope.SAMPLE:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "this dataset annotates whole samples; use /api/samples/{sample_id}/annotations/…"
-            ),
+        raise ConflictError(
+            "this dataset annotates whole samples; use /api/samples/{sample_id}/annotations/…"
         )
 
 
 def _require_sample_scope(conn: sqlite3.Connection, dataset_id: int) -> None:
     if _annotation_scope(conn, dataset_id) is AnnotationScope.IMAGE:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "this dataset annotates individual images; use /api/images/{image_id}/annotations/…"
-            ),
+        raise ConflictError(
+            "this dataset annotates individual images; use /api/images/{image_id}/annotations/…"
         )
 
 
 def _sample_dataset_id(conn: sqlite3.Connection, sample_id: int) -> int:
     sample = samples_repo.get_sample(conn, sample_id)
     if sample is None:
-        raise HTTPException(status_code=404, detail=f"no sample with id {sample_id}")
+        raise NotFoundError(f"no sample with id {sample_id}")
     return sample.dataset_id
 
 
@@ -158,7 +159,7 @@ def _image_dataset_id(conn: sqlite3.Connection, image_id: int) -> int:
         (image_id,),
     ).fetchone()
     if row is None:
-        raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+        raise NotFoundError(f"no image with id {image_id}")
     return int(row["dataset_id"])
 
 
@@ -173,15 +174,13 @@ def _validate_taxonomy(
     known = {label.key for label in annotations_repo.list_labels(conn, dataset_id)}
     unknown = sorted({shape.label_key for shape in document.shapes} - known)
     if unknown:
-        raise HTTPException(
-            status_code=422, detail=f"unknown annotation labels: {', '.join(unknown)}"
-        )
+        raise InvalidInputError(f"unknown annotation labels: {', '.join(unknown)}")
     for shape in document.shapes:
         if isinstance(shape, BitmapShape):
             try:
                 decode_shape(shape)
             except AnnotationBitmapError as exc:
-                raise HTTPException(status_code=422, detail=str(exc)) from exc
+                raise InvalidInputError(str(exc)) from exc
 
 
 def _validate_document(
@@ -194,14 +193,11 @@ def _validate_document(
 ) -> None:
     image = images_repo.get_image(conn, image_id)
     if image is None:  # pragma: no cover - ownership join already found it
-        raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+        raise NotFoundError(f"no image with id {image_id}")
     if (document.image_width, document.image_height) != (image.width, image.height):
-        raise HTTPException(
-            status_code=422,
-            detail="annotation dimensions must match the source image exactly",
-        )
+        raise InvalidInputError("annotation dimensions must match the source image exactly")
     if document.base != expected_base:
-        raise HTTPException(status_code=422, detail="a draft's base layer cannot be changed")
+        raise InvalidInputError("a draft's base layer cannot be changed")
     _validate_taxonomy(conn, dataset_id, document)
 
 
@@ -221,9 +217,9 @@ def _save_import(
         _require_image_scope(conn, dataset_id)
         current = annotations_repo.get_draft(conn, image_id)
         if current is None:
-            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+            raise NotFoundError(f"image {image_id} has no annotation draft")
         if expected != _etag(current):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         labels = annotations_repo.list_labels(conn, dataset_id)
         known = {label.key: label.name for label in labels}
         default_key = labels[0].key if labels else "defect"
@@ -237,7 +233,7 @@ def _save_import(
                 clear_label_key=default_key,
             )
         except AnnotationInterchangeError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise InvalidInputError(str(exc)) from exc
         _validate_document(
             conn,
             image_id,
@@ -247,7 +243,7 @@ def _save_import(
         )
         saved = annotations_repo.update_draft(conn, image_id, current.version, document)
         if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
     _set_draft_etag(response, saved)
     return saved
 
@@ -258,22 +254,18 @@ def _resolved_mask(
     *,
     size: tuple[int, int],
 ) -> np.ndarray:
-    try:
-        truth = annotations_repo.resolve_ground_truth_masks(
-            conn, [image_id], verify_bytes=True
-        ).get(image_id)
-    except annotations_repo.GroundTruthDriftError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    truth = annotations_repo.resolve_ground_truth_masks(conn, [image_id], verify_bytes=True).get(
+        image_id
+    )
     if truth is None:
-        raise HTTPException(status_code=404, detail=f"image {image_id} has no completed annotation")
+        raise NotFoundError(f"image {image_id} has no completed annotation")
     try:
         mask = load_mask(Path(truth.path))
     except UnreadableImageError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise ConflictError(str(exc)) from exc
     if mask.shape != (size[1], size[0]):
-        raise HTTPException(
-            status_code=409,
-            detail="the resolved annotation mask does not match the source image dimensions",
+        raise ConflictError(
+            "the resolved annotation mask does not match the source image dimensions"
         )
     return mask
 
@@ -286,7 +278,7 @@ def list_annotation_labels(request: Request, dataset_id: int) -> list[Annotation
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            raise NotFoundError(f"no dataset with id {dataset_id}")
         return annotations_repo.list_labels(conn, dataset_id)
 
 
@@ -300,14 +292,12 @@ def create_annotation_label(
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            raise NotFoundError(f"no dataset with id {dataset_id}")
         annotations_repo.ensure_default_label(conn, dataset_id)
         try:
             return annotations_repo.create_label(conn, dataset_id, **body.model_dump(mode="python"))
         except sqlite3.IntegrityError as exc:
-            raise HTTPException(
-                status_code=409, detail=f"annotation label {body.key!r} exists"
-            ) from exc
+            raise ConflictError(f"annotation label {body.key!r} exists") from exc
 
 
 @router.put(
@@ -320,12 +310,12 @@ def update_annotation_label(
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            raise NotFoundError(f"no dataset with id {dataset_id}")
         updated = annotations_repo.update_label(
             conn, dataset_id, key, **body.model_dump(mode="python")
         )
     if updated is None:
-        raise HTTPException(status_code=404, detail=f"no annotation label {key!r}")
+        raise NotFoundError(f"no annotation label {key!r}")
     return updated
 
 
@@ -365,7 +355,7 @@ def _seed_state(conn: sqlite3.Connection, image_id: int) -> AnnotationDraftState
     """
     image = images_repo.get_image(conn, image_id)
     if image is None:  # pragma: no cover - ownership join already found it
-        raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+        raise NotFoundError(f"no image with id {image_id}")
 
     latest = annotations_repo.latest_revision(conn, image_id)
     if latest is not None:
@@ -403,13 +393,10 @@ def _pin_source_mask(conn: sqlite3.Connection, seed: AnnotationDraftState) -> st
         return seed.source_mask_sha256
     path = Path(seed.source_mask_path)
     if not path.is_file():
-        raise HTTPException(status_code=409, detail="the source mask is unavailable")
+        raise ConflictError("the source mask is unavailable")
     actual = sha256_of(path)
     if seed.source_mask_sha256 is not None and seed.source_mask_sha256 != actual:
-        raise HTTPException(
-            status_code=409,
-            detail="the imported source mask changed after it entered the catalog",
-        )
+        raise ConflictError("the imported source mask changed after it entered the catalog")
     if seed.source_mask_sha256 is None:
         masks_repo.record_sha256(conn, seed.source_mask_id, actual)
     return actual
@@ -458,7 +445,7 @@ def create_annotation_draft(
         _require_image_scope(conn, dataset_id)
         annotations_repo.ensure_default_label(conn, dataset_id)
         if annotations_repo.get_draft(conn, image_id) is not None:
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         seed = _seed_state(conn, image_id)
         _validate_document(conn, image_id, dataset_id, document, expected_base=seed.document.base)
         created = annotations_repo.create_draft(
@@ -491,9 +478,9 @@ def discard_annotation_draft(
         _require_image_scope(conn, dataset_id)
         current = annotations_repo.get_draft(conn, image_id)
         if current is None:
-            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+            raise NotFoundError(f"image {image_id} has no annotation draft")
         if not _is_wildcard(expected) and expected != _etag(current):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         annotations_repo.delete_draft(conn, image_id, current.version)
     return Response(status_code=204)
 
@@ -516,15 +503,15 @@ def save_annotation_draft(
         _require_image_scope(conn, dataset_id)
         current = annotations_repo.get_draft(conn, image_id)
         if current is None:
-            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+            raise NotFoundError(f"image {image_id} has no annotation draft")
         if expected != _etag(current):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         _validate_document(
             conn, image_id, dataset_id, document, expected_base=current.document.base
         )
         saved = annotations_repo.update_draft(conn, image_id, current.version, document)
         if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
     _set_draft_etag(response, saved)
     return saved
 
@@ -593,15 +580,15 @@ def copy_annotation_regions(
         _require_image_scope(conn, dataset_id)
         source = annotations_repo.get_draft(conn, image_id)
         if source is None:
-            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+            raise NotFoundError(f"image {image_id} has no annotation draft")
         if expected != _etag(source):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         if not source.document.shapes:
-            raise HTTPException(status_code=422, detail="this draft has no regions to copy")
+            raise InvalidInputError("this draft has no regions to copy")
 
         image = images_repo.get_image(conn, image_id)
         if image is None:  # pragma: no cover - the ownership join already found it
-            raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+            raise NotFoundError(f"no image with id {image_id}")
         siblings = {
             sibling.id: sibling
             for sibling in images_repo.list_images_for_sample(conn, image.sample_id)
@@ -613,23 +600,15 @@ def copy_annotation_regions(
         copied: list[CopiedChannel] = []
         for target_id in wanted:
             if target_id == image_id:
-                raise HTTPException(
-                    status_code=422, detail="a channel cannot be copied onto itself"
-                )
+                raise InvalidInputError("a channel cannot be copied onto itself")
             sibling = siblings.get(target_id)
             if sibling is None:
-                raise HTTPException(
-                    status_code=409,
-                    detail=f"image {target_id} is not another channel of this sample",
-                )
+                raise ConflictError(f"image {target_id} is not another channel of this sample")
             if (sibling.width, sibling.height) != (image.width, image.height):
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"image {target_id} is {sibling.width}x{sibling.height} and this one "
-                        f"is {image.width}x{image.height}; an annotation never leaves its "
-                        "source frame"
-                    ),
+                raise ConflictError(
+                    f"image {target_id} is {sibling.width}x{sibling.height} and this one "
+                    f"is {image.width}x{image.height}; an annotation never leaves its "
+                    "source frame"
                 )
 
             current = annotations_repo.get_draft(conn, target_id)
@@ -657,9 +636,7 @@ def copy_annotation_regions(
             )
             saved = annotations_repo.update_draft(conn, target_id, current.version, document)
             if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-                raise HTTPException(
-                    status_code=412, detail="the annotation draft changed elsewhere"
-                )
+                raise StaleVersionError("the annotation draft changed elsewhere")
             copied.append(
                 CopiedChannel(
                     image_id=target_id,
@@ -686,9 +663,9 @@ def complete_annotation_draft(
         _require_image_scope(conn, dataset_id)
         draft = annotations_repo.get_draft(conn, image_id)
         if draft is None:
-            raise HTTPException(status_code=404, detail=f"image {image_id} has no annotation draft")
+            raise NotFoundError(f"image {image_id} has no annotation draft")
         if expected != _etag(draft):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         _validate_document(
             conn, image_id, dataset_id, draft.document, expected_base=draft.document.base
         )
@@ -697,9 +674,7 @@ def complete_annotation_draft(
         destination = settings.annotation_image_dir(image_id) / f"revision-{next_no}.png"
         tx.remove_on_rollback(destination)
         if settings.annotations_dir.is_symlink() or destination.parent.is_symlink():
-            raise HTTPException(
-                status_code=409, detail="the app-owned annotation directory is unsafe"
-            )
+            raise ConflictError("the app-owned annotation directory is unsafe")
         try:
             mask_sha256 = render_binary_mask(
                 draft.document,
@@ -708,7 +683,7 @@ def complete_annotation_draft(
                 source_mask_sha256=draft.source_mask_sha256,
             )
         except AnnotationRenderError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+            raise ConflictError(str(exc)) from exc
         document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
         revision = annotations_repo.insert_revision(
             conn,
@@ -742,7 +717,7 @@ def read_annotation_revision_mask(
     with connection(settings.db_path) as conn:
         revision = annotations_repo.get_revision(conn, revision_id)
     if revision is None or revision.image_id != image_id:
-        raise HTTPException(status_code=404, detail="no such annotation revision")
+        raise NotFoundError("no such annotation revision")
     path = Path(revision.mask_path)
     expected = settings.annotation_image_dir(image_id)
     if (
@@ -751,11 +726,9 @@ def read_annotation_revision_mask(
         or path.parent != expected
         or path.name != f"revision-{revision.revision_no}.png"
     ):
-        raise HTTPException(status_code=409, detail="the stored annotation path is unsafe")
+        raise ConflictError("the stored annotation path is unsafe")
     if not path.is_file() or sha256_of(path) != revision.mask_sha256:
-        raise HTTPException(
-            status_code=409, detail="the materialised annotation mask is unavailable"
-        )
+        raise ConflictError("the materialised annotation mask is unavailable")
     return FileResponse(
         path,
         media_type="image/png",
@@ -789,20 +762,17 @@ def read_annotation_source_mask(request: Request, image_id: int) -> Response:
         source = masks_repo.get_mask_for_image(conn, image_id)
         image = images_repo.get_image(conn, image_id)
     if source is None or image is None:
-        raise HTTPException(status_code=404, detail=f"image {image_id} has no imported mask")
+        raise NotFoundError(f"image {image_id} has no imported mask")
     path = Path(source.path)
     if not path.is_file():
-        raise HTTPException(status_code=409, detail="the source mask is unavailable")
+        raise ConflictError("the source mask is unavailable")
     actual = sha256_of(path)
     if source.sha256 is not None and source.sha256 != actual:
-        raise HTTPException(
-            status_code=409,
-            detail="the imported source mask changed after it entered the catalog",
-        )
+        raise ConflictError("the imported source mask changed after it entered the catalog")
     try:
         mask = load_mask(path, size=(image.width, image.height))
     except UnreadableImageError as exc:
-        raise HTTPException(status_code=410, detail=str(exc)) from exc
+        raise GoneError(str(exc)) from exc
     return Response(
         content=encode_png(mask),
         media_type="image/png",
@@ -902,7 +872,7 @@ def _export_context(
         dataset_id = _image_dataset_id(conn, image_id)
         image = images_repo.get_image(conn, image_id)
         if image is None:  # pragma: no cover - ownership join already found it
-            raise HTTPException(status_code=404, detail=f"no image with id {image_id}")
+            raise NotFoundError(f"no image with id {image_id}")
         labels = annotations_repo.list_labels(conn, dataset_id)
         label = next(
             (item for item in labels if item.key == "defect"), labels[0] if labels else None
@@ -1059,7 +1029,7 @@ def read_annotation_scope(request: Request, dataset_id: int) -> AnnotationScopeS
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            raise NotFoundError(f"no dataset with id {dataset_id}")
         return _scope_state(conn, dataset_id)
 
 
@@ -1078,19 +1048,16 @@ def set_annotation_scope(
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn, transaction(conn, immediate=True):
         if datasets_repo.get_dataset(conn, dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+            raise NotFoundError(f"no dataset with id {dataset_id}")
         state = _scope_state(conn, dataset_id)
         if body.scope is not state.scope:
             if state.open_drafts:
-                raise HTTPException(
-                    status_code=409,
-                    detail=(
-                        f"{state.open_drafts} annotation drafts are open; complete or "
-                        "discard them before changing scope"
-                    ),
+                raise ConflictError(
+                    f"{state.open_drafts} annotation drafts are open; complete or "
+                    "discard them before changing scope"
                 )
             if body.scope is AnnotationScope.SAMPLE and state.blockers:
-                raise HTTPException(status_code=409, detail="; ".join(state.blockers))
+                raise ConflictError("; ".join(state.blockers))
             datasets_repo.set_annotation_scope(conn, dataset_id, body.scope)
         updated = _scope_state(conn, dataset_id)
     return updated
@@ -1098,13 +1065,10 @@ def set_annotation_scope(
 
 def _shared_frame(images: list[Image]) -> tuple[int, int]:
     if not images:
-        raise HTTPException(status_code=404, detail="this sample has no images to annotate")
+        raise NotFoundError("this sample has no images to annotate")
     frames = {(image.width, image.height) for image in images}
     if len(frames) != 1:
-        raise HTTPException(
-            status_code=409,
-            detail="this sample's images do not share one source frame",
-        )
+        raise ConflictError("this sample's images do not share one source frame")
     return frames.pop()
 
 
@@ -1127,18 +1091,12 @@ def _sample_seed_state(conn: sqlite3.Connection, sample_id: int) -> AnnotationSa
     latest = annotations_repo.latest_revision_for_sample(conn, sample_id)
     if latest is not None:
         if latest.document.base != "empty":
-            raise HTTPException(
-                status_code=409,
-                detail=(
-                    "this sample's newest revision was opened on an imported source "
-                    "mask, which belongs to one image and cannot be shared"
-                ),
+            raise ConflictError(
+                "this sample's newest revision was opened on an imported source "
+                "mask, which belongs to one image and cannot be shared"
             )
         if (latest.document.image_width, latest.document.image_height) != (width, height):
-            raise HTTPException(
-                status_code=409,
-                detail="this sample's newest revision was drawn in a different frame",
-            )
+            raise ConflictError("this sample's newest revision was drawn in a different frame")
         document = latest.document
     return AnnotationSampleDraftState(sample_id=sample_id, persisted=False, document=document)
 
@@ -1180,7 +1138,7 @@ def create_sample_annotation_draft(
         _require_sample_scope(conn, dataset_id)
         annotations_repo.ensure_default_label(conn, dataset_id)
         if annotations_repo.get_sample_draft(conn, sample_id) is not None:
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         # Resolved for its refusals -- a shared frame, and a newest revision that can
         # actually be shared -- before anything is written.
         _sample_seed_state(conn, sample_id)
@@ -1207,11 +1165,9 @@ def discard_sample_annotation_draft(
         _require_sample_scope(conn, dataset_id)
         current = annotations_repo.get_sample_draft(conn, sample_id)
         if current is None:
-            raise HTTPException(
-                status_code=404, detail=f"sample {sample_id} has no annotation draft"
-            )
+            raise NotFoundError(f"sample {sample_id} has no annotation draft")
         if not _is_wildcard(expected) and expected != _sample_etag(current):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         annotations_repo.delete_sample_draft(conn, sample_id, current.version)
     return Response(status_code=204)
 
@@ -1234,15 +1190,13 @@ def save_sample_annotation_draft(
         _require_sample_scope(conn, dataset_id)
         current = annotations_repo.get_sample_draft(conn, sample_id)
         if current is None:
-            raise HTTPException(
-                status_code=404, detail=f"sample {sample_id} has no annotation draft"
-            )
+            raise NotFoundError(f"sample {sample_id} has no annotation draft")
         if expected != _sample_etag(current):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         _validate_sample_document(conn, sample_id, dataset_id, document)
         saved = annotations_repo.update_sample_draft(conn, sample_id, current.version, document)
         if saved is None:  # pragma: no cover - BEGIN IMMEDIATE serialises writers
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
     _set_sample_draft_etag(response, saved)
     return saved
 
@@ -1255,15 +1209,11 @@ def _validate_sample_document(
 ) -> None:
     width, height = _shared_frame(images_repo.list_images_for_sample(conn, sample_id))
     if (document.image_width, document.image_height) != (width, height):
-        raise HTTPException(
-            status_code=422,
-            detail="annotation dimensions must match the sample's shared frame exactly",
+        raise InvalidInputError(
+            "annotation dimensions must match the sample's shared frame exactly"
         )
     if document.base != "empty":
-        raise HTTPException(
-            status_code=422,
-            detail="a sample-scoped document has no base layer to inherit",
-        )
+        raise InvalidInputError("a sample-scoped document has no base layer to inherit")
     _validate_taxonomy(conn, dataset_id, document)
 
 
@@ -1290,16 +1240,12 @@ def complete_sample_annotation_draft(
         _require_sample_scope(conn, dataset_id)
         draft = annotations_repo.get_sample_draft(conn, sample_id)
         if draft is None:
-            raise HTTPException(
-                status_code=404, detail=f"sample {sample_id} has no annotation draft"
-            )
+            raise NotFoundError(f"sample {sample_id} has no annotation draft")
         if expected != _sample_etag(draft):
-            raise HTTPException(status_code=412, detail="the annotation draft changed elsewhere")
+            raise StaleVersionError("the annotation draft changed elsewhere")
         _validate_sample_document(conn, sample_id, dataset_id, draft.document)
         if settings.annotations_dir.is_symlink():
-            raise HTTPException(
-                status_code=409, detail="the app-owned annotation directory is unsafe"
-            )
+            raise ConflictError("the app-owned annotation directory is unsafe")
 
         images = images_repo.list_images_for_sample(conn, sample_id)
         document_sha256 = hashlib.sha256(draft.document.canonical_json().encode()).hexdigest()
@@ -1310,9 +1256,7 @@ def complete_sample_annotation_draft(
             next_no = annotations_repo.next_revision_no(conn, image.id)
             destination = settings.annotation_image_dir(image.id) / f"revision-{next_no}.png"
             if destination.parent.is_symlink():
-                raise HTTPException(
-                    status_code=409, detail="the app-owned annotation directory is unsafe"
-                )
+                raise ConflictError("the app-owned annotation directory is unsafe")
             if rendered is None:
                 try:
                     mask_sha256 = render_binary_mask(
@@ -1322,7 +1266,7 @@ def complete_sample_annotation_draft(
                         source_mask_sha256=None,
                     )
                 except AnnotationRenderError as exc:
-                    raise HTTPException(status_code=409, detail=str(exc)) from exc
+                    raise ConflictError(str(exc)) from exc
                 rendered = destination
             else:
                 destination.parent.mkdir(parents=True, exist_ok=True)

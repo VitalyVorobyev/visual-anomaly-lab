@@ -45,6 +45,14 @@ from anomaly_lab.domain.entities import (
     MetricSet,
     Subset,
 )
+from anomaly_lab.errors import (
+    ConflictError,
+    GoneError,
+    InvalidInputError,
+    NotFoundError,
+    UnavailableError,
+    UnsupportedRequestError,
+)
 from anomaly_lab.eval.ground_truth import current_digest
 from anomaly_lab.eval.localization import tolerance_px
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
@@ -515,7 +523,7 @@ def _load(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.get_experiment(conn, experiment_id)
     if experiment is None:
-        raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
+        raise NotFoundError(f"no experiment with id {experiment_id}")
     return experiment, settings
 
 
@@ -539,10 +547,7 @@ def _refuse_while_a_job_runs(request: Request, settings: Settings) -> None:
             job = jobs_repo.get_job(conn, queue.current_job_id)
     if job is None:
         return
-    raise HTTPException(
-        status_code=409,
-        detail=f"a {job.kind.value} job (id {job.id}) is running; try again when it ends",
-    )
+    raise ConflictError(f"a {job.kind.value} job (id {job.id}) is running; try again when it ends")
 
 
 @router.get("/model-types", summary="Every registered method, with its configuration schema")
@@ -578,21 +583,15 @@ def _resolve_channels(
         return []
     available = [channel.name for channel in datasets_repo.list_channels(conn, dataset_id)]
     if not available:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"dataset {dataset_id} has no channels, so there is nothing to select; "
-                "leave the selection empty"
-            ),
+        raise InvalidInputError(
+            f"dataset {dataset_id} has no channels, so there is nothing to select; "
+            "leave the selection empty"
         )
     unknown = sorted(set(requested) - set(available))
     if unknown:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"dataset {dataset_id} has no channel named {', '.join(unknown)}; "
-                f"it has {', '.join(available)}"
-            ),
+        raise InvalidInputError(
+            f"dataset {dataset_id} has no channel named {', '.join(unknown)}; "
+            f"it has {', '.join(available)}"
         )
     chosen = set(requested)
     return [name for name in available if name in chosen]
@@ -610,50 +609,38 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
     try:
         model_class = get_model_class(body.model_type)
     except UnknownModelError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise InvalidInputError(str(exc)) from exc
 
     try:
         config = model_class.config_model().model_validate(body.config).model_dump(mode="json")
         preprocessing_options = PreprocessingOptions.model_validate(body.preprocessing)
         evaluation = EvalConfig.model_validate(body.evaluation).model_dump(mode="json")
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise InvalidInputError(str(exc)) from exc
 
     with connection(settings.db_path) as conn:
         if datasets_repo.get_dataset(conn, body.dataset_id) is None:
-            raise HTTPException(status_code=404, detail=f"no dataset with id {body.dataset_id}")
+            raise NotFoundError(f"no dataset with id {body.dataset_id}")
         channels = _resolve_channels(conn, body.dataset_id, body.channels)
         split = splits_repo.get_split(conn, body.split_id)
         if split is None:
-            raise HTTPException(status_code=404, detail=f"no split with id {body.split_id}")
+            raise NotFoundError(f"no split with id {body.split_id}")
         if split.dataset_id != body.dataset_id:
-            raise HTTPException(
-                status_code=422,
-                detail=f"split {body.split_id} belongs to dataset {split.dataset_id}",
-            )
+            raise InvalidInputError(f"split {body.split_id} belongs to dataset {split.dataset_id}")
         profile = region_profiles_repo.get_profile(conn, body.region_profile_id)
         if profile is None:
-            raise HTTPException(
-                status_code=404, detail=f"no region profile with id {body.region_profile_id}"
-            )
+            raise NotFoundError(f"no region profile with id {body.region_profile_id}")
         if profile.dataset_id != body.dataset_id:
-            raise HTTPException(
-                status_code=422,
-                detail=(
-                    f"region profile {body.region_profile_id} belongs to dataset "
-                    f"{profile.dataset_id}"
-                ),
+            raise InvalidInputError(
+                f"region profile {body.region_profile_id} belongs to dataset {profile.dataset_id}"
             )
         build_summary = read_build_summary(settings, profile.id)
         if build_summary is None:
-            raise HTTPException(
-                status_code=422,
-                detail=f"region profile {profile.id} has not been built",
-            )
+            raise InvalidInputError(f"region profile {profile.id} has not been built")
         try:
             load_prepared_build(settings, profile, manifest_sha256=build_summary.manifest_sha256)
         except ValueError as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            raise InvalidInputError(str(exc)) from exc
         preprocessing = PreprocessingConfig(
             width=profile.prepared_width,
             height=profile.prepared_height,
@@ -765,11 +752,8 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
     experiment, settings = _load(request, experiment_id)
     artifact_path = experiment_artifact_path(settings, experiment)
     if experiment.artifact_dir and artifact_path is None:
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "refusing to remove an artifact path outside this experiment's app-owned directory"
-            ),
+        raise ConflictError(
+            "refusing to remove an artifact path outside this experiment's app-owned directory"
         )
     queue: JobQueue = request.app.state.job_queue
     resident: ResidentWorker = request.app.state.resident
@@ -781,9 +765,8 @@ async def delete_experiment(request: Request, experiment_id: int) -> ExperimentD
         with connection(settings.db_path) as conn, transaction(conn, immediate=True):
             active = jobs_repo.active_jobs_for_experiment(conn, experiment_id)
             if active:
-                raise HTTPException(
-                    status_code=409,
-                    detail="cancel or wait for the active job before deleting this experiment",
+                raise ConflictError(
+                    "cancel or wait for the active job before deleting this experiment"
                 )
             deleted = experiments_repo.delete_experiment(conn, experiment_id)
 
@@ -834,33 +817,24 @@ def _refuse_impossible_resume(experiment: Experiment, settings: Settings) -> Non
     try:
         capabilities = get_model_class(experiment.model_type).capabilities()
     except UnknownModelError as exc:
-        raise HTTPException(
-            status_code=422, detail=f"method {experiment.model_type} is not registered"
-        ) from exc
+        raise InvalidInputError(f"method {experiment.model_type} is not registered") from exc
 
     if not capabilities.supports_resume:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"method {experiment.model_type} cannot continue a finished run; it has "
-                "no notion of a training step. Train it from scratch instead."
-            ),
+        raise InvalidInputError(
+            f"method {experiment.model_type} cannot continue a finished run; it has "
+            "no notion of a training step. Train it from scratch instead."
         )
 
     state = read_training_state(Path(experiment.artifact_dir) / MODEL_SUBDIR)
     if state is None:
-        raise HTTPException(
-            status_code=422,
-            detail="this experiment has not been trained yet, so there is nothing to continue",
+        raise InvalidInputError(
+            "this experiment has not been trained yet, so there is nothing to continue"
         )
     if not state.resumable:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "this checkpoint was written before optimizer state was saved, so it "
-                "cannot be continued exactly. Train from scratch once, and that run can "
-                "then be continued."
-            ),
+        raise InvalidInputError(
+            "this checkpoint was written before optimizer state was saved, so it "
+            "cannot be continued exactly. Train from scratch once, and that run can "
+            "then be continued."
         )
 
 
@@ -878,22 +852,16 @@ def _refuse_impossible_diagnose(
     try:
         capabilities = get_model_class(experiment.model_type).capabilities()
     except UnknownModelError as exc:
-        raise HTTPException(
-            status_code=422, detail=f"method {experiment.model_type} is not registered"
-        ) from exc
+        raise InvalidInputError(f"method {experiment.model_type} is not registered") from exc
 
     if not capabilities.produces_diagnostics:
-        raise HTTPException(
-            status_code=422,
-            detail=f"method {experiment.model_type} records no diagnostics about an image",
+        raise InvalidInputError(
+            f"method {experiment.model_type} records no diagnostics about an image"
         )
     if capabilities.requires_training and experiment.status is not ExperimentStatus.TRAINED:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"experiment {experiment.id} is {experiment.status.value}; train it before "
-                "asking what it saw in an image"
-            ),
+        raise InvalidInputError(
+            f"experiment {experiment.id} is {experiment.status.value}; train it before "
+            "asking what it saw in an image"
         )
 
     with connection(settings.db_path) as conn:
@@ -910,7 +878,7 @@ def _refuse_impossible_diagnose(
         detail = f"image {image_id} is not in this experiment's split"
         if experiment.channels:
             detail += f" and channel selection ({', '.join(experiment.channels)})"
-        raise HTTPException(status_code=404, detail=detail)
+        raise NotFoundError(detail)
 
 
 @router.post("/{experiment_id}/infer", summary="Queue an inference and evaluation job")
@@ -942,16 +910,13 @@ def start_export(
     try:
         capabilities = get_model_class(experiment.model_type).capabilities()
     except UnknownModelError as exc:
-        raise HTTPException(
-            status_code=422, detail=f"method {experiment.model_type} is not registered"
-        ) from exc
+        raise InvalidInputError(f"method {experiment.model_type} is not registered") from exc
     if params.format not in capabilities.portable_formats:
-        raise HTTPException(
-            status_code=422,
-            detail=f"method {experiment.model_type} does not support {params.format.value} export",
+        raise InvalidInputError(
+            f"method {experiment.model_type} does not support {params.format.value} export"
         )
     if experiment.status is not ExperimentStatus.TRAINED:
-        raise HTTPException(status_code=422, detail="train the experiment before exporting it")
+        raise InvalidInputError("train the experiment before exporting it")
 
     queue: JobQueue = request.app.state.job_queue
     return summary_of(
@@ -972,10 +937,8 @@ def reevaluate(request: Request, experiment_id: int) -> list[MetricSummary]:
     """
     experiment, settings = _load(request, experiment_id)
     with connection(settings.db_path) as conn:
-        try:
-            evaluate_and_store(conn, experiment)
-        except annotations_repo.GroundTruthDriftError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        # A drifted truth file is a `ConflictError`, which the API renders as 409.
+        evaluate_and_store(conn, experiment)
         return _metric_summaries(conn, experiment.id)
 
 
@@ -1316,9 +1279,7 @@ async def diagnose(request: Request, experiment_id: int, body: DiagnoseRequest) 
         # nearly always a library's, and "the resident stopped" alone is unactionable.
         detail = str(exc)
         tail = resident.stderr_tail()
-        raise HTTPException(
-            status_code=503, detail=f"{detail}\n{tail}" if tail else detail
-        ) from exc
+        raise UnavailableError(f"{detail}\n{tail}" if tail else detail) from exc
 
     return DiagnoseResponse(
         keys=keys, elapsed_ms=(time.perf_counter() - started) * 1000.0, warm=warm
@@ -1394,9 +1355,9 @@ def read_source_values(request: Request, experiment_id: int, image_id: int) -> R
         image = images_repo.get_image(conn, image_id)
         profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
     if image is None:
-        raise HTTPException(status_code=404, detail=f"no image {image_id}")
+        raise NotFoundError(f"no image {image_id}")
     if profile is None:
-        raise HTTPException(status_code=410, detail="the experiment's region profile is missing")
+        raise GoneError("the experiment's region profile is missing")
 
     try:
         build = load_prepared_build(
@@ -1407,7 +1368,7 @@ def read_source_values(request: Request, experiment_id: int, image_id: int) -> R
             raise ValueError(f"image {image_id} is not part of the pinned region build")
         prepared_path = build.image_path(image_id)
     except ValueError as exc:
-        raise HTTPException(status_code=410, detail=str(exc)) from exc
+        raise GoneError(str(exc)) from exc
 
     config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
     digest = hashlib.sha256(
@@ -1422,9 +1383,7 @@ def read_source_values(request: Request, experiment_id: int, image_id: int) -> R
     except (OSError, ValueError) as exc:
         # The catalog references files in place, so a source file can disappear between
         # import and now — the same 410 the image tiers give.
-        raise HTTPException(
-            status_code=410, detail=f"the source file for image {image_id} is no longer readable"
-        ) from exc
+        raise GoneError(f"the source file for image {image_id} is no longer readable") from exc
 
     transform = build.transform_for(image_id)
     array = np.stack(
@@ -1489,18 +1448,12 @@ def read_diagnostic_payload(
     )
     if entry is None:
         scope = "run-scoped" if image_id is None else f"image {image_id}"
-        raise HTTPException(
-            status_code=404,
-            detail=f"experiment {experiment_id} recorded no {scope} diagnostic {key!r}",
-        )
+        raise NotFoundError(f"experiment {experiment_id} recorded no {scope} diagnostic {key!r}")
     if entry.path is None:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"diagnostic {key!r} is of kind {entry.kind.value}, whose payload is "
-                "already inline in the index; fetching it here would be a second source "
-                "of truth for the same data"
-            ),
+        raise UnsupportedRequestError(
+            f"diagnostic {key!r} is of kind {entry.kind.value}, whose payload is "
+            "already inline in the index; fetching it here would be a second source "
+            "of truth for the same data"
         )
 
     # The range is read *before* the validator, because it is part of what decides the
@@ -1521,28 +1474,19 @@ def read_diagnostic_payload(
         # The artifact directory is deletable by design, so a referenced file that is gone
         # is an expected state rather than corruption — the same 410 a missing source file
         # or a missing anomaly map gets.
-        raise HTTPException(
-            status_code=410,
-            detail=f"the payload for diagnostic {key!r} is no longer readable",
-        ) from exc
+        raise GoneError(f"the payload for diagnostic {key!r} is no longer readable") from exc
 
     if payload_format is PayloadFormat.RAW:
         # The same `(key, image_id)` resolution, so the per-branch panes inherit the hover
         # readout with no code written per method — which is what ADR-0018 is for.
         if entry.kind is DiagnosticKind.IMAGE:
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"diagnostic {key!r} is of kind image — an (H, W, 3) picture in [0, 1] "
-                    "rather than a field of values, so there is no number to read from it"
-                ),
+            raise UnsupportedRequestError(
+                f"diagnostic {key!r} is of kind image — an (H, W, 3) picture in [0, 1] "
+                "rather than a field of values, so there is no number to read from it"
             )
         if entry.kind is DiagnosticKind.GRID and frame >= array.shape[0]:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
-                ),
+            raise NotFoundError(
+                f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
             )
         plane = array[frame] if entry.kind is DiagnosticKind.GRID else array
         return Response(
@@ -1555,11 +1499,8 @@ def read_diagnostic_payload(
         content = render_rgb_image(array)
     elif entry.kind is DiagnosticKind.GRID:
         if frame >= array.shape[0]:
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
-                ),
+            raise NotFoundError(
+                f"diagnostic {key!r} has {array.shape[0]} frame(s); there is no frame {frame}"
             )
         content = render_anomaly_map(
             array[frame], value_range=value_range, alpha_follows_score=False

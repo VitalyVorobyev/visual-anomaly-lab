@@ -199,6 +199,16 @@ a server-visible absolute directory path.
 | `model_assets` | `/api/model-assets` | licensed asset catalogue, verified install/external source and app-owned removal |
 | `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
 
+**Refusals are domain errors, mapped once.** Code below the routers says *no* by raising a subclass of
+`anomaly_lab.errors.DomainError` — `NotFoundError`, `ConflictError`, `StaleVersionError`,
+`InvalidInputError`, `UnsupportedRequestError`, `GoneError`, `UnavailableError` — with a `detail` a person can
+act on. `api/errors.py` maps each class to its status (404, 409, 412, 422, 400, 410, 503) in one table and
+renders it exactly as FastAPI renders an `HTTPException`, `{"detail": …}`, so a refusal can move between a
+router and a service without a client noticing. An existing exception joins a category by inheriting from
+it: `GroundTruthDriftError` is a `ConflictError`, so every route that reads truth answers 409 without a
+translation of its own. `HTTPException` remains for what is only HTTP — a missing `If-Match` header is 428
+because of the request's headers, not because of anything in the domain.
+
 **Model plugin registry.** A name → class dictionary of anomaly models (ADR-0007). Registry keys are stable
 identifiers persisted in `Experiment.model_type`: `pixel_reference`,
 `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`,
