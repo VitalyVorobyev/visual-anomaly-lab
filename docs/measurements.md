@@ -296,7 +296,12 @@ dataset is the next gate.
 
 ## Supervised segmentation — `dino_linear_seg` stays experimental; neither method draws a usable defect mask
 
-The first supervised segmentation gate (ADR-0039), predeclared below before it ran.
+The first supervised segmentation gate (ADR-0039), in two legs, each predeclared before it ran. The legs
+share the protocol and the decision rule; they differ only in how `dino_linear_seg` samples its training
+pixels, which is its shipped default in each: `raster` in the first, `per_class` in the second.
+
+### Leg 1 — `raster` pixel sampling
+
 `scripts/semantic-public-gate.py`, 12 runs in 12.5 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1,
 Pillow 12.3.0).
 
@@ -361,3 +366,21 @@ gets almost nothing — 28–33 of 130 900 sampled pixels on `candle` and 93–1
 (mean class accuracy 0.83–0.88) at the price of false presence everywhere. The floor, which samples each
 class separately, saw 30 000–100 000 defect pixels and still could not separate defect by colour. The gate
 therefore measures the sampling rule as much as the head.
+
+### Leg 2 — `per_class` pixel sampling
+
+Predeclared before it ran. `dino_linear_seg` now splits each training image's pixel budget equally among
+the classes present in it, evenly spaced within each class (`pixel_sampling` `per_class`, its shipped
+default; [methods](architecture/methods.md#dino_linear_seg)). Under the plan's defaults about 770 training
+images share 131 072 pixels, 170 each, so a defect image gives up to 85 defect pixels where raster
+sampling gave it none or one.
+
+**Protocol and decision rule: leg 1's, unchanged.** The same script, classes, prepared size, split
+strategy and seeds, so the same splits; both methods rerun at their shipped defaults, whose only change is
+`pixel_sampling` — `class_balancing` stays `inverse_frequency`, and every other field keeps leg 1's value.
+`color_classifier` draws nothing at random and is rerun rather than reused, as a check that nothing else
+moved. The primary is test mean IoU averaged over the three seeds, and `dino_linear_seg` leaves
+experimental only if it beats `color_classifier` by at least 0.05 on it **on both classes**.
+
+This is the one further leg the first leg's cause justified. Whatever it shows, the gate is not rerun
+under another sampling or weighting rule to reach the margin.

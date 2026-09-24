@@ -161,6 +161,10 @@ def test_the_plan_is_logged_before_encoding_and_ignored_pixels_are_never_learned
     assert plan < encoded
     assert "at most 64 labelled pixels from each" in events[plan]
     assert any("no training pixel of 'moss'" in line for line in events)
+    assert "pixel sampling: per_class" in events
+    # What each class got is logged against what the chosen images held.
+    trained = next(line for line in events if line.startswith("training the head on"))
+    assert "background" in trained and " of " in trained
 
     queries, _ = _records(tmp_path / "images", 1, first_id=11)
     (predicted,) = _segment(model, tmp_path / "run", queries)

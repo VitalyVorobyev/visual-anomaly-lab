@@ -14,15 +14,21 @@ loss is taken on exactly the function the label map is drawn from, and a pixel's
 the label of the patch it happens to sit in.
 
 - **The pixel sample is bounded before anything is encoded** (`plan_pixels`): images first,
-  evenly spaced, then at most `pixels_per_image` labelled pixels from each, evenly spaced over
-  the image in raster order, and the float32 footprint is logged and refused above a ceiling.
-  Pixels marked `IGNORE_INDEX` are never sampled.
+  evenly spaced, then at most `pixels_per_image` labelled pixels from each, and the float32
+  footprint is logged and refused above a ceiling. Pixels marked `IGNORE_INDEX` are never
+  sampled.
+- **Each class in an image gets a share of that image's pixels** (`sample_pixels`,
+  `pixel_sampling = per_class`): the budget is split equally among the classes present, a class
+  with fewer pixels than its share gives the rest back to the others, and each class's pixels
+  are evenly spaced over its own raster order. Sampled evenly over the whole image instead
+  (`raster`), a defect covering a fraction of a percent of the frame gets a pixel or two.
 - **The head is fitted on the CPU**, with AdamW on shuffled minibatches, from a seeded
   generator that draws both its initial weights and the batch order — nothing reads torch's
   global stream, so a seed is the whole answer. It is small enough that the accelerator would
   buy nothing, and the CPU makes the fit reproducible bit for bit.
-- **`class_balancing`** weights the cross-entropy by inverse class frequency over the sample,
-  because an annotated image is mostly background and an unweighted head learns that.
+- **`class_balancing`** weights the cross-entropy by inverse class frequency over the sample.
+  Per-class sampling balances the classes *within* an image; the weights balance what is left
+  *across* images, since an image without a class still contributes background.
 - A class with no training pixel is never predicted, as in `color_classifier`: the fitted head
   would still hold a row for it, trained only to lose.
 
@@ -93,6 +99,13 @@ class ClassBalancing(StrEnum):
     """Each class's pixels weigh in inverse proportion to how many of them were sampled."""
 
 
+class PixelSampling(StrEnum):
+    PER_CLASS = "per_class"
+    """Each class present in an image gets an equal share of the image's pixel budget."""
+    RASTER = "raster"
+    """The budget is spaced evenly over the image's labelled pixels, whatever their class."""
+
+
 class DinoLinearSegConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
@@ -115,8 +128,16 @@ class DinoLinearSegConfig(BaseModel):
         ge=16,
         le=65_536,
         description=(
-            "At most this many labelled pixels are sampled from each training image, evenly "
-            "spaced over it. Neighbouring pixels share a patch, so more buys little."
+            "At most this many labelled pixels are sampled from each training image. "
+            "Neighbouring pixels share a patch, so more buys little."
+        ),
+    )
+    pixel_sampling: PixelSampling = Field(
+        default=PixelSampling.PER_CLASS,
+        description=(
+            "'per_class' splits each image's pixels equally among the classes present in it, "
+            "so a small defect is sampled as often as the background around it; 'raster' "
+            "spaces them evenly over the image, where a small class gets almost none."
         ),
     )
     max_training_pixels: int = Field(
@@ -238,6 +259,47 @@ def plan_pixels(
         )
         raise ValueError(msg)
     return plan
+
+
+def allocate_pixels(counts: np.ndarray, budget: int) -> np.ndarray:
+    """`(C,)` pixels to take from each class of one image, from its `(C,)` labelled counts.
+
+    Water-filling: the classes present split `budget` equally, visited from the smallest, and a
+    class with fewer pixels than its share takes all it has and leaves the rest to the classes
+    after it. The total never exceeds `budget`, and reaches it whenever the image holds that
+    many labelled pixels.
+    """
+    counts = np.asarray(counts, dtype=np.int64)
+    taken = np.zeros_like(counts)
+    present = [int(index) for index in np.argsort(counts, kind="stable") if counts[index] > 0]
+    remaining = int(budget)
+    for position, index in enumerate(present):
+        share = -(-remaining // (len(present) - position))
+        taken[index] = min(int(counts[index]), share)
+        remaining -= int(taken[index])
+    return taken
+
+
+def sample_pixels(
+    truth: np.ndarray, classes: int, budget: int, sampling: PixelSampling
+) -> np.ndarray:
+    """Sorted flat indices of at most `budget` labelled pixels of one flat label map.
+
+    A pixel is labelled when it is neither `IGNORE_INDEX` nor outside the `classes` modelled.
+    `raster` spaces the budget evenly over them; `per_class` gives each class its
+    `allocate_pixels` share, evenly spaced over that class's own pixels. Deterministic.
+    """
+    labelled = (truth != IGNORE_INDEX) & (truth >= 0) & (truth < classes)
+    if sampling is PixelSampling.RASTER:
+        indices = np.flatnonzero(labelled)
+        return indices[np.asarray(evenly_spaced(len(indices), budget), dtype=np.int64)]
+    counts = np.bincount(truth[labelled], minlength=classes)[:classes]
+    picked: list[np.ndarray] = []
+    for index, take in enumerate(allocate_pixels(counts, budget)):
+        if take:
+            members = np.flatnonzero(truth == index)
+            picked.append(members[np.asarray(evenly_spaced(len(members), int(take)))])
+    return np.sort(np.concatenate(picked)) if picked else np.zeros(0, dtype=np.int64)
 
 
 def feature_dim(backbone: DinoBackbone, layers: FeatureLayers) -> int:
@@ -375,14 +437,18 @@ class DinoLinearSegModel(AnomalyModel):
         ctx.log(plan.describe())
         chosen = [train[index] for index in evenly_spaced(len(train), plan.images_used)]
 
+        ctx.log(f"pixel sampling: {self.config.pixel_sampling.value}")
+
         features: list[np.ndarray] = []
         labels: list[np.ndarray] = []
+        available = np.zeros(size, dtype=np.int64)
         for position, record in enumerate(chosen):
             ctx.raise_if_cancelled()
             truth = targets.labels(record.image_id).reshape(-1)
-            labelled = np.flatnonzero((truth != IGNORE_INDEX) & (truth < size))
-            if len(labelled):
-                picked = labelled[np.asarray(evenly_spaced(len(labelled), plan.pixels_per_image))]
+            labelled = truth[(truth != IGNORE_INDEX) & (truth >= 0) & (truth < size)]
+            available += np.bincount(labelled, minlength=size)[:size]
+            picked = sample_pixels(truth, size, plan.pixels_per_image, self.config.pixel_sampling)
+            if len(picked):
                 grid_features = self._grid_features(record, ctx)
                 features.append(pixel_features(grid_features, picked, grid, (width, height)))
                 labels.append(truth[picked].astype(np.int64))
@@ -404,7 +470,10 @@ class DinoLinearSegModel(AnomalyModel):
             raise RuntimeError(msg)
         ctx.log(
             f"training the head on {len(sampled_labels)} pixels: "
-            + ", ".join(f"{name} {int(count)}" for name, count in zip(names, counts, strict=True))
+            + ", ".join(
+                f"{name} {int(count)} of {int(total)}"
+                for name, count, total in zip(names, counts, available, strict=True)
+            )
         )
 
         weights, bias = self._train_head(
