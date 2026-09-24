@@ -32,18 +32,20 @@ has annotation, and whether it is ready for a task is a readiness check.
    - **ADR-0028 still holds.** A confidence is not comparable across runs. Anything thresholded is
      resolved per run by one shared rule whose name and value are printed, and Compare puts only
      threshold-free metrics side by side.
-3. **Ground truth.** *(planned: annotation schema v2)* `BoxShape` and `instance_id` in
-   `domain/annotations.py`; completion writes a class-index PNG and an instances file next to the
-   binary mask, and the revision pins its class-to-index table. v1 documents must read as v2
-   unchanged. The taxonomy is `AnnotationLabel`, managed on the Annotate tab
+3. **Ground truth.** Completion writes a class-index PNG next to the binary mask and the revision
+   pins its class table (`annotation_render.py`); `annotations/class_truth.py` resolves and loads a
+   class's region per image. *(planned: annotation schema v2)* `BoxShape`, `instance_id` and an
+   instances file for detection. v1 documents must read as v2 unchanged. The taxonomy is `AnnotationLabel`, managed on the Annotate tab
    (`routes/dataset/ClassManager.tsx`). Class hotkeys must avoid `0`/`1`.
-4. **Predictions.** *(planned)* `Prediction` in `models/base.py` gains optional `label_map` and
-   `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
+4. **Predictions.** A binary task writes its mask with `InferContext.write_mask`. *(planned)*
+   `Prediction` in `models/base.py` gains optional `label_map` and `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
    ranking, the gallery and disagreement keep working.
-5. **Targets.** *(planned)* `TrainContext.targets: TargetProvider | None`. It is `None` for
-   `anomaly`, which is what makes an anomaly method unable to see a defect mask by construction —
-   **never pass ground truth to a plugin any other way.** The training-set policy is the task's:
-   `anomaly` trains on the train subset's normals; a supervised task on its annotated samples.
+5. **Targets.** `TrainContext.targets: TargetProvider | None`. It is `None` for `anomaly`, which is
+   what makes an anomaly method unable to see a defect mask by construction — **never pass ground
+   truth to a plugin any other way.** The training-set policy is the task's, in
+   `experiments/policy.py`: `anomaly` trains on the train subset's normals, `few_shot_segmentation`
+   on its references; a new task adds its branch there. The `infer` log names the evaluator's
+   `headline` metric.
 6. **The first plugin.** Follow the `add-method-plugin` skill; declare the task in
    `Capabilities.tasks`. It must still cost one module and one registry entry. If it needs a route,
    a schema or TypeScript, the boundary is wrong — fix the boundary.

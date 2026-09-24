@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
 import numpy as np
+from PIL import Image as PILImage
 from pydantic import BaseModel, Field
 
 # One numpy primitive, no model knowledge and no torch, imported so that "where the map
@@ -217,6 +218,23 @@ class ModelContext:
         self.diagnostics.emit(key, title, kind, payload, image_id=image_id, description=description)
 
 
+class TargetProvider(Protocol):
+    """The ground truth a targeted task fits on (ADR-0039, ADR-0040).
+
+    The only way a plugin ever sees ground truth. An `anomaly` run gets `None` instead, so a
+    method ranking by unlikeness to normal cannot read a defect mask by construction.
+    """
+
+    @property
+    def label_key(self) -> str:
+        """The class this run segments."""
+        ...
+
+    def mask(self, image_id: int) -> np.ndarray:
+        """Where the class is in one training image: boolean, in the prepared frame."""
+        ...
+
+
 @dataclass
 class TrainContext(ModelContext):
     """`fit`'s view of the world.
@@ -225,9 +243,13 @@ class TrainContext(ModelContext):
     held-out normals to fit its score-normalization quantiles; a split with no `val`
     subset — VisA's official one-class protocol, for instance — passes an empty sequence,
     and a model that needs them must fall back visibly rather than silently.
+
+    `targets` is `None` for `anomaly`. For a targeted task it answers for every record
+    `fit` is given.
     """
 
     val: Sequence[ImageRecord] = ()
+    targets: TargetProvider | None = None
 
 
 @dataclass
@@ -253,6 +275,9 @@ class InferContext(ModelContext):
     pinned spatial transform, so projection happens here once and no method needs to know
     that region profiles exist.
     """
+
+    mask_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
+    """The same projection for a boolean mask, which is resampled nearest, never blended."""
 
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
@@ -314,6 +339,35 @@ class InferContext(ModelContext):
         peak = peak_of(values)
         if peak is not None:
             self._map_peaks[image_id] = peak
+        return path
+
+    def mask_path(self, image_id: int) -> Path:
+        """Where one image's predicted mask is written, beside its map."""
+        return self.maps_dir / f"{image_id}.mask.png"
+
+    def write_mask(self, image_id: int, mask: np.ndarray) -> Path:
+        """Persist a method's own foreground decision for one image, as a 0/255 PNG.
+
+        For a method whose mask is more than its map above a threshold — a refined or
+        post-processed region. The map stays the foreground probability, and a run that
+        writes no mask is read by thresholding it. The mask arrives in the prepared frame
+        and is stored in the source frame, like the map.
+        """
+        values = np.squeeze(np.asarray(mask)).astype(bool)
+        if values.ndim != 2:
+            msg = (
+                f"a mask must be 2-D; image {image_id} produced an array of shape {np.shape(mask)}"
+            )
+            raise ValueError(msg)
+        if self.mask_projector is not None:
+            values = np.asarray(self.mask_projector(image_id, values), dtype=bool)
+        path = self.mask_path(image_id)
+        temporary = path.with_suffix(".tmp.png")
+        try:
+            PILImage.fromarray(values.astype(np.uint8) * 255, mode="L").save(temporary)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
         return path
 
     def peak_for(self, image_id: int) -> tuple[int, int] | None:

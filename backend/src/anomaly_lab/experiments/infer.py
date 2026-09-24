@@ -137,6 +137,9 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         map_projector=lambda image_id, values: loaded.region_build.transform_for(
             image_id
         ).project_map(values),
+        mask_projector=lambda image_id, values: loaded.region_build.transform_for(
+            image_id
+        ).project_mask(values),
     )
 
     started = time.perf_counter()
@@ -196,12 +199,13 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         # what the model produced and nothing else. That split is what makes `reevaluate`
         # able to apply a changed `eval_config` without re-running inference.
         ctx.progress(0.95, "computing metrics")
-        metrics = evaluator_for(experiment.task).evaluate_and_store(conn, experiment)
+        evaluator = evaluator_for(experiment.task)
+        metrics = evaluator.evaluate_and_store(conn, experiment)
         sample_count = len(results_repo.list_scored_samples(conn, experiment.id))
         experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINED)
 
-    headline = {subset.value: found.get("sample_roc_auc") for subset, found in metrics.items()}
-    ctx.log(f"sample ROC-AUC by subset: {headline}")
+    headline = {subset.value: found.get(evaluator.headline) for subset, found in metrics.items()}
+    ctx.log(f"{evaluator.headline} by subset: {headline}")
     ctx.progress(1.0, "scored and evaluated")
 
     return {
