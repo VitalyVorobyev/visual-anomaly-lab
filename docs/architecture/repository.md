@@ -49,7 +49,7 @@ visual-anomaly-lab/
     ├── thumbnails/{thumb,preview}/ # 256 px and 1024 px WebP
     ├── artifacts/exp-<id>/         # method state, maps/ (float32 .npy), logs/<job>.log, exports/
     ├── jobs/logs/                  # logs of jobs that belong to no experiment
-    ├── annotations/image-<id>/     # revision-<n>.png — immutable app-owned binary truth
+    ├── annotations/image-<id>/     # revision-<n>.png, .classes.png, .instances.json — immutable truth
     ├── region-profiles/profile-<id>/build/  # lossless prepared PNGs + transforms
     └── model-cache/assets/         # verified shared weights + external-source metadata
 ```

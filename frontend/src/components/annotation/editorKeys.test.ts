@@ -11,6 +11,8 @@ import {
   type EditorCommand,
   type KeyLike,
   canvasBindingFor,
+  classKeyAt,
+  classSlotFor,
   windowBindingFor,
   withKeys,
 } from "./editorKeys";
@@ -26,6 +28,8 @@ describe("window bindings", () => {
     [key("v"), "tool.select"],
     [key("V", { shiftKey: true }), "tool.select"],
     [key("p"), "tool.polygon"],
+    [key("r"), "tool.box"],
+    [key("R", { shiftKey: true }), "tool.box"],
     [key("b"), "tool.brush"],
     [key("e"), "tool.eraser"],
     [key("a"), "tool.assist"],
@@ -91,6 +95,30 @@ describe("window bindings", () => {
   });
 });
 
+describe("class keys", () => {
+  it("pick the first eight classes with 2 to 9, and leave 0 and 1 to the view", () => {
+    for (const digit of ["2", "3", "4", "5", "6", "7", "8", "9"]) {
+      expect(command(key(digit))).toBe("class.pick");
+    }
+    expect(command(key("0"))).toBe("view.fit");
+    expect(command(key("1"))).toBe("view.actual");
+    expect(classSlotFor("2")).toBe(0);
+    expect(classSlotFor("9")).toBe(7);
+    expect(classSlotFor("1")).toBeNull();
+    expect(classSlotFor("0")).toBeNull();
+  });
+
+  it("name the key of each position the picker shows, and none past the eighth", () => {
+    expect(classKeyAt(0)).toBe("2");
+    expect(classKeyAt(7)).toBe("9");
+    expect(classKeyAt(8)).toBeNull();
+  });
+
+  it("are not reached with a modifier held", () => {
+    expect(command(key("2", { metaKey: true }))).toBeUndefined();
+  });
+});
+
 describe("canvas bindings", () => {
   it("own the arrows, Enter and Space", () => {
     expect(canvasBindingFor(key("ArrowUp"))?.command).toBe("cursor.move");
@@ -112,6 +140,7 @@ describe("the sheet's source", () => {
 
   it("names a control's keys from the same list", () => {
     expect(withKeys("Select", "tool.select")).toBe("Select (V)");
+    expect(withKeys("Box", "tool.box")).toBe("Box (R)");
     expect(withKeys("Redo", "redo")).toBe("Redo (⇧⌘Z)");
   });
 });

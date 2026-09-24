@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { AnnotationDocument, BitmapShape, PolygonShape } from "../../api/client";
+import type { AnnotationDocument, BitmapShape, BoxShape, PolygonShape } from "../../api/client";
 import { readPixel } from "./pixelReadout";
 
 const square: PolygonShape = {
@@ -76,5 +76,35 @@ describe("readPixel", () => {
     expect(readPixel(document(), { x: 4.5, y: 4.5 }, new Map(), null)?.region).toBe(1);
     expect(readPixel(document(), { x: -0.5, y: 3 }, masks, null)).toBeNull();
     expect(readPixel(document(), { x: 10, y: 3 }, masks, null)).toBeNull();
+  });
+});
+
+describe("readPixel over a box", () => {
+  const box: BoxShape = {
+    id: "box",
+    label_key: "defect",
+    kind: "box",
+    operation: "add",
+    x: 1,
+    y: 1,
+    width: 3,
+    height: 2,
+  };
+
+  it("reads a box as the polygon of its corners, tested at the pixel's centre", () => {
+    const withBox = document({ shapes: [box] });
+    expect(readPixel(withBox, { x: 1.2, y: 1.9 }, masks, null)).toEqual({
+      x: 1,
+      y: 1,
+      value: 1,
+      region: 1,
+    });
+    expect(readPixel(withBox, { x: 3.5, y: 2.5 }, masks, null)?.value).toBe(1);
+    expect(readPixel(withBox, { x: 4.5, y: 2.5 }, masks, null)).toEqual({
+      x: 4,
+      y: 2,
+      value: 0,
+      region: null,
+    });
   });
 });

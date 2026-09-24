@@ -80,6 +80,7 @@ export function ReferencePane({
         onMoveShape={ignore}
         onBrush={ignore}
         onFinishPolygon={ignore}
+        onBox={ignore}
         onAssistPoint={ignore}
         onAssistBox={ignore}
       />

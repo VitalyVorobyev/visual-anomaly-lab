@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Annotated, Literal
+from typing import Annotated, Literal, assert_never
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -17,14 +17,53 @@ class AnnotationPoint(BaseModel):
     y: float
 
 
+ShapeId = Annotated[str, Field(min_length=1, max_length=128)]
+InstanceId = Annotated[
+    str | None,
+    Field(
+        min_length=1,
+        max_length=128,
+        # Unset is left out rather than written as null, so every document stored before
+        # shapes had one keeps its canonical JSON, and therefore its digest.
+        exclude_if=lambda value: value is None,
+        description=(
+            "Groups add shapes into one object instance at completion. Unset, a shape is its "
+            "own instance, keyed by its id."
+        ),
+    ),
+]
+
+
 class PolygonShape(BaseModel):
     model_config = API_MODEL_CONFIG
 
-    id: str = Field(min_length=1, max_length=128)
+    id: ShapeId
     label_key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
     kind: Literal["polygon"] = "polygon"
     operation: Literal["add", "subtract"] = "add"
+    instance_id: InstanceId = None
     points: list[AnnotationPoint] = Field(min_length=3)
+
+
+class BoxShape(BaseModel):
+    """An axis-aligned rectangle in the source frame; it rasterises as its four corners."""
+
+    model_config = API_MODEL_CONFIG
+
+    id: ShapeId
+    label_key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
+    kind: Literal["box"] = "box"
+    operation: Literal["add", "subtract"] = "add"
+    instance_id: InstanceId = None
+    x: float = Field(ge=0)
+    y: float = Field(ge=0)
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+
+    def corners(self) -> list[tuple[float, float]]:
+        """The polygon a box is: a box and this polygon cover exactly the same pixels."""
+        x1, y1 = self.x + self.width, self.y + self.height
+        return [(self.x, self.y), (x1, self.y), (x1, y1), (self.x, y1)]
 
 
 class BitmapShape(BaseModel):
@@ -32,10 +71,11 @@ class BitmapShape(BaseModel):
 
     model_config = API_MODEL_CONFIG
 
-    id: str = Field(min_length=1, max_length=128)
+    id: ShapeId
     label_key: str = Field(min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$")
     kind: Literal["bitmap"] = "bitmap"
     operation: Literal["add", "subtract"] = "add"
+    instance_id: InstanceId = None
     x: int = Field(ge=0)
     y: int = Field(ge=0)
     width: int = Field(gt=0)
@@ -43,7 +83,7 @@ class BitmapShape(BaseModel):
     png_base64: str = Field(min_length=1, max_length=90_000_000)
 
 
-AnnotationShape = Annotated[PolygonShape | BitmapShape, Field(discriminator="kind")]
+AnnotationShape = Annotated[PolygonShape | BoxShape | BitmapShape, Field(discriminator="kind")]
 
 
 class AnnotationDocument(BaseModel):
@@ -62,16 +102,32 @@ class AnnotationDocument(BaseModel):
         ids = [shape.id for shape in self.shapes]
         if len(ids) != len(set(ids)):
             raise ValueError("shape ids must be unique")
+        instance_class: dict[str, str] = {}
+        for shape in self.shapes:
+            if shape.operation != "add":
+                continue
+            key = shape.instance_id or shape.id
+            if instance_class.setdefault(key, shape.label_key) != shape.label_key:
+                raise ValueError(f"instance {key!r} cannot hold shapes of two classes")
         for shape in self.shapes:
             if isinstance(shape, PolygonShape):
                 for point in shape.points:
                     if not (0 <= point.x <= self.image_width and 0 <= point.y <= self.image_height):
                         raise ValueError("every point must lie inside the source-image frame")
-            elif (
-                shape.x + shape.width > self.image_width
-                or shape.y + shape.height > self.image_height
-            ):
-                raise ValueError("every bitmap must lie inside the source-image frame")
+            elif isinstance(shape, BoxShape):
+                if (
+                    shape.x + shape.width > self.image_width
+                    or shape.y + shape.height > self.image_height
+                ):
+                    raise ValueError("every box must lie inside the source-image frame")
+            elif isinstance(shape, BitmapShape):
+                if (
+                    shape.x + shape.width > self.image_width
+                    or shape.y + shape.height > self.image_height
+                ):
+                    raise ValueError("every bitmap must lie inside the source-image frame")
+            else:  # pragma: no cover - the discriminated union is closed
+                assert_never(shape)
         return self
 
     def canonical_json(self) -> str:
@@ -172,6 +228,14 @@ class AnnotationRevision(BaseModel):
             "for a revision completed before class masks were written."
         ),
     )
+    instances_path: str | None = Field(
+        default=None,
+        description=(
+            "The instances JSON: every object instance with its class, bounding box and "
+            "pixel count. Null for a revision completed before instances were recorded."
+        ),
+    )
+    instances_sha256: str | None = None
     completed_at: str
 
     @field_validator("class_table", mode="before")

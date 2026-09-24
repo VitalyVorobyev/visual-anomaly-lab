@@ -12,6 +12,7 @@
 
 import type { AnnotationDocument, AnnotationLabel } from "../../api/client";
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import { classKeyAt } from "../../components/annotation/editorKeys";
 import { MAX_BRUSH_SIZE, MIN_BRUSH_SIZE } from "../../hooks/useBrushSize";
 import { Field, NumberInput, Select, Slider } from "@vitavision/lab-ui";
 import type { DocumentCommands } from "./useDocumentCommands";
@@ -35,8 +36,9 @@ export function ToolSection({
   const hasTaxonomy = labels.length > 1;
   const { pendingPoints, selected } = commands;
   const brushing = tool === "brush" || tool === "eraser";
+  const boxing = tool === "box";
   // With none of them to show, the section is not drawn rather than standing empty.
-  if (!hasTaxonomy && pendingPoints.length === 0 && !brushing) return null;
+  if (!hasTaxonomy && pendingPoints.length === 0 && !brushing && !boxing) return null;
 
   return (
     <section className="border-b border-line p-3">
@@ -51,7 +53,14 @@ export function ToolSection({
           <Select
             aria-label="New region label"
             value={commands.labelKey}
-            options={labels.map((label) => ({ value: label.key, label: label.name }))}
+            // The digit that picks each class, beside it: the keys are otherwise unguessable,
+            // and they skip 0 and 1, which are the view's.
+            options={labels.map((label, position) => {
+              const key = classKeyAt(position);
+              return key
+                ? { value: label.key, label: label.name, note: key }
+                : { value: label.key, label: label.name };
+            })}
             onValueChange={commands.setLabelKey}
           />
         </Field>
@@ -66,6 +75,12 @@ export function ToolSection({
             ? "three closes a ring"
             : "click the first vertex, double-click, or Enter"}{" "}
           · Backspace undoes one
+        </p>
+      )}
+      {boxing && (
+        <p className="mt-2 text-[11px] leading-4 text-fg-subtle">
+          Drag from one corner to the opposite one. A click without a drag draws nothing; under
+          Select, a box moves and its corners resize it.
         </p>
       )}
       {brushing && (

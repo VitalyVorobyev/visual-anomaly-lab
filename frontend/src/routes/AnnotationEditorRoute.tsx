@@ -383,6 +383,7 @@ function EditorReady({
               onMoveShape={commands.moveShape}
               onBrush={(points) => void commands.applyStroke(points)}
               onFinishPolygon={commands.finishPolygon}
+              onBox={commands.addBox}
               onAssistPoint={assist.addPoint}
               onAssistBox={assist.setBox}
             />

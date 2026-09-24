@@ -21,7 +21,7 @@ import {
   nextShapeId,
   replaceShape,
   translateShape,
-  withPolygonPoint,
+  withShapePoint,
   withShape,
   withoutShape,
 } from "../../api/annotationState";
@@ -38,9 +38,11 @@ import type {
   AnnotationPoint,
   AnnotationShape,
   BitmapShape,
+  BoxShape,
   PolygonShape,
 } from "../../api/client";
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import type { BoxRect } from "../../components/annotation/tools";
 import type { Flash } from "./useFlashMessage";
 
 /** How often a stroke is repainted because the document moved under it before it gives up. */
@@ -119,6 +121,33 @@ export function useDocumentCommands({
     // Select after every ring meant pressing P again for each of them.
   }, [commit, labelKey, latest, operation, pendingPoints, setSelectedId]);
 
+  /** A box drawn with the box tool: minted, selected, and the tool stays in hand. */
+  const addBox = useCallback(
+    (rect: BoxRect) => {
+      const box: BoxShape = { id: nextShapeId(), label_key: labelKey, kind: "box", operation, ...rect };
+      commit(withShape(latest(), box));
+      setSelectedId(box.id);
+    },
+    [commit, labelKey, latest, operation, setSelectedId],
+  );
+
+  /**
+   * The class for new regions, by its position in class order — what the digit keys pick.
+   * A position past the last class picks nothing, and says so.
+   */
+  const pickClass = useCallback(
+    (position: number) => {
+      const label = labels[position];
+      if (!label) {
+        flash(`There is no class ${position + 1}.`);
+        return;
+      }
+      setLabelKey(label.key);
+      flash(`New regions: ${label.name}`);
+    },
+    [flash, labels],
+  );
+
   const addPendingPoint = useCallback((point: AnnotationPoint) => {
     setPendingPoints((points) => [...points, point]);
   }, []);
@@ -132,7 +161,7 @@ export function useDocumentCommands({
 
   const movePoint = useCallback(
     (shapeId: string, pointIndex: number, point: AnnotationPoint) => {
-      commit(withPolygonPoint(latest(), shapeId, pointIndex, point));
+      commit(withShapePoint(latest(), shapeId, pointIndex, point));
     },
     [commit, latest],
   );
@@ -166,8 +195,8 @@ export function useDocumentCommands({
             );
         if (targets.length === 0) {
           flash(
-            selectedShape?.kind === "polygon"
-              ? "The eraser takes paint off painted regions. Reshape this polygon by its vertices, or delete it."
+            selectedShape?.kind === "polygon" || selectedShape?.kind === "box"
+              ? `The eraser takes paint off painted regions. Reshape this ${selectedShape.kind} by its vertices, or delete it.`
               : "Nothing painted here to erase.",
           );
           return true;
@@ -339,6 +368,8 @@ export function useDocumentCommands({
     setPendingPoints: setPendingPoints as Dispatch<SetStateAction<AnnotationPoint[]>>,
     addPendingPoint,
     finishPolygon,
+    addBox,
+    pickClass,
     moveShape,
     movePoint,
     applyStroke,

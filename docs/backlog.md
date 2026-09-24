@@ -41,8 +41,6 @@ Later, each behind the gate above:
 
 Planned in ADR-0039, and after few-shot segmentation.
 
-- [ ] **Annotation schema v2, boxes** (M): `BoxShape`, `instance_id`, a box tool in the editor,
-      class hotkeys that avoid `0`/`1`, and an instances file at completion.
 - [ ] **Supervised segmentation** (L, split before starting): multi-class `label_map`, a
       confusion-matrix evaluator and one small supervised method.
 - [ ] **Detection** (L, split before starting): COCO-style AP, and predictions drawn against truth

@@ -6,6 +6,8 @@ navigation live around a full-height canvas rather than pushing it below a long 
 ## Editor controls
 
 - Draw polygon vertices around a defect and close the contour.
+- Drag a box (`R`) from corner to corner around an object; under Select, drag a corner to resize it.
+- Pick the class for new regions with `2`–`9`, in the order the class picker lists them.
 - Paint or erase a region for irregular defects.
 - Select, move, insert, or remove contour vertices before committing.
 - Undo and redo edits within the draft.

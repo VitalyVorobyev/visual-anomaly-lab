@@ -1816,7 +1816,7 @@ export interface components {
              */
             base: "empty" | "source_mask";
             /** Shapes */
-            shapes?: (components["schemas"]["PolygonShape-Input"] | components["schemas"]["BitmapShape-Input"])[];
+            shapes?: (components["schemas"]["PolygonShape-Input"] | components["schemas"]["BoxShape-Input"] | components["schemas"]["BitmapShape-Input"])[];
         };
         /**
          * AnnotationDocument
@@ -1840,7 +1840,7 @@ export interface components {
              */
             base: "empty" | "source_mask";
             /** Shapes */
-            shapes: (components["schemas"]["PolygonShape-Output"] | components["schemas"]["BitmapShape-Output"])[];
+            shapes: (components["schemas"]["PolygonShape-Output"] | components["schemas"]["BoxShape-Output"] | components["schemas"]["BitmapShape-Output"])[];
         };
         /** AnnotationDraft */
         AnnotationDraft: {
@@ -1968,6 +1968,13 @@ export interface components {
              * @description Every class the dataset had at completion, with its index and pixel count. Null for a revision completed before class masks were written.
              */
             class_table: components["schemas"]["ClassTableEntry"][] | null;
+            /**
+             * Instances Path
+             * @description The instances JSON: every object instance with its class, bounding box and pixel count. Null for a revision completed before instances were recorded.
+             */
+            instances_path: string | null;
+            /** Instances Sha256 */
+            instances_sha256: string | null;
             /** Completed At */
             completed_at: string;
         };
@@ -2206,6 +2213,11 @@ export interface components {
              * @enum {string}
              */
             operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
             /** X */
             x: number;
             /** Y */
@@ -2237,6 +2249,11 @@ export interface components {
              * @enum {string}
              */
             operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
             /** X */
             x: number;
             /** Y */
@@ -2247,6 +2264,74 @@ export interface components {
             height: number;
             /** Png Base64 */
             png_base64: string;
+        };
+        /**
+         * BoxShape
+         * @description An axis-aligned rectangle in the source frame; it rasterises as its four corners.
+         */
+        "BoxShape-Input": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "box";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /**
+         * BoxShape
+         * @description An axis-aligned rectangle in the source frame; it rasterises as its four corners.
+         */
+        "BoxShape-Output": {
+            /** Id */
+            id: string;
+            /** Label Key */
+            label_key: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            kind: "box";
+            /**
+             * Operation
+             * @default add
+             * @enum {string}
+             */
+            operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
         };
         /**
          * BulkLabelFilter
@@ -4125,6 +4210,11 @@ export interface components {
              * @enum {string}
              */
             operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
             /** Points */
             points: components["schemas"]["AnnotationPoint"][];
         };
@@ -4145,6 +4235,11 @@ export interface components {
              * @enum {string}
              */
             operation: "add" | "subtract";
+            /**
+             * Instance Id
+             * @description Groups add shapes into one object instance at completion. Unset, a shape is its own instance, keyed by its id.
+             */
+            instance_id?: string | null;
             /** Points */
             points: components["schemas"]["AnnotationPoint"][];
         };

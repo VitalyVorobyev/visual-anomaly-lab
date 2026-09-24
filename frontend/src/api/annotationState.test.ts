@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import type { AnnotationDocument, PolygonShape } from "./client";
+import type { AnnotationDocument, BoxShape, PolygonShape } from "./client";
 import {
+  boxWithCorner,
   createHistory,
   historyReducer,
   replaceShape,
+  shapeOutline,
   translateShape,
-  withPolygonPoint,
+  withShapePoint,
   withShape,
   withoutShape,
 } from "./annotationState";
@@ -47,7 +49,7 @@ describe("annotation history", () => {
 
   it("moves polygon vertices and removes shapes without mutation", () => {
     const document = withShape(empty, polygon);
-    const moved = withPolygonPoint(document, "p1", 1, { x: 8, y: 2 });
+    const moved = withShapePoint(document, "p1", 1, { x: 8, y: 2 });
     expect((moved.shapes[0] as PolygonShape).points[1]).toEqual({ x: 8, y: 2 });
     expect((document.shapes[0] as PolygonShape).points[1]).toEqual({ x: 5, y: 1 });
     expect(withoutShape(moved, "p1").shapes).toHaveLength(0);
@@ -122,5 +124,54 @@ describe("translateShape", () => {
     const wide = { ...bitmap, x: 0, y: 0, width: 40, height: 40 };
     const document = { ...empty, shapes: [wide] };
     expect(translateShape(document, "b1", 5, 5)).toBe(document);
+  });
+});
+
+describe("boxes", () => {
+  const box: BoxShape = {
+    id: "r1",
+    label_key: "defect",
+    kind: "box",
+    operation: "add",
+    x: 2,
+    y: 3,
+    width: 4,
+    height: 2,
+  };
+
+  it("are outlined by their four corners, in order", () => {
+    expect(shapeOutline(box)).toEqual([
+      { x: 2, y: 3 },
+      { x: 6, y: 3 },
+      { x: 6, y: 5 },
+      { x: 2, y: 5 },
+    ]);
+  });
+
+  it("move whole, clamped against their own extent", () => {
+    const document = { ...empty, shapes: [box] };
+    expect(translateShape(document, "r1", 1.5, 1).shapes[0]).toMatchObject({ x: 3.5, y: 4 });
+    // Pushed far right, the box stops at the frame edge without shrinking.
+    expect(translateShape(document, "r1", 100, 0).shapes[0]).toMatchObject({
+      x: 16,
+      y: 3,
+      width: 4,
+      height: 2,
+    });
+  });
+
+  it("resize by a corner against the opposite one, and flip rather than invert", () => {
+    // Bottom-right dragged out: the top-left holds.
+    expect(boxWithCorner(box, 2, { x: 9, y: 8 })).toMatchObject({ x: 2, y: 3, width: 7, height: 5 });
+    // Top-left dragged past the bottom-right: normalised, never a negative width.
+    expect(boxWithCorner(box, 0, { x: 8, y: 7 })).toMatchObject({ x: 6, y: 5, width: 2, height: 2 });
+    // A drag that would leave no area keeps the box.
+    expect(boxWithCorner(box, 2, { x: 2, y: 9 })).toBe(box);
+  });
+
+  it("take a corner drag through the same edit a polygon vertex does", () => {
+    const document = { ...empty, shapes: [box] };
+    const resized = withShapePoint(document, "r1", 1, { x: 10, y: 1 });
+    expect(resized.shapes[0]).toMatchObject({ kind: "box", x: 2, y: 1, width: 8, height: 4 });
   });
 });

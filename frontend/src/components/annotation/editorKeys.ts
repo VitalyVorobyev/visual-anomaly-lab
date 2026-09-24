@@ -18,6 +18,7 @@ export type EditorCommand =
   | "redo"
   | "tool.select"
   | "tool.polygon"
+  | "tool.box"
   | "tool.brush"
   | "tool.eraser"
   | "tool.assist"
@@ -37,6 +38,7 @@ export type EditorCommand =
   | "label.normal"
   | "label.defect"
   | "label.unlabeled"
+  | "class.pick"
   | "shortcuts";
 
 export type CanvasCommand = "cursor.move" | "tool.apply" | "polygon.close";
@@ -102,14 +104,33 @@ function withCommand(key: string, shift: boolean | undefined = undefined) {
 
 const ARROWS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 
+/**
+ * The digits that pick a class, in class order: `2` is the first class, `9` the eighth.
+ * `0` and `1` are the view's (Fit, 1:1) and stay so, which is why the run starts at two.
+ */
+const CLASS_KEYS = ["2", "3", "4", "5", "6", "7", "8", "9"];
+
+/** The position in class order a digit picks, or `null` for any other key. */
+export function classSlotFor(key: string): number | null {
+  const slot = CLASS_KEYS.indexOf(key);
+  return slot < 0 ? null : slot;
+}
+
+/** The key that picks the class at `position` in class order, if it has one. */
+export function classKeyAt(position: number): string | null {
+  return CLASS_KEYS[position] ?? null;
+}
+
 export const EDITOR_BINDINGS: readonly EditorBinding[] = [
   { scope: "window", command: "tool.select", keys: ["V"], description: "Select, move and reshape", group: "Tools", match: bare("v") },
   { scope: "window", command: "tool.polygon", keys: ["P"], description: "Polygon", group: "Tools", match: bare("p") },
+  { scope: "window", command: "tool.box", keys: ["R"], description: "Box", group: "Tools", match: bare("r") },
   { scope: "window", command: "tool.brush", keys: ["B"], description: "Brush", group: "Tools", match: bare("b") },
   { scope: "window", command: "tool.eraser", keys: ["E"], description: "Eraser", group: "Tools", match: bare("e") },
   { scope: "window", command: "tool.assist", keys: ["A"], description: "Contour assist (MobileSAM)", group: "Tools", match: bare("a") },
   // Not `[` and `]`, the conventional pair — those are channel navigation here and have been
   // longer. Shift jumps by ten so the whole range is a few keystrokes.
+  { scope: "window", command: "class.pick", keys: ["2–9"], description: "Class for new regions, in class order (the first eight)", group: "Tools", match: bare(...CLASS_KEYS) },
   { scope: "window", command: "brush.smaller", keys: [",", "<"], description: "Brush smaller (Shift: by ten)", group: "Tools", match: bare(",", "<") },
   { scope: "window", command: "brush.larger", keys: [".", ">"], description: "Brush larger (Shift: by ten)", group: "Tools", match: bare(".", ">") },
 

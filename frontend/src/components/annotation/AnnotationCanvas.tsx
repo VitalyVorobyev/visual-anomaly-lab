@@ -62,7 +62,7 @@ import { LiveLayer } from "./LiveLayer";
 import { createLiveStore, useLive, type LiveStore } from "./liveStore";
 import { SceneLayer } from "./SceneLayer";
 import { useScenePalette } from "./scenePalette";
-import { TOOLS, type EditorTool, type ToolContext, type ToolEffect } from "./tools";
+import { TOOLS, type BoxRect, type EditorTool, type ToolContext, type ToolEffect } from "./tools";
 import { useHtmlImage } from "./useHtmlImage";
 
 export type { EditorTool } from "./tools";
@@ -132,6 +132,8 @@ interface Props {
   onMoveShape: (shapeId: string, dx: number, dy: number) => void;
   onBrush: (points: AnnotationPoint[]) => void;
   onFinishPolygon: () => void;
+  /** A box drawn with the box tool, normalised and with area. */
+  onBox: (rect: BoxRect) => void;
   onAssistPoint: (point: AssistPoint) => void;
   onAssistBox: (box: AssistBox | null) => void;
 }
@@ -179,6 +181,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onMoveShape,
   onBrush,
   onFinishPolygon,
+  onBox,
   onAssistPoint,
   onAssistBox,
 }, forwardedRef) {
@@ -291,6 +294,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       else if (effect.type === "stroke") onBrush(effect.points);
       else if (effect.type === "vertex") onPoint(effect.point);
       else if (effect.type === "closePolygon") onFinishPolygon();
+      else if (effect.type === "box") onBox(effect.rect);
       else if (effect.type === "assistPoint") onAssistPoint(effect.point);
       else if (effect.type === "assistBox") onAssistBox(effect.box);
       else toggleFit();
@@ -513,6 +517,7 @@ function useDecodedMasks(document: AnnotationDocument): ReadonlyMap<string, Uint
   const [masks, setMasks] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
   useEffect(() => {
     let cancelled = false;
+    // Only a bitmap needs decoding; a polygon and a box are read from their outline.
     const bitmaps = document.shapes.filter((shape) => shape.kind === "bitmap");
     const wanted = new Set(bitmaps.map((shape) => shape.png_base64));
     const missing = bitmaps.filter((shape) => !masks.has(shape.png_base64));

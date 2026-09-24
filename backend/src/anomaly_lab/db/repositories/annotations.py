@@ -57,6 +57,14 @@ class ClassMask:
 
 
 @dataclass(frozen=True)
+class InstancesFile:
+    """A revision's instances JSON, written beside its masks at completion."""
+
+    path: str
+    sha256: str
+
+
+@dataclass(frozen=True)
 class GroundTruthMask:
     image_id: int
     record_id: int
@@ -253,6 +261,7 @@ def insert_revision(
     mask_path: str,
     mask_sha256: str,
     class_mask: ClassMask,
+    instances: InstancesFile | None = None,
 ) -> AnnotationRevision:
     next_no = int(
         conn.execute(
@@ -265,8 +274,9 @@ def insert_revision(
         INSERT INTO annotation_revision
                (image_id, revision_no, document, document_sha256, mask_path, mask_sha256,
                 source_mask_id, source_mask_path, source_mask_sha256,
-                class_mask_path, class_mask_sha256, class_table)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                class_mask_path, class_mask_sha256, class_table,
+                instances_path, instances_sha256)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             draft.image_id,
@@ -279,6 +289,8 @@ def insert_revision(
             draft.source_mask_path,
             draft.source_mask_sha256,
             *class_mask.columns(),
+            instances.path if instances else None,
+            instances.sha256 if instances else None,
         ),
     )
     conn.execute(
@@ -392,6 +404,7 @@ def insert_shared_revision(
     mask_path: str,
     mask_sha256: str,
     class_mask: ClassMask,
+    instances: InstancesFile | None = None,
 ) -> AnnotationRevision:
     """Append one image's revision from a sample-scoped completion.
 
@@ -409,8 +422,9 @@ def insert_shared_revision(
         """
         INSERT INTO annotation_revision
                (image_id, revision_no, document, document_sha256, mask_path, mask_sha256,
-                class_mask_path, class_mask_sha256, class_table)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                class_mask_path, class_mask_sha256, class_table,
+                instances_path, instances_sha256)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             image_id,
@@ -420,6 +434,8 @@ def insert_shared_revision(
             mask_path,
             mask_sha256,
             *class_mask.columns(),
+            instances.path if instances else None,
+            instances.sha256 if instances else None,
         ),
     )
     row = conn.execute(

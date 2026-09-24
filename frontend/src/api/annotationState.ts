@@ -9,6 +9,7 @@ import type {
   AnnotationDocument,
   AnnotationPoint,
   AnnotationShape,
+  BoxShape,
   PolygonShape,
 } from "./client";
 
@@ -87,7 +88,11 @@ export function replaceShape(
   };
 }
 
-export function withPolygonPoint(
+/**
+ * Move one vertex of a vector region. A polygon's point moves; a box's corner is dragged with
+ * the opposite corner held, so it resizes and stays axis-aligned.
+ */
+export function withShapePoint(
   document: AnnotationDocument,
   shapeId: string,
   pointIndex: number,
@@ -96,12 +101,55 @@ export function withPolygonPoint(
   return {
     ...document,
     shapes: document.shapes.map((shape) => {
-      if (shape.id !== shapeId || shape.kind !== "polygon") return shape;
-      const points = [...shape.points];
-      points[pointIndex] = point;
-      return { ...shape, points } satisfies PolygonShape;
+      if (shape.id !== shapeId) return shape;
+      if (shape.kind === "polygon") {
+        const points = [...shape.points];
+        points[pointIndex] = point;
+        return { ...shape, points } satisfies PolygonShape;
+      }
+      if (shape.kind === "box") return boxWithCorner(shape, pointIndex, point);
+      return shape;
     }),
   };
+}
+
+/** The outline a vector region is drawn and hit-tested by: a box is its four corners. */
+export function shapeOutline(shape: PolygonShape | BoxShape): AnnotationPoint[] {
+  if (shape.kind === "polygon") return shape.points;
+  const right = shape.x + shape.width;
+  const bottom = shape.y + shape.height;
+  return [
+    { x: shape.x, y: shape.y },
+    { x: right, y: shape.y },
+    { x: right, y: bottom },
+    { x: shape.x, y: bottom },
+  ];
+}
+
+/**
+ * The box spanned by two opposite corners, in either order. `null` when it has no area, which
+ * a document refuses.
+ */
+export function boxBetween(
+  a: AnnotationPoint,
+  b: AnnotationPoint,
+): Pick<BoxShape, "x" | "y" | "width" | "height"> | null {
+  const width = Math.abs(b.x - a.x);
+  const height = Math.abs(b.y - a.y);
+  if (width === 0 || height === 0) return null;
+  return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width, height };
+}
+
+/**
+ * A box with one corner (in `shapeOutline` order) dragged to `point` and the opposite corner
+ * held. Dragging past the opposite corner flips the box rather than inverting it; a drag
+ * that would leave no area keeps the box as it was.
+ */
+export function boxWithCorner(box: BoxShape, cornerIndex: number, point: AnnotationPoint): BoxShape {
+  const opposite = shapeOutline(box)[(cornerIndex + 2) % 4];
+  if (!opposite) return box;
+  const spanned = boxBetween(opposite, point);
+  return spanned ? { ...box, ...spanned } : box;
 }
 
 /**
@@ -132,7 +180,8 @@ export function translateShape(
           maxX: Math.max(...shape.points.map((point) => point.x)),
           maxY: Math.max(...shape.points.map((point) => point.y)),
         }
-      : {
+      : // A box and a bitmap are both their rectangle.
+        {
           minX: shape.x,
           minY: shape.y,
           maxX: shape.x + shape.width,
@@ -154,6 +203,9 @@ export function translateShape(
             y: point.y + offsetY,
           })),
         } satisfies PolygonShape;
+      }
+      if (candidate.kind === "box") {
+        return { ...candidate, x: candidate.x + offsetX, y: candidate.y + offsetY };
       }
       // A bitmap's crop is integer source pixels, so the offset it can take is too.
       return {

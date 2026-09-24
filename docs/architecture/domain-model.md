@@ -116,12 +116,13 @@ separately from digest coverage.
   optimistic-concurrency token exposed as an ETag.
 - **`AnnotationRevision`** — `id`, `image_id`, `revision_no`, `document` (JSON), document and mask SHA-256,
   `mask_path`, source-mask provenance, `class_mask_path`, `class_mask_sha256`, `class_table` (JSON),
-  `completed_at`. Completion materialises an app-owned binary PNG and a class-index PNG and appends this
-  row; a trigger makes rows immutable, and they are deleted only with their dataset. The three class
-  columns are null on a revision completed before migration 023.
+  `instances_path`, `instances_sha256`, `completed_at`. Completion materialises an app-owned binary PNG,
+  a class-index PNG and an instances JSON and appends this row; a trigger makes rows immutable, and they
+  are deleted only with their dataset. The three class columns are null on a revision completed before
+  migration 023, the two instance columns on one completed before migration 024.
 
-A document's shape list holds `PolygonShape` and `BitmapShape`, both with stable ids, taxonomy keys and
-ordered `add` / `subtract` composition. A bitmap is a cropped binary PNG positioned in source pixels — the
+A document's shape list holds `PolygonShape`, `BoxShape` and `BitmapShape`, all with stable ids, taxonomy
+keys, an optional `instance_id` and ordered `add` / `subtract` composition. A bitmap is a cropped binary PNG positioned in source pixels — the
 lossless form for imported masks, LabelMe masks and COCO RLE. See [annotations](annotations.md).
 
 ### Split

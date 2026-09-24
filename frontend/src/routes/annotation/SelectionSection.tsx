@@ -56,7 +56,11 @@ export function SelectionSection({
           </div>
           <p className="text-[11px] leading-4 text-fg-subtle">
             Drag to move · arrows nudge 1 px, Shift 10 px
-            {selected.kind === "polygon" ? " · drag a vertex to reshape" : " · brush extends it"}
+            {selected.kind === "polygon"
+              ? " · drag a vertex to reshape"
+              : selected.kind === "box"
+                ? " · drag a corner to resize"
+                : " · brush extends it"}
           </p>
           {selected.kind === "bitmap" && (
             <Button
