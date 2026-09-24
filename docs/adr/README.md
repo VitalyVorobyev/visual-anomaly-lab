@@ -48,6 +48,7 @@ citation can resolve to the wrong record.
 | [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
 | [0037](0037-a-frozen-dino-memory-is-ours-and-its-scoring-rule-is-one-axis.md) | A frozen DINO memory is ours, and its scoring rule is one axis | Methods |
 | [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships | Process |
+| [0039](0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md) | A task is frozen on the experiment, and it chooses the evaluator | Tasks |
 
 ## Conventions
 

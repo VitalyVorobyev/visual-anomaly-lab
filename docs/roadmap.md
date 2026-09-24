@@ -61,6 +61,10 @@ application.
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
   (ADR-0037).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
+- **Segmentation and detection, as tasks of the same app** (ADR-0039). Decided, not built: a task
+  frozen on the experiment, methods declaring the tasks they support, ground truth reaching training
+  only through a target provider, an evaluator per task, and annotation schema v2 with boxes and
+  instances. The one viewer's vector layer is in place for it; the rest is in [backlog.md](backlog.md).
 
 ## Deliberately not built
 
