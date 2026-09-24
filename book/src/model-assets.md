@@ -48,5 +48,5 @@ See [Portable ONNX deployment](deployment.md).
   require reinstalling it.
 - Removing an external reference never deletes the referenced file.
 
-For contributor details, start with the current [method architecture](../architecture/methods.md) and the
-[model-asset API](../architecture/README.md#component-responsibilities).
+For contributor details, start with the current [method architecture](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/methods.md) and the
+[model-asset API](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/README.md#component-responsibilities).

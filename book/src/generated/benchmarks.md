@@ -5,7 +5,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## Dinomaly promotion gate
 
-**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. Same prepared pixels within each class. Dinomaly: 5,000 steps. PatchCore: WRN-50, 256 images, 50,000 candidates, 10% coreset. [Full evidence](../../measurements.md).
+**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. Same prepared pixels within each class. Dinomaly: 5,000 steps. PatchCore: WRN-50, 256 images, 50,000 candidates, 10% coreset. [Full evidence](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md).
 
 ![Dinomaly promotion gate](dinomaly-gate.svg)
 
@@ -18,7 +18,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## GLASS bounded public gate
 
-**Protocol:** VisA official one-class split; 288 × 288 RGB identity; seed `20260812`. Same prepared pixels within each class. GLASS: 5,000 updates, batch 1. PatchCore is the paired reference for this gate. [Full evidence](../../measurements.md).
+**Protocol:** VisA official one-class split; 288 × 288 RGB identity; seed `20260812`. Same prepared pixels within each class. GLASS: 5,000 updates, batch 1. PatchCore is the paired reference for this gate. [Full evidence](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md).
 
 ![GLASS bounded public gate](glass-gate.svg)
 
@@ -31,7 +31,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## DINO patch memory promotion gate
 
-**Protocol:** VisA official one-class split; 448 × 448 RGB identity; seed `20260812`. Same prepared pixels within each class; 448 divides both patch sizes. dino_memory: DINOv2 ViT-S/14-reg4, global_knn, last_two layers, k=1, 256 images, 50,000 candidates, 10% coreset. PatchCore control: WRN-50, same caps. The DINOv3 and per-position ablation rows live in measurements.md; this block is the recorded, ungated pair. [Full evidence](../../measurements.md).
+**Protocol:** VisA official one-class split; 448 × 448 RGB identity; seed `20260812`. Same prepared pixels within each class; 448 divides both patch sizes. dino_memory: DINOv2 ViT-S/14-reg4, global_knn, last_two layers, k=1, 256 images, 50,000 candidates, 10% coreset. PatchCore control: WRN-50, same caps. The DINOv3 and per-position ablation rows live in measurements.md; this block is the recorded, ungated pair. [Full evidence](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md).
 
 ![DINO patch memory promotion gate](dino-memory-gate.svg)
 
@@ -44,7 +44,7 @@ These are checked measurements from the repository's public-data gates, not upst
 
 ## Dinomaly (ours) parity gate
 
-**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. The wrapper's exact protocol: DINOv2 ViT-S/14-reg4 encoder, 5,000 steps, paired PatchCore control (WRN-50, 256 images, 50,000 candidates, 10% coreset). Means match the wrapper's recorded run to the third decimal; parity retires the wrapper. [Full evidence](../../measurements.md).
+**Protocol:** VisA official one-class split; 392 × 392 RGB identity; seed `20260812`. The wrapper's exact protocol: DINOv2 ViT-S/14-reg4 encoder, 5,000 steps, paired PatchCore control (WRN-50, 256 images, 50,000 candidates, 10% coreset). Means match the wrapper's recorded run to the third decimal; parity retires the wrapper. [Full evidence](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md).
 
 ![Dinomaly (ours) parity gate](dinomaly-custom-gate.svg)
 
@@ -63,13 +63,13 @@ Prepared size changes the workload, so these bars describe Mac feasibility and s
 
 | Method | Device | Prepared | Inference | Peak RSS | MPS driver | Evidence |
 |---|---|---:|---:|---:|---:|---|
-| Dinomaly | MPS | 196² | 13.7 ms | 0.82 GiB | 0.52 GiB | [log](../../measurements.md) |
-| Dinomaly | MPS | 392² | 42.3 ms | 0.82 GiB | 0.62 GiB | [log](../../measurements.md) |
-| GLASS | MPS | 144² | 12.7 ms | 1.04 GiB | 1.20 GiB | [log](../../measurements.md) |
-| GLASS | MPS | 288² | 30.9 ms | 1.05 GiB | 1.19 GiB | [log](../../measurements.md) |
-| AnomalyVFM | MPS | 256² | 88.4 ms | 3.18 GiB | 2.08 GiB | [log](../../measurements.md) |
-| AnomalyVFM | MPS | 512² | 260.5 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements.md) |
-| AnomalyVFM | MPS | 768² | 591.3 ms | 3.18 GiB | 2.07 GiB | [log](../../measurements.md) |
+| Dinomaly | MPS | 196² | 13.7 ms | 0.82 GiB | 0.52 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| Dinomaly | MPS | 392² | 42.3 ms | 0.82 GiB | 0.62 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| GLASS | MPS | 144² | 12.7 ms | 1.04 GiB | 1.20 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| GLASS | MPS | 288² | 30.9 ms | 1.05 GiB | 1.19 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| AnomalyVFM | MPS | 256² | 88.4 ms | 3.18 GiB | 2.08 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| AnomalyVFM | MPS | 512² | 260.5 ms | 3.18 GiB | 2.07 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
+| AnomalyVFM | MPS | 768² | 591.3 ms | 3.18 GiB | 2.07 GiB | [log](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) |
 
 ## What the evidence supports
 

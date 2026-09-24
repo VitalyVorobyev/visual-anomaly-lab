@@ -10,7 +10,7 @@
 #      by accident, since source images are referenced in place and never copied.
 #   3. PNG and SVG are permitted -- app icons and synthetic test fixtures need them --
 #      but only while they stay small. A large PNG is a dataset file in disguise.
-#   4. docs/images/ is the one place a photograph may live: screenshots of the running
+#   4. book/src/images/ is the one place a photograph may live: screenshots of the running
 #      application, which a README needs and which nothing else can substitute for. It
 #      is narrow on purpose -- one directory, still size-capped, and every file in it
 #      has to be a picture of this application rather than of anybody's data.
@@ -29,7 +29,7 @@ BANNED_EXTENSIONS='\.(bmp|jpe?g|tiff?|gif|webp|avif|heic|heif|raw|dng|nef|cr2|cr
 # The single exemption from rule 2, anchored to the repository root so no other
 # directory can adopt the name. Screenshots are JPEG because they are photographs and a
 # lossless PNG of one blows straight through the size cap.
-SCREENSHOTS='^docs/images/[^/]+\.jpg$'
+SCREENSHOTS='^book/src/images/[^/]+\.jpg$'
 
 if git ls-files --cached | grep -iE 'privatedata'; then
   echo "ERROR: paths under privatedata/ are tracked/staged (see above)." >&2
@@ -49,7 +49,7 @@ fi
 if git ls-files --cached | grep -vE "$SCREENSHOTS" | grep -iE "$BANNED_EXTENSIONS"; then
   echo "ERROR: image or array data is tracked/staged (see above)." >&2
   echo "       Source images are referenced in place, never committed. Test fixtures" >&2
-  echo "       are small synthetic PNGs, and docs/images/*.jpg are screenshots of the" >&2
+  echo "       are small synthetic PNGs, and book/src/images/*.jpg are screenshots of the" >&2
   echo "       application itself." >&2
   fail=1
 fi
@@ -68,7 +68,7 @@ while IFS= read -r f; do
   # parameter expansion, and this script must run on the machine it protects.
   lower=$(printf '%s' "$f" | tr '[:upper:]' '[:lower:]')
   case "$lower" in
-    *.png | *.svg | docs/images/*.jpg)
+    *.png | *.svg | book/src/images/*.jpg)
       if [ "$size" -gt "$MAX_IMAGE_BYTES" ]; then
         echo "ERROR: $f is a $size byte image; fixtures, icons and screenshots" >&2
         echo "       must stay under 256 KB." >&2

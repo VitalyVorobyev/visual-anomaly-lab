@@ -15,7 +15,7 @@ cannot see. Tests prove behaviour; this proves what a person meets.
 - **Scratch catalogue only.** The backend runs with `ANOMALY_LAB_DATA_DIR` pointed into the session
   scratchpad, so the user's own `data/` is never read or written. Reuse an existing scratch
   `labdata/` if the session has one; seeding is idempotent.
-- **Screenshots stay in the scratchpad.** They are never staged. (`docs/images/*.jpg` is the one
+- **Screenshots stay in the scratchpad.** They are never staged. (`book/src/images/*.jpg` is the one
   committed home for screenshots of the app, and only when the user asks for one there.)
 - Stop both servers when done.
 

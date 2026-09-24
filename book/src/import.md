@@ -35,7 +35,7 @@ and schedules media preparation. It indexes source paths rather than copying byt
 
 The committed manifest is immutable provenance. `verify` checks that referenced files still exist and match
 the recorded facts. A changed source tree is not silently absorbed; rescan creates a new proposal and commit
-applies explicit reconciliation semantics described in the [import handbook](../architecture/import.md).
+applies explicit reconciliation semantics described in the [import handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/import.md).
 
 Deleting a dataset removes catalogue metadata and derived workspace artifacts after dependency confirmation.
 It never deletes the external source tree. Experiments tied to the dataset must be removed or explicitly

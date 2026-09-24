@@ -49,4 +49,4 @@ Never subtract raw maps from different methods or place their scores on one nume
 calibration are unrelated. Shared visualization uses per-run values and a shared *fraction* of each range.
 
 See [Interpreting metrics](metrics.md) and the canonical
-[evaluation handbook](../architecture/evaluation.md) for formulas and edge cases.
+[evaluation handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/evaluation.md) for formulas and edge cases.

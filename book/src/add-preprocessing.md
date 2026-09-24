@@ -56,5 +56,5 @@ the candidate. Predeclare minimum improvement and maximum regressions. Report pr
 mask coverage, missed defect pixels, build time, source-frame pixel metrics, and resource cost. A visually
 tight object mask is not a success criterion.
 
-The detailed current contract lives in the [methods](../architecture/methods.md) and
-[domain model](../architecture/domain-model.md) handbook pages.
+The detailed current contract lives in the [methods](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/methods.md) and
+[domain model](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/domain-model.md) handbook pages.
