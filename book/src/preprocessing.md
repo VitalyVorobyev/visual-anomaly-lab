@@ -15,6 +15,12 @@ produce source-frame geometry. The prepared-input build records, per image, the 
 padding, inverse transform, failure state, and hashes. An experiment pins the profile revision and build
 manifest.
 
+On a grouped dataset a content-based localizer can find a slightly different box in each channel of one
+part, which misregisters any method that fuses channels position by position. A profile's **crop per
+sample** setting fixes this: *Shared* gives every image of a sample the union of their crops, so all of a
+part's channels are prepared through one transform. The images of a sample must then share one size; a
+sample that cannot be united fails as a whole, visibly, instead of falling back to per-image crops.
+
 Identity is the correct starting point. Localization adds value when object pose or background dominates the
 signal, but it can remove the very defect being measured. The public paired gate in
 [`measurements.md`](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md) demonstrates the trap: a threshold

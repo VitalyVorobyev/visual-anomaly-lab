@@ -4508,6 +4508,11 @@ export interface components {
              * @default 17
              */
             seed: number;
+            /**
+             * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
+             * @default per_image
+             */
+            sample_alignment: components["schemas"]["SampleAlignment"];
         };
         /**
          * RegionProfileDeletionPreview
@@ -4600,6 +4605,8 @@ export interface components {
             seed: number;
             /** Created At */
             created_at: string;
+            /** @default per_image */
+            sample_alignment: components["schemas"]["SampleAlignment"];
         };
         /** RegionRequest */
         RegionRequest: {
@@ -4677,6 +4684,16 @@ export interface components {
             /** Samples */
             samples: components["schemas"]["SampleVerdict"][];
         };
+        /**
+         * SampleAlignment
+         * @description Whether the images of one sample are cropped independently or share one crop.
+         *
+         *     `per_image` runs the extractor on each image and keeps its own box. `union` replaces
+         *     every image's crop with the union of its sample's boxes, so the channels of one part
+         *     stay registered through preparation.
+         * @enum {string}
+         */
+        SampleAlignment: "per_image" | "union";
         /** SamplePage */
         SamplePage: {
             /** Total */

@@ -261,6 +261,18 @@ class SpatialResample(StrEnum):
     LANCZOS = "lanczos"
 
 
+class SampleAlignment(StrEnum):
+    """Whether the images of one sample are cropped independently or share one crop.
+
+    `per_image` runs the extractor on each image and keeps its own box. `union` replaces
+    every image's crop with the union of its sample's boxes, so the channels of one part
+    stay registered through preparation.
+    """
+
+    PER_IMAGE = "per_image"
+    UNION = "union"
+
+
 class RegionProfileRevision(BaseModel):
     """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
 
@@ -279,6 +291,7 @@ class RegionProfileRevision(BaseModel):
     failure_policy: RegionFailurePolicy = RegionFailurePolicy.FAIL
     seed: int
     created_at: str
+    sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE
 
     @field_validator("extractor_config", mode="before")
     @classmethod

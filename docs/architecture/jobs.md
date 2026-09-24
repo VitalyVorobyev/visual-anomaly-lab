@@ -41,7 +41,11 @@ parameters.
   digest verification; cancellation or failure removes the partial.
 - **`region_prepare`** — two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
   each (one stride over an interleaved list can miss a channel), and returns transforms
-  without writing pixels. Build visits the whole dataset, checks cancellation between images, writes into
+  without writing pixels. Under `sample_alignment = union` a crop depends on every image of its sample, so
+  the preview spends the budget on whole samples instead — as many as fit in 24 images, evenly spaced over
+  the dataset — which covers each chosen part's channels by construction; a lone sample larger than the
+  budget is still extracted whole and only its first 24 entries are returned. A union build decodes one
+  sample at a time, so memory is one part's images, and writes its manifest in dataset image order. Build visits the whole dataset, checks cancellation between images, writes into
   managed staging and publishes atomically once its manifest and summary are complete. Per-image failures
   are recorded and reduce coverage; they never fall back to identity. A malformed job, missing asset or
   extractor construction failure fails the job before processing.
