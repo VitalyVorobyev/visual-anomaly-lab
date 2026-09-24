@@ -83,9 +83,9 @@ comparing them under one evaluation protocol.
 
 ## Current status and working discipline
 
-- **Everything below closes, and the one open piece of the loop is the visual pass's states half**
-  — loading, error, disabled and focus; every screen has been reviewed at rest (see
-  `docs/roadmap.md`). **N methods can be read against each other**: import a directory tree or a
+- **Everything below closes, and every screen has been reviewed at rest and in its transient
+  states** (pending, error, focus, disabled; `lab-visual-pass --states`). Two findings wait on lab-ui:
+  a `ButtonLink`, and `Tabs` explaining a disabled tab on screen (see `docs/roadmap.md`). **N methods can be read against each other**: import a directory tree or a
   public benchmark, browse and label it, annotate it at pixel level, pin an invertible region profile, split it, train, score, read image- and pixel-level
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they

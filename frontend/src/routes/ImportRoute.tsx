@@ -270,7 +270,19 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
           </Field>
         </Disclosure>
 
-        <Field as="group" label="Adapter" description={chosen?.summary}>
+        <Field
+          as="group"
+          label="Adapter"
+          // A failed or pending list is said here, beside the empty picker it explains.
+          description={
+            adapters.isPending
+              ? "Reading the adapters…"
+              : adapters.error
+                ? undefined
+                : chosen?.summary
+          }
+          error={adapters.error ? `The adapters could not be read: ${adapters.error.message}` : undefined}
+        >
           <Select
             aria-label="Adapter"
             value={adapter}

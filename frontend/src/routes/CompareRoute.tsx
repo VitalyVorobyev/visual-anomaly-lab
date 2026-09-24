@@ -53,8 +53,11 @@ export function CompareRoute() {
   const fewShotComparison = useFewShotComparison(state.ids, fewShot);
   const report = fewShot ? undefined : comparison.data;
   const segmentation = fewShot ? fewShotComparison.data : undefined;
-  const pending = fewShot ? fewShotComparison.isPending : comparison.isPending;
-  const failure = fewShot ? fewShotComparison.error : comparison.error;
+  // Pending only while a read is actually under way: until the run list arrives neither
+  // comparison is asked, and a failed run list is an error, not a wait.
+  const pending =
+    experiments.isPending || (fewShot ? fewShotComparison.isFetching : comparison.isFetching);
+  const failure = experiments.error ?? (fewShot ? fewShotComparison.error : comparison.error);
 
   return (
     <div className="flex flex-col gap-6">

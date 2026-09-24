@@ -137,9 +137,9 @@ describe("RunBar", () => {
       />,
     );
 
-    const button = screen.getByRole("button", { name: "Export unavailable" });
-    expect(button.hasAttribute("disabled")).toBe(true);
-    expect(button.getAttribute("title")).toMatch(/no numerically verified ONNX exporter/);
+    // Said on the bar, not hidden in a disabled button's tooltip.
+    expect(screen.queryByRole("button", { name: /Export/ })).toBeNull();
+    expect(screen.getByText("No verified ONNX export for this method")).toBeTruthy();
   });
 
   it("shows the live run, its progress and a way to stop it", () => {

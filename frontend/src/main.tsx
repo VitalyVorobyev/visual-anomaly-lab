@@ -1,5 +1,6 @@
 // Self-hosted rather than fetched: the desktop shell serves from tauri://localhost with no
 // network guarantee, so a webfont request is a font that sometimes does not arrive.
+import { shouldRetry } from "./api/retry";
 import "@fontsource-variable/ibm-plex-sans/wght.css";
 import "@fontsource/ibm-plex-mono/latin-400.css";
 import "@fontsource/ibm-plex-mono/latin-500.css";
@@ -18,7 +19,9 @@ import { AppRoutes } from "./routes";
 import "./styles.css";
 import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
-const queryClient = new QueryClient();
+// A failed read shows its error promptly rather than after the default seven seconds of
+// retries (`api/retry.ts`).
+const queryClient = new QueryClient({ defaultOptions: { queries: { retry: shouldRetry } } });
 
 const container = document.getElementById("root");
 if (container === null) {
