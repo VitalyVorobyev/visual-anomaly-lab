@@ -496,7 +496,8 @@ to the higher side. The arithmetic is `models/prototypes.py`, in numpy.
 ### `proto_seg`
 
 Ours (ADR-0040), training-free by default, built from the shared blocks so that each design choice is a
-field the gate can measure:
+field the gate can measure. It is the default few-shot method by the public gate's predeclared rule
+([measurements.md](../measurements.md)):
 
 - **Debiased features** (`positional_debias`, `positional_rank` 500 as in INSID3, clipped and logged)
   from `layers` (default the last two blocks).

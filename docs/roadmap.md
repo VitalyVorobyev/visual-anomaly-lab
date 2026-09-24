@@ -76,7 +76,9 @@ application.
     screen, and the reference studio — choose references by eye, preview any image live, accept / fix /
     mark absent, and freeze into a run.
 
-  Still open: the public gate that decides between the methods.
+  The public VisA gate made `proto_seg` the default, and showed that no method yet draws a usable mask of
+  a small defect at the fixed `>= 0.5` cut ([measurements.md](measurements.md)). Still open: a
+  threshold-free pixel metric, a calibrated foreground probability, and a cross-domain gate.
 - **Supervised segmentation** (ADR-0039) runs end to end on the few-shot task's seams: a run pins its
   dataset's classes at creation, fits on the annotated images of its train subset through
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix

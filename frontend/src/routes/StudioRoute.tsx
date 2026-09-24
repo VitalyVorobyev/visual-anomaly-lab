@@ -67,7 +67,7 @@ const RAIL_TITLE: Record<ClassPresence, string> = {
 export const MAX_REFERENCES = 10;
 const PAGE = 48;
 /** The method the studio offers first: the public gate's default (docs/measurements.md). */
-const PREFERRED_METHOD = "fss_dino";
+const PREFERRED_METHOD = "proto_seg";
 
 function readIds(raw: string | null): number[] {
   if (!raw) return [];

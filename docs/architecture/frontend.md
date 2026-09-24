@@ -235,7 +235,7 @@ class in the class manager and from the Splits tab's reference draw.
 - **Centre:** the focused sample on `SampleStage`, with that class's outline
   (`GET /api/images/{id}/mask?class_key=`).
 - **Right rail:** the references (one to ten), the method (the few-shot methods that are available,
-  `fss_dino` first), the region profile, and **Freeze as experiment**. Freezing makes a `manual` split of
+  `proto_seg` first, the gate's default), the region profile, and **Freeze as experiment**. Freezing makes a `manual` split of
   the references, a `few_shot_segmentation` run on the class and its Train & score
   (`hooks/useStudio.ts`), then lands on the run. Why it cannot freeze yet is said in words beside the
   button.
