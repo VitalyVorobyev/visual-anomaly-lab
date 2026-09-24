@@ -25,9 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Targets and masks** (M): `TrainContext.targets` as a `TargetProvider` (`None` for
-      `anomaly`), mapped into the prepared frame; a task-owned training-set policy in
-      `run_train_job`; `InferContext.write_mask` beside `write_map`; a log headline chosen by task.
 - [ ] **Evaluator and the torch-free floor** (L, split before starting):
       - The evaluator reports foreground IoU and Dice, boundary F1 (with the tolerance printed),
         false-positive rate on absent images, recall on present images, small-region recall,

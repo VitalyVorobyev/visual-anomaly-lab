@@ -52,10 +52,13 @@ def render_truth(
     with index `i + 1`. Every class is pinned, drawn or not, because a completed revision is
     a confirmed absence of every class that existed when it was completed.
     """
-    if len(classes) > MAX_CLASSES:
-        raise AnnotationRenderError(f"a dataset can have at most {MAX_CLASSES} classes")
+    canvas = rasterize(
+        document,
+        classes,
+        source_mask_path=source_mask_path,
+        source_mask_sha256=source_mask_sha256,
+    )
     index_of = {key: position + 1 for position, key in enumerate(classes)}
-    canvas = _rasterize(document, index_of, source_mask_path, source_mask_sha256)
     counts = np.bincount(canvas.ravel(), minlength=len(classes) + 1)
 
     binary = np.where(canvas > 0, 255, 0).astype(np.uint8)
@@ -69,13 +72,20 @@ def render_truth(
     )
 
 
-def _rasterize(
+def rasterize(
     document: AnnotationDocument,
-    index_of: dict[str, int],
+    classes: Sequence[str],
+    *,
     source_mask_path: Path | None,
     source_mask_sha256: str | None,
 ) -> np.ndarray:
-    """Draw the shapes in order: an `add` paints its class's index, a `subtract` clears."""
+    """The class-index canvas, in memory: class `classes[i]` is index `i + 1`, 0 background.
+
+    Shapes are drawn in order: an `add` paints its class's index, a `subtract` clears.
+    """
+    if len(classes) > MAX_CLASSES:
+        raise AnnotationRenderError(f"a dataset can have at most {MAX_CLASSES} classes")
+    index_of = {key: position + 1 for position, key in enumerate(classes)}
     size = (document.image_width, document.image_height)
     if document.base == "source_mask":
         if source_mask_path is None or source_mask_sha256 is None:

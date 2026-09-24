@@ -616,6 +616,91 @@ def _pinned_areas(class_table: str | None) -> dict[str, int] | None:
     return {str(entry["key"]): int(entry["pixels"]) for entry in json.loads(class_table)}
 
 
+# One row per image, carrying everything its class truth is read from: the newest completed
+# revision (with its class mask, table and source provenance) and the imported mask.
+_TRUTH_ROWS = """
+    SELECT image.id              AS image_id,
+           image.sample_id       AS sample_id,
+           image.width           AS width,
+           image.height          AS height,
+           sample.label          AS label,
+           latest.id             AS revision_id,
+           latest.document       AS document,
+           latest.class_table    AS class_table,
+           latest.class_mask_path    AS class_mask_path,
+           latest.class_mask_sha256  AS class_mask_sha256,
+           latest.source_mask_path   AS revision_source_path,
+           latest.source_mask_sha256 AS revision_source_sha256,
+           latest.completed_at   AS completed_at,
+           source.id             AS source_id,
+           source.path           AS source_path,
+           source.sha256         AS source_sha256
+      FROM image
+      JOIN sample ON sample.id = image.sample_id
+      LEFT JOIN annotation_revision AS latest
+        ON latest.id = (SELECT id FROM annotation_revision
+                         WHERE annotation_revision.image_id = image.id
+                         ORDER BY revision_no DESC LIMIT 1)
+      LEFT JOIN mask AS source
+        ON source.id = (SELECT id FROM mask
+                         WHERE mask.image_id = image.id AND mask.kind = 'ground_truth'
+                         ORDER BY id LIMIT 1)
+"""
+
+
+def label_created_at(conn: sqlite3.Connection, dataset_id: int) -> dict[str, str]:
+    return {
+        str(row["key"]): str(row["created_at"])
+        for row in conn.execute(
+            "SELECT key, created_at FROM annotation_label WHERE dataset_id = ?", (dataset_id,)
+        )
+    }
+
+
+def truth_rows_for_images(conn: sqlite3.Connection, image_ids: Sequence[int]) -> list[sqlite3.Row]:
+    rows: list[sqlite3.Row] = []
+    for start in range(0, len(image_ids), 900):
+        chunk = list(image_ids[start : start + 900])
+        if chunk:
+            placeholders = ",".join("?" * len(chunk))
+            rows.extend(
+                conn.execute(
+                    f"{_TRUTH_ROWS} WHERE image.id IN ({placeholders}) ORDER BY image.id", chunk
+                ).fetchall()
+            )
+    return rows
+
+
+def image_presence(row: sqlite3.Row, label_key: str, created: dict[str, str]) -> ClassPresence:
+    """One image's presence of one class (ADR-0040) — the rule every class read shares.
+
+    The newest completed revision decides, and only for a class that existed when it was
+    completed: a class created later was never in front of the annotator. Its pinned class
+    table answers exactly — present when the class has pixels, absent when it has none. A
+    revision older than class tables answers from its document instead: present when it adds
+    a region of the class. Without a revision, only the default class has an answer: an
+    imported ground-truth mask is present, and an image of a sample labelled normal is absent.
+    """
+    pinned = _pinned_areas(row["class_table"])
+    if pinned is not None:
+        if label_key not in pinned:
+            return ClassPresence.UNLABELED
+        return ClassPresence.PRESENT if pinned[label_key] > 0 else ClassPresence.ABSENT
+    if row["document"] is not None:
+        if label_key in _classes_drawn(str(row["document"])):
+            return ClassPresence.PRESENT
+        if created.get(label_key, "~") <= str(row["completed_at"]):
+            return ClassPresence.ABSENT
+        return ClassPresence.UNLABELED
+    if label_key != DEFAULT_LABEL_KEY:
+        return ClassPresence.UNLABELED
+    if row["source_id"] is not None:
+        return ClassPresence.PRESENT
+    if row["label"] == Label.NORMAL.value:
+        return ClassPresence.ABSENT
+    return ClassPresence.UNLABELED
+
+
 def class_presence(
     conn: sqlite3.Connection, dataset_id: int, label_key: str
 ) -> dict[int, ClassPresence]:
@@ -626,74 +711,21 @@ def class_presence(
 def presence_by_class(
     conn: sqlite3.Connection, dataset_id: int, label_keys: Sequence[str]
 ) -> dict[str, dict[int, ClassPresence]]:
-    """Every sample's presence of each class, per ADR-0040, in one pass over the dataset.
+    """Every sample's presence of each class, in one pass over the dataset.
 
-    An image's newest completed revision decides it, and only for a class that existed when
-    it was completed: a class created later was never in front of the annotator. Its pinned
-    class table answers exactly — present when the class has pixels, absent when it has none.
-    A revision older than class tables answers from its document instead: present when it
-    adds a region of the class, absent otherwise. Without a revision, only the default class has an
-    answer: an imported ground-truth mask is present, and an image of a sample labelled
-    normal is absent. A sample shows the class when any of its images does, and is absent
-    only when every one of them is.
+    Each image answers by `image_presence`. A sample shows the class when any of its images
+    does, and is absent only when every one of them is.
     """
-    created = {
-        str(row["key"]): str(row["created_at"])
-        for row in conn.execute(
-            "SELECT key, created_at FROM annotation_label WHERE dataset_id = ?", (dataset_id,)
-        )
-    }
+    created = label_created_at(conn, dataset_id)
     rows = conn.execute(
-        """
-        SELECT image.sample_id AS sample_id,
-               sample.label    AS label,
-               latest.document AS document,
-               latest.class_table AS class_table,
-               latest.completed_at AS completed_at,
-               EXISTS (SELECT 1 FROM mask
-                        WHERE mask.image_id = image.id
-                          AND mask.kind = 'ground_truth') AS has_source
-          FROM image
-          JOIN sample ON sample.id = image.sample_id
-          LEFT JOIN annotation_revision AS latest
-            ON latest.id = (SELECT id FROM annotation_revision
-                             WHERE annotation_revision.image_id = image.id
-                             ORDER BY revision_no DESC LIMIT 1)
-         WHERE sample.dataset_id = ?
-         ORDER BY image.sample_id, image.id
-        """,
+        f"{_TRUTH_ROWS} WHERE sample.dataset_id = ? ORDER BY image.sample_id, image.id",
         (dataset_id,),
     ).fetchall()
-
     images: dict[str, dict[int, list[ClassPresence]]] = {key: {} for key in label_keys}
     for row in rows:
-        pinned = _pinned_areas(row["class_table"])
-        drawn = None if row["document"] is None else _classes_drawn(str(row["document"]))
         for key in label_keys:
-            if pinned is not None:
-                if key not in pinned:
-                    presence = ClassPresence.UNLABELED
-                elif pinned[key] > 0:
-                    presence = ClassPresence.PRESENT
-                else:
-                    presence = ClassPresence.ABSENT
-            elif drawn is not None:
-                if key in drawn:
-                    presence = ClassPresence.PRESENT
-                elif created.get(key, "~") <= str(row["completed_at"]):
-                    presence = ClassPresence.ABSENT
-                else:
-                    presence = ClassPresence.UNLABELED
-            elif key != DEFAULT_LABEL_KEY:
-                presence = ClassPresence.UNLABELED
-            elif row["has_source"]:
-                presence = ClassPresence.PRESENT
-            elif row["label"] == Label.NORMAL.value:
-                presence = ClassPresence.ABSENT
-            else:
-                presence = ClassPresence.UNLABELED
-            images[key].setdefault(int(row["sample_id"]), []).append(presence)
-
+            found = image_presence(row, key, created)
+            images[key].setdefault(int(row["sample_id"]), []).append(found)
     return {
         key: {sample_id: _sample_presence(found) for sample_id, found in per_sample.items()}
         for key, per_sample in images.items()

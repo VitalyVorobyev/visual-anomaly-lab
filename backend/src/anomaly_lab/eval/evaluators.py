@@ -22,6 +22,11 @@ from anomaly_lab.eval import runner
 class Evaluator(Protocol):
     """Reads stored predictions and ground truth, and writes the metric sets."""
 
+    @property
+    def headline(self) -> str:
+        """The metric the `infer` log names per subset — the task's one-line answer."""
+        ...
+
     def evaluate_and_store(
         self, conn: sqlite3.Connection, experiment: Experiment
     ) -> dict[Subset, dict[str, Any]]:
@@ -37,6 +42,8 @@ class Evaluator(Protocol):
 
 class AnomalyEvaluator:
     """Image- and pixel-level anomaly metrics over stored scores and maps (ADR-0011)."""
+
+    headline = "sample_roc_auc"
 
     def evaluate_and_store(
         self, conn: sqlite3.Connection, experiment: Experiment

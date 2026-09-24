@@ -15,14 +15,15 @@ from pydantic import BaseModel, Field
 
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import experiments as experiments_repo
-from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.domain.entities import ExperimentStatus, JobKind, Label, Subset
+from anomaly_lab.domain.entities import ExperimentStatus, JobKind
 from anomaly_lab.experiments.context import (
     ExperimentJobError,
     diagnostics_writer,
     load_experiment,
     to_records,
 )
+from anomaly_lab.experiments.policy import NoTrainingPolicyError, training_set
+from anomaly_lab.experiments.targets import PreparedClassTargets
 from anomaly_lab.jobs.context import JobCancelledError, JobContext
 from anomaly_lab.jobs.protocol import FOLLOW_UP_KEY
 from anomaly_lab.models.base import ModelCancelledError, SupportsResume, TrainContext
@@ -98,50 +99,25 @@ def read_training_state(model_dir: Path) -> TrainingState | None:
 
 
 def run_train_job(ctx: JobContext) -> dict[str, Any]:
-    """Fit a method on its split's training normals and persist the fitted model."""
+    """Fit a method on what its task trains on (`experiments/policy.py`), and persist it."""
     params = TrainParams.model_validate(dict(ctx.params))
 
     with connection(ctx.settings.db_path) as conn:
         loaded = load_experiment(conn, ctx.settings, params.experiment_id)
         experiment = loaded.experiment
 
-        # Normals only, and by *sample* label rather than by image, because the label
-        # lives on the sample (ADR-0005). Anomaly detection learns what normal looks
-        # like; a defect in the training set teaches the model that defects are normal.
-        train_images = images_repo.list_images_for_split(
-            conn,
-            experiment.split_id,
-            subsets=[Subset.TRAIN],
-            labels=[Label.NORMAL],
-            channels=experiment.channels,
-        )
-        # Held-out normals, where the split has any. EfficientAD fits its score
-        # normalization on these; VisA's official one-class protocol has no `val` subset
-        # at all, so this is routinely empty and must not be treated as an error.
-        val_images = images_repo.list_images_for_split(
-            conn,
-            experiment.split_id,
-            subsets=[Subset.VAL],
-            labels=[Label.NORMAL],
-            channels=experiment.channels,
-        )
-        all_train = images_repo.list_images_for_split(
-            conn, experiment.split_id, subsets=[Subset.TRAIN], channels=experiment.channels
-        )
+        try:
+            chosen = training_set(conn, experiment)
+        except NoTrainingPolicyError as exc:
+            raise ExperimentJobError(str(exc)) from exc
         experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINING)
 
+    train_images, val_images, excluded = chosen.train, chosen.val, chosen.excluded
     if not train_images:
-        msg = (
-            f"split {experiment.split_id} has no normal-labelled samples in its train "
-            "subset, so there is nothing to learn from. Label some samples normal, or "
-            "create a split whose train subset holds them."
-        )
-        raise ExperimentJobError(msg)
-
-    excluded = len(all_train) - len(train_images)
+        raise ExperimentJobError(chosen.empty_because)
     if excluded:
         ctx.log(
-            f"{excluded} image(s) in the train subset are not labelled normal and were "
+            f"{excluded} image(s) in the train subset {chosen.excluded_because} and were "
             "excluded from fitting",
             level="warning",
         )
@@ -153,7 +129,9 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         f"input {loaded.preprocessing.width}x{loaded.preprocessing.height} "
         f"{loaded.preprocessing.color.value}"
     )
-    if not val_images:
+    if experiment.target_label is not None:
+        ctx.log(f"fitting on references of {experiment.target_label!r}")
+    elif not val_images:
         ctx.log(
             "this split has no val subset; a method that calibrates on held-out normals "
             "will say what it does instead",
@@ -169,6 +147,9 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         reporter=ctx,
         diagnostics=writer,
         val=to_records(val_images, loaded.region_build),
+        targets=None
+        if experiment.target_label is None
+        else PreparedClassTargets(experiment.target_label, chosen.truths, loaded.region_build),
     )
 
     model_dir = loaded.artifact_dir / MODEL_SUBDIR

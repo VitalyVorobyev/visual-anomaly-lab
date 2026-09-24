@@ -104,6 +104,9 @@ def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) 
         map_projector=lambda target_id, values: loaded.region_build.transform_for(
             target_id
         ).project_map(values),
+        mask_projector=lambda target_id, values: loaded.region_build.transform_for(
+            target_id
+        ).project_mask(values),
     )
 
     try:

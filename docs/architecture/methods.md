@@ -87,8 +87,21 @@ untouched field is sent as unset.
 - `should_cancel()` / `raise_if_cancelled()` — cooperative cancellation, polled at batch boundaries;
 - `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract (ADR-0018);
 - `TrainContext.val` — held-out normals, empty when the split has no `val` subset;
+- `TrainContext.targets` — the only path ground truth takes into a plugin (ADR-0039). It is `None` for
+  `anomaly`, so an anomaly method cannot see a defect mask by construction. For a targeted task it is a
+  `TargetProvider`: `label_key`, and `mask(image_id)`, the class's region as a boolean array in the
+  prepared frame (`experiments/targets.py`);
 - `InferContext.write_map(image_id, array)` — projects a prepared-frame map to source coordinates,
-  persists it as float32 and accumulates the run's finite display range.
+  persists it as float32 and accumulates the run's finite display range;
+- `InferContext.write_mask(image_id, mask)` — a method's own foreground decision, projected nearest
+  into the source frame and stored as a 0/255 PNG beside the map (`maps/<id>.mask.png`). For a
+  targeted task the map is the foreground probability, and a run that writes no mask is read by
+  thresholding it.
+
+**What `fit` is given is the task's** (`experiments/policy.py`). `anomaly` fits on the train subset's
+normals and calibrates on the val subset's. `few_shot_segmentation` fits on every train-subset image whose
+truth answers for the target class, present or absent (`annotations/class_truth.py`), and has no val. The
+handler logs how many images it left out and why.
 
 Models never touch SQLite, never read application settings, and never write outside `artifact_dir` and
 `cache_dir`, which is what makes a plugin testable with a `NullReporter` and no job system.
