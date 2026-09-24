@@ -81,6 +81,13 @@ class CreateExperimentRequest(BaseModel):
         default=Task.ANOMALY,
         description="What the run is asked to do. The method must list it in its capabilities.",
     )
+    target_label: str | None = Field(
+        default=None,
+        description=(
+            "The annotation class a targeted task segments, by key. Required for "
+            "`few_shot_segmentation`, refused for `anomaly`."
+        ),
+    )
     config: dict[str, Any] = Field(default_factory=dict)
     preprocessing: dict[str, Any] = Field(default_factory=dict)
     evaluation: dict[str, Any] = Field(default_factory=dict)
@@ -116,6 +123,7 @@ class ExperimentSummary(BaseModel):
     region_manifest_sha256: str
     model_type: str
     task: Task = Task.ANOMALY
+    target_label: str | None = None
     channels: list[str] = Field(
         default_factory=list,
         description=(
@@ -423,6 +431,7 @@ def summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumma
         region_manifest_sha256=experiment.region_manifest_sha256,
         model_type=experiment.model_type,
         task=experiment.task,
+        target_label=experiment.target_label,
         channels=experiment.channels,
         status=experiment.status,
         created_at=experiment.created_at,

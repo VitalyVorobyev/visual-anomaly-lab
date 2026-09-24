@@ -22,6 +22,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/annotation-labels/coverage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How many samples show, lack, or have no answer for each class
+         * @description Per class, in samples: what a few-shot run can take references from and test on.
+         */
+        get: operations["get_class_coverage_api_datasets__dataset_id__annotation_labels_coverage_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets/{dataset_id}/annotation-labels/{key}": {
         parameters: {
             query?: never;
@@ -1593,7 +1613,8 @@ export interface paths {
          *
          *     The `imported` strategy instead reads the partition out of the manifest the dataset
          *     was committed from, because a benchmark's published number is only comparable against
-         *     the benchmark's own partition.
+         *     the benchmark's own partition. `manual` and `few_shot` hold a few-shot task's
+         *     references in `train` and everything else in `test` (ADR-0040).
          */
         post: operations["create_split_api_splits_post"];
         delete?: never;
@@ -2153,6 +2174,23 @@ export interface components {
             /** Matched By */
             matched_by: string;
         };
+        /**
+         * ClassCoverage
+         * @description How much truth one class has, in samples — what a targeted task can draw on (ADR-0040).
+         *
+         *     `present` samples can be references or positive queries, `absent` ones are confirmed
+         *     negatives, and `unlabeled` ones are excluded from every metric.
+         */
+        ClassCoverage: {
+            /** Label Key */
+            label_key: string;
+            /** Present */
+            present: number;
+            /** Absent */
+            absent: number;
+            /** Unlabeled */
+            unlabeled: number;
+        };
         /** CocoAnnotation */
         CocoAnnotation: {
             /** Id */
@@ -2465,6 +2503,11 @@ export interface components {
              * @default anomaly
              */
             task: components["schemas"]["Task"];
+            /**
+             * Target Label
+             * @description The annotation class a targeted task segments, by key. Required for `few_shot_segmentation`, refused for `anomaly`.
+             */
+            target_label?: string | null;
             /** Config */
             config?: {
                 [key: string]: unknown;
@@ -2898,6 +2941,8 @@ export interface components {
             model_type: string;
             /** @default anomaly */
             task: components["schemas"]["Task"];
+            /** Target Label */
+            target_label: string | null;
             /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
@@ -2988,6 +3033,8 @@ export interface components {
             model_type: string;
             /** @default anomaly */
             task: components["schemas"]["Task"];
+            /** Target Label */
+            target_label: string | null;
             /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
@@ -4427,6 +4474,21 @@ export interface components {
              * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
              */
             manifest_id?: string | null;
+            /**
+             * Sample Ids
+             * @description For `manual` only: the reference samples, which form `train`.
+             */
+            sample_ids?: number[];
+            /**
+             * Label Key
+             * @description For `few_shot` only: the annotation class the references must show.
+             */
+            label_key?: string | null;
+            /**
+             * Shots
+             * @description For `few_shot` only: how many references to draw.
+             */
+            shots?: number | null;
         };
         /**
          * SplitParams
@@ -4469,12 +4531,27 @@ export interface components {
              * @description Which import proposal an `imported` split was materialized from. Recorded so the partition stays traceable to the file that asserted it; ignored by every other strategy.
              */
             manifest_id: string | null;
+            /**
+             * Sample Ids
+             * @description For `manual` only: the reference samples, which form `train`.
+             */
+            sample_ids: number[];
+            /**
+             * Label Key
+             * @description For `few_shot` only: the annotation class the references must show.
+             */
+            label_key: string | null;
+            /**
+             * Shots
+             * @description For `few_shot` only: how many references to draw.
+             */
+            shots: number | null;
         };
         /**
          * SplitStrategy
          * @enum {string}
          */
-        SplitStrategy: "normal_only_train" | "imported";
+        SplitStrategy: "normal_only_train" | "imported" | "manual" | "few_shot";
         /**
          * Subset
          * @enum {string}
@@ -4500,11 +4577,12 @@ export interface components {
          * @description What an experiment is asked to do, frozen at creation (ADR-0039).
          *
          *     It chooses the training set, the evaluator and the result screens. `anomaly` ranks images
-         *     by how unlike the training normals they are; the other two are supervised and read their
-         *     targets from the dataset's annotation.
+         *     by how unlike the training normals they are; `few_shot_segmentation` segments one class
+         *     from the handful of references in a split's `train` subset (ADR-0040); the other two are
+         *     supervised and read their targets from the dataset's annotation.
          * @enum {string}
          */
-        Task: "anomaly" | "semantic_segmentation" | "object_detection";
+        Task: "anomaly" | "few_shot_segmentation" | "semantic_segmentation" | "object_detection";
         /**
          * ThresholdReport
          * @description Everything that changes when the slider moves — counts *and* the classified rows.
@@ -4687,6 +4765,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AnnotationLabel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_class_coverage_api_datasets__dataset_id__annotation_labels_coverage_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClassCoverage"][];
                 };
             };
             /** @description Validation Error */

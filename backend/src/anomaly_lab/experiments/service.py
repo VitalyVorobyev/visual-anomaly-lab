@@ -25,6 +25,7 @@ import numpy as np
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection, transaction
+from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -32,7 +33,16 @@ from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.deployment.export import ExportParams
-from anomaly_lab.domain.entities import Experiment, ExperimentStatus, Job, Subset, Task
+from anomaly_lab.domain.entities import (
+    TARGETED_TASKS,
+    ClassPresence,
+    Experiment,
+    ExperimentStatus,
+    Job,
+    Split,
+    Subset,
+    Task,
+)
 from anomaly_lab.errors import (
     ConflictError,
     GoneError,
@@ -221,6 +231,46 @@ def resolve_channels(
     return [name for name in available if name in chosen]
 
 
+def validate_target(
+    conn: sqlite3.Connection, task: Task, target_label: str | None, split: Split
+) -> None:
+    """Refuse a target class that the task does not take, or that the split cannot serve.
+
+    A targeted task's references are the split's `train` subset (ADR-0040), so every one of
+    them has to show the class: a reference without a region of it has nothing to teach.
+    A `few_shot` split was drawn for one class and serves no other.
+    """
+    if task not in TARGETED_TASKS:
+        if target_label is not None:
+            raise InvalidInputError(f"the task {task.value!r} does not take a target class")
+        return
+    if target_label is None:
+        raise InvalidInputError(f"the task {task.value!r} needs a target class")
+    known = {label.key for label in annotations_repo.list_labels(conn, split.dataset_id)}
+    if target_label not in known:
+        raise InvalidInputError(
+            f"dataset {split.dataset_id} has no annotation class {target_label!r}"
+        )
+    drawn_for = split.params.get("label_key")
+    if split.strategy == "few_shot" and drawn_for != target_label:
+        raise InvalidInputError(
+            f"split {split.id} draws references of {drawn_for!r}, not {target_label!r}"
+        )
+    references = splits_repo.list_sample_ids(conn, split.id, Subset.TRAIN)
+    if not references:
+        raise InvalidInputError(f"split {split.id} has no references in its train subset")
+    presence = annotations_repo.class_presence(conn, split.dataset_id, target_label)
+    blank = sorted(
+        sample_id
+        for sample_id in references
+        if presence.get(sample_id) is not ClassPresence.PRESENT
+    )
+    if blank:
+        raise InvalidInputError(
+            f"references {blank} of split {split.id} show no completed region of {target_label!r}"
+        )
+
+
 def create_experiment(
     settings: Settings,
     *,
@@ -232,6 +282,7 @@ def create_experiment(
     config: dict[str, Any],
     preprocessing: dict[str, Any],
     task: Task = Task.ANOMALY,
+    target_label: str | None = None,
     evaluation: dict[str, Any],
     channels: Sequence[str],
     notes: str | None,
@@ -271,6 +322,7 @@ def create_experiment(
             raise NotFoundError(f"no split with id {split_id}")
         if split.dataset_id != dataset_id:
             raise InvalidInputError(f"split {split_id} belongs to dataset {split.dataset_id}")
+        validate_target(conn, task, target_label, split)
         profile = region_profiles_repo.get_profile(conn, region_profile_id)
         if profile is None:
             raise NotFoundError(f"no region profile with id {region_profile_id}")
@@ -302,6 +354,7 @@ def create_experiment(
             region_manifest_sha256=build_summary.manifest_sha256,
             model_type=model_type,
             task=task.value,
+            target_label=target_label,
             model_config=frozen_config,
             preprocessing_config=frozen_preprocessing,
             eval_config=frozen_evaluation,

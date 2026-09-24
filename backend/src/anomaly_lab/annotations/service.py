@@ -57,7 +57,7 @@ from anomaly_lab.domain.annotations import (
     AnnotationShape,
     BitmapShape,
 )
-from anomaly_lab.domain.entities import AnnotationScope, Image
+from anomaly_lab.domain.entities import AnnotationScope, ClassPresence, Image
 from anomaly_lab.errors import (
     ConflictError,
     GoneError,
@@ -803,6 +803,37 @@ SAMPLE_DRAFTS = SampleDrafts()
 
 
 # --- Label taxonomy --------------------------------------------------------------------
+
+
+class ClassCoverage(BaseModel):
+    """How much truth one class has, in samples — what a targeted task can draw on (ADR-0040).
+
+    `present` samples can be references or positive queries, `absent` ones are confirmed
+    negatives, and `unlabeled` ones are excluded from every metric.
+    """
+
+    model_config = API_MODEL_CONFIG
+
+    label_key: str
+    present: int
+    absent: int
+    unlabeled: int
+
+
+def class_coverage(settings: Settings, dataset_id: int) -> list[ClassCoverage]:
+    with connection(settings.db_path) as conn:
+        _require_dataset(conn, dataset_id)
+        keys = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
+        presence = annotations_repo.presence_by_class(conn, dataset_id, keys)
+    return [
+        ClassCoverage(
+            label_key=key,
+            present=sum(found is ClassPresence.PRESENT for found in presence[key].values()),
+            absent=sum(found is ClassPresence.ABSENT for found in presence[key].values()),
+            unlabeled=sum(found is ClassPresence.UNLABELED for found in presence[key].values()),
+        )
+        for key in keys
+    ]
 
 
 def list_labels(settings: Settings, dataset_id: int) -> list[AnnotationLabel]:

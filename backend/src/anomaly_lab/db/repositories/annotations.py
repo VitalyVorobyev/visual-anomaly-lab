@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -14,7 +16,7 @@ from anomaly_lab.domain.annotations import (
     AnnotationRevision,
     AnnotationSampleDraft,
 )
-from anomaly_lab.domain.entities import AnnotationState
+from anomaly_lab.domain.entities import AnnotationState, ClassPresence, Label
 from anomaly_lab.errors import ConflictError
 from anomaly_lab.media.decode import sha256_of
 
@@ -78,16 +80,18 @@ def _sample_draft(row: sqlite3.Row) -> AnnotationSampleDraft:
 
 #: The seeded colour of the `defect` class. Migration 017 says why it is not red.
 DEFAULT_LABEL_COLOR = "#c026d3"
+# The class an imported binary mask, and a sample's normal/defect label, speak about.
+DEFAULT_LABEL_KEY = "defect"
 
 
 def ensure_default_label(conn: sqlite3.Connection, dataset_id: int) -> None:
     conn.execute(
         """
         INSERT INTO annotation_label (dataset_id, key, name, color, position)
-             VALUES (?, 'defect', 'Defect', ?, 0)
+             VALUES (?, ?, 'Defect', ?, 0)
         ON CONFLICT (dataset_id, key) DO NOTHING
         """,
-        (dataset_id, DEFAULT_LABEL_COLOR),
+        (dataset_id, DEFAULT_LABEL_KEY, DEFAULT_LABEL_COLOR),
     )
 
 
@@ -560,6 +564,105 @@ def annotation_state_for_samples(
                 else AnnotationState.NONE
             )
     return states
+
+
+def _classes_drawn(document: str) -> set[str]:
+    """The classes a completed document draws: its added regions, and its source mask.
+
+    Read from the document rather than its rendered mask, and without validating it — every
+    stored document was validated when it was completed, and this runs over a whole dataset.
+    """
+    parsed = json.loads(document)
+    drawn = {
+        str(shape["label_key"])
+        for shape in parsed.get("shapes", [])
+        if shape.get("operation", "add") == "add" and "label_key" in shape
+    }
+    if parsed.get("base") == "source_mask":
+        drawn.add(DEFAULT_LABEL_KEY)
+    return drawn
+
+
+def class_presence(
+    conn: sqlite3.Connection, dataset_id: int, label_key: str
+) -> dict[int, ClassPresence]:
+    """Every sample's presence of one class, keyed by sample id (see `presence_by_class`)."""
+    return presence_by_class(conn, dataset_id, [label_key])[label_key]
+
+
+def presence_by_class(
+    conn: sqlite3.Connection, dataset_id: int, label_keys: Sequence[str]
+) -> dict[str, dict[int, ClassPresence]]:
+    """Every sample's presence of each class, per ADR-0040, in one pass over the dataset.
+
+    An image's newest completed revision decides it: the class is present when the document
+    draws it, and absent when it does not — but only for a class that existed when the
+    revision was completed. A class created later was never in front of the annotator, so the
+    revision says nothing about it. Without a revision, only the default class has an
+    answer: an imported ground-truth mask is present, and an image of a sample labelled
+    normal is absent. A sample shows the class when any of its images does, and is absent
+    only when every one of them is.
+    """
+    created = {
+        str(row["key"]): str(row["created_at"])
+        for row in conn.execute(
+            "SELECT key, created_at FROM annotation_label WHERE dataset_id = ?", (dataset_id,)
+        )
+    }
+    rows = conn.execute(
+        """
+        SELECT image.sample_id AS sample_id,
+               sample.label    AS label,
+               latest.document AS document,
+               latest.completed_at AS completed_at,
+               EXISTS (SELECT 1 FROM mask
+                        WHERE mask.image_id = image.id
+                          AND mask.kind = 'ground_truth') AS has_source
+          FROM image
+          JOIN sample ON sample.id = image.sample_id
+          LEFT JOIN annotation_revision AS latest
+            ON latest.id = (SELECT id FROM annotation_revision
+                             WHERE annotation_revision.image_id = image.id
+                             ORDER BY revision_no DESC LIMIT 1)
+         WHERE sample.dataset_id = ?
+         ORDER BY image.sample_id, image.id
+        """,
+        (dataset_id,),
+    ).fetchall()
+
+    images: dict[str, dict[int, list[ClassPresence]]] = {key: {} for key in label_keys}
+    for row in rows:
+        drawn = None if row["document"] is None else _classes_drawn(str(row["document"]))
+        for key in label_keys:
+            if drawn is not None:
+                if key in drawn:
+                    presence = ClassPresence.PRESENT
+                elif created.get(key, "~") <= str(row["completed_at"]):
+                    presence = ClassPresence.ABSENT
+                else:
+                    presence = ClassPresence.UNLABELED
+            elif key != DEFAULT_LABEL_KEY:
+                presence = ClassPresence.UNLABELED
+            elif row["has_source"]:
+                presence = ClassPresence.PRESENT
+            elif row["label"] == Label.NORMAL.value:
+                presence = ClassPresence.ABSENT
+            else:
+                presence = ClassPresence.UNLABELED
+            images[key].setdefault(int(row["sample_id"]), []).append(presence)
+
+    return {
+        key: {sample_id: _sample_presence(found) for sample_id, found in per_sample.items()}
+        for key, per_sample in images.items()
+    }
+
+
+def _sample_presence(images: list[ClassPresence]) -> ClassPresence:
+    if ClassPresence.PRESENT in images:
+        return ClassPresence.PRESENT
+    if all(presence is ClassPresence.ABSENT for presence in images):
+        return ClassPresence.ABSENT
+    return ClassPresence.UNLABELED
 
 
 def count_multi_image_samples(conn: sqlite3.Connection, dataset_id: int) -> int:

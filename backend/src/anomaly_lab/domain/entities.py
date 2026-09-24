@@ -290,13 +290,31 @@ class Task(StrEnum):
     """What an experiment is asked to do, frozen at creation (ADR-0039).
 
     It chooses the training set, the evaluator and the result screens. `anomaly` ranks images
-    by how unlike the training normals they are; the other two are supervised and read their
-    targets from the dataset's annotation.
+    by how unlike the training normals they are; `few_shot_segmentation` segments one class
+    from the handful of references in a split's `train` subset (ADR-0040); the other two are
+    supervised and read their targets from the dataset's annotation.
     """
 
     ANOMALY = "anomaly"
+    FEW_SHOT_SEGMENTATION = "few_shot_segmentation"
     SEMANTIC_SEGMENTATION = "semantic_segmentation"
     OBJECT_DETECTION = "object_detection"
+
+
+# The tasks whose run is about one annotation class, named on the experiment.
+TARGETED_TASKS = frozenset({Task.FEW_SHOT_SEGMENTATION})
+
+
+class ClassPresence(StrEnum):
+    """Whether a sample shows an annotation class, as far as its ground truth says (ADR-0040).
+
+    `ABSENT` is truth, not a gap: a completed annotation without the class is a confirmed
+    negative. `UNLABELED` is the gap, and is excluded from every metric.
+    """
+
+    PRESENT = "present"
+    ABSENT = "absent"
+    UNLABELED = "unlabeled"
 
 
 class ExperimentStatus(StrEnum):
@@ -356,6 +374,10 @@ class Experiment(BaseModel):
     region_manifest_sha256: str
     model_type: str
     task: Task = Task.ANOMALY
+    target_label: str | None = Field(
+        default=None,
+        description="The annotation class a targeted task segments; null for `anomaly`.",
+    )
     # `model_config` is taken by pydantic itself, so the field carries a trailing
     # underscore in Python and its database and wire name through the alias.
     model_config_: dict[str, Any] = Field(default_factory=dict, alias="model_config")
