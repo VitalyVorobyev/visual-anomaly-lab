@@ -22,7 +22,7 @@ from anomaly_lab.eval.evaluators import (
 from anomaly_lab.models.base import Capabilities
 from anomaly_lab.models.registry import describe_all
 
-FEW_SHOT_METHODS = {"color_prototype", "fss_dino"}
+FEW_SHOT_METHODS = {"color_prototype", "fss_dino", "proto_seg"}
 
 
 def test_every_method_written_before_tasks_is_an_anomaly_method() -> None:

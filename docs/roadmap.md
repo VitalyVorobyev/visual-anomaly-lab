@@ -71,8 +71,9 @@ application.
   `fit` as targets, predicted masks, an evaluator for masks and presence, and `color_prototype`, the
   torch-free floor that runs the slice end to end, and the shared frozen-DINO blocks the next methods
   build on (one encoding path, INSID3's positional debiasing, guided refinement), and `fss_dino`, a
-  reproduction of the FSSDINO baseline on them. The create screen asks for the target class. Still open:
-  - `proto_seg`, our debiased multi-prototype method;
+  reproduction of the FSSDINO baseline on them, and `proto_seg`, ours, whose debiasing, prototype bank,
+  adaptation and refinement are each a field. The create screen asks for the target class. Still open:
+  - the public gate that decides between them;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
 
   The order is in [backlog.md](backlog.md).

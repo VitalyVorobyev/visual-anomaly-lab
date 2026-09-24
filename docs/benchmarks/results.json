@@ -36,6 +36,10 @@
   "fss_dino": {
    "family": "few-shot DINO prototypes",
    "maturity": "experimental"
+  },
+  "proto_seg": {
+   "family": "few-shot debiased prototypes",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [

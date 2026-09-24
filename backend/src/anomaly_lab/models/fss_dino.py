@@ -45,9 +45,8 @@ from anomaly_lab.models.base import (
 from anomaly_lab.models.dino_backbone import (
     BACKBONES,
     DinoBackbone,
-    backbone_fingerprint,
+    FrozenEncoder,
     image_patch_features,
-    load_backbone,
     patch_grid,
     validate_prepared_size,
 )
@@ -135,8 +134,13 @@ class FssDinoModel(AnomalyModel):
         self.config = config
         self._prototypes: dict[str, np.ndarray] = {}
         self._grams: dict[str, np.ndarray] = {}
-        self._fingerprint: str | None = None
-        self._encoder: Any = None
+        self._encoder = FrozenEncoder(
+            config.backbone,
+            pretrained=config.pretrained_backbone,
+            allow_downloads=config.allow_downloads,
+            seed=config.seed,
+            method="fss_dino",
+        )
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
@@ -157,32 +161,11 @@ class FssDinoModel(AnomalyModel):
 
     # ------------------------------------------------------------------ encoder
 
-    def _encoder_for(self, device: str, cache_dir: Path) -> Any:
-        if self._encoder is None:
-            encoder = load_backbone(
-                self.config.backbone,
-                pretrained=self.config.pretrained_backbone,
-                allow_downloads=self.config.allow_downloads,
-                cache_dir=cache_dir,
-                seed=self.config.seed,
-                method="fss_dino",
-            )
-            fingerprint = backbone_fingerprint(encoder)
-            if self._fingerprint is not None and fingerprint != self._fingerprint:
-                msg = (
-                    "the encoder fss_dino was fitted with has changed since: its weights no "
-                    "longer match the stored fingerprint. Refit the run."
-                )
-                raise RuntimeError(msg)
-            self._fingerprint = fingerprint
-            self._encoder = encoder.to(device)
-        return self._encoder
-
     def _layer(self) -> tuple[int, ...]:
         return (BACKBONES[self.config.backbone].depth - 1,)
 
     def _features(self, records: Sequence[ImageRecord], ctx: TrainContext | InferContext) -> Any:
-        encoder = self._encoder_for(ctx.device.value, ctx.cache_dir)
+        encoder = self._encoder.model(ctx.device.value, ctx.cache_dir)
         features = image_patch_features(
             encoder, records, ctx.preprocessing, self._layer(), ctx.device.value
         )
@@ -273,13 +256,13 @@ class FssDinoModel(AnomalyModel):
     # ------------------------------------------------------------------ persistence
 
     def save(self, artifact_dir: Path) -> None:
-        if not self._prototypes or self._fingerprint is None:
+        if not self._prototypes or self._encoder.fingerprint is None:
             raise RuntimeError("fss_dino has nothing to save; it was never fitted")
         arrays = {f"prototypes_{side}": value for side, value in self._prototypes.items()}
         arrays.update({f"gram_{side}": value for side, value in self._grams.items()})
         # numpy's stub types the second positional as `allow_pickle`; this is the keyword form.
         np.savez_compressed(artifact_dir / STATE_FILENAME, **arrays)  # type: ignore[arg-type]
-        meta = {"backbone": self.config.backbone.value, "fingerprint": self._fingerprint}
+        meta = {"backbone": self.config.backbone.value, "fingerprint": self._encoder.fingerprint}
         (artifact_dir / META_FILENAME).write_text(json.dumps(meta), encoding="utf-8")
 
     def load(self, artifact_dir: Path) -> None:
@@ -290,8 +273,7 @@ class FssDinoModel(AnomalyModel):
                 f"{self.config.backbone.value}"
             )
             raise RuntimeError(msg)
-        self._fingerprint = str(meta["fingerprint"])
-        self._encoder = None
+        self._encoder.expect(str(meta["fingerprint"]))
         with np.load(artifact_dir / STATE_FILENAME, allow_pickle=False) as stored:
             self._prototypes = {
                 key.removeprefix("prototypes_"): stored[key]

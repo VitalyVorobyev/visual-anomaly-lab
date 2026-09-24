@@ -25,9 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **`proto_seg`** (L): our method. It uses debiased features and a hybrid fg/bg prototype bank
-      with LSE scoring, and has two fields: `adaptation` (`training_free` | `linear_adapt`) and
-      `refine`. Presence is calibrated from the foreground evidence, region size and margin.
 - [ ] **The workflow: Data · Truth · Runs** (M):
       - The dataset nav is regrouped into three stages.
       - Readiness is shown per task in the band, from the class coverage read.

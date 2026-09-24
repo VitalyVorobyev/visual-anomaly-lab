@@ -250,6 +250,8 @@ do with patch features do not also differ in how they got them.
   `(P, D)` features span where position lives, and `debias` projects features onto their complement and
   renormalises. INSID3 fixes `s = 500` for ViT-L. The rank is clipped to half of `min(P, D)`, because a
   small grid would otherwise lose every direction the noise spans.
+- `dino_backbone.FrozenEncoder` builds a method's encoder once and stores its fingerprint; after `load`,
+  the first rebuild must match it. The weights themselves are never saved with a fitted model.
 - `refine.py` brings a patch-grid probability to prepared-pixel resolution: `bilinear`, or `guided` (He et
   al.'s guided filter, with the grey image as guide), which is edge-preserving smoothing. It concentrates a
   transition on the image's own edge and keeps the local mean in flat regions; it is not a threshold. numpy
@@ -268,9 +270,10 @@ do with patch features do not also differ in how they got them.
 | `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
 | `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
 | `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
+| `proto_seg` | few-shot: debiased prototype bank / probe | fit | no | no | no | mps |
 
-`color_prototype` and `fss_dino` declare `few_shot_segmentation` alone; every other method declares
-`anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
+`color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone; every other method
+declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -450,6 +453,28 @@ to the higher side. The arithmetic is `models/prototypes.py`, in numpy.
 - The encoder is not saved. `load` restores the prototypes, and the first prediction refuses an encoder
   whose fingerprint moved.
 - Accuracy is the public gate's question; the plugin tests run a seeded random ViT. ONNX: none.
+
+### `proto_seg`
+
+Ours (ADR-0040), training-free by default, built from the shared blocks so that each design choice is a
+field the gate can measure:
+
+- **Debiased features** (`positional_debias`, `positional_rank` 500 as in INSID3, clipped and logged)
+  from `layers` (default the last two blocks).
+- **A hybrid bank per side**: the mean direction plus `clusters_per_class` (8) seeded cosine k-means
+  prototypes. Both sides get the same cluster count, because the LSE score sums over a side's prototypes
+  and would otherwise favour the side that has more.
+- **LSE scoring**: a patch's probability is the class's share of a softmax over every prototype at
+  `temperature` (0.1).
+- **`adaptation`**: `training_free` scores with the bank; `linear_adapt` fits a class-balanced,
+  L2-regularised logistic probe on the references' patches by deterministic full-batch descent, and scores
+  with it.
+- **`refine`**: `guided` (default) or `bilinear`, from the patch grid to pixels.
+- **Presence**: the mean of the `presence_patches` (4) most confident patches.
+- It writes no mask, so the evaluator cuts its map at 0.5. `max_features_per_class` (20 000) bounds the
+  bank and the probe. The seed reaches k-means, the noise image and, without pretrained weights, the
+  encoder.
+- **Experimental** until the public gate in the backlog has run. ONNX: none.
 
 ### `classical_circular` (optional, not built)
 

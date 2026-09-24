@@ -14,6 +14,7 @@ This page is generated from the live model registry and checked method metadata.
 | `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
 | `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | experimental | no | — |
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
+| `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -142,6 +143,21 @@ Fits one colour model to the class and one to everything else in the references,
 `fss_dino` · **few-shot DINO prototypes** · experimental
 
 Cosine prototypes and a Gram matrix for the class and its background, from frozen DINO patch features of the references. Training-free; a published baseline.
+
+- Tasks: `few_shot_segmentation`
+- Preferred device: `mps`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: no
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## Prototype segmenter (few-shot, ours)
+
+`proto_seg` · **few-shot debiased prototypes** · experimental
+
+Positionally debiased DINO patches matched against a mean-plus-cluster prototype bank per side, or a linear probe; refined to the image's edges.
 
 - Tasks: `few_shot_segmentation`
 - Preferred device: `mps`
