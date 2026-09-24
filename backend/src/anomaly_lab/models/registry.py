@@ -82,6 +82,12 @@ def _proto_seg() -> type[AnomalyModel]:
     return ProtoSegModel
 
 
+def _dino_linear_seg() -> type[AnomalyModel]:
+    from anomaly_lab.models.dino_linear_seg import DinoLinearSegModel
+
+    return DinoLinearSegModel
+
+
 def _subspace_ad() -> type[AnomalyModel]:
     from anomaly_lab.models.subspace_ad import SubspaceAdModel
 
@@ -118,6 +124,8 @@ def _subspace_ad() -> type[AnomalyModel]:
 # `color_classifier` is the first method of supervised segmentation (ADR-0039): it fits on
 # label maps through `TrainContext.label_targets` and writes label maps through
 # `InferContext.write_label_map`, and still cost one module and this one line.
+# `dino_linear_seg` is its first deep method, a softmax head on the shared frozen-DINO blocks
+# trained at sampled pixels, and it needed nothing the floor had not already put in place.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -130,6 +138,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "fss_dino": _fss_dino,
     "proto_seg": _proto_seg,
     "color_classifier": _color_classifier,
+    "dino_linear_seg": _dino_linear_seg,
 }
 
 

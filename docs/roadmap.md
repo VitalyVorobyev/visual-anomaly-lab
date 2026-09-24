@@ -84,11 +84,12 @@ application.
   dataset's classes at creation, fits on the annotated images of its train subset through
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix
   (mean IoU, per-class IoU and accuracy, pixel accuracy, frequency-weighted IoU). `color_classifier` is
-  the torch-free floor, and `class_stratified` draws a split for it from annotated samples, stratified
-  by the classes each shows. Its results read in its own terms: IoU per class across subsets, the
+  the torch-free floor, `dino_linear_seg` the first deep method (a softmax head on frozen DINO patch
+  features, trained on a bounded sample of annotated pixels), and `class_stratified` draws a split for
+  them from annotated samples, stratified by the classes each shows. Its results read in its own terms: IoU per class across subsets, the
   confusion matrix drawn, a per-sample verdict (`false_class` beside the few-shot outcomes), the label
   maps over the image — prediction solid, truth dashed, one palette colour per pinned class — and the
-  task in the dataset's readiness band. Still open: a deep method, and its public gate.
+  task in the dataset's readiness band. Still open: the public gate between the two.
 - **Detection** (ADR-0039) follows, and reuses the same seams.
 
 ## Deliberately not built

@@ -50,15 +50,12 @@ Later, each behind a measured gate:
 ## Supervised tasks
 
 Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, label targets, label
-maps, the confusion-matrix evaluator, the `color_classifier` floor, the `class_stratified` split and
-its result screens. What remains, in dependency order, one PR each:
+maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_linear_seg` deep head,
+the `class_stratified` split and its result screens. What remains, in dependency order, one PR each:
 
-- [ ] **A deep segmentation method on the frozen-DINO path** (M): a linear head on the shared patch
-      features, fitted through `label_targets`, writing label maps; `dl`-gated tests, seed
-      reproducibility in both directions, and one module plus one registry entry.
 - [ ] **Public segmentation gate** (M): predeclared in `measurements.md` before it runs — VisA's
-      masks as a `defect`-only segmentation benchmark on a supervised split, the deep head against
-      `color_classifier`, with mean IoU as the decision and the others reported.
+      masks as a `defect`-only segmentation benchmark on a supervised split, `dino_linear_seg`
+      against `color_classifier`, with mean IoU as the decision and the others reported.
 - [ ] **Detection** (L, split before starting): COCO-style AP, and predictions drawn against truth
       on the vector layer.
 

@@ -105,7 +105,8 @@ comparing them under one evaluation protocol.
   hybrid prototype bank, optional linear adaptation):
   a split of references, a target class, masks into `fit` through `TrainContext.targets`, and an
   evaluator for masks and presence. The third, supervised semantic segmentation (ADR-0039), runs
-  its slice with `color_classifier` (numpy, the floor): classes pinned at creation, label maps into
+  with `color_classifier` (numpy, the floor) and `dino_linear_seg` (a softmax head on the same
+  frozen DINO features, trained at sampled pixels): classes pinned at creation, label maps into
   `fit` through `TrainContext.label_targets` and out through `InferContext.write_label_map`, and a
   per-class confusion-matrix evaluator. A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
