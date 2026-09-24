@@ -64,10 +64,16 @@ application.
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
   (ADR-0037).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
-- **Segmentation and detection, as tasks of the same app** (ADR-0039). Decided, not built: a task
-  frozen on the experiment, methods declaring the tasks they support, ground truth reaching training
-  only through a target provider, an evaluator per task, and annotation schema v2 with boxes and
-  instances. The one viewer's vector layer is in place for it; the rest is in [backlog.md](backlog.md).
+- **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it,
+  and frozen DINOv3 feature matching segments it in new images, with absence as a first-class
+  answer. Decided, not built:
+  - the task, reference splits and class-index truth;
+  - a torch-free floor and two DINO methods;
+  - an evaluator for masks and presence;
+  - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
+
+  The order is in [backlog.md](backlog.md).
+- **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.
 
 ## Deliberately not built
 

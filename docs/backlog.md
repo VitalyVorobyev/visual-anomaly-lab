@@ -21,21 +21,70 @@ until its output has been reviewed.
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
       `ButtonLink` there, release, and replace all five.
 
-## Tasks
+## Few-shot segmentation
 
-Segmentation and detection as tasks of the same app, in the order ADR-0039 needs them.
+The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Annotation schema v2** (M): `BoxShape`, `instance_id`, a box tool in the editor, class
-      hotkeys that avoid `0`/`1` (the stage's fit and 1:1), and
-      completion writing a class-index PNG and an instances file beside the binary mask, with the
-      revision pinning its class-to-index table.
-- [ ] **`Prediction` and targets** (M): optional `label_map` and `instances`, and
-      `TrainContext.targets` as a `TargetProvider` that is `None` for `anomaly`.
-- [ ] **Segmentation evaluator and the first supervised plugin** (L, split before starting):
-      constant-memory confusion-matrix IoU/Dice, and one small segmentation method as the vertical
-      slice that proves the boundary.
-- [ ] **Detection evaluator and results view** (L, split before starting): COCO-style AP, and the
-      sample viewer's vector layer drawing predictions against truth, toned per box.
+- [ ] **Task and reference splits** (M): `Task.FEW_SHOT_SEGMENTATION`, with the target class frozen
+      on the experiment; split strategies `manual` (explicit sample ids) and `few_shot`
+      (`label_key`, `shots`, `seed`); readiness per task.
+- [ ] **Class-index truth** (M): completion writes a class-index PNG beside the binary mask, and
+      the revision pins its class table in a new migration. Absence is a completed revision
+      without the class.
+- [ ] **Targets and masks** (M): `TrainContext.targets` as a `TargetProvider` (`None` for
+      `anomaly`), mapped into the prepared frame; a task-owned training-set policy in
+      `run_train_job`; `InferContext.write_mask` beside `write_map`; a log headline chosen by task.
+- [ ] **Evaluator and the torch-free floor** (L, split before starting):
+      - The evaluator reports foreground IoU and Dice, boundary F1 (with the tolerance printed),
+        false-positive rate on absent images, recall on present images, small-region recall,
+        presence ROC-AUC and latency, all in constant memory.
+      - `color_prototype` is a numpy colour prototype, so the whole slice runs in the torch-free
+        CI job.
+- [ ] **Shared DINO encoding, debiasing and refinement** (M):
+      - One encoding path in `dino_backbone.py`, taken out of `dino_memory`.
+      - A positional-debias transform (INSID3), available to every frozen-DINO method.
+      - `models/refine.py`: bilinear, guided and CRF (behind availability).
+- [ ] **`fss_dino`** (M): a reproduction of FSSDINO, with a DINOv3 last-layer prototype and Gram
+      refinement.
+- [ ] **`proto_seg`** (L): our method. It uses debiased features and a hybrid fg/bg prototype bank
+      with LSE scoring, and has two fields: `adaptation` (`training_free` | `linear_adapt`) and
+      `refine`. Presence is calibrated from the foreground evidence, region size and margin.
+- [ ] **The workflow: Data · Truth · Runs** (M):
+      - The dataset nav is regrouped into three stages.
+      - Readiness is shown per task in the band.
+      - Create experiment asks for the task first.
+- [ ] **Task-specific result bodies** (M):
+      - A `taskViews` registry keyed by task supplies the bodies of Overview, Samples, Benchmark
+        and Compare.
+      - Segmentation gets an IoU / absence table, gallery outcomes of miss / false presence /
+        low IoU, and a shots-versus-IoU chart.
+- [ ] **Reference studio** (L, split before starting):
+      - The studio has a reference strip, a query on `SampleStage` with the foreground probability,
+        and a queue sorted by uncertainty.
+      - Its actions are accept, fix in the editor seeded with the prediction, promote to reference,
+        and mark absent.
+      - A live preview runs through the resident worker, and "freeze as experiment" ends the
+        session.
+- [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
+      × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
+
+Later, each behind the gate above:
+- A cross-domain public few-shot dataset.
+- INSID3 upstream and FSS-SAM3 as quality references.
+- SAM-assisted pseudo-labelling at scale.
+- A learned boundary refiner.
+- ONNX export with a mask output contract.
+
+## Supervised tasks
+
+Planned in ADR-0039, and after few-shot segmentation.
+
+- [ ] **Annotation schema v2, boxes** (M): `BoxShape`, `instance_id`, a box tool in the editor,
+      class hotkeys that avoid `0`/`1`, and an instances file at completion.
+- [ ] **Supervised segmentation** (L, split before starting): multi-class `label_map`, a
+      confusion-matrix evaluator and one small supervised method.
+- [ ] **Detection** (L, split before starting): COCO-style AP, and predictions drawn against truth
+      on the vector layer.
 
 ## Spatial input
 
