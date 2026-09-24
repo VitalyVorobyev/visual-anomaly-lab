@@ -154,8 +154,7 @@ def test_the_plan_is_logged_before_encoding_and_ignored_pixels_are_never_learned
             events.append(f"progress {message}")
 
     train_ctx, _ = _contexts(tmp_path / "run", labels, Recorder())
-    # The default draws in raster order everywhere else; this fit takes the per-class path.
-    model = _model(epochs=2, pixels_per_image=64, pixel_sampling="per_class")
+    model = _model(epochs=2, pixels_per_image=64)
     model.fit(training, train_ctx)
     plan = next(index for index, line in enumerate(events) if line.startswith("pixel plan"))
     encoded = next(index for index, line in enumerate(events) if "encoded 1/2" in line)
@@ -172,9 +171,7 @@ def test_the_plan_is_logged_before_encoding_and_ignored_pixels_are_never_learned
     assert 2 not in np.unique(predicted)
 
 
-@pytest.mark.parametrize(
-    "overrides", [{}, {"pixel_sampling": "per_class", "logit_bias": "held_out_iou"}]
-)
+@pytest.mark.parametrize("overrides", [{}, {"pixel_sampling": "raster", "logit_bias": "none"}])
 def test_one_seed_is_one_answer_and_another_seed_is_another(
     tmp_path: Path, overrides: dict[str, Any]
 ) -> None:
@@ -232,7 +229,7 @@ def test_a_saved_model_segments_identically_after_loading(tmp_path: Path) -> Non
     training, labels = _records(tmp_path / "images", 2)
     queries, _ = _records(tmp_path / "images", 2, first_id=11)
     train_ctx, _ = _contexts(tmp_path / "run", labels)
-    model = _model(epochs=3)
+    model = _model(epochs=3, logit_bias="none")
     model.fit(training, train_ctx)
     before = _segment(model, tmp_path / "run", queries)
     model.save(tmp_path / "run")
@@ -241,7 +238,7 @@ def test_a_saved_model_segments_identically_after_loading(tmp_path: Path) -> Non
         "dino_linear_seg.npz",
     ]
 
-    restored = _model(epochs=3)
+    restored = _model(epochs=3, logit_bias="none")
     restored.load(tmp_path / "run")
     after = _segment(restored, tmp_path / "loaded", queries)
     assert all(np.array_equal(a, b) for a, b in zip(before, after, strict=True))

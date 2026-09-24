@@ -47,7 +47,7 @@
   },
   "dino_linear_seg": {
    "family": "segmentation linear head on frozen DINO",
-   "maturity": "experimental"
+   "maturity": "supported"
   }
  },
  "quality_protocols": [

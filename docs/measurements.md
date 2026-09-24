@@ -382,12 +382,13 @@ on every class) and shows that on VisA the honest answer at 0.5 is mostly "absen
 is what held it back, and it was added to reject a scale that draws nothing; on `candle` the scale draws
 something useful, on `pcb1` it does not.
 
-## Supervised segmentation — `dino_linear_seg` stays experimental under either pixel sampling; neither method draws a usable defect mask
+## Supervised segmentation — neither pixel sampling alone promoted `dino_linear_seg`; neither method drew a usable defect mask
 
 The first supervised segmentation gate (ADR-0039), in two legs, each predeclared before it ran. The legs
 share the protocol and the decision rule; they differ only in how `dino_linear_seg` samples its training
-pixels: `raster` in the first, `per_class` in the second. Neither leg promoted it, and `raster` remains
-its default because it measured higher on the primary.
+pixels: `raster` in the first, `per_class` in the second. Neither leg promoted it, and `raster` measured
+higher on the primary. Its defaults and maturity are now decided by the logit-bias gate below, which
+promoted it under `per_class` sampling.
 
 ### Leg 1 — `raster` pixel sampling
 
@@ -496,7 +497,7 @@ The head trained on 4 985–5 950 defect pixels per run, against 28–109 in leg
 
 **Verdict, by the rule.** `dino_linear_seg` leads `color_classifier` by 0.007 mean IoU on `candle` and by
 0.007 on `pcb1`, short of 0.05 on both, so **`dino_linear_seg` stays experimental**. Its lead is smaller
-than in leg 1 on both classes, so `raster` stays the default and `per_class` ships as an option.
+than in leg 1 on both classes, so `raster` stayed the default until the logit-bias gate below.
 
 **What the leg says beyond its rule.** Sampling the defect fairly bought recall and cost precision. Mean
 class accuracy rose to 0.90–0.94, but the head now labels 3–6 % of every image defect — the background IoU
@@ -507,14 +508,14 @@ thousands do not. The sample was not what held the head back: its argmax is not 
 that covers a fraction of a percent of the frame. Correcting that is a new question with its own gate,
 not a third leg of this one.
 
-## Supervised segmentation, logit bias — predeclared
+## Supervised segmentation, logit bias — `dino_linear_seg` is supported, under `per_class` and `held_out_iou`
 
-The second supervised segmentation gate, predeclared before it ran. The first gate's two legs showed that
+The second supervised segmentation gate, predeclared before it ran. `scripts/semantic-public-gate.py --gate
+bias`, 18 runs in 22.5 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0). The first gate's two legs showed that
 `dino_linear_seg`'s argmax is not calibrated to a small class: under `inverse_frequency` the head answers
 as if defect and background were equally common. This gate asks whether a constant per class, added to
 the logits at prediction and fitted for IoU on held-out folds of the training images (`logit_bias`
 `held_out_iou`; [methods](architecture/methods.md#dino_linear_seg)), makes the head draw a usable mask.
-`scripts/semantic-public-gate.py --gate bias`.
 
 **Protocol.** The first gate's, unchanged: VisA `candle` and `pcb1`, identity prepared input at 448 × 448,
 one class `defect` from VisA's pixel masks, `class_stratified` splits at their shipped defaults under seeds
@@ -558,3 +559,47 @@ smoke, on VisA `macaroni1` seed 0 — outside the gate, so it looked at none of 
 script and the held-out fit on real pixels before the rule was fixed: a fitted constant of −4.04 on
 `defect` reached a held-out IoU of 0.144 on the training frames and a test IoU of 0.151, against 0.0019
 uncorrected and 0.0004 for the floor.
+
+**Result.** Test subset, means over three seeds; the spread is across seeds. Outcomes are samples pooled
+over the three seeds (90 defect and 900 or 903 normal samples per class).
+
+| Class | Method | Mean IoU | ± seeds | Background IoU | Pixel accuracy | Mean class accuracy | ms/image | Fit s |
+|---|---|---|---|---|---|---|---|---|
+| `candle` | `color_classifier` | 0.0007 | 0.0002 | 0.647 | 0.647 | 0.942 | 32 | 8 |
+| | `dino_linear_seg`, `none` | 0.0079 | 0.0016 | 0.971 | 0.971 | 0.937 | 87 | 69 |
+| | `dino_linear_seg`, `held_out_iou` | 0.2353 | 0.0402 | 0.9995 | 0.9995 | 0.633 | 87 | 62 |
+| `pcb1` | `color_classifier` | 0.0038 | 0.0007 | 0.853 | 0.854 | 0.805 | 35 | 8 |
+| | `dino_linear_seg`, `none` | 0.0112 | 0.0022 | 0.944 | 0.944 | 0.900 | 90 | 61 |
+| | `dino_linear_seg`, `held_out_iou` | 0.1075 | 0.0302 | 0.9985 | 0.9985 | 0.322 | 91 | 62 |
+
+| Class | Method | Defects: hit / low IoU / miss | Normals: correct absence / false presence |
+|---|---|---|---|
+| `candle` | `color_classifier` | 0 / 88 / 2 | 0 / 900 |
+| | `dino_linear_seg`, `none` | 0 / 90 / 0 | 0 / 900 |
+| | `dino_linear_seg`, `held_out_iou` | 6 / 70 / 14 | 647 / 253 |
+| `pcb1` | `color_classifier` | 0 / 90 / 0 | 0 / 903 |
+| | `dino_linear_seg`, `none` | 0 / 90 / 0 | 0 / 903 |
+| | `dino_linear_seg`, `held_out_iou` | 2 / 76 / 12 | 658 / 245 |
+
+The fitted constants on `defect` were −3.50, −3.31 and −3.57 on `candle` (held-out IoU on the training
+frames 0.295, 0.292, 0.306) and −3.37, −3.09 and −2.76 on `pcb1` (0.074, 0.097, 0.089); the training
+prior's shift would have been −6.9 to −8.5. Per seed, test IoU was 0.220, 0.196, 0.290 on `candle` and
+0.099, 0.075, 0.148 on `pcb1`. Peak RSS 2.7 GB under `held_out_iou`, against 2.0 GB without it; the fold
+heads add no measurable fit time, since encoding dominates.
+
+All three construction checks hold: `color_classifier` reproduced the first gate's metrics and the `none`
+runs the second leg's to the reported digit, and within every pair the saved head weights were
+bit-identical, so each pair differs by the constant alone.
+
+**Verdict, by the rule.** `dino_linear_seg` under `held_out_iou` leads `color_classifier` by 0.235 mean IoU
+on `candle` and by 0.104 on `pcb1`, at least 0.05 on both, so **`dino_linear_seg` is supported**, and
+`per_class` and `held_out_iou` are its defaults. It is also above the `raster` default on both classes
+(0.235 against 0.083, 0.108 against 0.039).
+
+**What the gate says beyond its rule.** The head was never the problem: the same weights that label 3–6 %
+of every image defect reach an IoU of 0.24 and 0.11 once one constant per class is chosen for IoU. The
+held-out estimate on the training frames predicted the test IoU closely on `candle` (0.30 against 0.24)
+and conservatively on `pcb1` (0.09 against 0.11), so the constant generalises from the folds. The mask
+is usable, not good: most defect samples are still below an IoU of 0.5, a sixth are missed, and about
+a quarter of normal images show some false presence. The Bayes shift is the wrong decision for this
+measure: it is roughly twice the fitted constant and draws nothing.

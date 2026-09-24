@@ -17,14 +17,15 @@ the label of the patch it happens to sit in.
   evenly spaced, then at most `pixels_per_image` labelled pixels from each, and the float32
   footprint is logged and refused above a ceiling. Pixels marked `IGNORE_INDEX` are never
   sampled.
-- **How an image's budget is spent is `pixel_sampling`** (`sample_pixels`). `raster`, the
-  default, spaces it evenly over the image's labelled pixels, so a defect covering a fraction of
-  a percent of the frame gets a pixel or two. `per_class` splits it equally among the classes
-  present, a class with fewer pixels than its share giving the rest back to the others, each
-  class evenly spaced over its own pixels. Balancing the sample is not balancing the answer:
-  under `inverse_frequency` either rule gives the classes equal total weight, and the public gate
-  measured `per_class` *lower* on defect IoU, because thousands of defect pixels at that weight
-  move the boundary further into background (docs/measurements.md).
+- **How an image's budget is spent is `pixel_sampling`** (`sample_pixels`). `per_class`, the
+  default, splits it equally among the classes present, a class with fewer pixels than its
+  share giving the rest back to the others, each class evenly spaced over its own pixels.
+  `raster` spaces it evenly over the image's labelled pixels, so a defect covering a fraction
+  of a percent of the frame gets a pixel or two. Balancing the sample is not balancing the
+  answer: under `inverse_frequency` either rule gives the classes equal total weight, and
+  without `logit_bias` the public gate measured `per_class` *lower* on defect IoU, because
+  thousands of defect pixels at that weight move the boundary further into background. With
+  `held_out_iou` it is the default (docs/measurements.md).
 - **The head is fitted on the CPU**, with AdamW on shuffled minibatches, from a seeded
   generator that draws both its initial weights and the batch order — nothing reads torch's
   global stream, so a seed is the whole answer. It is small enough that the accelerator would
@@ -44,7 +45,8 @@ the label of the patch it happens to sit in.
   (`fit_class_bias`): the training images are split into `BIAS_FOLDS` folds, a head fitted on
   the others scores each fold's sampled pixels, each pixel is weighted by how many pixels of
   its class and image it stands for (`pixel_weights`), and each class's constant is the cut of
-  those held-out logits with the highest IoU over the training frames.
+  those held-out logits with the highest IoU over the training frames. It is the default, by
+  the public gate that measured it (docs/measurements.md).
 - A class with no training pixel is never predicted, as in `color_classifier`: the fitted head
   would still hold a row for it, trained only to lose.
 
@@ -161,7 +163,7 @@ class DinoLinearSegConfig(BaseModel):
         ),
     )
     pixel_sampling: PixelSampling = Field(
-        default=PixelSampling.RASTER,
+        default=PixelSampling.PER_CLASS,
         description=(
             "'raster' spaces each image's pixels evenly over it, where a small class gets "
             "almost none; 'per_class' splits them equally among the classes present, so a "
@@ -198,7 +200,7 @@ class DinoLinearSegConfig(BaseModel):
         ),
     )
     logit_bias: LogitBias = Field(
-        default=LogitBias.NONE,
+        default=LogitBias.HELD_OUT_IOU,
         description=(
             "A constant per class added to the logits before the argmax. 'none' keeps the "
             "head's answer, which under 'inverse_frequency' treats every class as equally "
@@ -489,7 +491,8 @@ class DinoLinearSegModel(AnomalyModel):
     title = "DINO linear head (segmentation)"
     summary = (
         "A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounded "
-        "sample of annotated pixels; logits are upsampled to the image before the argmax."
+        "sample of annotated pixels; logits are upsampled to the image and offset by one "
+        "constant per class, fitted for IoU on held-out folds, before the argmax."
     )
 
     def __init__(self, config: DinoLinearSegConfig) -> None:

@@ -521,16 +521,17 @@ foreground-share score, like `color_classifier`.
   only when there are more of them than the total, since each keeps a pixel; the plan and its float32
   footprint are logged, and a plan above 4 GiB is refused naming the knobs. `IGNORE_INDEX` pixels are
   never sampled, and only the chosen images are encoded.
-- **`pixel_sampling` decides how an image's budget is spent.** `raster` (default) spaces it evenly over
-  the image's labelled pixels whatever their class, which gives a defect covering a fraction of a percent
-  of the frame a pixel or two. `per_class` has `allocate_pixels` split the budget equally among the
+- **`pixel_sampling` decides how an image's budget is spent.** `raster` spaces it evenly over the
+  image's labelled pixels whatever their class, which gives a defect covering a fraction of a percent of
+  the frame a pixel or two. `per_class` (default) has `allocate_pixels` split the budget equally among the
   classes present in the image, visiting the smallest first so that a class with fewer pixels than its
   share takes them all and leaves the rest to the others, and `sample_pixels` spaces each class's take
   evenly over that class's own pixels. Nothing is random either way. The fit logs the rule and, per
-  class, the pixels taken against the labelled pixels the chosen images held. `per_class` is not the
-  default because the public gate measured it lower on defect IoU on both VisA classes: with thousands
-  of defect pixels under `inverse_frequency`, the head moves its boundary further into background and
-  labels a few percent of every image defect ([measurements](../measurements.md)).
+  class, the pixels taken against the labelled pixels the chosen images held. On its own `per_class`
+  measured lower than `raster` on defect IoU: with thousands of defect pixels under `inverse_frequency`,
+  the head moves its boundary further into background and labels a few percent of every image defect.
+  With `held_out_iou` the fitted constant pulls that boundary back, and the defect's larger sample is
+  what the constant is fitted on ([measurements](../measurements.md)).
 - **The head fits on the CPU** with AdamW (`learning_rate` 1e-3, `weight_decay` 1e-4) for `epochs` (10)
   over shuffled minibatches of `batch_size` (1 024), with cross-entropy weighted by `class_balancing`:
   `inverse_frequency` (default) gives every sampled class the same total weight, `none` counts every pixel
@@ -544,7 +545,7 @@ foreground-share score, like `color_classifier`.
   trained as if every class were equally common labels a class that covers a fraction of a percent of the
   pixels as readily as the background around it. The head is fitted identically whatever the field says;
   the constants are saved beside it, and a checkpoint asked for a constant it was not fitted with refuses
-  by name. `none` (default) is the head's own answer. `training_prior` is the standard logit adjustment
+  by name. `none` is the head's own answer. `training_prior` is the standard logit adjustment
   (`prior_shift`): `log p_c − log q_c`, with `p` the class's share of the chosen images' labelled pixels
   and `q` its share of the fit's loss weight (sampled count times class weight), which makes the argmax
   the Bayes answer for pixel accuracy — and on a VisA defect, at a shift near −8, that answer is almost
@@ -552,7 +553,8 @@ foreground-share score, like `color_classifier`.
   the task is read by: the training images with sampled pixels are split into `BIAS_FOLDS` (3) folds by
   position, a head fitted on the other folds (same rule, a seed derived from `seed` and the fold) scores
   each fold's sampled pixels, and `pixel_weights` makes each pixel stand for `available / sampled` pixels
-  of its class in its image, so the pooled sample reads as the training frames themselves.
+  of its class in its image, so the pooled sample reads as the training frames themselves; it is the
+  default.
   `fit_class_bias` then visits each class but background once, holding the constants already fitted,
   sorts the held-out margins and takes the cut with the highest weighted IoU; a class no cut overlaps
   keeps zero and says so. It costs `BIAS_FOLDS` more head fits on the CPU and no second encoding pass.
@@ -564,10 +566,10 @@ foreground-share score, like `color_classifier`.
   label targets, or when the sampled pixels hold no class at all. The encoder is not saved: `save` writes
   the head (each file whole, then renamed into place) and the encoder's fingerprint, and `load` refuses
   a different backbone or layer set.
-- **Experimental.** Both legs of the first public gate kept it there: under `raster` sampling it beat the
-  floor by the predeclared margin on one VisA class and not the other, and under `per_class` sampling its
-  lead shrank on both. A second gate, of `held_out_iou` under `per_class` sampling, is predeclared
-  ([measurements](../measurements.md)). ONNX: none.
+- **Supported**, by the logit-bias gate: under `per_class` sampling and `held_out_iou` it beat the floor by
+  the predeclared margin on both VisA classes, where neither pixel sampling alone had
+  ([measurements](../measurements.md)). The mask it draws of a VisA defect is usable, not good. ONNX:
+  none.
 
 ### `fss_dino`
 

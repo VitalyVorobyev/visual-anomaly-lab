@@ -92,11 +92,11 @@ application.
   confusion matrix drawn, a per-sample verdict (`false_class` beside the few-shot outcomes), the label
   maps over the image on the sample page and on every gallery tile — prediction solid, truth dashed, one
   palette colour per pinned class — and the
-  task in the dataset's readiness band. The public VisA gate kept `dino_linear_seg` experimental in both its
-  legs — ahead of the floor on both classes, by the predeclared margin on one, and by less when the
-  defect is sampled in its own share (`pixel_sampling` `per_class`) — and showed that neither method draws
-  a usable mask of a small defect class ([measurements.md](measurements.md)). Still open: a head whose
-  answer is calibrated to how rare a small class is.
+  task in the dataset's readiness band. `dino_linear_seg` is supported: sampling each class in its own
+  share and adding one constant per class, fitted for IoU on held-out folds of the training images
+  (`logit_bias` `held_out_iou`), it beats the floor by the predeclared margin on both VisA classes, where
+  the head's own argmax labelled a few percent of every image defect ([measurements.md](measurements.md)).
+  Its mask of a small VisA defect is usable, not good.
 - **Detection** (ADR-0039) follows, and reuses the same seams.
 
 ## Deliberately not built
