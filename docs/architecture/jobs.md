@@ -149,7 +149,8 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
   reference studio's current references through the same `PreparedClassTargets` a run uses. Its spec
   (dataset, class, method, profile, references) is the resident's command line, never a request field. Its
   generation fingerprints the spec, the pinned region build and every reference image's pinned truth, so
-  new references are a new resident. A request segments one image into `previews/<generation>/maps/`,
+  new references are a new resident. A request segments one image, or a batch of at most 48, into
+`previews/<generation>/maps/`,
   which `GET /api/studio/previews/{generation}/{image}.png` renders on the fixed range [0, 1]. A preview is
   stored for nobody and evaluated by nothing.
 

@@ -186,3 +186,26 @@ def test_other_classes_keep_their_shapes(
     assert revision["document"]["shapes"][0] == scratch
     table = {entry["key"]: entry["pixels"] for entry in revision["class_table"]}
     assert table["scratch"] > 0 and table["defect"] == 0
+
+
+def test_a_batch_orders_a_page_least_certain_first_and_stays_bounded(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    profile = create_experiment(client, seeded)["region_profile_id"]
+    reference = _sample_of(settings, seeded.defect_image_ids[0])
+    images = seeded.defect_image_ids[1:] + seeded.normal_image_ids
+    url = f"/api/datasets/{seeded.dataset_id}/studio/preview-batch"
+    body = {"class_key": "defect", "method": "color_prototype", "profile_id": profile}
+
+    batch = client.post(url, json={**body, "references": [reference], "image_ids": images})
+    assert batch.status_code == 200, batch.text
+    results = batch.json()["results"]
+    assert sorted(entry["image_id"] for entry in results) == sorted(images)
+    uncertainty = [entry["uncertainty"] for entry in results]
+    assert uncertainty == sorted(uncertainty, reverse=True)
+    assert all(0.0 <= value <= 1.0 for value in uncertainty)
+
+    too_many = client.post(
+        url, json={**body, "references": [reference], "image_ids": list(range(1, 50))}
+    )
+    assert too_many.status_code == 422

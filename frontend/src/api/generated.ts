@@ -1709,6 +1709,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/studio/preview-batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Segment up to one rail page of images, least certain first
+         * @description What orders the studio's rail by uncertainty: where the references are weakest.
+         *
+         *     Bounded to one page (`MAX_BATCH`) so a request stays one resident answer; the rail
+         *     says it ordered a page, never the whole dataset.
+         */
+        post: operations["preview_batch_api_datasets__dataset_id__studio_preview_batch_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/studio/previews/{generation}/{image_id}.png": {
         parameters: {
             query?: never;
@@ -2118,6 +2141,50 @@ export interface components {
             available: boolean;
             /** Reason */
             reason: string | null;
+        };
+        /** BatchEntry */
+        BatchEntry: {
+            /** Image Id */
+            image_id: number;
+            /** Score */
+            score: number;
+            /** Foreground Share */
+            foreground_share: number;
+            /**
+             * Uncertainty
+             * @description How close the presence score is to 0.5, on [0, 1]; 1 is a coin flip.
+             */
+            uncertainty: number;
+        };
+        /** BatchRequest */
+        BatchRequest: {
+            /** Class Key */
+            class_key: string;
+            /** Method */
+            method: string;
+            /** Profile Id */
+            profile_id: number;
+            /** References */
+            references: number[];
+            /**
+             * Image Ids
+             * @description At most one rail page of images.
+             */
+            image_ids: number[];
+        };
+        /** BatchResult */
+        BatchResult: {
+            /** Generation */
+            generation: string;
+            /** Warm */
+            warm: boolean;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /**
+             * Results
+             * @description Least certain first.
+             */
+            results: components["schemas"]["BatchEntry"][];
         };
         /**
          * BitmapShape
@@ -8216,6 +8283,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_batch_api_datasets__dataset_id__studio_preview_batch_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BatchRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BatchResult"];
                 };
             };
             /** @description Validation Error */

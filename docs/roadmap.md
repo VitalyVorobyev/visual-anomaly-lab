@@ -64,24 +64,20 @@ application.
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
   (ADR-0037).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
-- **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it,
-  and frozen DINOv3 feature matching segments it in new images, with absence as a first-class
-  answer. Built so far: the task value, the target class on the experiment, the `manual` and `few_shot`
-  reference splits, per-class coverage, class-index masks with a pinned class table, references reaching
-  `fit` as targets, predicted masks, an evaluator for masks and presence, and `color_prototype`, the
-  torch-free floor that runs the slice end to end, and the shared frozen-DINO blocks the next methods
-  build on (one encoding path, INSID3's positional debiasing, guided refinement), and `fss_dino`, a
-  reproduction of the FSSDINO baseline on them, and `proto_seg`, ours, whose debiasing, prototype bank,
-  adaptation and refinement are each a field. The dataset workspace is grouped as Data · Truth · Runs,
-  its band says per task what is still needed, the create screen asks for the task first, and the
-  Splits tab draws references for a class. A segmentation run's results are read in its own terms —
-  overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline — and Compare
-  reads runs of one class across reference draws. Still open:
-  - the public gate that decides between the methods;
-  - the reference studio's uncertainty queue (choosing references by eye, a live preview of any image,
-    accept / fix / mark absent, and freezing into a run are built);
+- **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it, and a
+  run segments that class in every other sample, with absence as a first-class answer. What stands:
+  - **Truth:** class-index masks with a pinned class table, per-class coverage, and references as a split
+    (`manual`, or a seeded `few_shot` draw).
+  - **Methods:** `color_prototype` (the torch-free floor), `fss_dino` (a reproduction of FSSDINO) and
+    `proto_seg` (ours), on one frozen-DINO encoding path with INSID3's positional debiasing and guided
+    refinement.
+  - **Reading:** an evaluator for masks and presence, result screens in the task's own terms, and Compare
+    across reference draws.
+  - **Workflow:** the dataset workspace as Data · Truth · Runs with per-task readiness, a task-first create
+    screen, and the reference studio — choose references by eye, preview any image live, accept / fix /
+    mark absent, and freeze into a run.
 
-  The order is in [backlog.md](backlog.md).
+  Still open: the public gate that decides between the methods.
 - **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.
 
 ## Deliberately not built

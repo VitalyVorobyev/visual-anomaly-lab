@@ -173,3 +173,44 @@ export function useSetStudioRegion(datasetId: number) {
     },
   });
 }
+
+/**
+ * One rail page segmented by the current references, least certain first — where the
+ * references are weakest, and so where the reader's attention is worth most.
+ */
+export function useStudioBatch(input: Omit<PreviewInput, "imageId"> & { imageIds: number[] }, enabled: boolean) {
+  const references = [...input.references].sort((a, b) => a - b);
+  return useQuery({
+    queryKey: [
+      "studio-batch",
+      input.datasetId,
+      input.classKey,
+      input.methodKey,
+      input.profileId,
+      references,
+      input.imageIds,
+    ] as const,
+    queryFn: async () =>
+      unwrap(
+        await api.POST("/api/datasets/{dataset_id}/studio/preview-batch", {
+          params: { path: { dataset_id: input.datasetId } },
+          body: {
+            class_key: input.classKey,
+            method: input.methodKey as string,
+            profile_id: input.profileId as number,
+            references,
+            image_ids: input.imageIds,
+          },
+        }),
+        "the ordered page",
+      ),
+    enabled:
+      enabled &&
+      references.length > 0 &&
+      input.imageIds.length > 0 &&
+      input.methodKey !== undefined &&
+      input.profileId !== undefined,
+    retry: false,
+    staleTime: Infinity,
+  });
+}
