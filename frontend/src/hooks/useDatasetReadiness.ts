@@ -1,19 +1,21 @@
 /**
- * What a dataset still needs before a run can train on it.
+ * What a dataset still needs before a run of each task can train on it.
  *
- * Training needs a *built* region profile and a split, and the only place that used to say
- * so was the create form — after the reader had already opened it. This reads the same two
- * facts the form checks, with the same rule for "built" (a build report exists and no
- * image failed), so the band and the form cannot disagree about whether a dataset is ready.
+ * Every run needs a *built* region profile. An anomaly run needs a split drawn or adopted for
+ * it; a few-shot run needs a class with a reference and something to test on, and a split of
+ * references (ADR-0040). This reads the facts the create form checks, with the same rule for
+ * "built" (a build report exists and no image failed), so the band and the form cannot
+ * disagree about whether a dataset is ready.
  */
 
 import { useQueries } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
-import type { RegionBuildSummary } from "../api/client";
+import type { RegionBuildSummary, SplitDetail, Task } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
+import { useClassCoverage } from "./useAnnotations";
 import { useSplits } from "./useCatalog";
-import { useExperiments } from "./useExperiments";
+import { useExperiments, useModelTypes } from "./useExperiments";
 import { useRegionProfiles } from "./useRegionProfiles";
 
 export interface DatasetReadiness {
@@ -24,11 +26,28 @@ export interface DatasetReadiness {
   builtProfiles: number;
   splits: number;
   runs: number;
-  /** What is still missing, in the order it has to be done. */
+  /**
+   * Each task some method can run (ADR-0039), with what it still needs, in the order it has to
+   * be done. A task whose list is empty can be trained now.
+   */
+  tasks: TaskReadiness[];
+}
+
+export interface TaskReadiness {
+  task: Task;
   missing: ReadinessStep[];
 }
 
-export type ReadinessStep = "prepare" | "split";
+export type ReadinessStep = "prepare" | "split" | "annotate" | "references";
+
+/** The tasks the band speaks for, in the order it names them. */
+export const READINESS_TASKS: Task[] = ["anomaly", "few_shot_segmentation"];
+
+/** Which split strategies a task trains on: a few-shot run's `train` subset is its references. */
+export function splitServesTask(split: Pick<SplitDetail, "strategy">, task: Task): boolean {
+  const referenceSplit = split.strategy === "manual" || split.strategy === "few_shot";
+  return task === "few_shot_segmentation" ? referenceSplit : !referenceSplit;
+}
 
 /** A build is usable when it exists and nothing in it failed — the create form's rule. */
 export function isUsableBuild(build: RegionBuildSummary | undefined): boolean {
@@ -39,6 +58,8 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
   const profiles = useRegionProfiles(datasetId);
   const splits = useSplits(datasetId);
   const runs = useExperiments(datasetId === undefined ? {} : { datasetId });
+  const catalog = useModelTypes();
+  const coverage = useClassCoverage(datasetId);
   const builds = useQueries({
     queries: (profiles.data ?? []).map((profile) => ({
       queryKey: queryKeys.regionBuild(profile.id),
@@ -55,19 +76,34 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
   });
 
   const builtProfiles = builds.filter((build) => isUsableBuild(build.data)).length;
-  const missing: ReadinessStep[] = [];
-  if (builtProfiles === 0) missing.push("prepare");
-  if ((splits.data?.length ?? 0) === 0) missing.push("split");
+  const offered = READINESS_TASKS.filter((task) =>
+    (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(task)),
+  );
+  // A class a few-shot run can use has a reference to learn from and something else to test on.
+  const usableClass = (coverage.data ?? []).some(
+    (entry) => entry.present >= 1 && entry.present + entry.absent >= 2,
+  );
+  const tasks = offered.map((task) => {
+    const missing: ReadinessStep[] = [];
+    if (builtProfiles === 0) missing.push("prepare");
+    if (task === "few_shot_segmentation" && !usableClass) missing.push("annotate");
+    if (!(splits.data ?? []).some((split) => splitServesTask(split, task))) {
+      missing.push(task === "few_shot_segmentation" ? "references" : "split");
+    }
+    return { task, missing };
+  });
 
   return {
     known:
       profiles.data !== undefined &&
       splits.data !== undefined &&
+      catalog.data !== undefined &&
+      (!offered.includes("few_shot_segmentation") || coverage.data !== undefined) &&
       builds.every((build) => !build.isPending),
     profiles: profiles.data?.length ?? 0,
     builtProfiles,
     splits: splits.data?.length ?? 0,
     runs: runs.data?.length ?? 0,
-    missing,
+    tasks,
   };
 }

@@ -96,8 +96,17 @@ siblings of their `<Link>`: a control inside an anchor must cancel the click, an
 click makes the browser restore its old state after React writes the new one.
 
 **Navigation.** The main navigation is `Datasets`, `Experiments` and `Compare`; import is an action in the
-catalogue, and backend health stays visible in the shell. Inside a dataset the strip moves between
-`Browse`, `Annotate`, `Prepare`, `Splits` and `Experiments`, underlined because pills mark in-page state.
+catalogue, and backend health stays visible in the shell. Inside a dataset the strip is grouped by the stage
+of the work, in the order it is done: **Data** (`Browse`, `Prepare`) · **Truth** (`Annotate`) · **Runs**
+(`Splits`, `Experiments`). It stays one row, so the band keeps its height: the stage names are quiet labels
+between the links, folded away below `md`, and each stage is a `role="group"`. The links are underlined
+because pills mark in-page state.
+
+**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. Every
+run needs a built profile; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
+class with a reference and something to test on (from the coverage read) and a split of references
+(`splitServesTask`). With one task the band is a checklist. With two, the shared first step comes first,
+then each task shows a check or the link to its next step.
 
 **Vocabulary.** A *region profile* is the crop-and-resize recipe built on Prepare; *Colour* is the
 experiment's colour option; the *threshold* is a run's image-score cut; the *map cut* is the fraction of a
@@ -142,8 +151,10 @@ revision names the experiments pinning it. `GET /api/region-extractors`,
 `POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}`,
 `GET/DELETE /api/region-profiles/{id}`.
 
-**Splits** — create a seeded, stratified split; per-subset counts by label; immutable once
-created. `POST /api/splits`, `GET /api/splits?dataset_id=`.
+**Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a
+class** (`few_shot`: a class that some sample shows, a shot count and a seed, with the class's coverage
+beside the picker). Per-subset counts by label; immutable once created. `POST /api/splits`,
+`GET /api/splits?dataset_id=`, `GET /api/datasets/{id}/annotation-labels/coverage`.
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
 in the URL and are applied in SQLite. A checkbox column picks runs for Compare under the picker's own
@@ -151,12 +162,13 @@ in the URL and are applied in SQLite. A checkbox column picks runs for Compare u
 `GET /api/experiments?dataset_id=&q=&model_type=&status=&sort=`,
 `GET /api/experiments/{id}/deletion-preview`, `DELETE /api/experiments/{id}`.
 
-**Experiment creation** — a dedicated route; inside a dataset the user picks split, built region profile
-and method. The band lists what is missing as links in order, using the form's rule for "built"
-(`isUsableBuild`); the unsent form is kept in `sessionStorage` (`api/experimentDraft.ts`). Method cards are
-those whose `capabilities.tasks` include the chosen task; a task picker appears only when methods offer
-more than one (ADR-0039). A targeted task adds a **Target class** select over the dataset's classes,
-defaulting to the class a `few_shot` split was drawn for (ADR-0040). A lone profile or split is preselected; an empty name becomes
+**Experiment creation** — a dedicated route, **task first**. When methods offer more than one task
+(ADR-0039), step 1 is the task, because it decides everything after it: the split list offers only the
+task's kind of split (`splitServesTask`), method cards are those whose `capabilities.tasks` include it,
+and a targeted task adds a **Target class** select beside the split, defaulting to the class a `few_shot`
+split was drawn for (ADR-0040). With one task the form starts at its inputs. The band lists what is
+missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
+`sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes
 `<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.
 `GET /api/experiments/model-types`, `POST /api/experiments`.
 

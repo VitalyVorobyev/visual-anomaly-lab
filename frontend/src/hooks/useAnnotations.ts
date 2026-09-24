@@ -70,6 +70,24 @@ export function useAnnotationLabels(datasetId: number | undefined) {
 }
 
 /**
+ * Per class, how many samples show it, lack it, or have no answer (ADR-0040): what a few-shot
+ * run can take references from and test on.
+ */
+export function useClassCoverage(datasetId: number | undefined) {
+  return useQuery({
+    queryKey: queryKeys.classCoverage(datasetId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/datasets/{dataset_id}/annotation-labels/coverage", {
+          params: { path: { dataset_id: datasetId as number } },
+        }),
+        "the class coverage",
+      ),
+    enabled: datasetId !== undefined,
+  });
+}
+
+/**
  * Recolour a class.
  *
  * The colour belongs to the *label*, not to the session: a scratch should look like a scratch on
@@ -111,6 +129,7 @@ export function useCreateAnnotationLabel(datasetId: number) {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.annotationLabels(datasetId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverage(datasetId) });
     },
   });
 }
@@ -408,6 +427,7 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
       for (const imageId of imageIds) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(imageId) });
       }
+      void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverageAll() });
     },
   });
 }

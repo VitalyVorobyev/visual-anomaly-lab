@@ -72,9 +72,11 @@ application.
   torch-free floor that runs the slice end to end, and the shared frozen-DINO blocks the next methods
   build on (one encoding path, INSID3's positional debiasing, guided refinement), and `fss_dino`, a
   reproduction of the FSSDINO baseline on them, and `proto_seg`, ours, whose debiasing, prototype bank,
-  adaptation and refinement are each a field. The create screen asks for the target class. Still open:
-  - the public gate that decides between them;
-  - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
+  adaptation and refinement are each a field. The dataset workspace is grouped as Data · Truth · Runs,
+  its band says per task what is still needed, the create screen asks for the task first, and the
+  Splits tab draws references for a class. Still open:
+  - the public gate that decides between the methods;
+  - result screens that read a segmentation run in its own terms, and an interactive reference studio.
 
   The order is in [backlog.md](backlog.md).
 - **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.

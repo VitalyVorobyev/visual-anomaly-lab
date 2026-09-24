@@ -161,6 +161,32 @@ describe("the create-experiment form", () => {
     );
   });
 
+  it("asks for the task first, and offers only the splits that task trains on", () => {
+    const floor = {
+      ...METHOD,
+      key: "color_prototype",
+      title: "Colour prototype",
+      capabilities: { ...METHOD.capabilities, tasks: ["few_shot_segmentation"] },
+    };
+    const references = {
+      ...SPLIT,
+      id: 4,
+      name: "five shots",
+      strategy: "few_shot",
+      params: { label_key: "scratch", shots: 5 },
+    };
+    renderForm([SPLIT, references], [METHOD, floor]);
+    // The task is step 1, before the inputs it decides.
+    expect(screen.getByText("Task")).toBeTruthy();
+    expect(screen.getByRole("combobox", { name: "Split" }).textContent).toContain("published");
+
+    fireEvent.click(screen.getByRole("radio", { name: "Few-shot segmentation" }));
+    const split = screen.getByRole("combobox", { name: "Split" });
+    expect(split.textContent).toContain("five shots");
+    expect(screen.getAllByText("Colour prototype").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Pixel reference")).toBeNull();
+  });
+
   it("brings back what was typed before following a prerequisite link", () => {
     sessionStorage.setItem(
       draftKey(7),
