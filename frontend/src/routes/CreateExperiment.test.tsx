@@ -200,6 +200,28 @@ describe("the create-experiment form", () => {
     expect(link.getAttribute("href")).toBe("/datasets/7/splits?strategy=class_stratified");
   });
 
+  it("offers a detection run the same split a segmentation run takes, and links to drawing one", () => {
+    const floor = {
+      ...METHOD,
+      key: "box_floor",
+      title: "Box floor",
+      capabilities: { ...METHOD.capabilities, tasks: ["object_detection"] },
+    };
+    const { unmount } = renderForm([SPLIT], [METHOD, floor]);
+    fireEvent.click(screen.getByRole("radio", { name: "Object detection" }));
+    expect(screen.getByText(/No split of annotated samples yet/)).toBeTruthy();
+    const link = screen.getByRole("link", { name: "Draw one by class" });
+    expect(link.getAttribute("href")).toBe("/datasets/7/splits?strategy=class_stratified");
+    unmount();
+
+    const drawn = { ...SPLIT, id: 4, name: "by class", strategy: "class_stratified" };
+    renderForm([SPLIT, drawn], [METHOD, floor]);
+    fireEvent.click(screen.getByRole("radio", { name: "Object detection" }));
+    const split = screen.getByRole("combobox", { name: "Split" });
+    expect(split.textContent).toContain("by class");
+    expect(screen.queryByRole("link", { name: "Draw one by class" })).toBeNull();
+  });
+
   it("brings back what was typed before following a prerequisite link", () => {
     sessionStorage.setItem(
       draftKey(7),

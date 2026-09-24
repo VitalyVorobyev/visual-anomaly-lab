@@ -101,9 +101,9 @@ application.
   through `box_targets` on the boxes of its annotated training images — a revision's instances, or an
   imported mask's connected components — writes boxes per image, and is read by COCO's protocol
   (AP@[.5:.95] as the headline, AP50, AP75, recall, AP per class). `color_detector` is the floor, the
-  colour classifier's components boxed. Its results read as metric tables alone: the create form does
-  not offer it `class_stratified`, and there are no drawn boxes, no per-sample verdict, no deep detector
-  and no public gate yet.
+  colour classifier's components boxed. It is offered segmentation's splits, `class_stratified` and
+  `manual`, and named in the dataset's readiness band. Its results read as metric tables alone: there
+  are no drawn boxes, no per-sample verdict, no deep detector and no public gate yet.
 
 ## Deliberately not built
 

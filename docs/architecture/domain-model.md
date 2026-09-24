@@ -139,7 +139,8 @@ be regenerated exactly — a seed alone reproduces nothing without its fractions
 - **`manual`** and **`few_shot`** — a few-shot task's references in `train` and every other sample in
   `test`, with no `val` (ADR-0040). `manual` takes `params.sample_ids`; `few_shot` draws `params.shots`
   samples that show `params.label_key`, under the seed, so three seeds are three reference draws.
-- **`class_stratified`** — a supervised task's split (ADR-0039): the samples whose every image answers
+- **`class_stratified`** — a supervised task's split, segmentation's and detection's alike (ADR-0039),
+  because detection truth labels an image by the same presence rule: the samples whose every image answers
   for every class of the dataset (recorded in `params.classes`) are drawn under the seed into `train`
   (`params.train_fraction`) and `test`, stratified by the set of classes each shows; every other
   sample goes to `params.unlabeled_subset` (`test` by default; never `train`). No `val`. A class two or
