@@ -162,11 +162,18 @@ beside the picker). Per-subset counts by label; immutable once created. `POST /a
 `GET /api/splits?dataset_id=`, `GET /api/datasets/{id}/annotation-labels/coverage`.
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
-in the URL and are applied in SQLite. A checkbox column picks runs for Compare under the picker's own
+in the URL and are applied in SQLite: a search that also matches a run's number (`12`, `#12`), any set of
+methods as chips, a status, and a created-on day range. The server orders — by a header button (Created
+flips newest/oldest; Name, Method, Status) — and pages by an opaque keyset cursor of `[sort value, id]`,
+fifty rows per "Load more", so a run is never skipped or repeated while runs are added. The panel title
+is the matching total, not the loaded count. Readers that need one dataset's or split's runs rather than
+a catalogue (the Compare picker, readiness) take one page of up to 500 and say when there are more. A
+checkbox column picks runs for Compare under the picker's own
 `refusalReason`. The headline column is each run's own task metric, labelled (`api/headline.ts`: `0.912
 AUROC`, `0.643 IoU`), because the evaluator names it (`headline_metric`, `headline_value`). Deletion
 previews files, bytes, active-work blockers and resident eviction.
-`GET /api/experiments?dataset_id=&q=&model_type=&status=&sort=`,
+`GET /api/experiments?dataset_id=&q=&model_type=…&status=&created_from=&created_to=&sort=&cursor=&limit=`
+→ `{items, total, next_cursor}`,
 `GET /api/experiments/{id}/deletion-preview`, `DELETE /api/experiments/{id}`.
 
 **Experiment creation** — a dedicated route, **task first**. When methods offer more than one task

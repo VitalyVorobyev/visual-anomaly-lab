@@ -14,8 +14,10 @@ until its output has been reviewed.
       in a `title` tooltip — the one reason `lab-visual-pass --states` still reports. `Tabs` would
       show the reason on focus and hover through its own `Tooltip`; release, then drop the `title`s.
       The editor's disabled Discard has the same shape.
-- [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
-      range, cursor pagination and sortable column headers.
+- [ ] **A sortable column header, upstream in lab-ui** (S): the experiment catalogue orders by
+      header buttons, but `Table` cannot set `aria-sort` on the `<th>`, so a screen reader hears a
+      button rather than a sorted column. Add a `sort` prop to `Column`, release, and move the
+      catalogue's `SortHeader` onto it.
 - [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`
       inside a `<Link>` (catalogue header, dataset band, sample viewer, experiment catalogue), which
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a

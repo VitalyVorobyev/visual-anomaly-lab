@@ -20,17 +20,19 @@
  * uppercase summaries over eight fields that nobody has to touch.
  */
 
-import { Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import type { ModelDescription, Task } from "../api/client";
+import type { ExperimentSummary, ModelDescription, Task } from "../api/client";
 import {
   useRegionBuild,
   useRegionProfiles,
 } from "../hooks/useRegionProfiles";
 import {
+  activeFilterCount,
   EMPTY_EXPERIMENT_CATALOG,
+  type ExperimentSort,
   readExperimentCatalogState,
   toExperimentListQuery,
   writeExperimentCatalogState,
@@ -40,10 +42,11 @@ import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { useAnnotationLabels } from "../hooks/useAnnotations";
 import { TabScroll } from "./dataset/TabScroll";
 import {
+  CATALOGUE_PAGE,
   useCreateExperiment,
   useDeleteExperiment,
   useExperimentDeletionPreview,
-  useExperiments,
+  useExperimentPages,
   useModelTypes,
 } from "../hooks/useExperiments";
 import { refusalReason, toggleRun } from "../api/compareState";
@@ -53,7 +56,52 @@ import { formatHeadline } from "../api/headline";
 import { isUsableBuild, splitServesTask } from "../hooks/useDatasetReadiness";
 import { experimentStatusTone } from "../api/statusTone";
 
-type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
+type ExperimentRow = ExperimentSummary;
+
+/**
+ * A column header that orders the catalogue. The server sorts — a page is a slice of the
+ * whole ordered list, so sorting the loaded rows here would order only what happened to
+ * arrive. Created flips between newest and oldest; the others order one way.
+ */
+function SortHeader({
+  label,
+  sorts,
+  current,
+  onSort,
+}: {
+  label: string;
+  /** The orders this column cycles through, the first one on the first press. */
+  sorts: readonly ExperimentSort[];
+  current: ExperimentSort;
+  onSort: (sort: ExperimentSort) => void;
+}) {
+  const index = sorts.indexOf(current);
+  const active = index >= 0;
+  const next = sorts[(index + 1) % sorts.length] ?? sorts[0];
+  const Icon = !active ? ArrowUpDown : current === "newest" ? ArrowDown : ArrowUp;
+  return (
+    <button
+      type="button"
+      onClick={() => next !== undefined && onSort(next)}
+      className={cn(
+        "inline-flex items-center gap-1 rounded-control font-inherit transition-colors hover:text-fg",
+        active ? "text-fg" : "text-inherit",
+      )}
+      aria-label={`${label}, ${active ? `ordered ${SORT_LABEL[current]}` : "not ordered"}; order by ${SORT_LABEL[next ?? current]}`}
+    >
+      {label}
+      <Icon className={cn("size-3", !active && "opacity-50")} aria-hidden />
+    </button>
+  );
+}
+
+const SORT_LABEL: Record<ExperimentSort, string> = {
+  newest: "newest first",
+  oldest: "oldest first",
+  name: "by name",
+  method: "by method",
+  status: "by status",
+};
 
 /**
  * The catalogue itself: filters, table, deletion dialog, and no page chrome.
@@ -75,16 +123,23 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
   const deletionPreview = useExperimentDeletionPreview(pendingDelete?.id);
   const [searchParams, setSearchParams] = useSearchParams();
   const state = readExperimentCatalogState(searchParams);
-  const experiments = useExperiments(toExperimentListQuery(state, datasetId));
+  const experiments = useExperimentPages(toExperimentListQuery(state, datasetId));
 
   const datasetNames = new Map((datasets.data ?? []).map((entry) => [entry.id, entry.name]));
   const methodNames = new Map((methods.data?.methods ?? []).map((entry) => [entry.key, entry.title]));
-  const activeFilters = [state.query || undefined, state.modelType, state.status].filter(Boolean).length;
+  const activeFilters = activeFilterCount(state);
 
   const update = (patch: Partial<typeof state>) =>
     setSearchParams(writeExperimentCatalogState({ ...state, ...patch }), { replace: true });
 
-  const rows = experiments.data ?? [];
+  const rows = useMemo(
+    () => (experiments.data?.pages ?? []).flatMap((page) => page.items),
+    [experiments.data],
+  );
+  const total = experiments.data?.pages[0]?.total;
+  const sortHeader = (label: string, sorts: readonly ExperimentSort[]) => (
+    <SortHeader label={label} sorts={sorts} current={state.sort} onSort={(sort) => update({ sort })} />
+  );
   const anchor = rows.find((row) => row.id === picked[0]);
   const togglePicked = (id: number) =>
     setPicked((current) => toggleRun(current, id));
@@ -112,7 +167,7 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
     },
     {
       key: "name",
-      header: "Name",
+      header: sortHeader("Name", ["name"]),
       cell: (row) => (
         <Link
           to={`/experiments/${row.id}`}
@@ -140,7 +195,7 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
       : []),
     {
       key: "method",
-      header: "Method",
+      header: sortHeader("Method", ["method"]),
       cell: (row) => (
         <span className="flex flex-col">
           <span>{methodNames.get(row.model_type) ?? row.model_type}</span>
@@ -150,7 +205,7 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
     },
     {
       key: "created",
-      header: "Created",
+      header: sortHeader("Created", ["newest", "oldest"]),
       cell: (row) => (
         <time dateTime={row.created_at} className="whitespace-nowrap text-xs text-fg-muted">
           {formatDate(row.created_at)}
@@ -159,7 +214,7 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
     },
     {
       key: "status",
-      header: "Status",
+      header: sortHeader("Status", ["status"]),
       cell: (row) => <Badge tone={experimentStatusTone(row.status)}>{row.status}</Badge>,
     },
     {
@@ -190,7 +245,13 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
   return (
     <div className="flex flex-col gap-4">
       <Panel
-        title={experiments.data ? `${experiments.data.length} experiments` : "Experiment history"}
+        title={
+          total === undefined
+            ? "Experiment history"
+            : total === 1
+              ? "1 experiment"
+              : `${total} experiments`
+        }
         actions={
           <div className="flex items-center gap-2">
             {picked.length > 0 && (
@@ -220,71 +281,85 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
           </div>
         }
       >
-        <div className="mb-4 grid gap-3 border-b border-line pb-4 sm:grid-cols-2 lg:grid-cols-4">
-          <Field label="Search">
-            <div className="relative">
-              <Search
-                className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle"
-                aria-hidden
+        <div className="mb-4 flex flex-col gap-3 border-b border-line pb-4">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <Field label="Search">
+              <div className="relative">
+                <Search
+                  className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-fg-subtle"
+                  aria-hidden
+                />
+                <Input
+                  value={state.query}
+                  onChange={(event) => update({ query: event.target.value })}
+                  placeholder="Name, notes or #number"
+                  className="pl-8"
+                />
+              </div>
+            </Field>
+            <Field as="group" label="Status">
+              <Select
+                aria-label="Status"
+                value={state.status ?? ""}
+                placeholder="Any status"
+                options={[
+                  { value: "draft", label: "Draft" },
+                  { value: "training", label: "Training" },
+                  { value: "trained", label: "Trained" },
+                  { value: "failed", label: "Failed" },
+                ]}
+                onValueChange={(value) =>
+                  update({ status: value ? (value as typeof state.status) : undefined })
+                }
               />
+            </Field>
+            <Field label="Created from">
               <Input
-                value={state.query}
-                onChange={(event) => update({ query: event.target.value })}
-                placeholder="Name or notes"
-                className="pl-8"
+                type="date"
+                value={state.createdFrom ?? ""}
+                max={state.createdTo}
+                onChange={(event) => update({ createdFrom: event.target.value || undefined })}
               />
-            </div>
-          </Field>
-          <Field as="group" label="Method">
-            <Select
-              aria-label="Method"
-              value={state.modelType ?? ""}
-              placeholder="Any method"
-              options={(methods.data?.methods ?? []).map((method) => ({
-                value: method.key,
-                label: method.title,
-                note: method.key,
-              }))}
-              onValueChange={(value) => update({ modelType: value || undefined })}
-            />
-          </Field>
-          <Field as="group" label="Status">
-            <Select
-              aria-label="Status"
-              value={state.status ?? ""}
-              placeholder="Any status"
-              options={[
-                { value: "draft", label: "Draft" },
-                { value: "training", label: "Training" },
-                { value: "trained", label: "Trained" },
-                { value: "failed", label: "Failed" },
-              ]}
-              onValueChange={(value) =>
-                update({ status: value ? (value as typeof state.status) : undefined })
-              }
-            />
-          </Field>
-          <Field as="group" label="Order">
-            <Select
-              aria-label="Order"
-              value={state.sort}
-              options={[
-                { value: "newest", label: "Newest first" },
-                { value: "oldest", label: "Oldest first" },
-                { value: "name", label: "Name" },
-              ]}
-              onValueChange={(value) => update({ sort: value as typeof state.sort })}
-            />
-          </Field>
+            </Field>
+            <Field label="Created to">
+              <Input
+                type="date"
+                value={state.createdTo ?? ""}
+                min={state.createdFrom}
+                onChange={(event) => update({ createdTo: event.target.value || undefined })}
+              />
+            </Field>
+          </div>
+          <div role="group" aria-label="Methods" className="flex flex-wrap items-center gap-1.5">
+            <span className="mr-1 text-xs text-fg-muted">
+              {state.modelTypes.length === 0 ? "Every method" : "Only"}
+            </span>
+            {(methods.data?.methods ?? []).map((method) => (
+              <ToggleChip
+                key={method.key}
+                checked={state.modelTypes.includes(method.key)}
+                onCheckedChange={(on) =>
+                  update({
+                    modelTypes: on
+                      ? [...state.modelTypes, method.key]
+                      : state.modelTypes.filter((key) => key !== method.key),
+                  })
+                }
+                title={method.key}
+              >
+                {method.title}
+              </ToggleChip>
+            ))}
+          </div>
         </div>
 
         {remove.error && <ErrorBox>{remove.error.message}</ErrorBox>}
         {experiments.isPending && <SkeletonRows rows={3} />}
-        {experiments.error && <ErrorBox>{experiments.error.message}</ErrorBox>}
+        {experiments.error && !experiments.data && <ErrorBox>{experiments.error.message}</ErrorBox>}
         {experiments.data && (
           <Table
             columns={columns}
-            rows={experiments.data}
+            rows={rows}
             rowKey={(row) => row.id}
             caption="Experiments"
             empty={
@@ -293,6 +368,24 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
                 : "No experiments yet. Create one to train a method on a split."
             }
           />
+        )}
+        {experiments.error && experiments.data && (
+          <ErrorBox>{experiments.error.message}</ErrorBox>
+        )}
+        {experiments.hasNextPage && (
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <span className="text-xs text-fg-muted">
+              {rows.length} of {total ?? rows.length} shown
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              loading={experiments.isFetchingNextPage}
+              onClick={() => void experiments.fetchNextPage()}
+            >
+              Load {Math.min(CATALOGUE_PAGE, (total ?? 0) - rows.length)} more
+            </Button>
+          </div>
         )}
       </Panel>
 

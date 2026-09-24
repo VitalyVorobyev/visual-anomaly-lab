@@ -168,7 +168,7 @@ def test_a_method_is_refused_for_a_task_it_does_not_declare(
 
     created = _create(client, seeded)
     assert created["task"] == "anomaly"
-    listed = client.get("/api/experiments").json()
+    listed = client.get("/api/experiments").json()["items"]
     assert {row["task"] for row in listed} == {"anomaly"}
 
 
@@ -976,7 +976,7 @@ def test_reopening_an_experiment_returns_identical_numbers(
 def test_the_experiment_list_shows_the_headline_number(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
-    listed = client.get("/api/experiments").json()
+    listed = client.get("/api/experiments").json()["items"]
     entry = next(item for item in listed if item["id"] == scored["id"])
     assert entry["headline_value"] == pytest.approx(1.0)
 
@@ -1000,7 +1000,51 @@ def test_the_experiment_catalog_combines_search_method_status_and_sort(
     )
 
     assert listed.status_code == 200
-    assert [entry["id"] for entry in listed.json()] == [first["id"], second["id"]]
+    assert [entry["id"] for entry in listed.json()["items"]] == [first["id"], second["id"]]
+    assert listed.json()["total"] == 2
+
+
+def test_the_catalog_pages_by_cursor_without_skipping_or_repeating(
+    client: TestClient, seeded: Fixture
+) -> None:
+    created = [_create(client, seeded, name=f"run {letter}")["id"] for letter in "dbeac"]
+    for sort, expected in (
+        ("newest", sorted(created, reverse=True)),
+        ("oldest", sorted(created)),
+        # Names sort case-insensitively, the id breaking ties in the same direction.
+        ("name", [created[i] for i in (3, 1, 4, 0, 2)]),
+    ):
+        seen: list[int] = []
+        cursor = None
+        while True:
+            params: dict[str, Any] = {"sort": sort, "limit": 2}
+            if cursor is not None:
+                params["cursor"] = cursor
+            page = client.get("/api/experiments", params=params).json()
+            assert page["total"] == 5
+            seen.extend(entry["id"] for entry in page["items"])
+            cursor = page["next_cursor"]
+            if cursor is None:
+                break
+        assert seen == expected, sort
+
+
+def test_the_catalog_finds_a_run_by_number_method_list_and_day(
+    client: TestClient, seeded: Fixture
+) -> None:
+    run = _create(client, seeded, name="numbered")
+    _create(client, seeded, name="other")
+    by_id = client.get("/api/experiments", params={"q": f"#{run['id']}"}).json()["items"]
+    assert [entry["id"] for entry in by_id] == [run["id"]]
+
+    both = client.get(
+        "/api/experiments", params={"model_type": ["pixel_reference", "color_prototype"]}
+    ).json()
+    assert both["total"] == 2
+    today = run["created_at"][:10]
+    assert client.get("/api/experiments", params={"created_from": today}).json()["total"] == 2
+    assert client.get("/api/experiments", params={"created_to": "2000-01-01"}).json()["total"] == 0
+    assert client.get("/api/experiments", params={"cursor": "not-a-cursor"}).status_code == 422
 
 
 def test_the_experiment_catalog_rejects_unknown_filter_values(

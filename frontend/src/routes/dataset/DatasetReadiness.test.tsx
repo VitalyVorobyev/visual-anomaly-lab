@@ -38,7 +38,7 @@ function renderWith(seed: [readonly unknown[], unknown][], catalog = ANOMALY_ONL
 const BUILT: [readonly unknown[], unknown][] = [
   [queryKeys.regionProfiles(7), [{ id: 11 }]],
   [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
-  [queryKeys.experiments({ datasetId: 7 }), []],
+  [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
 ];
 
 describe("dataset readiness", () => {
@@ -58,7 +58,7 @@ describe("dataset readiness", () => {
     renderWith([
       [queryKeys.regionProfiles(7), []],
       [queryKeys.splits(7), []],
-      [queryKeys.experiments({ datasetId: 7 }), []],
+      [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
     ]);
     const steps = screen.getAllByRole("link");
     expect(steps.map((step) => step.textContent)).toEqual([
@@ -74,7 +74,7 @@ describe("dataset readiness", () => {
       [queryKeys.regionProfiles(7), [{ id: 11 }]],
       [queryKeys.regionBuild(11), { failed: 2, succeeded: 8, total: 10 }],
       [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]],
-      [queryKeys.experiments({ datasetId: 7 }), []],
+      [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
     ]);
     expect(screen.getByRole("link").textContent).toBe("1. Build a region profile");
   });
@@ -84,7 +84,7 @@ describe("dataset readiness", () => {
       [queryKeys.regionProfiles(7), [{ id: 11 }]],
       [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
       [queryKeys.splits(7), [{ id: 3, strategy: "normal_only_train" }]],
-      [queryKeys.experiments({ datasetId: 7 }), [{ id: 1 }, { id: 2 }]],
+      [queryKeys.experiments({ datasetId: 7 }), { items: [{ id: 1 }, { id: 2 }], total: 2, next_cursor: null }],
     ]);
     expect(screen.getByText(/Ready to train/)).toBeTruthy();
     expect(screen.getByRole("link").textContent).toBe("2 runs");
@@ -95,7 +95,7 @@ describe("dataset readiness", () => {
       [
         [queryKeys.regionProfiles(7), []],
         [queryKeys.splits(7), []],
-        [queryKeys.experiments({ datasetId: 7 }), []],
+        [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
         [queryKeys.classCoverage(7), []],
       ],
       BOTH,

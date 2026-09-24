@@ -31,7 +31,8 @@ export function RunPicker({
   const datasets = useDatasets();
   const methods = useModelTypes();
   const methodTitles = new Map((methods.data?.methods ?? []).map((m) => [m.key, m.title]));
-  const rows = experiments.data ?? [];
+  const rows = experiments.data?.items ?? [];
+  const total = experiments.data?.total ?? 0;
   // Before the early returns: the hook count may not depend on whether the list arrived.
   const splitNames = useSplitNames([...new Set(rows.map((row) => row.dataset_id))]);
 
@@ -84,6 +85,13 @@ export function RunPicker({
         <p className="text-xs text-fg-subtle">
           {hidden === 1 ? "1 run" : `${hidden} runs`} on other datasets, splits or classes not
           shown — their numbers answer a different question. Clear the selection to see every run.
+        </p>
+      )}
+
+      {total > rows.length && (
+        <p className="text-xs text-fg-subtle">
+          The newest {rows.length} of {total} runs are listed. An older run is reached from its
+          own page, or by narrowing the catalogue on Experiments.
         </p>
       )}
 

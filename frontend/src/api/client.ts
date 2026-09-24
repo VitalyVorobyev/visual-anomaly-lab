@@ -126,6 +126,7 @@ export type MetricSummary = Schemas["MetricSummary"];
 export type ResultsPage = Schemas["ResultsPage"];
 export type SampleVerdict = Schemas["SampleVerdict"];
 export type ThresholdReport = Schemas["ThresholdReport"];
+export type ExperimentPage = Schemas["ExperimentPage"];
 export type FewShotComparison = Schemas["FewShotComparison"];
 export type FewShotRun = Schemas["FewShotRun"];
 export type ClassPresence = Schemas["ClassPresence"];
