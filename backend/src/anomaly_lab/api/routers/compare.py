@@ -24,7 +24,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
-from anomaly_lab.api.routers.experiments import MapScale, MetricSummary
+from anomaly_lab.api.routers.experiments.views import MapScale, MetricSummary
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo

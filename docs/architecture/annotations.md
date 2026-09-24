@@ -97,6 +97,16 @@ deliberate force, offered by the editor only after a `412` has told the user the
 discarding another window's work is always a second, informed click. Every route above has a
 `/api/samples/{id}/…` twin with its own ETag namespace.
 
+**The two twins are one implementation.** `annotations/service.py` writes the lifecycle once, on
+`DraftUnit` — read-or-seed, create-only, save-at-version, discard, and the locked prelude every write and
+completion starts from (resolve the unit's dataset, refuse the other scope, find the draft or `404`, match
+the ETag or `412`). `ImageDrafts` and `SampleDrafts` supply only what genuinely differs: how the unit is
+found, what its seed is, which frame a document must match, and which table holds it. Completion stays
+per unit, because one image with imported-mask provenance and one rendering fanned out to every image of
+a sample are different operations that share only that prelude. The routes in
+`api/routers/annotations.py` read the precondition headers, call the service and set `ETag`; every
+refusal below them is a domain error (the handbook's [overview](README.md)).
+
 Migration 016 deleted the drafts the previous design left behind, when opening the editor created one and
 completing one recreated it. Its `version = 1` predicate meant "never saved" only under *that* write path
 and is never valid again — which is why `count_open_image_drafts` counts rows with no predicate at all.
@@ -145,7 +155,8 @@ The mask endpoint verifies both its expected app-owned path and digest before se
 every image's own revision path, returning the list. The `mask_sha256` is therefore identical across the
 fan-out, which is what makes "these channels carry the same truth" checkable rather than merely intended;
 each image keeps its own `revision_no`, so one with earlier image-scoped history continues counting from
-where it stopped. Any failure removes every file it had written.
+where it stopped. Any failure removes every file it had written: each one is registered on the write
+transaction as it lands and taken back if the transaction rolls back ([repository](repository.md)).
 
 Dataset deletion includes annotation directories and rows in its previewed app-owned cascade. The imported
 image and mask trees are outside that inventory and survive unchanged.

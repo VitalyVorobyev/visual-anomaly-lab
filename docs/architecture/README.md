@@ -192,12 +192,20 @@ a server-visible absolute directory path.
 | `splits` | `/api/splits` | create/list seeded or imported splits, per-subset counts, assignments |
 | `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build, prepared images and guarded revision deletion |
 | `segment_assist` | `/api/segment-assist`, `/api/images/…/segment-assist` | MobileSAM readiness and temporary prompt-guided mask suggestions |
-| `experiments` | `/api/experiments` | model catalogue/schema, search, create/detail/delete, train/infer/export, results and diagnostics |
+| `experiments` | `/api/experiments` | a package of four modules on one prefix: `crud` (model catalogue/schema, search, create/detail/delete), `runs` (train/infer/export, re-evaluate), `results` (rankings, thresholds, curves, previews, artifacts) and `diagnostics`; `views` holds their shared read models |
 | `compare` | `/api/compare` | compatible multi-run metrics, operating points and per-sample agreement |
 | `jobs` | `/api/jobs`, `/ws/jobs/{id}` | status, cancel, metrics, log tail and live progress for generic background work |
 | `images` | `/api/images` | thumb / preview / full pixel delivery, prepared previews and anomaly-map PNG rendering |
 | `model_assets` | `/api/model-assets` | licensed asset catalogue, verified install/external source and app-owned removal |
 | `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
+
+**Routers present; services decide.** The two routers with the most orchestration hand it to a service
+beside the code they orchestrate: `annotations/service.py` (drafts, revisions, scope, interchange) and
+`experiments/service.py` (creation, preconditions for resume/export/diagnosis, deletion ordering, the
+resident and queue guards, raw values and stored diagnostics). A route reads its parameters and headers,
+calls one service function and shapes the answer — status, `ETag`, bytes. Transactions, file writes and
+every refusal live in the service. The other routers are thin enough that the split would add a file
+without removing a decision.
 
 **Refusals are domain errors, mapped once.** Code below the routers says *no* by raising a subclass of
 `anomaly_lab.errors.DomainError` — `NotFoundError`, `ConflictError`, `StaleVersionError`,

@@ -10,6 +10,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from anomaly_lab.config import Settings
@@ -216,6 +217,52 @@ def test_one_completion_writes_one_revision_per_channel_with_identical_bytes(
         )
     assert sorted(resolved) == sorted(images_by_sample[sample_id])
     assert {truth.kind for truth in resolved.values()} == {"revision"}
+
+
+def test_a_completion_that_fails_part_way_leaves_no_file_and_keeps_the_draft(
+    client: TestClient, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The fan-out writes a file per channel before the rows that point at them.
+
+    If the second row fails, the transaction rolls back and every file already written is
+    taken back with it: an orphaned `revision-1.png` would otherwise be named again by the
+    next completion, and the draft that was never consumed must still be there to retry.
+    """
+    dataset_id, sample_ids, images_by_sample = multishot_dataset(settings, tmp_path / "src")
+    _use_sample_scope(client, dataset_id)
+    sample_id = sample_ids[0]
+    draft, etag = _open_sample_draft(client, sample_id)
+    saved = client.put(
+        f"/api/samples/{sample_id}/annotations/draft",
+        json=_triangle(draft["document"]),
+        headers={"If-Match": etag},
+    )
+    assert saved.status_code == 200, saved.text
+
+    real = annotations_repo.insert_shared_revision
+    calls: list[int] = []
+
+    def fail_on_second(*args: Any, **kwargs: Any) -> Any:
+        calls.append(1)
+        if len(calls) == 2:
+            raise RuntimeError("the second channel's row could not be written")
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(annotations_repo, "insert_shared_revision", fail_on_second)
+    with pytest.raises(RuntimeError, match="second channel"):
+        client.post(
+            f"/api/samples/{sample_id}/annotations/complete",
+            headers={"If-Match": saved.headers["etag"]},
+        )
+
+    for image_id in images_by_sample[sample_id]:
+        directory = settings.annotation_image_dir(image_id)
+        assert not directory.exists() or not any(directory.iterdir())
+    after = client.get(f"/api/samples/{sample_id}/annotations/draft")
+    assert after.json()["persisted"] is True
+    assert after.headers["etag"] == saved.headers["etag"]
+    with connection(settings.db_path) as conn:
+        assert annotations_repo.list_revisions(conn, images_by_sample[sample_id][0]) == []
 
 
 def test_every_channel_exports_the_shared_truth_through_the_image_routes(

@@ -20,9 +20,12 @@ visual-anomaly-lab/
 │   ├── pyproject.toml
 │   ├── uv.lock
 │   ├── src/anomaly_lab/
-│   │   ├── api/                    # FastAPI app factory, routers, websockets, schemas
+│   │   ├── api/                    # FastAPI app factory, routers, websockets; errors.py maps refusals to statuses
+│   │   ├── annotations/service.py  # draft lifecycle (one implementation, two units), revisions, scope
+│   │   ├── experiments/            # service.py (create, preconditions, deletion), train/infer/diagnose work
+│   │   ├── errors.py               # domain refusals: NotFound, Conflict, StaleVersion, InvalidInput, …
 │   │   ├── domain/                 # pydantic entities, enums — no I/O
-│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection, repositories
+│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection + transaction(), repositories
 │   │   ├── datasets/               # import adapters, manifest model, scan/verify
 │   │   ├── media/                  # BMP decode, thumbnail/preview cache, map rendering
 │   │   ├── models/                 # base.py (interface), classical/, anomalib_adapters/, registry
