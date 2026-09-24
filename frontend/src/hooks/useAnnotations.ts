@@ -18,6 +18,7 @@ import type {
   AnnotationDocument,
   AnnotationDocumentInput,
   AnnotationLabel,
+  AnnotationLabelCreate,
   AnnotationRevision,
   AnnotationScope,
   AnnotationScopeState,
@@ -86,6 +87,27 @@ export function useUpdateAnnotationLabel(datasetId: number) {
           body: { name: label.name, color: label.color, position: label.position },
         }),
         "the annotation label",
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annotationLabels(datasetId) });
+    },
+  });
+}
+
+/**
+ * Add a class. The key is the stable identity a shape stores, so it is chosen once, here, and a
+ * later rename changes only the name a reader sees.
+ */
+export function useCreateAnnotationLabel(datasetId: number) {
+  const queryClient = useQueryClient();
+  return useMutation<AnnotationLabel, Error, AnnotationLabelCreate>({
+    mutationFn: async (body) =>
+      unwrap(
+        await api.POST("/api/datasets/{dataset_id}/annotation-labels", {
+          params: { path: { dataset_id: datasetId } },
+          body,
+        }),
+        "the new annotation label",
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.annotationLabels(datasetId) });

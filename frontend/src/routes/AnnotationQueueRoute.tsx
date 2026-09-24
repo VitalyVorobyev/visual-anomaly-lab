@@ -27,6 +27,7 @@ import {
 import { useAnnotationScope, useSetAnnotationScope } from "../hooks/useAnnotations";
 import { useDataset, useSamples } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
+import { ClassManager } from "./dataset/ClassManager";
 
 const QUEUE_PAGE = 120;
 
@@ -120,6 +121,8 @@ export function AnnotationQueueRoute() {
             )}
           </span>
         </div>
+
+        <ClassManager datasetId={datasetId} />
 
         {setScope.error && <ErrorBox>{setScope.error.message}</ErrorBox>}
         {perSample && multiChannel && (
