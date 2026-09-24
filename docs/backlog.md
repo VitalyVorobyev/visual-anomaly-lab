@@ -57,11 +57,6 @@ Planned in ADR-0039, and after few-shot segmentation.
 - [ ] **Measure compact source-map persistence** (M): projected float32 maps consume about 1.23 GB
       for a 200-image VisA test set. Compare compressed source maps against prepared-frame map plus
       pinned-transform projection, preserving constant-memory evaluation and exact overlay semantics.
-- [ ] **Stratify region-profile previews by channel** (S): 24 images evenly spaced across a
-      3-channel grouped dataset can resonate with the channel interleave and sample only two of the
-      three channels — a preview that looked clean while the unsampled channel's crops diverged by
-      35 % was how the first grouped crop profile shipped wrong. Spread the preview budget across
-      channels when the dataset has them.
 - [ ] **Per-sample crop harmonisation for grouped datasets** (M): extractors run per image, so the
       channels of one sample can crop differently and misregister every per-position channel fusion.
       `center_crop` sidesteps this by being content-free; a content-based extractor needs a
