@@ -53,6 +53,7 @@ export type AnnotationState = Schemas["AnnotationState"];
 export type AnnotationDocument = Schemas["AnnotationDocument-Output"];
 export type AnnotationDocumentInput = Schemas["AnnotationDocument-Input"];
 export type AnnotationLabel = Schemas["AnnotationLabel"];
+export type AnnotationLabelCreate = Schemas["AnnotationLabelCreate"];
 export type AnnotationRevision = Schemas["AnnotationRevision"];
 export type AnnotationPoint = Schemas["AnnotationPoint"];
 export type PolygonShape = Schemas["PolygonShape-Output"];

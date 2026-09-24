@@ -22,7 +22,10 @@ with a dashed outline so an eraser layer never looks like a brush layer, and the
 resolves its colours from the design tokens at runtime — Konva cannot take a class name, so
 `scenePalette.ts` reads `styles.css` and repaints on a theme change rather than hardcoding one
 palette (ADR-0021). Mask weight is a persisted per-reader preference; the label colour is dataset
-taxonomy and is edited through the existing `PUT .../annotation-labels/{key}`.
+taxonomy. The Annotate tab's **Classes** section (`routes/dataset/ClassManager.tsx`) adds a class —
+its key derived once from the name, unique within the dataset, and never changed — and renames,
+recolours and reorders one through `PUT .../annotation-labels/{key}`. There is no delete, because a
+class that regions still name cannot simply disappear.
 
 The seeded `defect` class is magenta (`#c026d3`), not red. A mask sits over the photograph at partial
 opacity for minutes at a time while somebody works: red reads as an error state, and over a metal part
@@ -332,8 +335,7 @@ dropdowns that set them for the *next* shape, and both earned nothing. The opera
 control already in Selection, on a shape that is already selected — every path that mints one selects
 it — so picking Subtract before drawing and flipping to Subtract after drawing produce the same
 document, and only one of them needs a permanent control. The class had exactly one option on every
-dataset this application can produce: the taxonomy is a real table and the API can add to it, but
-nothing in the UI does. So the class picker appears only where there is something to choose
+dataset this application could produce until the Classes section existed. So the class picker appears only where there is something to choose
 *between*, in the inspector and on a selected region alike — label count is data in the way channel
 count is — and what is left of that section is headed for the tool in hand: brush size while a brush
 is held, the vertex readout while a polygon is open. With none of them to show, the section is not
