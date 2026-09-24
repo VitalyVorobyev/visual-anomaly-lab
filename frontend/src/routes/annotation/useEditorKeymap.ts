@@ -63,6 +63,7 @@ export function editorKeyActions({
   canvas,
   applyLabel,
   complete,
+  openShortcuts,
 }: {
   session: DraftSession;
   commands: DocumentCommands;
@@ -73,6 +74,7 @@ export function editorKeyActions({
   canvas: RefObject<AnnotationCanvasHandle | null>;
   applyLabel: (label: Label) => void;
   complete: () => Promise<void>;
+  openShortcuts: () => void;
 }): EditorKeyActions {
   const { pendingPoints, selectedId } = commands;
   const { setTool, brushSize, setBrushSize } = workspace;
@@ -140,6 +142,10 @@ export function editorKeyActions({
     "label.normal": () => applyLabel("normal"),
     "label.defect": () => applyLabel("defect"),
     "label.unlabeled": () => applyLabel("unlabeled"),
+    shortcuts: (event) => {
+      event.preventDefault();
+      openShortcuts();
+    },
   };
 }
 

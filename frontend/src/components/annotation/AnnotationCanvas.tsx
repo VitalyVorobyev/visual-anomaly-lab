@@ -38,7 +38,9 @@ import type {
   AssistPoint,
   BitmapShape,
 } from "../../api/client";
-import { tintedMask } from "../../api/annotationBitmap";
+import { formatScale } from "@vitavision/lab-ui";
+
+import { decodeShapeMask, imageMask, tintedMask } from "../../api/annotationBitmap";
 import { imageUrl, sourceMaskUrl } from "../../api/imageUrl";
 import {
   type CanvasView,
@@ -47,10 +49,14 @@ import {
   clamp,
   fitScale,
   isFitView,
+  smoothAt,
   toSource,
+  toSourceUnclamped,
   viewOrigin,
   zoomAbout,
+  zoomBy,
 } from "./canvasView";
+import { readPixel } from "./pixelReadout";
 import { canvasBindingFor } from "./editorKeys";
 import { LiveLayer } from "./LiveLayer";
 import { createLiveStore, useLive, type LiveStore } from "./liveStore";
@@ -65,6 +71,8 @@ export { INITIAL_CANVAS_VIEW, type CanvasView } from "./canvasView";
 export interface AnnotationCanvasHandle {
   fit: () => void;
   actualPixels: () => void;
+  /** Zoom about the centre of the pane, within the pane's zoom range. */
+  zoomBy: (factor: number) => void;
 }
 
 interface Props {
@@ -191,8 +199,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       snapReady: false,
       keyboardPoint: { x: document.image_width / 2, y: document.image_height / 2 },
       keyboardFocused: false,
+      pointer: null,
     }),
   );
+  const masks = useDecodedMasks(document);
   const source = useHtmlImage(imageUrl(imageId, "full"));
   const overlay = useHtmlImage(
     overlayImageId === undefined ? undefined : imageUrl(overlayImageId, "full"),
@@ -235,6 +245,16 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       return null;
     }
   }, [baseMaskSource, document.image_width, document.image_height, baseColor]);
+  // The same import as one byte per pixel, for the readout. Decoded once per base, not per move.
+  const baseValues = useMemo(() => {
+    if (baseMaskSource === null) return null;
+    try {
+      return imageMask(baseMaskSource, document.image_width, document.image_height);
+    } catch {
+      return null;
+    }
+  }, [baseMaskSource, document.image_width, document.image_height]);
+  const brushing = editable && (tool === "brush" || tool === "eraser");
 
   const context: ToolContext = { pendingPoints, scale, assistMode };
 
@@ -248,7 +268,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     onView(actualPixelsView(size, image));
   };
 
-  useImperativeHandle(forwardedRef, () => ({ fit: fitView, actualPixels }));
+  useImperativeHandle(forwardedRef, () => ({
+    fit: fitView,
+    actualPixels,
+    zoomBy: (factor: number) => onView(zoomBy(view, factor, size, image)),
+  }));
 
   const toggleFit = () => {
     if (isFitView(view) && previousView.current) {
@@ -314,6 +338,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       if (!pan.moved && Math.hypot(pointer.x - pan.x, pointer.y - pan.y) > 2) pan.moved = true;
     }
     const point = toSource(pointer, origin, scale, image);
+    store.set({ pointer: toSourceUnclamped(pointer, origin, scale) });
     const live = store.get();
     if (live.gesture) {
       const step = toolModule.move(context, live.gesture, point);
@@ -345,6 +370,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     const pointer = pointerPosition();
     if (!pointer) return;
     onView(zoomAbout(view, event.evt.deltaY > 0 ? 0.9 : 1.1, pointer, size, image));
+    // The view moved under a still pointer, so what it is over has changed.
+    store.set({ pointer: toSourceUnclamped(pointer, origin, scale) });
   };
 
   const onCanvasKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -403,7 +430,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         onMouseMove={onStageMove}
         onTouchMove={onStageMove}
         onMouseUp={finishGesture}
-        onMouseLeave={finishGesture}
+        onMouseLeave={() => {
+          finishGesture();
+          store.set({ pointer: null });
+        }}
         onTouchEnd={finishGesture}
         onWheel={onWheel}
         onContextMenu={(event) => event.evt.preventDefault()}
@@ -411,9 +441,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         className={
           grabbing
             ? "cursor-grabbing"
-            : toolModule.cursor === "crosshair"
-              ? "cursor-crosshair"
-              : "cursor-grab"
+            : brushing
+              ? // The brush's own footprint is the cursor (`LiveLayer`); a crosshair on top of
+                // it would be a second pointer claiming a different size.
+                "cursor-none"
+              : toolModule.cursor === "crosshair"
+                ? "cursor-crosshair"
+                : "cursor-grab"
         }
       >
         <SceneLayer
@@ -432,7 +466,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
           originX={origin.x}
           originY={origin.y}
           scale={scale}
-          smoothing
+          smoothing={smoothAt(scale)}
           onSelect={onSelect}
           onMoveShape={onMoveShape}
           onMovePoint={onMovePoint}
@@ -445,6 +479,7 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
           pendingPoints={pendingPoints}
           assistPoints={assistPoints}
           assistBox={assistBox}
+          brushCursor={brushing && !grabbing}
           originX={origin.x}
           originY={origin.y}
           scale={scale}
@@ -456,9 +491,98 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         </div>
       )}
       <KeyboardReadout store={store} />
+      <PixelReadout
+        store={store}
+        document={document}
+        masks={masks}
+        base={baseValues}
+        scale={scale}
+        fitted={isFitView(view)}
+      />
     </div>
   );
 });
+
+/**
+ * Every bitmap region's crop as one byte per pixel, keyed by its PNG, for the pixel readout.
+ *
+ * Decoded when a region appears or changes, never per pointer move; a region whose PNG is
+ * unchanged keeps its decode, and one that left the document is dropped.
+ */
+function useDecodedMasks(document: AnnotationDocument): ReadonlyMap<string, Uint8Array> {
+  const [masks, setMasks] = useState<ReadonlyMap<string, Uint8Array>>(() => new Map());
+  useEffect(() => {
+    let cancelled = false;
+    const bitmaps = document.shapes.filter((shape) => shape.kind === "bitmap");
+    const wanted = new Set(bitmaps.map((shape) => shape.png_base64));
+    const missing = bitmaps.filter((shape) => !masks.has(shape.png_base64));
+    const stale = [...masks.keys()].some((key) => !wanted.has(key));
+    if (missing.length === 0 && !stale) return;
+    void Promise.all(
+      missing.map(async (shape) => {
+        try {
+          return [shape.png_base64, await decodeShapeMask(shape)] as const;
+        } catch {
+          // An undecodable region reads as outside; the scene says the same by not drawing it.
+          return null;
+        }
+      }),
+    ).then((decoded) => {
+      if (cancelled) return;
+      const next = new Map([...masks].filter(([key]) => wanted.has(key)));
+      for (const entry of decoded) if (entry) next.set(entry[0], entry[1]);
+      setMasks(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // `masks` is read, not watched: this runs when the document changes, and the decode it
+    // starts is what changes `masks`.
+  }, [document.shapes]);
+  return masks;
+}
+
+/**
+ * The pixel under the pointer, the mask value the document resolves to there, and the zoom as
+ * screen pixels per source pixel — `100%` is 1:1, not fit.
+ */
+function PixelReadout({
+  store,
+  document,
+  masks,
+  base,
+  scale,
+  fitted,
+}: {
+  store: LiveStore;
+  document: AnnotationDocument;
+  masks: ReadonlyMap<string, Uint8Array>;
+  base: Uint8Array | null;
+  scale: number;
+  fitted: boolean;
+}) {
+  const pointer = useLive(store, (state) => state.pointer);
+  const reading = pointer ? readPixel(document, pointer, masks, base) : null;
+  return (
+    <div
+      className="pointer-events-none absolute bottom-3 left-3 rounded-control border border-line bg-surface/90 px-2 py-1 font-mono text-[10px] text-fg-muted shadow-panel backdrop-blur-sm"
+      aria-hidden
+    >
+      {reading && (
+        <>
+          <span className="text-fg">
+            {reading.x}, {reading.y}
+          </span>
+          {" · mask "}
+          <span className={reading.value ? "text-signal" : undefined}>{reading.value}</span>
+          {reading.region !== null && ` · region ${reading.region}`}
+          {" · "}
+        </>
+      )}
+      {fitted ? `Fit ${formatScale(scale)}` : formatScale(scale)}
+    </div>
+  );
+}
 
 /** Where the keyboard cursor is, while the canvas has focus. */
 function KeyboardReadout({ store }: { store: LiveStore }) {

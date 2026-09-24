@@ -36,7 +36,8 @@ export type EditorCommand =
   | "view.actual"
   | "label.normal"
   | "label.defect"
-  | "label.unlabeled";
+  | "label.unlabeled"
+  | "shortcuts";
 
 export type CanvasCommand = "cursor.move" | "tool.apply" | "polygon.close";
 
@@ -128,6 +129,7 @@ export const EDITOR_BINDINGS: readonly EditorBinding[] = [
   { scope: "window", command: "regions.toggle", keys: ["H"], description: "Hide or show the regions; hold to peek", group: "View", match: bare("h"), hold: true },
   { scope: "window", command: "view.fit", keys: ["0"], description: "Fit the image", group: "View", match: bare("0") },
   { scope: "window", command: "view.actual", keys: ["1"], description: "Actual pixels (1:1)", group: "View", match: bare("1") },
+  { scope: "window", command: "shortcuts", keys: ["?"], description: "This list", group: "View", match: bare("?") },
 
   { scope: "window", command: "label.normal", keys: ["N"], description: "Label the sample normal", group: "Label", match: bare("n") },
   { scope: "window", command: "label.defect", keys: ["D"], description: "Label the sample defect", group: "Label", match: bare("d") },
@@ -161,6 +163,12 @@ export const CANVAS_BINDINGS = EDITOR_BINDINGS.filter(
 export function windowBindingFor(event: KeyLike): WindowBinding | undefined {
   if (event.altKey) return undefined;
   return WINDOW_BINDINGS.find((binding) => binding.match(event));
+}
+
+/** A control's name with the keys that reach it, for a tooltip: `Select (V)`, `Undo (⌘Z)`. */
+export function withKeys(label: string, command: EditorCommand): string {
+  const binding = WINDOW_BINDINGS.find((candidate) => candidate.command === command);
+  return binding ? `${label} (${binding.keys.join(" / ")})` : label;
 }
 
 export function canvasBindingFor(event: KeyLike): CanvasBinding | undefined {

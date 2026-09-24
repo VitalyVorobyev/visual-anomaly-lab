@@ -38,6 +38,7 @@ import { QueueFooter } from "./annotation/QueueFooter";
 import { ReferencePane } from "./annotation/ReferencePane";
 import { RegionsSection } from "./annotation/RegionsSection";
 import { SelectionSection } from "./annotation/SelectionSection";
+import { ShortcutSheet } from "./annotation/ShortcutSheet";
 import { ToolRail } from "./annotation/ToolRail";
 import { ToolSection } from "./annotation/ToolSection";
 import { useChannelPanes } from "./annotation/useChannelPanes";
@@ -175,6 +176,7 @@ function EditorReady({
   const { tool, setTool, brushSize, setBrushSize, view, setView, regionsHidden } = workspace;
   const canvasRef = useRef<AnnotationCanvasHandle>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [message, flash] = useFlashMessage();
 
   const session = useDraftSession({
@@ -275,6 +277,7 @@ function EditorReady({
       canvas: canvasRef,
       applyLabel,
       complete: completeCurrent,
+      openShortcuts: () => setShortcutsOpen(true),
     }),
   );
 
@@ -336,10 +339,10 @@ function EditorReady({
           canRedo={commands.canRedo}
           onUndo={commands.undo}
           onRedo={commands.redo}
-          view={view}
-          onView={setView}
+          onZoom={(factor) => canvasRef.current?.zoomBy(factor)}
           onFit={() => canvasRef.current?.fit()}
           onActualPixels={() => canvasRef.current?.actualPixels()}
+          onShortcuts={() => setShortcutsOpen(true)}
         />
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
@@ -443,6 +446,7 @@ function EditorReady({
         pending={session.discard.isPending}
         onDiscard={(force) => void discardCurrent(force)}
       />
+      <ShortcutSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   );
 }

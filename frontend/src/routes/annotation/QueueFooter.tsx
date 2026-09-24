@@ -22,9 +22,9 @@ export function QueueFooter({
         onClick={queue.openPrevious}
         aria-label="Previous image"
       />
+      {/* The few keys a labelling pass leans on; `?` has the rest, from the one list. */}
       <span className="text-center font-mono text-[10px] text-fg-subtle">
-        J/K after save · C completes{multiChannel ? " · [ ] channel" : ""} ·
-        H mask · N/D/U label
+        J/K after save · C completes{multiChannel ? " · [ ] channel" : ""} · ? all keys
       </span>
       <Button
         icon={<ArrowRight />}

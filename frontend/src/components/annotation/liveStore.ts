@@ -20,6 +20,11 @@ export interface LiveState {
   /** The drag in progress. Its arrays are appended in place; `revision` says when. */
   gesture: Gesture | null;
   revision: number;
+  /**
+   * The source coordinate under the mouse, unclamped, or `null` when it is off the stage. The
+   * brush cursor is drawn here and the pixel readout reads it.
+   */
+  pointer: AnnotationPoint | null;
   /** Whether the pointer is over the open ring's first vertex. */
   snapReady: boolean;
   /** The keyboard cursor, in source pixels. */

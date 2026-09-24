@@ -27,6 +27,7 @@ export function LiveLayer({
   pendingPoints,
   assistPoints,
   assistBox,
+  brushCursor,
   originX,
   originY,
   scale,
@@ -38,6 +39,8 @@ export function LiveLayer({
   pendingPoints: AnnotationPoint[];
   assistPoints: AssistPoint[];
   assistBox: AssistBox | null;
+  /** Draw the brush's footprint at the pointer: a brush or eraser in an editable pane. */
+  brushCursor: boolean;
   originX: number;
   originY: number;
   scale: number;
@@ -47,6 +50,7 @@ export function LiveLayer({
   const snapReady = useLive(store, (state) => state.snapReady);
   const keyboardPoint = useLive(store, (state) => state.keyboardPoint);
   const keyboardFocused = useLive(store, (state) => state.keyboardFocused);
+  const pointer = useLive(store, (state) => (brushCursor ? state.pointer : null));
   const trail = gesture?.kind === "stroke" ? gesture.flat : null;
 
   // The trail's array is appended in place, so its identity does not change as it grows and
@@ -165,6 +169,26 @@ export function LiveLayer({
               stroke={palette.frame}
               strokeWidth={1 / scale}
             />
+          </Group>
+        )}
+        {pointer && (
+          // The footprint the stroke will paint: a disc of the brush's *diameter* in source
+          // pixels, the same disc `rasterizeStroke` stamps. Two rings, dark under light, so it
+          // reads over a bright specular surface and a dark field alike; the OS cursor is
+          // hidden while it is shown, so there is one pointer, not two.
+          <Group x={pointer.x} y={pointer.y}>
+            <Circle
+              radius={Math.max(brushSize / 2, 2 / scale)}
+              stroke={palette.canvas}
+              strokeWidth={3 / scale}
+              opacity={0.7}
+            />
+            <Circle
+              radius={Math.max(brushSize / 2, 2 / scale)}
+              stroke={tool === "eraser" ? palette.cut : palette.signal}
+              strokeWidth={1.25 / scale}
+            />
+            <Circle radius={1 / scale} fill={tool === "eraser" ? palette.cut : palette.signal} />
           </Group>
         )}
       </Group>

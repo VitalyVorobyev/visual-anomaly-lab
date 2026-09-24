@@ -9,6 +9,8 @@
  * CSS pixels per source pixel.
  */
 
+import { MAX_SCALE } from "@vitavision/lab-ui";
+
 import type { AnnotationPoint } from "../../api/client";
 
 export interface CanvasView {
@@ -28,9 +30,16 @@ export const INITIAL_CANVAS_VIEW: CanvasView = { zoom: 1, panX: 0, panY: 0 };
 const FIT_MARGIN = 0.94;
 /** How far below fit zooming out may go: room around the part, not a lost image. */
 export const MIN_ZOOM_VS_FIT = 0.25;
-export const MAX_ZOOM_VS_FIT = 12;
-/** One wheel notch. */
-export const WHEEL_STEP = 1.1;
+/**
+ * The most a view may magnify, in screen pixels per *source* pixel — lab-ui's `MAX_SCALE`,
+ * the one ceiling every viewer in the lab family shares.
+ *
+ * It used to be twelve times *fit*, which is a different ceiling for every image: a frame
+ * three times the size of the pane stopped at four screen pixels per source pixel, too coarse
+ * to place a one-pixel correction, while a small crop could be blown up past any use.
+ * Expressed against true 1:1, the same pixel is equally reachable on every dataset.
+ */
+export const MAX_PIXEL_SCALE = MAX_SCALE;
 
 export function fitScale(size: Size, image: Size): number {
   return Math.min(size.width / image.width, size.height / image.height) * FIT_MARGIN;
@@ -44,14 +53,26 @@ export function viewOrigin(size: Size, image: Size, fit: number, view: CanvasVie
   };
 }
 
-/** The `zoom` range this pane allows, as `[min, max]` multiples of fit. */
-export function zoomRange(_fit: number): [number, number] {
-  return [MIN_ZOOM_VS_FIT, MAX_ZOOM_VS_FIT];
+/**
+ * The `zoom` range this pane allows, as `[min, max]` multiples of fit. The ceiling is
+ * `MAX_PIXEL_SCALE` source-to-screen, never below fit itself.
+ */
+export function zoomRange(fit: number): [number, number] {
+  return [MIN_ZOOM_VS_FIT, Math.max(1, MAX_PIXEL_SCALE / fit)];
 }
 
 export function clampZoom(zoom: number, fit: number): number {
   const [min, max] = zoomRange(fit);
   return clamp(zoom, min, max);
+}
+
+/** The source coordinate under a screen point, unclamped: the pointer may be off the frame. */
+export function toSourceUnclamped(
+  pointer: AnnotationPoint,
+  origin: AnnotationPoint,
+  scale: number,
+): AnnotationPoint {
+  return { x: (pointer.x - origin.x) / scale, y: (pointer.y - origin.y) / scale };
 }
 
 /** The source pixel under a screen point, clamped to the frame. */
@@ -87,6 +108,20 @@ export function zoomAbout(
     panX: anchor.x - before.x * nextScale - fitOrigin.x,
     panY: anchor.y - before.y * nextScale - fitOrigin.y,
   };
+}
+
+/** `zoomAbout` the centre of the pane: the rail's zoom buttons, which have no pointer. */
+export function zoomBy(view: CanvasView, factor: number, size: Size, image: Size): CanvasView {
+  return zoomAbout(view, factor, { x: size.width / 2, y: size.height / 2 }, size, image);
+}
+
+/**
+ * Whether the photograph should be resampled smoothly at this scale. Above 1:1 a source pixel
+ * covers several screen pixels, and smoothing would blur exactly the edge being traced — so it
+ * is drawn as the square it is.
+ */
+export function smoothAt(scale: number): boolean {
+  return scale <= 1;
 }
 
 /** One source pixel to one screen pixel, centred. */

@@ -1,8 +1,12 @@
-/** The narrow left rail: tools, history and view. Every button names its key. */
+/**
+ * The narrow left rail: tools, history, view and the shortcut sheet. Every button names its
+ * key, read from `EDITOR_BINDINGS` so a tooltip cannot promise a key the keymap does not bind.
+ */
 
 import {
   Brush,
   Eraser,
+  Keyboard,
   Maximize2,
   MousePointer2,
   Redo2,
@@ -14,16 +18,20 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { CanvasView, EditorTool } from "../../components/annotation/AnnotationCanvas";
+import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import { type EditorCommand, withKeys } from "../../components/annotation/editorKeys";
 import { Tooltip, cn, focusRing } from "@vitavision/lab-ui";
 
-const TOOLS: { tool: EditorTool; icon: ReactNode; label: string }[] = [
-  { tool: "select", icon: <MousePointer2 />, label: "Select (V)" },
-  { tool: "polygon", icon: <Shapes />, label: "Polygon (P)" },
-  { tool: "brush", icon: <Brush />, label: "Brush (B)" },
-  { tool: "eraser", icon: <Eraser />, label: "Eraser (E)" },
-  { tool: "assist", icon: <WandSparkles />, label: "Contour assist (A)" },
+const TOOLS: { tool: EditorTool; command: EditorCommand; icon: ReactNode; label: string }[] = [
+  { tool: "select", command: "tool.select", icon: <MousePointer2 />, label: "Select" },
+  { tool: "polygon", command: "tool.polygon", icon: <Shapes />, label: "Polygon" },
+  { tool: "brush", command: "tool.brush", icon: <Brush />, label: "Brush" },
+  { tool: "eraser", command: "tool.eraser", icon: <Eraser />, label: "Eraser" },
+  { tool: "assist", command: "tool.assist", icon: <WandSparkles />, label: "Contour assist" },
 ];
+
+/** One rail step. The wheel's is finer; a button press should visibly move. */
+const ZOOM_STEP = 1.25;
 
 export function ToolRail({
   tool,
@@ -32,10 +40,10 @@ export function ToolRail({
   canRedo,
   onUndo,
   onRedo,
-  view,
-  onView,
+  onZoom,
   onFit,
   onActualPixels,
+  onShortcuts,
 }: {
   tool: EditorTool;
   onTool: (tool: EditorTool) => void;
@@ -43,10 +51,11 @@ export function ToolRail({
   canRedo: boolean;
   onUndo: () => void;
   onRedo: () => void;
-  view: CanvasView;
-  onView: (view: CanvasView) => void;
+  /** Zoom about the pane's centre by `factor`; the canvas owns the range. */
+  onZoom: (factor: number) => void;
   onFit: () => void;
   onActualPixels: () => void;
+  onShortcuts: () => void;
 }) {
   return (
     <aside
@@ -57,26 +66,29 @@ export function ToolRail({
         <ToolButton
           key={item.tool}
           icon={item.icon}
-          label={item.label}
+          label={withKeys(item.label, item.command)}
           active={tool === item.tool}
           onClick={() => onTool(item.tool)}
         />
       ))}
       <span className="my-1 h-px w-6 bg-line" />
-      <ToolButton icon={<Undo2 />} label="Undo (⌘Z)" disabled={!canUndo} onClick={onUndo} />
-      <ToolButton icon={<Redo2 />} label="Redo (⇧⌘Z)" disabled={!canRedo} onClick={onRedo} />
+      <ToolButton icon={<Undo2 />} label={withKeys("Undo", "undo")} disabled={!canUndo} onClick={onUndo} />
+      <ToolButton icon={<Redo2 />} label={withKeys("Redo", "redo")} disabled={!canRedo} onClick={onRedo} />
       <span className="my-1 h-px w-6 bg-line" />
-      <ToolButton icon={<ZoomIn />} label="Zoom in" onClick={() => onView({ ...view, zoom: Math.min(12, view.zoom * 1.25) })} />
-      <ToolButton icon={<ZoomOut />} label="Zoom out" onClick={() => onView({ ...view, zoom: Math.max(0.25, view.zoom / 1.25) })} />
-      <ToolButton icon={<Maximize2 />} label="Fit image (0)" onClick={onFit} />
+      <ToolButton icon={<ZoomIn />} label="Zoom in" onClick={() => onZoom(ZOOM_STEP)} />
+      <ToolButton icon={<ZoomOut />} label="Zoom out" onClick={() => onZoom(1 / ZOOM_STEP)} />
+      <ToolButton icon={<Maximize2 />} label={withKeys("Fit image", "view.fit")} onClick={onFit} />
       <ToolButton
         icon={<span className="font-mono text-[9px] font-semibold">1:1</span>}
-        label="Actual pixels (1)"
+        label={withKeys("Actual pixels", "view.actual")}
         onClick={onActualPixels}
       />
-      <span className="mt-auto px-1 text-center font-mono text-[9px] leading-3 text-fg-subtle">
-        {view.zoom === 1 ? "Fit" : `${Math.round(view.zoom * 100)}% fit`}
-      </span>
+      <span className="mt-auto" />
+      <ToolButton
+        icon={<Keyboard />}
+        label={withKeys("Keyboard shortcuts", "shortcuts")}
+        onClick={onShortcuts}
+      />
     </aside>
   );
 }
