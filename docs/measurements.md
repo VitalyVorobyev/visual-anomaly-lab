@@ -293,3 +293,36 @@ Few-shot segmentation). VisA
 defects are also a hard target for a method built for objects, which is why a cross-domain few-shot
 dataset is the next gate.
 
+
+## Supervised segmentation — predeclared, not yet run
+
+The first supervised segmentation gate (ADR-0039), predeclared below before it runs.
+`scripts/semantic-public-gate.py`.
+
+**Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
+divide. The dataset is read as a semantic segmentation benchmark of one class, `defect`: VisA's pixel
+masks are the imported ground truth a supervised run reads through its label targets, and each normal
+sample answers with an empty map, exactly as the few-shot gate reads them. For each class, a
+`class_stratified` split at its shipped defaults (70 % train, stratified by class signature) is drawn
+under seeds {0, 1, 2} over all samples — 1 000 or 1 004 normals and 100 defects, so about 70 defects and
+700 normals train and 30 and 300 test. Two methods run at their shipped defaults on the same pixels, with
+the method seed equal to the split seed where the method has one: `color_classifier` (the floor; it
+draws nothing at random) and `dino_linear_seg` (DINOv2 ViT-B/14, last block). That is 12 runs, one child
+process each, scored on the test subset.
+
+**Reported.**
+- Per method and class, as a mean over seeds with the spread across seeds: mean IoU, the background's IoU,
+  pixel accuracy, mean class accuracy, frequency-weighted IoU, ms per image and seconds to fit.
+- Per-sample outcomes of the test subset (hit, low IoU, miss for defect samples; correct absence or false
+  presence for normal ones), pooled over seeds.
+
+**Decision rule, fixed before the run.** The primary number is test mean IoU as the evaluator defines it —
+over the annotation classes, background excluded, so here the IoU of `defect` — averaged over the three
+seeds, per class.
+- `dino_linear_seg` leaves experimental (`supported`) if it beats `color_classifier` by at least 0.05 on
+  the primary **on both classes**. Otherwise it stays experimental.
+- The margin is absolute, not relative, because the floor may sit near zero, where any ratio is large. It
+  is 0.05 rather than the few-shot gate's 0.02 because one class and 30 test defects make a seed's draw
+  move IoU by more; and it must hold on both classes because the few-shot gate's lead came from one class
+  alone.
+- `color_classifier` is the floor and stays experimental whatever the result.
