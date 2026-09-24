@@ -291,9 +291,10 @@ do with patch features do not also differ in how they got them.
 | `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
 | `proto_seg` | few-shot: debiased prototype bank / probe | fit | no | no | no | mps |
 | `color_classifier` | segmentation: per-class colour Gaussians | fit | no | no | no | cpu |
+| `dino_linear_seg` | segmentation: softmax head on frozen DINO | yes | no | no | no | mps |
 
 `color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone, `color_classifier`
-declares `semantic_segmentation` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
+and `dino_linear_seg` declare `semantic_segmentation` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -471,6 +472,36 @@ score.
 - A class with no training pixel is not modelled, never predicted, and named in a warning. It refuses to
   fit without label targets, or when the training images hold no pixel of any class.
 - ONNX: none.
+
+### `dino_linear_seg`
+
+The first deep supervised segmentation method (ADR-0039): a softmax classifier over background and the
+pinned classes — a 1x1 convolution on the patch grid — on the shared frozen encoding path, fitted through
+`label_targets`. It writes the label map, the probability of anything but background as its map, and the
+foreground-share score, like `color_classifier`.
+
+- **Trained at pixels, predicted at pixels.** The head is linear, so the logits of an interpolated
+  feature are the interpolated logits. A sampled pixel's training feature is the patch grid interpolated
+  at that pixel (`pixel_features`, which reproduces `refine.upsample` exactly — the torch-free test pins
+  it), and prediction upsamples the grid's logits bilinearly before the argmax. The loss is taken on the
+  function the label map is drawn from, and a pixel is never simply given its patch's label.
+- **Bounded before encoding.** `plan_pixels` divides `max_training_pixels` (131 072) among the training
+  images, at most `pixels_per_image` (1 024) labelled pixels each, evenly spaced in raster order; images
+  are dropped, evenly spaced, only when there are more of them than the total, since each keeps a pixel; the plan and its float32 footprint are logged, and a
+  plan above 4 GiB is refused naming the knobs. `IGNORE_INDEX` pixels are never sampled, and only the
+  chosen images are encoded.
+- **The head fits on the CPU** with AdamW (`learning_rate` 1e-3, `weight_decay` 1e-4) for `epochs` (10)
+  over shuffled minibatches of `batch_size` (1 024), with cross-entropy weighted by `class_balancing`:
+  `inverse_frequency` (default) gives every sampled class the same total weight, `none` counts every pixel
+  once. One seeded generator draws the initial weights and the batch order, so nothing depends on torch's
+  global stream; the tests assert the seed in both directions. The per-epoch loss is a metric.
+- `layers` defaults to the last block; `refine` is `bilinear` (the function the head was trained on) or
+  `guided`, which filters each class's probability against the image before the argmax.
+- A class with no sampled pixel is never predicted and is named in a warning. It refuses to fit without
+  label targets, or when the sampled pixels hold no class at all. The encoder is not saved: `save` writes
+  the head (each file whole, then renamed into place) and the encoder's fingerprint, and `load` refuses
+  a different backbone or layer set.
+- **Experimental** until the public segmentation gate in the backlog has run. ONNX: none.
 
 ### `fss_dino`
 

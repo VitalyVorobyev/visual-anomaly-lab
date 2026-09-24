@@ -20,6 +20,11 @@ from enum import StrEnum
 import numpy as np
 from PIL import Image
 
+GUIDED_RADIUS = 4
+"""The guided filter's window half-width, in prepared pixels."""
+GUIDED_EPS = 1e-3
+"""The guided filter's regulariser: how strong an image edge must be to move a transition."""
+
 
 class Refinement(StrEnum):
     BILINEAR = "bilinear"
@@ -71,8 +76,8 @@ def refine(
     image: np.ndarray,
     method: Refinement,
     *,
-    radius: int = 4,
-    eps: float = 1e-3,
+    radius: int = GUIDED_RADIUS,
+    eps: float = GUIDED_EPS,
 ) -> np.ndarray:
     """A patch-grid probability at the resolution of `image` (`(H, W, C)` in `[0, 1]`).
 

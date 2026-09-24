@@ -44,6 +44,10 @@
   "color_classifier": {
    "family": "segmentation colour classifier",
    "maturity": "experimental"
+  },
+  "dino_linear_seg": {
+   "family": "segmentation linear head on frozen DINO",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [
