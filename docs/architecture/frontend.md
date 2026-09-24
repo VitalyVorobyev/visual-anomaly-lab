@@ -206,6 +206,13 @@ Five cross-cutting UI rules follow from the design above:
    strip or radio group, any open dialog, and held modifiers unless the screen opts in — and is unit-tested
    case by case.
 
+The rules that a pattern can recognise — no raw `<table>`, no hex colour or Tailwind ramp step, no bare
+`<select>`, range or checkbox input, no `<details>`, no `<Button>` directly inside a `<Link>`, no `keydown`
+listener outside `useHotkeys` — are held by `frontend/src/uiRules.test.ts`. It is a ratchet rather than a
+ban: the occurrences that remain are listed per file with their count, so a new one fails the suite and so
+does a fixed one whose allowance was not lowered. What a pattern cannot see — hierarchy, states, whether the
+next step is reachable — is the visual pass (`.claude/skills/lab-visual-pass`).
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

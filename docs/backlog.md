@@ -10,7 +10,10 @@ until its output has been reviewed.
 ## Interface
 
 - [ ] **Visual QA in light and dark at 1440×900 and 1024×768** (M): hierarchy, density, contrast,
-      focus, loading/empty/error/disabled states, and no same-axis nested scroll.
+      focus, loading/empty/error/disabled states, and no same-axis nested scroll. The
+      `lab-visual-pass` skill seeds a scratch catalogue from VisA, shoots all eighteen screens in
+      both viewports and themes, and audits nesting, naming and scrollers; what remains is reading
+      the pictures and fixing what they show.
 - [ ] **Move `SampleRoute.tsx` off `ZoomPanCanvas`** (S): the two result viewers are on `ImageStage`
       and the dataset browser's single-sample viewer is the last consumer of the deprecated
       component, so the component cannot leave the app until it moves. It is not distorted today —
