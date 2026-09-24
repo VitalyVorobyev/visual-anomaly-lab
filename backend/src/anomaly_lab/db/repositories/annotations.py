@@ -15,6 +15,7 @@ from anomaly_lab.domain.annotations import (
     AnnotationLabel,
     AnnotationRevision,
     AnnotationSampleDraft,
+    ClassTableEntry,
 )
 from anomaly_lab.domain.entities import AnnotationState, ClassPresence, Label
 from anomaly_lab.errors import ConflictError
@@ -40,6 +41,19 @@ IMAGE_HAS_TRUTH = (
     " OR EXISTS (SELECT 1 FROM mask"
     "            WHERE mask.image_id = image.id AND mask.kind = 'ground_truth'))"
 )
+
+
+@dataclass(frozen=True)
+class ClassMask:
+    """A revision's class-index mask and the class table that gives its indices meaning."""
+
+    path: str
+    sha256: str
+    table: Sequence[ClassTableEntry]
+
+    def columns(self) -> tuple[str, str, str]:
+        table = [entry.model_dump(mode="json") for entry in self.table]
+        return self.path, self.sha256, json.dumps(table, sort_keys=True)
 
 
 @dataclass(frozen=True)
@@ -238,6 +252,7 @@ def insert_revision(
     document_sha256: str,
     mask_path: str,
     mask_sha256: str,
+    class_mask: ClassMask,
 ) -> AnnotationRevision:
     next_no = int(
         conn.execute(
@@ -249,8 +264,9 @@ def insert_revision(
         """
         INSERT INTO annotation_revision
                (image_id, revision_no, document, document_sha256, mask_path, mask_sha256,
-                source_mask_id, source_mask_path, source_mask_sha256)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                source_mask_id, source_mask_path, source_mask_sha256,
+                class_mask_path, class_mask_sha256, class_table)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             draft.image_id,
@@ -262,6 +278,7 @@ def insert_revision(
             draft.source_mask_id,
             draft.source_mask_path,
             draft.source_mask_sha256,
+            *class_mask.columns(),
         ),
     )
     conn.execute(
@@ -374,6 +391,7 @@ def insert_shared_revision(
     document_sha256: str,
     mask_path: str,
     mask_sha256: str,
+    class_mask: ClassMask,
 ) -> AnnotationRevision:
     """Append one image's revision from a sample-scoped completion.
 
@@ -390,10 +408,19 @@ def insert_shared_revision(
     cursor = conn.execute(
         """
         INSERT INTO annotation_revision
-               (image_id, revision_no, document, document_sha256, mask_path, mask_sha256)
-             VALUES (?, ?, ?, ?, ?, ?)
+               (image_id, revision_no, document, document_sha256, mask_path, mask_sha256,
+                class_mask_path, class_mask_sha256, class_table)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (image_id, next_no, document.canonical_json(), document_sha256, mask_path, mask_sha256),
+        (
+            image_id,
+            next_no,
+            document.canonical_json(),
+            document_sha256,
+            mask_path,
+            mask_sha256,
+            *class_mask.columns(),
+        ),
     )
     row = conn.execute(
         "SELECT * FROM annotation_revision WHERE id = ?", (int(cursor.lastrowid or 0),)
@@ -583,6 +610,12 @@ def _classes_drawn(document: str) -> set[str]:
     return drawn
 
 
+def _pinned_areas(class_table: str | None) -> dict[str, int] | None:
+    if class_table is None:
+        return None
+    return {str(entry["key"]): int(entry["pixels"]) for entry in json.loads(class_table)}
+
+
 def class_presence(
     conn: sqlite3.Connection, dataset_id: int, label_key: str
 ) -> dict[int, ClassPresence]:
@@ -595,10 +628,11 @@ def presence_by_class(
 ) -> dict[str, dict[int, ClassPresence]]:
     """Every sample's presence of each class, per ADR-0040, in one pass over the dataset.
 
-    An image's newest completed revision decides it: the class is present when the document
-    draws it, and absent when it does not — but only for a class that existed when the
-    revision was completed. A class created later was never in front of the annotator, so the
-    revision says nothing about it. Without a revision, only the default class has an
+    An image's newest completed revision decides it, and only for a class that existed when
+    it was completed: a class created later was never in front of the annotator. Its pinned
+    class table answers exactly — present when the class has pixels, absent when it has none.
+    A revision older than class tables answers from its document instead: present when it
+    adds a region of the class, absent otherwise. Without a revision, only the default class has an
     answer: an imported ground-truth mask is present, and an image of a sample labelled
     normal is absent. A sample shows the class when any of its images does, and is absent
     only when every one of them is.
@@ -614,6 +648,7 @@ def presence_by_class(
         SELECT image.sample_id AS sample_id,
                sample.label    AS label,
                latest.document AS document,
+               latest.class_table AS class_table,
                latest.completed_at AS completed_at,
                EXISTS (SELECT 1 FROM mask
                         WHERE mask.image_id = image.id
@@ -632,9 +667,17 @@ def presence_by_class(
 
     images: dict[str, dict[int, list[ClassPresence]]] = {key: {} for key in label_keys}
     for row in rows:
+        pinned = _pinned_areas(row["class_table"])
         drawn = None if row["document"] is None else _classes_drawn(str(row["document"]))
         for key in label_keys:
-            if drawn is not None:
+            if pinned is not None:
+                if key not in pinned:
+                    presence = ClassPresence.UNLABELED
+                elif pinned[key] > 0:
+                    presence = ClassPresence.PRESENT
+                else:
+                    presence = ClassPresence.ABSENT
+            elif drawn is not None:
                 if key in drawn:
                     presence = ClassPresence.PRESENT
                 elif created.get(key, "~") <= str(row["completed_at"]):

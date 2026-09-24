@@ -115,8 +115,10 @@ separately from digest coverage.
   provenance, `updated_at`. At most one mutable source-frame document per image; `version` is the
   optimistic-concurrency token exposed as an ETag.
 - **`AnnotationRevision`** — `id`, `image_id`, `revision_no`, `document` (JSON), document and mask SHA-256,
-  `mask_path`, source-mask provenance, `completed_at`. Completion materialises an app-owned binary PNG and
-  appends this row; a trigger makes rows immutable, and they are deleted only with their dataset.
+  `mask_path`, source-mask provenance, `class_mask_path`, `class_mask_sha256`, `class_table` (JSON),
+  `completed_at`. Completion materialises an app-owned binary PNG and a class-index PNG and appends this
+  row; a trigger makes rows immutable, and they are deleted only with their dataset. The three class
+  columns are null on a revision completed before migration 023.
 
 A document's shape list holds `PolygonShape` and `BitmapShape`, both with stable ids, taxonomy keys and
 ordered `add` / `subtract` composition. A bitmap is a cropped binary PNG positioned in source pixels — the

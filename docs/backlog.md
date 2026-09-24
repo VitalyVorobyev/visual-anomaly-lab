@@ -25,9 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Class-index truth** (M): completion writes a class-index PNG beside the binary mask, and
-      the revision pins its class table in a new migration. Presence then reads the rendered class
-      pixels, so a region cut away entirely no longer counts as the class.
 - [ ] **Targets and masks** (M): `TrainContext.targets` as a `TargetProvider` (`None` for
       `anomaly`), mapped into the prepared frame; a task-owned training-set policy in
       `run_train_job`; `InferContext.write_mask` beside `write_map`; a log headline chosen by task.

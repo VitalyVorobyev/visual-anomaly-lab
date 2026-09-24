@@ -66,10 +66,10 @@ application.
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
 - **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it,
   and frozen DINOv3 feature matching segments it in new images, with absence as a first-class
-  answer. The task value, the target class on the experiment, the `manual` and `few_shot` reference
-  splits and per-class coverage are built; no method or evaluator declares the task yet, so a run of it
-  is refused. Still open:
-  - class-index truth;
+  answer. Built so far: the task value, the target class on the experiment, the `manual` and `few_shot`
+  reference splits, per-class coverage, and class-index masks with a pinned class table. No method or
+  evaluator declares the task yet, so a run of it is refused. Still open:
+  - targets reaching `fit`, and predicted masks;
   - a torch-free floor and two DINO methods;
   - an evaluator for masks and presence;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.

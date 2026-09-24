@@ -1823,6 +1823,18 @@ export interface components {
             source_mask_path: string | null;
             /** Source Mask Sha256 */
             source_mask_sha256: string | null;
+            /**
+             * Class Mask Path
+             * @description The class-index PNG: each pixel is a class-table index, 0 is background.
+             */
+            class_mask_path: string | null;
+            /** Class Mask Sha256 */
+            class_mask_sha256: string | null;
+            /**
+             * Class Table
+             * @description Every class the dataset had at completion, with its index and pixel count. Null for a revision completed before class masks were written.
+             */
+            class_table: components["schemas"]["ClassTableEntry"][] | null;
             /** Completed At */
             completed_at: string;
         };
@@ -2190,6 +2202,18 @@ export interface components {
             absent: number;
             /** Unlabeled */
             unlabeled: number;
+        };
+        /**
+         * ClassTableEntry
+         * @description One class as a completed revision pinned it: its index in the class mask, and its area.
+         */
+        ClassTableEntry: {
+            /** Key */
+            key: string;
+            /** Index */
+            index: number;
+            /** Pixels */
+            pixels: number;
         };
         /** CocoAnnotation */
         CocoAnnotation: {

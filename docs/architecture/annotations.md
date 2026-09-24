@@ -26,10 +26,11 @@ read as an error state, and distinct from the teal `signal` selection outline.
 **A class's truth includes its absence** (ADR-0040). `annotations_repo.presence_by_class` answers, per
 sample, whether a class is present, absent or unlabelled:
 
-- An image's newest completed revision decides it. The class is present when the document adds a region
-  of it (or, for `defect`, starts from the source mask), and absent when it does not — for a class that
-  existed when the revision was completed. A class created later is unlabelled there: it was never in
-  front of the annotator.
+- An image's newest completed revision decides it, for the classes that existed when it was completed. A
+  class created later is unlabelled there: it was never in front of the annotator.
+- A revision's pinned class table answers exactly: present when the class has pixels, absent when it has
+  none. A revision completed before class tables existed answers from its document instead: present when
+  it adds a region of the class (or, for `defect`, starts from the source mask).
 - Without a revision, only `defect` has an answer: an imported ground-truth mask is present, and a sample
   labelled normal is absent. Every other class is unlabelled.
 - A sample shows the class when any of its images does, and is absent only when all of them are.
@@ -120,13 +121,21 @@ dimensions are refused (`409`), never rescaled, and one bad target fails the who
 
 ## Completion and storage
 
-Completion renders the base and ordered polygon/bitmap operations to a binary PNG, atomically writes
-`data/annotations/image-<id>/revision-<n>.png`, hashes the canonical document and mask, inserts an
+Completion rasterises the base and the ordered polygon/bitmap operations once (`annotation_render.py`).
+An `add` paints its class's index and a `subtract` clears whatever is there; a `source_mask` base is drawn
+in `defect`. Two PNGs are written atomically from that one canvas:
+
+- `data/annotations/image-<id>/revision-<n>.png`, the binary mask every anomaly consumer reads, which is
+  exactly `index > 0`;
+- `revision-<n>.classes.png`, the 8-bit class-index mask, with 0 as background.
+
+The revision pins `class_table`: every class the dataset had at completion, in taxonomy order, with its
+index (from 1) and pixel count. Completion then hashes the canonical document and both masks, inserts an
 append-only revision and removes the draft. A database trigger rejects `UPDATE` on revisions. The mask
 endpoint verifies its expected app-owned path and digest before serving immutable bytes.
 
-`POST /api/samples/{id}/annotations/complete` renders once and copies the bytes to every image's own
-revision path, so `mask_sha256` is identical across the fan-out and shared truth is checkable. Each image
+`POST /api/samples/{id}/annotations/complete` renders once and copies both files to every image's own
+revision path, so `mask_sha256` and `class_mask_sha256` are identical across the fan-out and shared truth is checkable. Each image
 keeps its own `revision_no`. Every written file is registered on the write transaction and removed if it
 rolls back ([repository](repository.md)).
 
