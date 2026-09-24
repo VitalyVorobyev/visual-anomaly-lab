@@ -1663,7 +1663,9 @@ export interface paths {
          *     The `imported` strategy instead reads the partition out of the manifest the dataset
          *     was committed from, because a benchmark's published number is only comparable against
          *     the benchmark's own partition. `manual` and `few_shot` hold a few-shot task's
-         *     references in `train` and everything else in `test` (ADR-0040).
+         *     references in `train` and everything else in `test` (ADR-0040). `class_stratified`
+         *     draws the samples annotated for every class into `train` and `test`, stratified by the
+         *     classes each shows, for a supervised task (ADR-0039).
          */
         post: operations["create_split_api_splits_post"];
         delete?: never;
@@ -5032,7 +5034,7 @@ export interface components {
              */
             val_defect_fraction: number;
             /**
-             * @description Where unlabelled samples go. They are excluded from every metric but must be scored to appear in the ranked lists. `null` leaves them out of the split.
+             * @description Where unlabelled samples go — for `class_stratified`, samples whose ground truth does not answer for every class. They are excluded from every metric but must be scored to appear in the ranked lists. `null` leaves them out of the split.
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
@@ -5062,6 +5064,17 @@ export interface components {
              * @description For `few_shot` only: how many references to draw.
              */
             shots?: number | null;
+            /**
+             * Train Fraction
+             * @description For `class_stratified` only: share of the annotated samples that train; the rest test. Drawn per class signature, so every mix of classes is represented in both subsets in proportion.
+             * @default 0.7
+             */
+            train_fraction: number;
+            /**
+             * Classes
+             * @description For `class_stratified`: the classes the draw answered for and stratified by — every class of the dataset when the split was drawn. Recorded, not chosen, so the split stays traceable to the taxonomy it was drawn against; ignored by every other strategy.
+             */
+            classes?: string[];
         };
         /**
          * SplitParams
@@ -5089,7 +5102,7 @@ export interface components {
              */
             val_defect_fraction: number;
             /**
-             * @description Where unlabelled samples go. They are excluded from every metric but must be scored to appear in the ranked lists. `null` leaves them out of the split.
+             * @description Where unlabelled samples go — for `class_stratified`, samples whose ground truth does not answer for every class. They are excluded from every metric but must be scored to appear in the ranked lists. `null` leaves them out of the split.
              * @default test
              */
             unlabeled_subset: components["schemas"]["Subset"] | null;
@@ -5119,12 +5132,23 @@ export interface components {
              * @description For `few_shot` only: how many references to draw.
              */
             shots: number | null;
+            /**
+             * Train Fraction
+             * @description For `class_stratified` only: share of the annotated samples that train; the rest test. Drawn per class signature, so every mix of classes is represented in both subsets in proportion.
+             * @default 0.7
+             */
+            train_fraction: number;
+            /**
+             * Classes
+             * @description For `class_stratified`: the classes the draw answered for and stratified by — every class of the dataset when the split was drawn. Recorded, not chosen, so the split stays traceable to the taxonomy it was drawn against; ignored by every other strategy.
+             */
+            classes: string[];
         };
         /**
          * SplitStrategy
          * @enum {string}
          */
-        SplitStrategy: "normal_only_train" | "imported" | "manual" | "few_shot";
+        SplitStrategy: "normal_only_train" | "imported" | "manual" | "few_shot" | "class_stratified";
         /**
          * Subset
          * @enum {string}

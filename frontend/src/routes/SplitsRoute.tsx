@@ -9,7 +9,7 @@
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { Link, useParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
 import type { SplitDetail } from "../api/client";
@@ -33,27 +33,39 @@ import { useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import { EMPTY_BROWSE, writeBrowseState } from "../api/browseState";
 
-type Strategy = "normal_only_train" | "imported" | "few_shot";
+type Strategy = "normal_only_train" | "imported" | "few_shot" | "class_stratified";
+
+const STRATEGIES: Strategy[] = ["normal_only_train", "imported", "few_shot", "class_stratified"];
+
+/** A prerequisite link can name the strategy its task needs, so the form opens on it. */
+function initialStrategy(requested: string | null): Strategy {
+  return STRATEGIES.find((entry) => entry === requested) ?? "normal_only_train";
+}
 
 export function SplitsRoute() {
   const params = useParams();
   const datasetId = Number(params["datasetId"]);
   const queryClient = useQueryClient();
+  const [search] = useSearchParams();
 
   const splits = useSplits(datasetId);
 
   const [name, setName] = useState("default");
   const [seed, setSeed] = useState(0);
-  const [strategy, setStrategy] = useState<Strategy>("normal_only_train");
+  const [strategy, setStrategy] = useState<Strategy>(() =>
+    initialStrategy(search.get("strategy")),
+  );
   const [trainFraction, setTrainFraction] = useState(0.6);
   const [valFraction, setValFraction] = useState(0.2);
   const [valDefectFraction, setValDefectFraction] = useState(0.3);
   const [holdout, setHoldout] = useState(0);
   const [labelKey, setLabelKey] = useState("");
   const [shots, setShots] = useState(5);
+  const [annotatedTrain, setAnnotatedTrain] = useState(0.7);
 
   const drawn = strategy === "normal_only_train";
   const references = strategy === "few_shot";
+  const byClass = strategy === "class_stratified";
   // A class can supply references once some sample shows it (ADR-0040).
   const coverage = useClassCoverage(datasetId);
   const drawable = (coverage.data ?? []).filter((entry) => entry.present > 0);
@@ -76,6 +88,8 @@ export function SplitsRoute() {
               // split's stored params do not imply a holdout was considered.
               holdout_from_train: strategy === "imported" ? holdout : 0,
               ...(references ? { label_key: labelKey, shots } : {}),
+              // Required on the wire, and meaningless for every strategy but `class_stratified`.
+              train_fraction: annotatedTrain,
               // Assigned rather than left out: unlabelled samples are excluded from
               // every metric later, but they have to be scored to appear in the
               // ranked lists.
@@ -113,6 +127,11 @@ export function SplitsRoute() {
                   { value: "normal_only_train", label: "Draw one", note: "normal_only_train" },
                   { value: "imported", label: "Adopt the published one", note: "imported" },
                   { value: "few_shot", label: "Draw references for a class", note: "few_shot" },
+                  {
+                    value: "class_stratified",
+                    label: "Draw annotated samples by class",
+                    note: "class_stratified",
+                  },
                 ]}
               />
             </Field>
@@ -171,6 +190,23 @@ export function SplitsRoute() {
                 </Field>
               </>
             )}
+            {byClass && (
+              <>
+                <Field label="Seed">
+                  <NumberInput
+                    value={seed}
+                    onChange={(event) => setSeed(Number(event.target.value))}
+                  />
+                </Field>
+                <Fraction
+                  label="Annotated samples used for training"
+                  value={annotatedTrain}
+                  onChange={setAnnotatedTrain}
+                  min={0.05}
+                  max={0.95}
+                />
+              </>
+            )}
             {drawn && (
               <>
                 <Field label="Seed">
@@ -217,6 +253,17 @@ export function SplitsRoute() {
                     .
                   </>
                 )}
+              </>
+            ) : byClass ? (
+              <>
+                For a segmentation run, which learns from annotated samples of every class. Only
+                samples whose annotation answers for every class of the dataset are drawn, and they
+                are drawn by the set of classes each one shows, so every mix of classes trains and
+                tests in proportion. Any class that two or more samples show trains; it is tested
+                too, unless every sample showing it is the only one teaching another class — then
+                its test metrics read as a dash. A class only one sample shows goes where the draw
+                puts it. Samples without a full annotation go to test, where they are scored but
+                measured against nothing; there is no validation subset.
               </>
             ) : drawn ? (
               <>
@@ -277,16 +324,20 @@ function Fraction({
   label,
   value,
   onChange,
+  min = 0,
+  max = 1,
 }: {
   label: string;
   value: number;
   onChange: (value: number) => void;
+  min?: number;
+  max?: number;
 }) {
   return (
     <Field as="group" label={label} annotation={value.toFixed(2)}>
       <Slider
-        min={0}
-        max={1}
+        min={min}
+        max={max}
         step={0.05}
         value={value}
         aria-label={label}
@@ -310,7 +361,9 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
               ? `seed ${split.seed} · ${split.params.shots ?? "?"} × ${split.params.label_key ?? "?"}`
               : split.strategy === "manual"
                 ? `${split.params.sample_ids.length} references · manual`
-                : `seed ${split.seed} · ${split.strategy}`}
+                : split.strategy === "class_stratified"
+                  ? `seed ${split.seed} · by ${split.params.classes.length} classes`
+                  : `seed ${split.seed} · ${split.strategy}`}
         </span>
       }
     >
@@ -318,7 +371,7 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
         caption={`Composition of ${split.name}`}
         rows={split.composition}
         rowKey={(row) => row.subset}
-        columns={compositionColumns(datasetId, split.id)}
+        columns={compositionColumns(datasetId, split)}
       />
     </Panel>
   );
@@ -326,7 +379,11 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
 
 type CompositionRow = SplitDetail["composition"][number];
 
-function compositionColumns(datasetId: number, splitId: number): Column<CompositionRow>[] {
+function compositionColumns(datasetId: number, split: SplitDetail): Column<CompositionRow>[] {
+  const splitId = split.id;
+  // Only a split whose train is normals promises no defect there; a split for segmentation
+  // trains on defects on purpose.
+  const normalsTrain = split.strategy === "normal_only_train" || split.strategy === "imported";
   return [
     {
       key: "subset",
@@ -343,7 +400,7 @@ function compositionColumns(datasetId: number, splitId: number): Column<Composit
       numeric: true,
       // A defect here would teach the model that defects are normal.
       cell: (row) =>
-        row.subset === "train" && row.defect === 0 ? (
+        normalsTrain && row.subset === "train" && row.defect === 0 ? (
           <span className="text-normal">0 ✓</span>
         ) : (
           row.defect

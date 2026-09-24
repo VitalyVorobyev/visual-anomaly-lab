@@ -748,6 +748,36 @@ def presence_by_class(
     }
 
 
+def classes_shown_by_sample(
+    conn: sqlite3.Connection, dataset_id: int, label_keys: Sequence[str]
+) -> dict[int, frozenset[str] | None]:
+    """Which of `label_keys` each sample shows, or `None` when its truth leaves one unanswered.
+
+    A sample answers only when every one of its images answers for every class — the rule
+    `class_truth.resolve_label_truth` applies to one image — so every image of an answered
+    sample is one a supervised run can fit on. What it shows is the union over its images.
+    """
+    created = label_created_at(conn, dataset_id)
+    rows = conn.execute(
+        f"{_TRUTH_ROWS} WHERE sample.dataset_id = ? ORDER BY image.sample_id, image.id",
+        (dataset_id,),
+    ).fetchall()
+    shown: dict[int, set[str] | None] = {}
+    for row in rows:
+        sample_id = int(row["sample_id"])
+        found = shown.setdefault(sample_id, set())
+        if found is None:
+            continue
+        answers = {key: image_presence(row, key, created) for key in label_keys}
+        if ClassPresence.UNLABELED in answers.values():
+            shown[sample_id] = None
+            continue
+        found.update(key for key, answer in answers.items() if answer is ClassPresence.PRESENT)
+    return {
+        sample_id: None if found is None else frozenset(found) for sample_id, found in shown.items()
+    }
+
+
 def _sample_presence(images: list[ClassPresence]) -> ClassPresence:
     if ClassPresence.PRESENT in images:
         return ClassPresence.PRESENT

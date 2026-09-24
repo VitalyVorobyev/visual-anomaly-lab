@@ -158,7 +158,11 @@ revision names the experiments pinning it. `GET /api/region-extractors`,
 
 **Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a
 class** (`few_shot`: a class that some sample shows, a shot count and a seed, with the class's coverage
-beside the picker). Per-subset counts by label; immutable once created. `POST /api/splits`,
+beside the picker), or **draw annotated samples by class** (`class_stratified`: a seed and the
+annotated share that trains, with what happens to unannotated samples and small classes said under
+the form). `?strategy=` opens the form on a strategy, which is how a prerequisite link lands on the
+one its task needs. Per-subset counts by label; the train-defect tick appears only for a strategy
+whose train is normals. Immutable once created. `POST /api/splits`,
 `GET /api/splits?dataset_id=`, `GET /api/datasets/{id}/annotation-labels/coverage`.
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
@@ -180,7 +184,9 @@ previews files, bytes, active-work blockers and resident eviction.
 (ADR-0039), step 1 is the task, because it decides everything after it: the split list offers only the
 task's kind of split (`splitServesTask`), method cards are those whose `capabilities.tasks` include it,
 and a targeted task adds a **Target class** select beside the split, defaulting to the class a `few_shot`
-split was drawn for (ADR-0040). With one task the form starts at its inputs. The band lists what is
+split was drawn for (ADR-0040). With no split its task can use, the Split field links to the Splits tab
+opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation.
+With one task the form starts at its inputs. The band lists what is
 missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
 `sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes
 `<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.

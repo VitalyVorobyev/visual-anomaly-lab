@@ -44,13 +44,9 @@ Later, each behind a measured gate:
 ## Supervised tasks
 
 Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, label targets, label
-maps, the confusion-matrix evaluator and the `color_classifier` floor. What remains, in dependency
+maps, the confusion-matrix evaluator, the `color_classifier` floor and the `class_stratified` split. What remains, in dependency
 order, one PR each:
 
-- [ ] **A split strategy for supervised tasks** (S): the drawn strategies put normals alone in
-      `train`, so today a segmentation run needs a hand-listed `manual` split. A seeded draw over
-      annotated samples, stratified by which classes each shows, settles ADR-0039's open question
-      of whether a supervised split stratifies by class.
 - [ ] **Segmentation result screens** (M): through `taskViews.tsx` — a per-class IoU table across
       subsets, the stored confusion matrix drawn, the label map over the image on `SampleStage`
       (truth dashed, prediction solid), a per-sample verdict for the gallery in place of the neutral

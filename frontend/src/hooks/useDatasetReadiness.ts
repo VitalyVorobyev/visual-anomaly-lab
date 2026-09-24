@@ -44,14 +44,19 @@ export type ReadinessStep = "prepare" | "split" | "annotate" | "references";
 export const READINESS_TASKS: Task[] = ["anomaly", "few_shot_segmentation"];
 
 /**
- * Which split strategies a task trains on: a few-shot run's `train` subset is its references,
- * and a supervised run fits on whatever its `train` subset holds that is annotated — which
- * today is a hand-chosen (`manual`) split more often than a drawn one, whose train is normals.
+ * Which split strategies a task trains on: an anomaly run on a drawn or adopted partition
+ * whose train is normals, a few-shot run on a split of references (ADR-0040), and a
+ * supervised run on annotated samples — drawn by class (`class_stratified`) or listed by hand
+ * (`manual`) (ADR-0039).
  */
 export function splitServesTask(split: Pick<SplitDetail, "strategy">, task: Task): boolean {
-  if (task === "semantic_segmentation") return split.strategy !== "few_shot";
-  const referenceSplit = split.strategy === "manual" || split.strategy === "few_shot";
-  return task === "few_shot_segmentation" ? referenceSplit : !referenceSplit;
+  if (task === "few_shot_segmentation") {
+    return split.strategy === "manual" || split.strategy === "few_shot";
+  }
+  if (task === "semantic_segmentation") {
+    return split.strategy === "class_stratified" || split.strategy === "manual";
+  }
+  return split.strategy === "normal_only_train" || split.strategy === "imported";
 }
 
 /** A build is usable when it exists and nothing in it failed — the create form's rule. */

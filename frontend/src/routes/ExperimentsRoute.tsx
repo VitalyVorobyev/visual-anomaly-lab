@@ -590,6 +590,8 @@ function CreateExperiment({
   // A targeted task segments one class (ADR-0040); a `few_shot` split was drawn for one, so
   // it names the class unless the reader has chosen.
   const targeted = task === "few_shot_segmentation";
+  // A supervised run fits on annotated samples, which a drawn split of normals never trains on.
+  const supervised = task === "semantic_segmentation";
   const splitClass = splits.data?.find((entry) => entry.id === splitId)?.params.label_key ?? "";
   const effectiveTarget = targetLabel || splitClass;
   // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker
@@ -602,7 +604,8 @@ function CreateExperiment({
     [catalog.data, task],
   );
   // A task trains on its own kind of split: an anomaly run on a drawn or adopted partition,
-  // a few-shot run on a split of references (ADR-0040). The others are not offered.
+  // a few-shot run on a split of references (ADR-0040), a supervised run on annotated
+  // samples (ADR-0039). The others are not offered.
   const taskSplits = useMemo(
     () => (splits.data ?? []).filter((split) => splitServesTask(split, task)),
     [splits.data, task],
@@ -891,12 +894,22 @@ function CreateExperiment({
               description={
                 noSplits ? (
                   <>
-                    {targeted ? "No split of references yet." : "This dataset has no splits."}{" "}
+                    {targeted
+                      ? "No split of references yet."
+                      : supervised
+                        ? "No split of annotated samples yet."
+                        : "This dataset has no splits."}{" "}
                     <Link
                       className="text-signal underline underline-offset-2"
-                      to={`/datasets/${datasetId}/splits`}
+                      to={`/datasets/${datasetId}/splits${
+                        targeted
+                          ? "?strategy=few_shot"
+                          : supervised
+                            ? "?strategy=class_stratified"
+                            : ""
+                      }`}
                     >
-                      {targeted ? "Choose references" : "Create one"}
+                      {targeted ? "Choose references" : supervised ? "Draw one by class" : "Create one"}
                     </Link>
                     .
                   </>

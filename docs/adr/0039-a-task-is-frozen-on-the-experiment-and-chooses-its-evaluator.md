@@ -49,6 +49,19 @@ column.
   same presence rule a targeted task reads per class. An image with a gap is unlabelled, excluded from
   fit and metrics and counted, because a pixel of an unanswered class would otherwise read as
   background — a negative nobody asserted.
+- **A supervised split draws annotated samples, stratified by the set of classes each one shows**
+  (`class_stratified`). Only samples whose truth answers every class of the dataset are drawn; the
+  rest go to `test`, scored and measured against nothing. Each class signature — `{}`, `{scratch}`,
+  `{scratch, dent}` — takes its proportional share of `train`, with largest-remainder rounding so
+  the total is exact; then a class two or more samples show gets a training sample if the draw left
+  it none, and a test sample if that strands no other class. Three alternatives were live. **An unstratified draw**
+  is simpler and lets a rare class land wholly on one side of the split, which reads as a method
+  failing on it. **Iterative stratification per class** balances rare classes of a multi-label
+  dataset more closely, but its assignment depends on the order it visits classes and samples and
+  is hard to state on screen. **Reusing `normal_only_train`** trains on normals, which a supervised
+  run cannot learn a class from. Signatures stay exact while a dataset has few classes; a taxonomy
+  large enough to make most signatures singletons is when iterative stratification is worth its
+  cost.
 - **A segmentation prediction's `score` is the share of the image given a class other than
   background.** A mean maximum probability was the alternative; it needs a calibrated probability
   that a Gaussian classifier and a linear head do not share, while the share is defined by the label

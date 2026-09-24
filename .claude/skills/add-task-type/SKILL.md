@@ -56,7 +56,9 @@ has annotation, and whether it is ready for a task is a readiness check.
    construction — **never pass ground truth to a plugin any other way.** The training-set policy is the task's, in
    `experiments/policy.py`: `anomaly` trains on the train subset's normals, `few_shot_segmentation`
    on its references, `semantic_segmentation` on the train subset's images labelled for every
-   pinned class; a new task adds its branch there. The `infer` log names the evaluator's
+   pinned class; a new task adds its branch there. The split that feeds it is the task's too:
+   `splitServesTask` (`frontend/src/hooks/useDatasetReadiness.ts`) says which strategies a task is
+   offered, and a supervised task's is `class_stratified` (`datasets/splitting.py`). The `infer` log names the evaluator's
    `headline` metric.
 6. **The first plugin.** Follow the `add-method-plugin` skill; declare the task in
    `Capabilities.tasks`. It must still cost one module and one registry entry. If it needs a route,
@@ -82,7 +84,6 @@ has annotation, and whether it is ready for a task is a readiness check.
 - What a sample-level result means for a multi-channel part outside `anomaly` (ADR-0011 aggregates
   scores; there is no rule yet for classes or boxes). Evaluate per image until one is decided, and
   say so on screen.
-- Whether a split for a supervised task should stratify by class.
 
 Record any decision with a live alternative by editing ADR-0039 in place (ADR-0030: no changelog), and
 commit with the `safe-commit` skill.
