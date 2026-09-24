@@ -33,13 +33,18 @@ def create_job(
     params: Mapping[str, Any] | None = None,
     experiment_id: int | None = None,
 ) -> Job:
-    """Enqueue a job. It becomes visible — and cancellable — before it starts."""
+    """Enqueue a job. It becomes visible — and cancellable — before it starts.
+
+    `JobKind` is the only list of kinds (migration 020 dropped the schema's copy), so the
+    kind is coerced through it here: a caller that slipped a bare string past the type
+    checker gets a `ValueError` naming it, never a row no handler can run.
+    """
     cursor = conn.execute(
         """
         INSERT INTO job (kind, experiment_id, status, params)
              VALUES (?, ?, 'queued', ?)
         """,
-        (kind.value, experiment_id, _dump(params)),
+        (JobKind(kind).value, experiment_id, _dump(params)),
     )
     created = get_job(conn, int(cursor.lastrowid or 0))
     if created is None:  # pragma: no cover - the insert above just succeeded

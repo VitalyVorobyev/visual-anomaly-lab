@@ -125,3 +125,10 @@ describes a request the application can make — there is no wrapper left to run
 a deliberate ablation read against the recorded historical numbers in `docs/measurements.md`,
 rather than against a live wrapper run. The experiments already recorded against it (five, per
 the 2026-08-08 entry above) stay loadable for the same reason they always did.
+
+**2026-09-24 — a new job kind no longer costs a migration.** The consequence above ("`distill`
+cost a migration, because the `job.kind` CHECK constraint is the one place the queue's
+kind-agnosticism stops at the database") is resolved: migration 020 dropped the CHECK, and
+`JobKind` — which every write is coerced through — is now the only list of kinds. ADR-0009's
+"one entry and one handler" is true of the schema as well as the runtime. The decision recorded
+here is unchanged.

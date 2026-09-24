@@ -50,7 +50,9 @@ job before processing, which keeps a partially configured profile from looking l
 `export` is experiment-bound and follows the same one-entry rule. It loads the fitted method, writes an ONNX
 bundle into app-owned staging, executes graph parity on CPU, hashes the payloads and atomically publishes only
 after the manifest is valid. Failure or cancellation removes staging. The queue and protocol have no
-export-specific branch; the kind costs one lazy handler and one migration that widens SQLite's `kind` check.
+export-specific branch; the kind cost one lazy handler and — then — one migration widening SQLite's `kind`
+check. Migration 020 dropped that check, so a new kind now costs one `JobKind` member, one entry in
+`jobs/handlers.py` and its handler, and nothing in the schema ([domain model](domain-model.md)).
 
 ## Worker → parent event protocol
 

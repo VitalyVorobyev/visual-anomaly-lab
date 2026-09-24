@@ -19,6 +19,8 @@ from anomaly_lab.db.migrate import (
     current_schema_version,
     discover_migrations,
 )
+from anomaly_lab.db.repositories import jobs as jobs_repo
+from anomaly_lab.domain.entities import JobKind
 
 # The canonical domain entities of ADR-0005, one table each.
 EXPECTED_TABLES = {
@@ -374,13 +376,99 @@ def test_a_migration_file_may_not_manage_its_own_transaction() -> None:
         assert not contains_transaction_control(migration.sql), migration.name
 
 
-def test_a_distill_job_is_accepted_and_a_nonsense_kind_is_not(
+def test_a_job_kind_is_validated_by_jobkind_not_by_the_schema(
     migrated_db: sqlite3.Connection,
 ) -> None:
-    """Migration 002 widened the `kind` CHECK, and the CHECK is what makes it a real list."""
+    """Migration 020 dropped the `kind` CHECK; `JobKind` is now the only list.
+
+    The schema accepting any text is the point — a new kind costs no migration — so the
+    refusal of a nonsense kind has to happen on the way in, in the repository.
+    """
     migrated_db.execute("INSERT INTO job (kind, params) VALUES ('distill', '{}')")
-    with pytest.raises(sqlite3.IntegrityError):
-        migrated_db.execute("INSERT INTO job (kind, params) VALUES ('ponder', '{}')")
+    migrated_db.execute("INSERT INTO job (kind, params) VALUES ('a_future_kind', '{}')")
+
+    with pytest.raises(ValueError, match="ponder"):
+        jobs_repo.create_job(migrated_db, kind="ponder")  # type: ignore[arg-type]
+    created = jobs_repo.create_job(migrated_db, kind=JobKind.DISTILL)
+    assert created.kind is JobKind.DISTILL
+
+
+def test_migration_020_keeps_every_row_and_every_shape_check(settings: Settings) -> None:
+    """Both rebuilds copy every row, and only the vocabulary CHECKs go.
+
+    `status`, `progress` and the three-valued `localized` describe shape rather than an
+    extensible list, so they must survive the rebuild — as must the job id counter, because
+    a job's id names its log file and AUTOINCREMENT promises it is never issued twice.
+    """
+    with connect(settings.db_path) as conn:
+        for migration in discover_migrations():
+            if migration.number > 19:
+                break
+            conn.executescript(
+                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
+            )
+        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/d')")
+        conn.execute("INSERT INTO sample (dataset_id, group_key, external_id) VALUES (1, 'g', '1')")
+        conn.execute(
+            "INSERT INTO split (dataset_id, name, strategy, seed, params) "
+            "VALUES (1, 's', 'imported', 0, '{}')"
+        )
+        conn.execute(
+            "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type, "
+            "extractor_config, prepared_width, prepared_height, seed) "
+            "VALUES (1, 'full frame', 1, 'identity', '{}', 8, 8, 17)"
+        )
+        conn.execute(
+            "INSERT INTO experiment (name, dataset_id, split_id, region_profile_id, "
+            "region_manifest_sha256, model_type, artifact_dir) "
+            "VALUES ('e', 1, 1, 1, 'sha', 'pixel_reference', '/artifacts/1')"
+        )
+        conn.execute(
+            "INSERT INTO sample_result (experiment_id, sample_id, agg_score, aggregation, "
+            "normalization, localized) VALUES (1, 1, 0.5, 'mean', 'robust_z', 1)"
+        )
+        for job_id in (1, 2, 3):
+            conn.execute(
+                "INSERT INTO job (id, kind, experiment_id, status, params, message) "
+                "VALUES (?, 'train', 1, 'succeeded', '{\"a\": 1}', 'kept')",
+                (job_id,),
+            )
+        # The newest job is gone before the rebuild, as an experiment deletion would leave it.
+        conn.execute("DELETE FROM job WHERE id = 3")
+
+        assert apply_migrations_to(conn) >= 20
+
+        jobs = conn.execute("SELECT id, kind, experiment_id, status, params, message FROM job")
+        assert [tuple(row) for row in jobs] == [
+            (1, "train", 1, "succeeded", '{"a": 1}', "kept"),
+            (2, "train", 1, "succeeded", '{"a": 1}', "kept"),
+        ]
+        row = conn.execute("SELECT * FROM sample_result").fetchone()
+        stored = (row["agg_score"], row["aggregation"], row["normalization"], row["localized"])
+        assert stored == (0.5, "mean", "robust_z", 1)
+        assert conn.execute("PRAGMA foreign_key_check").fetchall() == []
+        job_indexes = {r[1] for r in conn.execute("PRAGMA index_list('job')")}
+        assert {"idx_job_experiment", "idx_job_status"} <= job_indexes
+        result_indexes = {r[1] for r in conn.execute("PRAGMA index_list('sample_result')")}
+        assert {"idx_sample_result_sample", "idx_sample_result_score"} <= result_indexes
+
+        # Id 3 was issued once; the rebuild must not hand it out again.
+        cursor = conn.execute("INSERT INTO job (kind, params) VALUES ('infer', '{}')")
+        assert cursor.lastrowid == 4
+
+        # The vocabularies are open ...
+        conn.execute("UPDATE sample_result SET aggregation = 'a_future_mode'")
+        # ... and the shapes are not.
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE job SET status = 'paused' WHERE id = 1")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE job SET progress = 2.0 WHERE id = 1")
+        with pytest.raises(sqlite3.IntegrityError):
+            conn.execute("UPDATE sample_result SET localized = 2")
+        # Cascades still reach both rebuilt tables.
+        conn.execute("DELETE FROM experiment WHERE id = 1")
+        assert conn.execute("SELECT COUNT(*) FROM job WHERE experiment_id = 1").fetchone()[0] == 0
+        assert conn.execute("SELECT COUNT(*) FROM sample_result").fetchone()[0] == 0
 
 
 def test_region_preparation_job_kind_and_profile_resample_are_migrated(
