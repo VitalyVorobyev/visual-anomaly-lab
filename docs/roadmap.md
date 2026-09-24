@@ -49,12 +49,11 @@ application.
 
 ## Open
 
-- **The visual pass, its states half.** Every screen has been reviewed at rest at 1440×900 and
-  1024×768 in both themes with the `lab-visual-pass` skill (2026-09-24): hierarchy, density and
-  contrast hold, no screen nests a scroller, and the one structural finding left is the five
-  buttons inside links, waiting on lab-ui's `ButtonLink`. What has not been looked at is the
-  transient half — loading, error and disabled states, and keyboard focus — which the screenshot
-  script does not drive yet.
+- **The visual pass's last two findings, both upstream in lab-ui.** Every screen has been reviewed at rest
+  in both viewports and themes, and in its transient states — pending, error, a Tab walk and disabled
+  controls (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen
+  says what went wrong. What is left: five buttons nest inside links, waiting on a `ButtonLink`, and two
+  disabled tabs explain themselves only in a tooltip, waiting on `Tabs` (see [backlog.md](backlog.md)).
 - **The large-catalogue experiment workflow** — id query, multi-select methods, date range, cursor
   pagination, sortable headers.
 - **`dinomaly_custom` does not export ONNX yet**, which the retired anomalib wrapper did — that

@@ -9,11 +9,11 @@ until its output has been reviewed.
 
 ## Interface
 
-- [ ] **Visual QA of the transient states** (M): every screen has been reviewed at rest in both
-      viewports and themes. Extend `lab-visual-pass`'s `shots.py` to drive the states a resting
-      screenshot never shows — a pending query (hold a request), an error (a 500 from a stubbed
-      route), a disabled control and its visible reason, and a Tab walk that asserts a focus ring
-      on every stop — then fix what they show.
+- [ ] **A disabled tab says why on screen, upstream in lab-ui** (S): the experiment page's
+      Architecture and Inspector tabs, when a run recorded nothing for them, explain themselves only
+      in a `title` tooltip — the one reason `lab-visual-pass --states` still reports. `Tabs` would
+      show the reason on focus and hover through its own `Tooltip`; release, then drop the `title`s.
+      The editor's disabled Discard has the same shape.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination and sortable column headers.
 - [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`

@@ -154,23 +154,25 @@ export function RunBar({
         >
           Score &amp; evaluate
         </Button>
-        <Button
-          variant="secondary"
-          disabled={busy || !trained || !canExportOnnx}
-          loading={startExport.isPending}
-          title={
-            !canExportOnnx
-              ? "This method has no numerically verified ONNX exporter yet."
-              : !trained
-                ? NOT_TRAINED
-                : "Create a checksummed ONNX bundle with parity fixtures."
-          }
-          onClick={() =>
-            startExport.mutate(undefined, { onSuccess: (job) => onFollow(job.id) })
-          }
-        >
-          {canExportOnnx ? "Export ONNX" : "Export unavailable"}
-        </Button>
+        {canExportOnnx ? (
+          <Button
+            variant="secondary"
+            disabled={busy || !trained}
+            loading={startExport.isPending}
+            title={
+              !trained ? NOT_TRAINED : "Create a checksummed ONNX bundle with parity fixtures."
+            }
+            onClick={() =>
+              startExport.mutate(undefined, { onSuccess: (job) => onFollow(job.id) })
+            }
+          >
+            Export ONNX
+          </Button>
+        ) : (
+          // Said, not greyed out: a dead button whose reason lives in a tooltip is a question
+          // the screen leaves the reader to ask.
+          <span className="text-xs text-fg-muted">No verified ONNX export for this method</span>
+        )}
 
         {live !== undefined && (
           <>

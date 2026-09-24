@@ -176,7 +176,11 @@ export function StudioRoute() {
       : references.length > MAX_REFERENCES
         ? `At most ${MAX_REFERENCES} references.`
         : method === undefined
-          ? "No few-shot method is available."
+          ? catalog.isPending
+            ? "Reading the methods…"
+            : catalog.error
+              ? `The methods could not be read: ${catalog.error.message}`
+              : "No few-shot method is available."
           : profileId === undefined
             ? "Choose a region profile."
             : !isUsableBuild(build.data)
@@ -437,7 +441,9 @@ export function StudioRoute() {
             />
             {!previewOn ? null : !previewable ? (
               <p className="text-xs text-fg-muted">
-                Needs at least one reference, a method and a built region profile.
+                {catalog.isPending || profiles.isPending || build.isFetching
+                  ? "Reading the methods and the region profile…"
+                  : "Needs at least one reference, a method and a built region profile."}
               </p>
             ) : preview.isFetching ? (
               <p className="text-xs text-fg-muted">

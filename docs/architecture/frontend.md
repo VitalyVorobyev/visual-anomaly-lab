@@ -86,6 +86,11 @@ the backend's last output.
 - **`CanvasLayout`** — no page scroll; an image canvas fills the viewport and supporting panes scroll only
   on their own content. The sample viewer and the annotation editor live here.
 
+**A failed read shows its error promptly** (`api/retry.ts`). A 4xx is never retried, since it is the
+request's fault and says so. A 5xx or a dropped connection is retried once, in case the sidecar is
+restarting. React Query's default of three retries with backoff meant about seven seconds of skeleton
+before any error.
+
 **Exactly one page-level scroller per screen.** A bounded pane may scroll on the same axis only as a peer
 **column** beside the content — the browser's filter rail and the sample viewer's control rail. A log tail
 or ranked list in the flow is clipped behind a disclosure instead. `frontend/src/routes/dataset/tabScroll.test.tsx`

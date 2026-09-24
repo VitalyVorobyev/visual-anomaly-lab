@@ -54,9 +54,19 @@ uv run --with playwright python .claude/skills/lab-visual-pass/scripts/shots.py 
 
 (First run in a fresh environment: `uv run --with playwright playwright install chromium`.)
 
+`--states` shoots each screen's transient states instead, light 1440 only:
+- `<name>-pending.png`, with every backend request held open;
+- `<name>-error.png`, with every backend request answered 500, after the one retry a failed read gets.
+
+It also walks Tab through the resting screen. Each screen opens as a fresh document, since every screen is
+a hash route and a same-document navigation would draw cached data over the state under test. Read the
+pending and error pictures side by side: a skeleton that never resolves, an empty control with no word
+beside it, or a "none available" said while something is still loading are the usual findings.
+
 Each line is a screen and what the DOM audit found — `scroll` (an unmarked nested scroller),
 `nest` (a control inside a link), `unnamed` (a control with no accessible name), `errors` (console
-errors and page crashes). A crash screen in a later shot can be the tail of an earlier page's
+errors and page crashes). Under `--states`: `focus` (a Tab stop with no visible focus indicator) and
+`reason` (a disabled button explained only by a `title` tooltip). A crash screen in a later shot can be the tail of an earlier page's
 crash in the same context — re-shoot the screen alone before believing it.
 
 ## 4. Read the pictures
