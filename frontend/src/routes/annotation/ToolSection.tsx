@@ -13,7 +13,7 @@
 import type { AnnotationDocument, AnnotationLabel } from "../../api/client";
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
 import { MAX_BRUSH_SIZE, MIN_BRUSH_SIZE } from "../../hooks/useBrushSize";
-import { NumberInput, Select, Slider } from "@vitavision/lab-ui";
+import { Field, NumberInput, Select, Slider } from "@vitavision/lab-ui";
 import type { DocumentCommands } from "./useDocumentCommands";
 
 export function ToolSection({
@@ -45,12 +45,16 @@ export function ToolSection({
         // Only where there is something to choose between. A dataset with one class gets no
         // picker, and one with four gets a real one: label count is data in exactly the way
         // channel count is (ADR-0005).
-        <Select
-          aria-label="New region label"
-          value={commands.labelKey}
-          options={labels.map((label) => ({ value: label.key, label: label.name }))}
-          onValueChange={commands.setLabelKey}
-        />
+        // Named on screen: under a "Tool" heading, a bare dropdown reading "Defect" was a
+        // tool picker to anyone who had not already guessed it was the class.
+        <Field as="group" label="Class for new regions">
+          <Select
+            aria-label="New region label"
+            value={commands.labelKey}
+            options={labels.map((label) => ({ value: label.key, label: label.name }))}
+            onValueChange={commands.setLabelKey}
+          />
+        </Field>
       )}
       {pendingPoints.length > 0 && (
         // A readout, not a control. Closing is a click on the first vertex or a double-click

@@ -9,11 +9,11 @@ until its output has been reviewed.
 
 ## Interface
 
-- [ ] **Visual QA in light and dark at 1440×900 and 1024×768** (M): hierarchy, density, contrast,
-      focus, loading/empty/error/disabled states, and no same-axis nested scroll. The
-      `lab-visual-pass` skill seeds a scratch catalogue from VisA, shoots all eighteen screens in
-      both viewports and themes, and audits nesting, naming and scrollers; what remains is reading
-      the pictures and fixing what they show.
+- [ ] **Visual QA of the transient states** (M): every screen has been reviewed at rest in both
+      viewports and themes. Extend `lab-visual-pass`'s `shots.py` to drive the states a resting
+      screenshot never shows — a pending query (hold a request), an error (a 500 from a stubbed
+      route), a disabled control and its visible reason, and a Tab walk that asserts a focus ring
+      on every stop — then fix what they show.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination and sortable column headers.
 - [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`

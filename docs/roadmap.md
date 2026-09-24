@@ -49,11 +49,14 @@ application.
 
 ## Open
 
-- **The visual pass.** Key screens reviewed at 1440×900 and 1024×768 in both themes: hierarchy,
-  density, contrast, focus, and loading/empty/error/disabled states. The last criterion of the
-  deployment-and-onboarding milestone that is not met.
+- **The visual pass, its states half.** Every screen has been reviewed at rest at 1440×900 and
+  1024×768 in both themes with the `lab-visual-pass` skill (2026-09-24): hierarchy, density and
+  contrast hold, no screen nests a scroller, and the one structural finding left is the five
+  buttons inside links, waiting on lab-ui's `ButtonLink`. What has not been looked at is the
+  transient half — loading, error and disabled states, and keyboard focus — which the screenshot
+  script does not drive yet.
 - **The large-catalogue experiment workflow** — id query, multi-select methods, date range, cursor
-  pagination, sortable headers, compatible selection handed to Compare.
+  pagination, sortable headers.
 - **`dinomaly_custom` does not export ONNX yet**, which the retired anomalib wrapper did — that
   follow-up is in [backlog.md](backlog.md).
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate

@@ -23,8 +23,13 @@ export function QueueFooter({
         aria-label="Previous image"
       />
       {/* The few keys a labelling pass leans on; `?` has the rest, from the one list. */}
-      <span className="text-center font-mono text-[10px] text-fg-subtle">
-        J/K after save · C completes{multiChannel ? " · [ ] channel" : ""} · ? all keys
+      {/* One line, or none: at the rail's width the full set wrapped into two cramped lines,
+          so the narrow case keeps only the pointer to the full sheet. */}
+      <span className="min-w-0 truncate text-center font-mono text-[10px] text-fg-subtle">
+        <span className="hidden xl:inline">
+          J/K after save · C completes{multiChannel ? " · [ ] channel" : ""} ·{" "}
+        </span>
+        ? all keys
       </span>
       <Button
         icon={<ArrowRight />}

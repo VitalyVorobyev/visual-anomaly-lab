@@ -124,7 +124,9 @@ export function DatasetLayout() {
             <DatasetSectionNav datasetId={datasetId} />
             {detail?.description && (
               <Tooltip content={detail.description}>
-                <p className="hidden min-w-0 shrink truncate pb-2 text-xs text-fg-muted lg:block">
+                {/* From `xl`: at 1024 px the strip leaves no room, and the sentence sat
+                    flush against the last tab, cut off after a few words. */}
+                <p className="hidden min-w-0 shrink truncate pb-2 text-xs text-fg-muted xl:block">
                   {detail.description}
                 </p>
               </Tooltip>
