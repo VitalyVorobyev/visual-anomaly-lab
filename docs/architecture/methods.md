@@ -300,6 +300,10 @@ something different on every class. `calibration.py` is the shared fix, a `calib
 - **The references' prior, not the queries'.** Every fold is fitted on references, which usually all show
   the class; a query set that is mostly absent sees a scale fitted where the class is common.
 
+The default is `none` for all three, by the few-shot gate's calibration leg
+([measurements.md](../measurements.md)): calibrated, absent images stop being flagged and IoU rises, but
+on a small defect class the scaled map clears 0.5 on too few of the images that show it.
+
 ## Shipped methods
 
 | key | family | trains | resume | channel-aware | ONNX | device |
@@ -594,7 +598,8 @@ field the gate can measure. It is the default few-shot method by the public gate
 - It writes no mask, so the evaluator cuts its map at 0.5. `max_features_per_class` (20 000) bounds the
   bank and the probe. The seed reaches k-means, the noise image and, without pretrained weights, the
   encoder.
-- **Experimental** until the public gate in the backlog has run. ONNX: none.
+- No mask of a small defect it draws is usable yet; the gate that made it the default says so
+  ([measurements.md](../measurements.md)). ONNX: none.
 
 ### `classical_circular` (optional, not built)
 
