@@ -7,6 +7,12 @@ the annotated samples into train and test; each method then fits on the train su
 segments the test subset, in its own child process on the same immutable prepared pixels.
 
     ./scripts/semantic-public-gate.py --data-dir /tmp/semantic-gate
+    ./scripts/semantic-public-gate.py --gate bias --data-dir /tmp/semantic-bias-gate
+
+`--gate sampling` (the default) is the first gate: both methods at their shipped defaults.
+`--gate bias` is the logit-bias gate: `color_classifier` at its defaults and `dino_linear_seg`
+under `per_class` sampling twice, with `logit_bias` `none` and `held_out_iou` — the same fitted
+head, read with and without constants fitted for IoU on held-out folds of the training images.
 
 The destination must be absent or empty; source images stay read-only under `--datasets-dir`
 (the repository's `/datasets` by default). It holds the isolated database, prepared pixels,
@@ -28,6 +34,7 @@ from statistics import mean, pstdev
 from typing import Any
 
 import m11_public_gate as harness
+import numpy as np
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.splitting import (
@@ -50,9 +57,25 @@ from anomaly_lab.regions.preparation import PreparedRegionBuild
 
 CATEGORIES = ("candle", "pcb1")
 SEEDS = (0, 1, 2)
-METHODS = ("color_classifier", "dino_linear_seg")
-CANDIDATE = "dino_linear_seg"
 FLOOR = "color_classifier"
+PER_CLASS: dict[str, str] = {"pixel_sampling": "per_class"}
+# Each gate's runs: a label, the method, and the fields that differ from its shipped defaults.
+GATES: dict[str, tuple[tuple[str, str, dict[str, str]], ...]] = {
+    "sampling": ((FLOOR, FLOOR, {}), ("dino_linear_seg", "dino_linear_seg", {})),
+    "bias": (
+        (FLOOR, FLOOR, {}),
+        ("dino_linear_seg:none", "dino_linear_seg", {**PER_CLASS, "logit_bias": "none"}),
+        (
+            "dino_linear_seg:held_out_iou",
+            "dino_linear_seg",
+            {**PER_CLASS, "logit_bias": "held_out_iou"},
+        ),
+    ),
+}
+CANDIDATES = {"sampling": "dino_linear_seg", "bias": "dino_linear_seg:held_out_iou"}
+# The bias gate's default rule reads the first gate's shipped default (raster sampling, no
+# bias) on the same splits: test mean IoU by class, docs/measurements.md, leg 1.
+RASTER_DEFAULT_IOU = {"candle": 0.0829, "pcb1": 0.0388}
 PREPARED_SIZE = 448
 MARGIN = 0.05
 REPORTED = (
@@ -93,14 +116,15 @@ def _experiment(
     dataset_id: int,
     split_id: int,
     method: str,
+    fields: dict[str, str],
     seed: int,
     build: PreparedRegionBuild,
     name: str,
 ) -> int:
     config_model = get_model_class(method).config_model()
     # The method's seed follows the split's, where it has one; `color_classifier` draws nothing.
-    overrides = {"seed": seed} if "seed" in config_model.model_fields else {}
-    config = config_model.model_validate(overrides).model_dump(mode="json")
+    overrides: dict[str, Any] = {"seed": seed} if "seed" in config_model.model_fields else {}
+    config = config_model.model_validate({**overrides, **fields}).model_dump(mode="json")
     preprocessing = PreprocessingConfig(width=PREPARED_SIZE, height=PREPARED_SIZE)
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(
@@ -140,6 +164,19 @@ def _outcomes(settings: Settings, experiment_id: int) -> dict[str, dict[str, int
     return {label: dict(sorted(counts.items())) for label, counts in sorted(tally.items())}
 
 
+def _constants(artifact_dir: Path) -> dict[str, list[float]]:
+    """The logit constants `dino_linear_seg` saved beside its head, background first."""
+    state = artifact_dir / "dino_linear_seg.npz"
+    if not state.exists():
+        return {}
+    with np.load(state, allow_pickle=False) as stored:
+        return {
+            key: [float(value) for value in stored[key]]
+            for key in ("prior_shift", "held_out_bias")
+            if key in stored.files
+        }
+
+
 def _row(report: dict[str, Any]) -> dict[str, Any]:
     metrics = report["infer"]["metrics"]["test"]
     row: dict[str, Any] = {name: metrics.get(name) for name in REPORTED}
@@ -152,11 +189,11 @@ def _row(report: dict[str, Any]) -> dict[str, Any]:
     return row
 
 
-def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
+def _summary(runs: list[dict[str, Any]], gate: str) -> dict[str, Any]:
     """Per method and class: the mean over seeds and the spread across them."""
     table: dict[str, Any] = {}
-    for method in METHODS:
-        for category in CATEGORIES:
+    for method, _, _ in GATES[gate]:
+        for category in dict.fromkeys(run["category"] for run in runs):
             legs = [run for run in runs if run["method"] == method and run["category"] == category]
             if not legs:
                 continue
@@ -175,23 +212,37 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
     return table
 
 
-def _decision(table: dict[str, Any]) -> dict[str, Any]:
+def _decision(table: dict[str, Any], gate: str) -> dict[str, Any]:
     def iou(method: str, category: str) -> float | None:
         value = table.get(method, {}).get(category, {}).get("mean_iou")
         return None if value is None else float(value)
 
+    candidate_key = CANDIDATES[gate]
     leads: dict[str, float | None] = {}
     for category in CATEGORIES:
-        candidate, floor = iou(CANDIDATE, category), iou(FLOOR, category)
+        candidate, floor = iou(candidate_key, category), iou(FLOOR, category)
         leads[category] = None if candidate is None or floor is None else candidate - floor
     promoted = all(lead is not None and lead >= MARGIN for lead in leads.values())
-    return {
+    decision: dict[str, Any] = {
+        "gate": gate,
+        "candidate": candidate_key,
         "primary": "test mean IoU (annotation classes; background excluded), mean over seeds",
         "margin": MARGIN,
         "lead_by_class": leads,
         "promoted": promoted,
         "maturity": "supported" if promoted else "experimental",
     }
+    if gate == "bias":
+        # The fitted variant becomes the default if it is promoted, or if it measures above
+        # the raster default on the primary on both classes.
+        above = {
+            category: (value := iou(candidate_key, category)) is not None
+            and value > RASTER_DEFAULT_IOU[category]
+            for category in CATEGORIES
+        }
+        decision["above_raster_default_by_class"] = above
+        decision["new_defaults"] = promoted or all(above.values())
+    return decision
 
 
 def main() -> int:
@@ -203,8 +254,12 @@ def main() -> int:
         default=harness.REPOSITORY / "datasets",
         help="Where the public packs live (VisA_20220922 inside it); read only.",
     )
+    parser.add_argument("--gate", choices=sorted(GATES), default="sampling")
     parser.add_argument("--categories", nargs="+", default=list(CATEGORIES))
+    parser.add_argument("--seeds", nargs="+", type=int, help="A smoke subset of the gate's seeds.")
     args = parser.parse_args()
+    gate: str = args.gate
+    seeds: tuple[int, ...] = tuple(args.seeds or SEEDS)
 
     data_dir: Path = args.data_dir.resolve()
     harness._empty_destination(data_dir)
@@ -229,16 +284,17 @@ def main() -> int:
                 job_id=40_000 + index,
                 log=log,
             )
-            for seed in SEEDS:
+            for seed in seeds:
                 with connection(settings.db_path) as conn:
                     split_id = _split(conn, dataset_id, seed)
-                for method in METHODS:
-                    name = f"semantic gate · {category} · {method} · seed {seed}"
+                for label, method, fields in GATES[gate]:
+                    name = f"semantic gate · {gate} · {category} · {label} · seed {seed}"
                     experiment_id = _experiment(
                         settings,
                         dataset_id=dataset_id,
                         split_id=split_id,
                         method=method,
+                        fields=fields,
                         seed=seed,
                         build=build,
                         name=name,
@@ -246,25 +302,31 @@ def main() -> int:
                     print(f"{name}...", file=sys.stderr)
                     report = harness._execute(data_dir, experiment_id, log)
                     outcomes = _outcomes(settings, experiment_id)
+                    constants = _constants(settings.experiment_dir(experiment_id))
                     shutil.rmtree(settings.experiment_dir(experiment_id) / "maps")
                     runs.append(
                         {
                             "category": category,
-                            "method": method,
+                            "method": label,
                             "seed": seed,
                             "experiment_id": experiment_id,
                             **_row(report),
                             "outcomes": outcomes,
+                            **constants,
                         }
                     )
-                    table = _summary(runs)
+                    table = _summary(runs, gate)
                     result_path.write_text(
                         json.dumps(
                             {
                                 "protocol": {
+                                    "gate": gate,
                                     "categories": args.categories,
-                                    "seeds": SEEDS,
-                                    "methods": METHODS,
+                                    "seeds": seeds,
+                                    "runs": [
+                                        {"label": label, "method": method, "fields": fields}
+                                        for label, method, fields in GATES[gate]
+                                    ],
                                     "prepared_size": PREPARED_SIZE,
                                     "classes": ["defect"],
                                     "split": "class_stratified, shipped defaults",
@@ -273,14 +335,14 @@ def main() -> int:
                                 "elapsed_seconds": time.perf_counter() - started,
                                 "runs": runs,
                                 "summary": table,
-                                "decision": _decision(table),
+                                "decision": _decision(table, gate),
                             },
                             indent=2,
                         ),
                         encoding="utf-8",
                     )
 
-    print(json.dumps(_decision(_summary(runs)), indent=2))
+    print(json.dumps(_decision(_summary(runs, gate), gate), indent=2))
     return 0
 
 

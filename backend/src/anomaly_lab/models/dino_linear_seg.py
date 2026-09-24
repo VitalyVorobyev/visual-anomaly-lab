@@ -32,6 +32,19 @@ the label of the patch it happens to sit in.
 - **`class_balancing`** weights the cross-entropy by inverse class frequency over the sample.
   Per-class sampling balances the classes *within* an image; the weights balance what is left
   *across* images, since an image without a class still contributes background.
+- **`logit_bias`** adds one constant per class to the logits at prediction, because a softmax
+  fitted under a weighted loss answers for the prior the loss saw — under `inverse_frequency`,
+  every class equally common — and its argmax then labels a class covering a fraction of a
+  percent of the frame as readily as the background around it. The head is fitted the same way
+  whatever the field says; only the constant differs, and it is saved with the head.
+  `training_prior` is the standard logit adjustment (`prior_shift`): `log p_c - log q_c`, `p`
+  the class's share of the training images' labelled pixels and `q` its share of the fit's
+  loss weight. Its argmax is the Bayes answer for pixel accuracy, which on a class that rare is
+  almost never the class. `held_out_iou` fits the constant for the measure the task is read by
+  (`fit_class_bias`): the training images are split into `BIAS_FOLDS` folds, a head fitted on
+  the others scores each fold's sampled pixels, each pixel is weighted by how many pixels of
+  its class and image it stands for (`pixel_weights`), and each class's constant is the cut of
+  those held-out logits with the highest IoU over the training frames.
 - A class with no training pixel is never predicted, as in `color_classifier`: the fitted head
   would still hold a row for it, trained only to lose.
 
@@ -86,6 +99,9 @@ from anomaly_lab.models.refine import (
 )
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
+BIAS_FOLDS = 3
+"""Folds of the training images `held_out_iou` fits its constants on, each scored by a head
+fitted on the others."""
 STATE_FILENAME = "dino_linear_seg.npz"
 META_FILENAME = "dino_linear_seg.json"
 MAX_FEATURE_BYTES = 4 * 1024**3
@@ -100,6 +116,15 @@ class ClassBalancing(StrEnum):
     """Every sampled pixel counts once."""
     INVERSE_FREQUENCY = "inverse_frequency"
     """Each class's pixels weigh in inverse proportion to how many of them were sampled."""
+
+
+class LogitBias(StrEnum):
+    NONE = "none"
+    """The head's own answer, for the class priors its loss was weighted to."""
+    TRAINING_PRIOR = "training_prior"
+    """Each logit is shifted to the class priors of the training images' labelled pixels."""
+    HELD_OUT_IOU = "held_out_iou"
+    """Each class's logit is offset by the cut that maximised its IoU on held-out folds."""
 
 
 class PixelSampling(StrEnum):
@@ -170,6 +195,16 @@ class DinoLinearSegConfig(BaseModel):
             "'inverse_frequency' weights each class's pixels by the inverse of how often it was "
             "sampled, so a small class is not drowned by background; 'none' counts every pixel "
             "once."
+        ),
+    )
+    logit_bias: LogitBias = Field(
+        default=LogitBias.NONE,
+        description=(
+            "A constant per class added to the logits before the argmax. 'none' keeps the "
+            "head's answer, which under 'inverse_frequency' treats every class as equally "
+            "common; 'training_prior' restores how common each class is in the training "
+            "images; 'held_out_iou' fits each class's constant for IoU on held-out folds of "
+            "the training images, at the cost of fitting the head once per fold."
         ),
     )
     refine: Refinement = Field(
@@ -328,6 +363,87 @@ def class_weights(counts: np.ndarray, balancing: ClassBalancing) -> np.ndarray:
     return weights.astype(np.float32)
 
 
+def prior_shift(available: np.ndarray, sampled: np.ndarray, loss_weights: np.ndarray) -> np.ndarray:
+    """`(C,)` logit shift from the prior the fit saw to the prior of the training images.
+
+    `available` counts every labelled pixel of each class in the images the fit read, `sampled`
+    the pixels it trained on, and `loss_weights` what each of them weighed. The fit's prior `q`
+    is each class's share of the total loss weight, `n_c * w_c`; the images' prior `p` is its
+    share of `available`. The shift is `log p_c - log q_c` for every class the fit learned and
+    zero for the rest, which are never predicted. A constant added to every logit changes no
+    softmax, so the background is pinned at zero shift. Pure numpy.
+    """
+    available = np.asarray(available, dtype=np.float64)
+    mass = np.asarray(sampled, dtype=np.float64) * np.asarray(loss_weights, dtype=np.float64)
+    learned = (mass > 0) & (available > 0)
+    shift = np.zeros(len(available), dtype=np.float64)
+    if not learned.any():
+        return shift.astype(np.float32)
+    shift[learned] = np.log(available[learned] / available[learned].sum()) - np.log(
+        mass[learned] / mass[learned].sum()
+    )
+    if learned[0]:
+        shift[learned] -= shift[0]
+    return shift.astype(np.float32)
+
+
+def pixel_weights(labels: np.ndarray, available: np.ndarray) -> np.ndarray:
+    """`(n,)` how many of one image's labelled pixels each of its `n` sampled pixels stands for.
+
+    A sampled pixel of class `c` weighs `available[c] / sampled[c]`, so the weighted sample of
+    every image has that image's own class counts, whichever rule drew it. Pure numpy.
+    """
+    labels = np.asarray(labels, dtype=np.int64)
+    sampled = np.bincount(labels, minlength=len(available))
+    ratio = np.asarray(available, dtype=np.float64) / np.maximum(sampled, 1)
+    return np.asarray(ratio[labels], dtype=np.float64)
+
+
+def fit_class_bias(
+    logits: np.ndarray, labels: np.ndarray, weights: np.ndarray, learned: np.ndarray
+) -> tuple[np.ndarray, np.ndarray]:
+    """`(C,)` constants for the logits, and `(C,)` the weighted IoU each one reaches.
+
+    `logits` are held-out `(n, C)` logits of weighted pixels. Each class the head learned but
+    background is visited once, in order, holding the constants already fitted: a pixel is
+    given the class exactly when the constant exceeds its margin (the best other logit, less
+    its own), so sorting the margins and accumulating true and false weight gives the IoU of
+    every cut at once, and the constant is the midpoint below the next distinct margin. A class
+    no cut gives any overlap keeps zero, and its IoU is `NaN`. Pure numpy.
+    """
+    size = logits.shape[1]
+    scores = np.asarray(logits, dtype=np.float64).copy()
+    scores[:, ~np.asarray(learned, dtype=bool)] = -np.inf
+    weights = np.asarray(weights, dtype=np.float64)
+    bias = np.zeros(size, dtype=np.float64)
+    reached = np.full(size, np.nan)
+    for index in range(1, size):
+        truth = labels == index
+        total = float(weights[truth].sum())
+        if not learned[index] or total <= 0.0:
+            continue
+        others = scores + bias
+        others[:, index] = -np.inf
+        margin = others.max(axis=1) - scores[:, index]
+        order = np.argsort(margin, kind="stable")
+        ordered = margin[order]
+        hits = np.cumsum(np.where(truth[order], weights[order], 0.0))
+        false = np.cumsum(np.where(truth[order], 0.0, weights[order]))
+        following = np.append(ordered[1:], np.inf)
+        cuts = np.flatnonzero((following > ordered) & np.isfinite(ordered))
+        if not len(cuts):
+            continue
+        iou = hits[cuts] / (total + false[cuts])
+        best = int(np.argmax(iou))
+        if iou[best] <= 0.0:
+            continue
+        last = int(cuts[best])
+        upper = following[last] if np.isfinite(following[last]) else ordered[last] + 2.0
+        bias[index] = (ordered[last] + upper) / 2.0
+        reached[index] = iou[best]
+    return bias.astype(np.float32), reached
+
+
 def _axis(positions: np.ndarray, source: int, target: int) -> tuple[np.ndarray, ...]:
     """Pillow's bilinear upsampling along one axis: the two neighbours and the far weight."""
     centre = (positions + 0.5) * (source / target) - 0.5
@@ -444,17 +560,20 @@ class DinoLinearSegModel(AnomalyModel):
 
         features: list[np.ndarray] = []
         labels: list[np.ndarray] = []
+        stands_for: list[np.ndarray] = []
         available = np.zeros(size, dtype=np.int64)
         for position, record in enumerate(chosen):
             ctx.raise_if_cancelled()
             truth = targets.labels(record.image_id).reshape(-1)
             labelled = truth[(truth != IGNORE_INDEX) & (truth >= 0) & (truth < size)]
-            available += np.bincount(labelled, minlength=size)[:size]
+            own = np.bincount(labelled, minlength=size)[:size]
+            available += own
             picked = sample_pixels(truth, size, plan.pixels_per_image, self.config.pixel_sampling)
             if len(picked):
                 grid_features = self._grid_features(record, ctx)
                 features.append(pixel_features(grid_features, picked, grid, (width, height)))
                 labels.append(truth[picked].astype(np.int64))
+                stands_for.append(pixel_weights(labels[-1], own))
             ctx.progress(
                 0.6 * (position + 1) / len(chosen), f"encoded {position + 1}/{len(chosen)}"
             )
@@ -479,19 +598,95 @@ class DinoLinearSegModel(AnomalyModel):
             )
         )
 
+        loss_weights = class_weights(counts, self.config.class_balancing)
+        shift = prior_shift(available, counts, loss_weights)
+        ctx.log(
+            "training prior as a logit shift: "
+            + ", ".join(
+                f"{name} {float(value):+.2f}" for name, value in zip(names, shift, strict=True)
+            )
+        )
+        folded = self.config.logit_bias is LogitBias.HELD_OUT_IOU
+        sampled_features = np.concatenate(features)
         weights, bias = self._train_head(
-            np.concatenate(features),
+            sampled_features,
             sampled_labels,
-            class_weights(counts, self.config.class_balancing),
+            loss_weights,
             ctx,
+            seed=self.config.seed,
+            span=(0.6, 0.8 if folded else 1.0),
         )
         self._state = {
             "weights": weights,
             "bias": bias,
+            "prior_shift": shift,
             "present": counts > 0,
             "classes": np.array([size - 1], dtype=np.int64),
         }
+        if folded:
+            images = np.concatenate(
+                [np.full(len(part), index) for index, part in enumerate(labels)]
+            )
+            self._state["held_out_bias"] = self._fit_held_out_bias(
+                sampled_features,
+                sampled_labels,
+                np.concatenate(stands_for),
+                images % BIAS_FOLDS,
+                names,
+                ctx,
+            )
+        ctx.log(f"logit bias: {self.config.logit_bias.value}")
         ctx.progress(1.0, "head fitted")
+
+    def _fit_held_out_bias(
+        self,
+        features: np.ndarray,
+        labels: np.ndarray,
+        stands_for: np.ndarray,
+        folds: np.ndarray,
+        names: Sequence[str],
+        ctx: TrainContext,
+    ) -> np.ndarray:
+        """Each fold scored by a head fitted on the others; the constants fitted on all folds."""
+        size = len(names)
+        held_out = np.zeros((len(labels), size), dtype=np.float32)
+        used = sorted({int(fold) for fold in folds})
+        if len(used) < 2:
+            ctx.log(
+                "held-out bias: fewer than two training images hold pixels, so there is "
+                "nothing to hold out; the head's own answer stands",
+                level="warning",
+            )
+            return np.zeros(size, dtype=np.float32)
+        for step, fold in enumerate(used):
+            inside = folds != fold
+            fold_counts = np.bincount(labels[inside], minlength=size)[:size]
+            seed = int(np.random.SeedSequence([self.config.seed, fold + 1]).generate_state(1)[0])
+            start = 0.8 + 0.2 * step / len(used)
+            weights, bias = self._train_head(
+                features[inside],
+                labels[inside],
+                class_weights(fold_counts, self.config.class_balancing),
+                ctx,
+                seed=seed,
+                span=(start, start + 0.2 / len(used)),
+                name=f"fold {step + 1}/{len(used)}",
+            )
+            scores = features[~inside] @ weights.T + bias
+            scores[:, fold_counts == 0] = -np.inf
+            held_out[~inside] = scores
+        fitted, reached = fit_class_bias(held_out, labels, stands_for, self._state["present"])
+        ctx.log(
+            f"held-out bias over {len(used)} folds: "
+            + ", ".join(
+                f"{name} {float(fitted[index]):+.2f} (IoU {reached[index]:.3f})"
+                if np.isfinite(reached[index])
+                else f"{name} {float(fitted[index]):+.2f} (no overlap; unchanged)"
+                for index, name in enumerate(names)
+                if index > 0
+            )
+        )
+        return fitted
 
     def _train_head(
         self,
@@ -499,11 +694,17 @@ class DinoLinearSegModel(AnomalyModel):
         labels: np.ndarray,
         loss_weights: np.ndarray,
         ctx: TrainContext,
+        *,
+        seed: int,
+        span: tuple[float, float],
+        name: str | None = None,
     ) -> tuple[np.ndarray, np.ndarray]:
-        """AdamW on the softmax head, on the CPU, from one seeded generator."""
+        """AdamW on the softmax head, on the CPU, from one seeded generator.
+
+        `name` marks a fold's head, whose loss is not the run's metric."""
         import torch
 
-        generator = torch.Generator().manual_seed(self.config.seed)
+        generator = torch.Generator().manual_seed(seed)
         inputs = torch.from_numpy(features)
         targets = torch.from_numpy(labels)
         classes = len(loss_weights)
@@ -530,10 +731,15 @@ class DinoLinearSegModel(AnomalyModel):
                 loss.backward()
                 optimizer.step()
                 total += float(loss.detach())
-            ctx.metric("loss", total / batches, step=epoch + 1)
+            if name is None:
+                ctx.metric("loss", total / batches, step=epoch + 1)
             ctx.progress(
-                0.6 + 0.4 * (epoch + 1) / self.config.epochs,
-                f"epoch {epoch + 1}/{self.config.epochs}",
+                span[0] + (span[1] - span[0]) * (epoch + 1) / self.config.epochs,
+                " · ".join(
+                    part
+                    for part in (name, f"epoch {epoch + 1}/{self.config.epochs}")
+                    if part is not None
+                ),
             )
         return (
             weight.detach().numpy().astype(np.float32),
@@ -551,12 +757,15 @@ class DinoLinearSegModel(AnomalyModel):
         rows, cols = patch_grid(self.config.backbone, width, height)
         classes = int(self._state["classes"][0])
         absent = ~self._state["present"]
+        # A per-class constant survives the bilinear upsample unchanged, so offsetting the
+        # patch logits is offsetting the pixel logits.
+        bias = self._state["bias"] + self._logit_bias()
         predictions: list[Prediction] = []
         for position, record in enumerate(images):
             ctx.raise_if_cancelled()
             started = time.perf_counter()
             patch_logits = self._grid_features(record, ctx) @ self._state["weights"].T
-            patch_logits += self._state["bias"]
+            patch_logits += bias
             logits = np.stack(
                 [upsample(plane.reshape(rows, cols), (width, height)) for plane in patch_logits.T]
             )
@@ -586,6 +795,20 @@ class DinoLinearSegModel(AnomalyModel):
             )
             ctx.progress((position + 1) / len(images), f"segmented {position + 1}/{len(images)}")
         return predictions
+
+    def _logit_bias(self) -> np.ndarray:
+        """The constant `logit_bias` adds, from what the fit saved beside the head."""
+        choice = self.config.logit_bias
+        if choice is LogitBias.NONE:
+            return np.zeros_like(self._state["bias"])
+        key = "prior_shift" if choice is LogitBias.TRAINING_PRIOR else "held_out_bias"
+        if key not in self._state:
+            msg = (
+                f"this dino_linear_seg checkpoint was not fitted with logit_bias "
+                f"{choice.value!r}; refit it to read it that way"
+            )
+            raise RuntimeError(msg)
+        return np.asarray(self._state[key], dtype=np.float32)
 
     # ------------------------------------------------------------------ persistence
 

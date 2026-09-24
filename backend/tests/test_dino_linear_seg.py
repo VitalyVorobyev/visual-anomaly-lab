@@ -16,12 +16,16 @@ from anomaly_lab.models.dino_linear_seg import (
     ClassBalancing,
     DinoLinearSegConfig,
     DinoLinearSegModel,
+    LogitBias,
     PixelSampling,
     allocate_pixels,
     class_weights,
     feature_dim,
+    fit_class_bias,
     pixel_features,
+    pixel_weights,
     plan_pixels,
+    prior_shift,
     sample_pixels,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -131,6 +135,96 @@ def test_inverse_frequency_gives_every_sampled_class_the_same_total_weight() -> 
     assert np.array_equal(class_weights(counts, ClassBalancing.NONE), [1, 1, 0, 1])
 
 
+def test_under_inverse_frequency_the_shift_is_the_log_prior_of_the_images() -> None:
+    available = np.array([99_000, 900, 0, 100])
+    counts = np.array([500, 400, 0, 100])
+    weights = class_weights(counts, ClassBalancing.INVERSE_FREQUENCY)
+    shift = prior_shift(available, counts, weights)
+    # The fit saw every learned class as equally common, so only the images' prior is left.
+    assert shift[0] == 0.0 and shift[2] == 0.0
+    assert shift[1] == pytest.approx(np.log(900 / 99_000), rel=1e-5)
+    assert shift[3] == pytest.approx(np.log(100 / 99_000), rel=1e-5)
+
+
+def test_an_unweighted_fit_on_a_representative_sample_needs_no_shift() -> None:
+    available = np.array([8_000, 1_600, 400])
+    counts = available // 100
+    shift = prior_shift(available, counts, class_weights(counts, ClassBalancing.NONE))
+    np.testing.assert_allclose(shift, 0.0, atol=1e-6)
+
+
+def test_an_unweighted_fit_on_a_per_class_sample_is_shifted_by_what_sampling_did() -> None:
+    available = np.array([9_900, 100])
+    counts = np.array([50, 50])
+    shift = prior_shift(available, counts, class_weights(counts, ClassBalancing.NONE))
+    assert shift[1] == pytest.approx(np.log(0.01 / 0.5) - np.log(0.99 / 0.5), rel=1e-5)
+
+
+def test_restoring_the_prior_hands_an_even_pixel_back_to_the_common_class() -> None:
+    """A pixel the balanced head calls a toss-up is, among the images' pixels, background."""
+    available = np.array([9_990, 10])
+    counts = np.array([100, 100])
+    shift = prior_shift(available, counts, class_weights(counts, ClassBalancing.INVERSE_FREQUENCY))
+    balanced = np.array([0.0, 0.5])
+    assert int(np.argmax(balanced)) == 1
+    assert int(np.argmax(balanced + shift)) == 0
+    # A class the head is sure enough of survives it.
+    assert int(np.argmax(np.array([0.0, 8.0]) + shift)) == 1
+
+
+def test_a_class_the_fit_never_learned_is_not_shifted() -> None:
+    available = np.array([100, 0, 5])
+    counts = np.array([10, 0, 0])
+    shift = prior_shift(available, counts, class_weights(counts, ClassBalancing.NONE))
+    np.testing.assert_array_equal(shift, [0.0, 0.0, 0.0])
+
+
+def test_a_sampled_pixel_stands_for_its_share_of_its_class_in_its_image() -> None:
+    weights = pixel_weights(np.array([0, 0, 1, 0]), np.array([900, 5, 0]))
+    np.testing.assert_allclose(weights, [300, 300, 5, 300])
+
+
+def _binary(class_logits: list[float]) -> np.ndarray:
+    return np.stack([np.zeros(len(class_logits)), np.array(class_logits)], axis=1)
+
+
+def test_the_held_out_bias_is_the_cut_with_the_highest_iou() -> None:
+    logits = _binary([5, 4, 3, 2, 1])
+    labels = np.array([1, 1, 0, 1, 0])
+    # Taking the top 1..5 pixels gives IoU 1/3, 2/3, 1/2, 3/4, 3/5: the best keeps four, so
+    # the class needs a logit above 1.5, midway between the fourth pixel's and the fifth's.
+    bias, reached = fit_class_bias(logits, labels, np.ones(5), np.array([True, True]))
+    assert bias[0] == 0.0
+    assert bias[1] == pytest.approx(-1.5)
+    assert reached[1] == pytest.approx(0.75)
+    assert np.isnan(reached[0])
+
+
+def test_the_held_out_bias_reads_the_pixels_as_the_frames_they_stand_for() -> None:
+    """A background pixel standing for ten outweighs the class pixel ranked after it."""
+    logits = _binary([5, 4, 3, 2, 1])
+    labels = np.array([1, 1, 0, 1, 0])
+    weights = np.array([1.0, 1.0, 10.0, 1.0, 1.0])
+    bias, reached = fit_class_bias(logits, labels, weights, np.array([True, True]))
+    assert bias[1] == pytest.approx(-3.5)
+    assert reached[1] == pytest.approx(2 / 3)
+
+
+def test_a_class_no_cut_overlaps_or_the_head_never_learned_keeps_its_answer() -> None:
+    logits = np.stack([np.zeros(4), np.arange(4.0), np.arange(4.0)], axis=1)
+    labels = np.array([0, 0, 0, 2])
+    bias, reached = fit_class_bias(logits, labels, np.ones(4), np.array([True, True, False]))
+    np.testing.assert_array_equal(bias, [0.0, 0.0, 0.0])
+    assert np.isnan(reached).all()
+
+
+def test_a_cut_that_takes_every_pixel_still_lands_above_the_last_one() -> None:
+    logits = _binary([3, 2, 1])
+    bias, reached = fit_class_bias(logits, np.array([1, 1, 1]), np.ones(3), np.ones(2, bool))
+    assert reached[1] == pytest.approx(1.0)
+    assert np.all(logits[:, 1] + bias[1] > 0)
+
+
 @pytest.mark.parametrize(
     ("grid", "size"), [((4, 6), (84, 56)), ((3, 3), (48, 48)), ((5, 2), (7, 9))]
 )
@@ -158,6 +252,9 @@ def test_the_configuration_is_bounded() -> None:
         DinoLinearSegConfig.model_validate({"class_balancing": "median"})
     assert DinoLinearSegConfig().class_balancing is ClassBalancing.INVERSE_FREQUENCY
     assert DinoLinearSegConfig().pixel_sampling is PixelSampling.RASTER
+    assert DinoLinearSegConfig().logit_bias is LogitBias.NONE
+    with pytest.raises(ValidationError):
+        DinoLinearSegConfig.model_validate({"logit_bias": "test_prior"})
     with pytest.raises(ValidationError):
         DinoLinearSegConfig.model_validate({"pixel_sampling": "random"})
 
