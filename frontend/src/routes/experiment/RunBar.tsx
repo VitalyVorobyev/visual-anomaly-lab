@@ -100,8 +100,8 @@ export function RunBar({
   // that says where is another tab — so say so here, where the button was pressed.
   const exported = live === undefined && jobs[0]?.kind === "export" && jobs[0].status === "succeeded";
 
-  const run = (kind: "train" | "infer", additionalSteps?: number) =>
-    start.mutate({ kind, additionalSteps }, { onSuccess: (job) => onFollow(job.id) });
+  const run = (kind: "train" | "infer", additionalSteps?: number, thenScore = false) =>
+    start.mutate({ kind, additionalSteps, thenScore }, { onSuccess: (job) => onFollow(job.id) });
 
   return (
     <div className="flex flex-col gap-2 rounded-lg border border-line bg-surface px-4 py-3">
@@ -109,14 +109,21 @@ export function RunBar({
         {/* On a trained experiment this is no longer the obvious action — continuing is.
             It also stops looking like a button that repeats the same run for no reason,
             which is exactly how it read before. */}
+        {/* A first run is one press: train, and score once it succeeds. A new experiment
+            used to land on a draft that needed Train, a wait, then Score & evaluate. */}
         <Button
           variant={trained ? "secondary" : "primary"}
           disabled={busy}
           loading={start.isPending && !trained}
-          onClick={() => (trained ? setConfirmRetrain(true) : run("train"))}
+          onClick={() => (trained ? setConfirmRetrain(true) : run("train", undefined, true))}
         >
-          {trained ? "Retrain from scratch" : "Train"}
+          {trained ? "Retrain from scratch" : "Train & score"}
         </Button>
+        {!trained && (
+          <Button variant="ghost" disabled={busy} onClick={() => run("train")}>
+            Train only
+          </Button>
+        )}
 
         {detail.supports_resume && (
           <span className="flex items-center gap-1.5">

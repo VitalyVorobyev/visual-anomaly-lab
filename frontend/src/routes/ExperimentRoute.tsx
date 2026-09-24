@@ -44,7 +44,7 @@ import { TrainingTab } from "./experiment/TrainingTab";
 
 /* A disabled tab used to give no reason at all, which reads as broken rather than as
    not-yet. Each says what would fill it. */
-const NOT_SCORED = "Nothing has been scored yet — run 'Score & evaluate' first.";
+const NOT_SCORED = "Nothing has been scored yet — 'Train & score', or 'Score & evaluate' on a trained run.";
 const NO_STRUCTURE = "This method recorded no architecture or score-normalization table.";
 const NO_PICTURES = "This method recorded no run-scoped pictures of itself.";
 
@@ -276,8 +276,9 @@ export function ExperimentRoute() {
             />
           ) : (
             <Empty>
-              Nothing has been scored yet. Train, then run &lsquo;Score &amp; evaluate&rsquo;
-              from the bar above.
+              {detail.status === "trained"
+                ? "Nothing has been scored yet. Run ‘Score & evaluate’ from the bar above."
+                : "Nothing has been scored yet. ‘Train & score’ in the bar above does both."}
             </Empty>
           )}
 

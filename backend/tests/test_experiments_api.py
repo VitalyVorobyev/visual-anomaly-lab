@@ -172,6 +172,17 @@ def test_a_method_is_refused_for_a_task_it_does_not_declare(
     assert {row["task"] for row in listed} == {"anomaly"}
 
 
+def test_training_asked_to_score_names_the_scoring_job_it_leaves_behind(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """Train-then-score is one request: the train result names the infer job to queue."""
+    experiment = _create(client, seeded)
+    plain = _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
+    assert "follow_up" not in plain
+    chained = _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"], "then_score": True})
+    assert chained["follow_up"] == {"kind": "infer", "params": {"experiment_id": experiment["id"]}}
+
+
 def test_a_split_from_another_dataset_is_refused(client: TestClient, seeded: Fixture) -> None:
     other = client.post(
         "/api/experiments",

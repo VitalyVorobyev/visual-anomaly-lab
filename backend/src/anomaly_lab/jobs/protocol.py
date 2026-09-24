@@ -81,6 +81,14 @@ _EVENT_ADAPTER: TypeAdapter[JobEvent] = TypeAdapter(JobEvent)
 # nor the entrypoint has to import the other for it.
 REQUEST_ID = "rid"
 
+FOLLOW_UP_KEY = "follow_up"
+"""A key in a `done` result naming the job to queue next: `{"kind": ..., "params": {...}}`.
+
+The one way a job chains another. The handler decides *whether* — only it knows what its
+params asked for — and the queue decides *when*: only on `succeeded`, never after a failure
+or a cancel, and without knowing what either kind means, so a chain costs no entry here.
+"""
+
 
 def encode(event: JobEvent) -> str:
     """Serialize one event to its wire form, without a trailing newline."""

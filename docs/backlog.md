@@ -20,8 +20,6 @@ until its output has been reviewed.
       inside a `<Link>` (catalogue header, dataset band, sample viewer, experiment catalogue), which
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
       `ButtonLink` there, release, and replace all five.
-- [ ] **Train, then score, as one action** (S): creating an experiment lands on a draft that needs
-      Train, a wait, then Score & evaluate.
 
 ## Tasks
 
