@@ -18,6 +18,17 @@ def _to_image(row: sqlite3.Row) -> Image:
     return Image.model_validate(dict(row))
 
 
+def dataset_id_of(conn: sqlite3.Connection, image_id: int) -> int:
+    row = conn.execute(
+        "SELECT sample.dataset_id FROM image JOIN sample ON sample.id = image.sample_id "
+        "WHERE image.id = ?",
+        (image_id,),
+    ).fetchone()
+    if row is None:
+        raise LookupError(f"no image with id {image_id}")
+    return int(row[0])
+
+
 def get_image(conn: sqlite3.Connection, image_id: int) -> Image | None:
     row = conn.execute("SELECT * FROM image WHERE id = ?", (image_id,)).fetchone()
     return _to_image(row) if row is not None else None

@@ -58,6 +58,15 @@ describe("the route table", () => {
     expect(container.querySelector('[data-layout="sample"]')).not.toBeNull();
   });
 
+  it("gives the reference studio the canvas, with its two rails as the only scrollers", () => {
+    const { container } = renderAt("/datasets/7/studio/scratch");
+
+    expect(band(container)).toBeNull();
+    expect(container.querySelector('[data-layout="canvas"]')).not.toBeNull();
+    expect(container.querySelector('[data-layout="studio"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-scroll="rail"]')).toHaveLength(2);
+  });
+
   it("keeps the annotation editor out of the band", () => {
     const { container } = renderAt("/datasets/7/annotate/1/2");
 

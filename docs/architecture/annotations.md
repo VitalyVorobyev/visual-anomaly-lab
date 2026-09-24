@@ -35,7 +35,10 @@ sample, whether a class is present, absent or unlabelled:
   labelled normal is absent. Every other class is unlabelled.
 - A sample shows the class when any of its images does, and is absent only when all of them are.
 
-`GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class. It is what a few-shot
+`GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
+`GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
+outlines one class's region from its own truth (`annotations/class_truth.py`), in the source frame; an
+image whose truth does not answer for the class is a 404, and a confirmed absence is an empty outline. It is what a few-shot
 split draws references from, and what a run on the class can test on.
 
 ## Document contract

@@ -77,7 +77,8 @@ application.
   Splits tab draws references for a class. A segmentation run's results are read in its own terms —
   overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline. Still open:
   - the public gate that decides between the methods;
-  - an interactive reference studio;
+  - the reference studio's live preview and its accept / fix / mark-absent loop (choosing references
+    by eye and freezing them into a run is built);
   - Compare for few-shot runs, which it refuses today.
 
   The order is in [backlog.md](backlog.md).

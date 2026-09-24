@@ -25,13 +25,17 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Reference studio** (L, split before starting):
-      - The studio has a reference strip, a query on `SampleStage` with the foreground probability,
-        and a queue sorted by uncertainty.
-      - Its actions are accept, fix in the editor seeded with the prediction, promote to reference,
-        and mark absent.
-      - A live preview runs through the resident worker, and "freeze as experiment" ends the
-        session.
+- [ ] **Refuse an input a method cannot read, at creation** (S): a DINO method on a prepared size its
+      patch does not divide is created, and fails at fit. A plugin classmethod that checks the frozen
+      preprocessing, called by `create_experiment`, would refuse it on the create screen and in the
+      studio by name — no route or TypeScript learns about patch sizes.
+- [ ] **Reference studio: live preview** (M): the focused query segmented by the current references
+      through the resident worker (ADR-0026), refitted when the references change, and a queue of
+      queries sorted by uncertainty. It needs a resident preview kind that fits a training-free
+      method in-process.
+- [ ] **Reference studio: accept, fix, mark absent** (M): from a prediction, accept it as a completed
+      revision, open the editor seeded with it as a draft, promote the sample to a reference, or
+      confirm the class absent.
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
 - [ ] **Compare for few-shot runs** (M): runs of one class and one reference-split family side by

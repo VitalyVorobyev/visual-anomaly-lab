@@ -63,6 +63,7 @@ def screens(ids: dict) -> dict[str, str]:
         "16-compare": f"/compare?ids={a},{b}",
         "17-compare-sample": f"/compare/samples/{s}?ids={a},{b}",
         "18-experiments": "/experiments",
+        "23-studio": f"/datasets/{d}/studio/defect?refs={s}&focus={s}",
         # A few-shot segmentation run (ADR-0040), when the seed made one.
         **(
             {

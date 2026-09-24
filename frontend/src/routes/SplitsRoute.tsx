@@ -204,7 +204,19 @@ export function SplitsRoute() {
                 Draws this many samples that show the class, under the seed, as the references a
                 few-shot run learns from; every other sample is a query it is scored on. The same
                 class with three seeds is three reference draws, which is how sensitivity to the
-                choice of references is measured.
+                choice of references is measured.{" "}
+                {chosenClass && (
+                  <>
+                    To pick them by eye instead,{" "}
+                    <Link
+                      className="text-signal underline underline-offset-2"
+                      to={`/datasets/${datasetId}/studio/${chosenClass.label_key}`}
+                    >
+                      open the reference studio
+                    </Link>
+                    .
+                  </>
+                )}
               </>
             ) : drawn ? (
               <>

@@ -1,4 +1,5 @@
 import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router";
 import { describe, expect, it } from "vitest";
 
 import { queryKeys } from "../../api/queryKeys";
@@ -36,7 +37,10 @@ describe("nextClassColour", () => {
 describe("ClassManager", () => {
   it("lists every class with its key and colour", () => {
     render(
-      withProviders(<ClassManager datasetId={7} />, [
+      withProviders(
+        <MemoryRouter>
+          <ClassManager datasetId={7} />
+        </MemoryRouter>, [
         [
           queryKeys.annotationLabels(7),
           [
@@ -53,5 +57,24 @@ describe("ClassManager", () => {
     expect((screen.getByLabelText("Colour of Defect") as HTMLInputElement).value).toBe("#e03131");
     expect(screen.getByRole("button", { name: "Move Defect up" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Move Scratch down" })).toHaveProperty("disabled", true);
+  });
+
+  it("links each class to its reference studio", () => {
+    render(
+      withProviders(
+        <MemoryRouter>
+          <ClassManager datasetId={7} />
+        </MemoryRouter>,
+        [
+          [
+            queryKeys.annotationLabels(7),
+            [{ id: 1, dataset_id: 7, key: "scratch", name: "Scratch", color: "#00aa00", position: 0 }],
+          ],
+        ],
+      ),
+    );
+    expect(
+      screen.getByRole("link", { name: "Choose references" }).getAttribute("href"),
+    ).toBe("/datasets/7/studio/scratch");
   });
 });

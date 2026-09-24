@@ -210,6 +210,24 @@ per sample. Its tables are `segmentationRows`, with present / absent / unlabelle
 Benchmark shows present samples by IoU band and absent samples by outcome. How overlap moves with the
 number of references is a question across runs, and is open.
 
+**Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
+where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each
+class in the class manager and from the Splits tab's reference draw.
+- **Left rail:** the samples that show the class (`GET …/samples?class_key=&presence=present`), as the
+  browser's own `SampleTile`, which takes an `onOpen` that focuses the stage instead of navigating. Its
+  checkbox makes the sample a reference.
+- **Centre:** the focused sample on `SampleStage`, with that class's outline
+  (`GET /api/images/{id}/mask?class_key=`).
+- **Right rail:** the references (one to ten), the method (the few-shot methods that are available,
+  `fss_dino` first), the region profile, and **Freeze as experiment**. Freezing makes a `manual` split of
+  the references, a `few_shot_segmentation` run on the class and its Train & score
+  (`hooks/useStudio.ts`), then lands on the run. Why it cannot freeze yet is said in words beside the
+  button.
+
+The session is the URL (`refs`, `focus`, `method`, `profile`). The studio reads no results: the run page
+is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
+sample viewer.
+
 **Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
 beside the combined map on the sample page. Diagnostic panes are in the prepared frame

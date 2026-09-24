@@ -37,6 +37,7 @@ from anomaly_lab.domain.entities import (
     AnnotationScope,
     AnnotationState,
     Channel,
+    ClassPresence,
     Dataset,
     Image,
     Label,
@@ -619,6 +620,13 @@ def list_samples(
             "what an annotation queue asks for. Omit for both."
         ),
     ),
+    class_key: str | None = Query(
+        default=None, description="With `presence`: an annotation class, by key (ADR-0040)."
+    ),
+    presence: ClassPresence | None = Query(
+        default=None,
+        description="With `class_key`: samples that show the class, lack it, or have no answer.",
+    ),
     limit: int = Query(default=100, ge=1, le=MAX_PAGE_SIZE),
     offset: int = Query(default=0, ge=0),
 ) -> SamplePage:
@@ -629,16 +637,27 @@ def list_samples(
     inserted rows in the middle.
     """
     settings: Settings = request.app.state.settings
-    filters = SampleFilter(
-        label=label,
-        channel_id=channel_id,
-        split_id=split_id,
-        subset=subset,
-        annotated=annotated,
-    )
+    if (class_key is None) != (presence is None):
+        raise HTTPException(
+            status_code=422, detail="class_key and presence filter together, or not at all"
+        )
 
     with connection(settings.db_path) as conn:
         _require_dataset(conn, dataset_id)
+        chosen: list[int] | None = None
+        if class_key is not None and presence is not None:
+            # Decided in Python by the one presence rule, so the rail and the few-shot draw
+            # cannot disagree about which samples show a class.
+            found = annotations_repo.class_presence(conn, dataset_id, class_key)
+            chosen = sorted(sample for sample, value in found.items() if value is presence)
+        filters = SampleFilter(
+            label=label,
+            channel_id=channel_id,
+            split_id=split_id,
+            subset=subset,
+            annotated=annotated,
+            sample_ids=chosen,
+        )
         total = samples_repo.count_samples(conn, dataset_id, filters)
         page = samples_repo.list_samples(conn, dataset_id, filters, limit=limit, offset=offset)
         names = _channel_names(conn, dataset_id)

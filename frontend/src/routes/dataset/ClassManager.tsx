@@ -14,9 +14,10 @@
 
 import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import type { AnnotationLabel } from "../../api/client";
-import { Button, Disclosure, ErrorBox, Field, Input } from "@vitavision/lab-ui";
+import { Button, cn, Disclosure, ErrorBox, Field, focusRing, Input } from "@vitavision/lab-ui";
 import {
   useAnnotationLabels,
   useCreateAnnotationLabel,
@@ -106,6 +107,7 @@ export function ClassManager({ datasetId }: { datasetId: number }) {
           {rows.map((label, index) => (
             <ClassRow
               key={label.key}
+              datasetId={datasetId}
               label={label}
               first={index === 0}
               last={index === rows.length - 1}
@@ -158,7 +160,9 @@ function ClassRow({
   last,
   onChange,
   onMove,
+  datasetId,
 }: {
+  datasetId: number;
   label: AnnotationLabel;
   first: boolean;
   last: boolean;
@@ -193,6 +197,16 @@ function ClassRow({
       />
       <span className="font-mono text-[11px] text-fg-subtle">{label.key}</span>
       <span className="ml-auto flex items-center gap-1">
+        {/* A few-shot run learns a class from a handful of its samples (ADR-0040). */}
+        <Link
+          to={`/datasets/${datasetId}/studio/${label.key}`}
+          className={cn(
+            "mr-2 rounded-sm text-xs font-medium text-fg-muted transition-colors hover:text-signal",
+            focusRing,
+          )}
+        >
+          Choose references
+        </Link>
         <Button
           variant="ghost"
           size="sm"

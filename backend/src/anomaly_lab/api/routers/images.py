@@ -11,6 +11,7 @@ of fact rather than a hope: a client that has the bytes never needs to ask for t
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from enum import StrEnum
 from pathlib import Path
@@ -20,6 +21,11 @@ from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from anomaly_lab.annotations.class_truth import (
+    ClassTruthError,
+    load_class_mask,
+    resolve_class_truth,
+)
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
@@ -294,6 +300,13 @@ def read_mask(
             "`frame=prepared`, and ignored otherwise."
         ),
     ),
+    class_key: str | None = Query(
+        default=None,
+        description=(
+            "Outline one annotation class's region instead of all of them (ADR-0040). "
+            "Source frame only; 404 when the image's truth does not answer for the class."
+        ),
+    ),
 ) -> Response:
     """The ground-truth outline as a transparent PNG, ready to lay over the source.
 
@@ -305,6 +318,13 @@ def read_mask(
     resampled down to less than one, which drops out in places; tracing the projected mask
     gives an even line at the resolution it is actually drawn at.
     """
+    if class_key is not None:
+        if frame is MaskFrame.PREPARED:
+            raise HTTPException(
+                status_code=422, detail="class_key outlines are drawn in the source frame only"
+            )
+        return _class_outline(request, image_id, class_key)
+
     prepared_for: int | None = None
     if frame is MaskFrame.PREPARED:
         if experiment_id is None:
@@ -354,6 +374,27 @@ def read_mask(
         tag = f'"ground-truth-{truth.sha256}-{frame.value}-{manifest[:16]}"'
 
     return Response(content=payload, media_type="image/png", headers=_headers(tag))
+
+
+def _class_outline(request: Request, image_id: int, class_key: str) -> Response:
+    """One class's region, from what pinned it (`annotations/class_truth.py`)."""
+    image, settings = _load_image(request, image_id)
+    with connection(settings.db_path) as conn:
+        dataset_id = images_repo.dataset_id_of(conn, image_id)
+        truth = resolve_class_truth(conn, dataset_id, [image_id], class_key).get(image_id)
+    if truth is None:
+        raise HTTPException(
+            status_code=404, detail=f"image {image_id} has no answer for class {class_key!r}"
+        )
+    try:
+        mask = load_class_mask(truth)
+    except ClassTruthError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    payload = render_mask_contour(mask, size=(image.width, image.height))
+    digest = hashlib.sha256(truth.identity.encode()).hexdigest()[:24]
+    return Response(
+        content=payload, media_type="image/png", headers=_headers(f'"class-{class_key}-{digest}"')
+    )
 
 
 def _pinned_transform(
