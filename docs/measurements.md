@@ -230,3 +230,28 @@ load).
 **Open.** No paired control on shared prepared pixels. Held fixed throughout: per-layer L2 before pooling,
 `concat` instead of `mean`, `final_norm=False`; `rotation_fill=masked` never measured. All four are in
 [backlog.md](backlog.md).
+
+## Few-shot segmentation — protocol predeclared
+
+The first few-shot gate (ADR-0040). **Predeclared; not yet run.** `scripts/few-shot-public-gate.py`.
+
+**Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
+divide. The target class is `defect`, from VisA's pixel masks. For each class, `few_shot` splits draw
+k ∈ {1, 2, 5, 10} references among the 100 defect samples under seeds {0, 1, 2}. Every other sample is a
+query: the rest of the defects, and the 1 000 normals as confirmed absences. Three methods run at their
+shipped defaults on the same pixels: `color_prototype`, `fss_dino` (DINOv2 ViT-B/14) and `proto_seg`
+(DINOv2 ViT-B/14). That is 72 runs, one child process each.
+
+**Reported.**
+- Per method and shot count: foreground IoU, boundary F1, presence ROC-AUC, the false-positive rate on
+  absent images, and ms per image.
+- Each is a mean over the two classes and three seeds, with the spread across seeds as the measure of
+  support sensitivity.
+
+**Decision rule, fixed before the run.** The primary number is foreground IoU at 5 shots.
+- `proto_seg` becomes the default few-shot method (the reference studio's first choice) if both hold:
+  - it beats `fss_dino` by at least 0.02 on the primary;
+  - its presence ROC-AUC at 5 shots is no more than 0.02 below `fss_dino`'s.
+  Otherwise `fss_dino` is the default, and `proto_seg` stays experimental.
+- The DINO methods are credible at all only if `fss_dino` beats `color_prototype` on the primary.
+
