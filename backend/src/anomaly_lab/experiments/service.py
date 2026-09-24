@@ -337,11 +337,18 @@ def create_experiment(
             load_prepared_build(settings, profile, manifest_sha256=build_summary.manifest_sha256)
         except ValueError as exc:
             raise InvalidInputError(str(exc)) from exc
-        frozen_preprocessing = PreprocessingConfig(
+        prepared = PreprocessingConfig(
             width=profile.prepared_width,
             height=profile.prepared_height,
             color=preprocessing_options.color,
-        ).model_dump(mode="json")
+        )
+        # What only the method knows it cannot read — a patch size the frame does not divide —
+        # is refused here, by the method, rather than minutes into a job.
+        try:
+            model_class.check_input(model_class.config_model().model_validate(config), prepared)
+        except ValueError as exc:
+            raise InvalidInputError(str(exc)) from exc
+        frozen_preprocessing = prepared.model_dump(mode="json")
 
         # The directory is named after the row, so it cannot be built until the row
         # exists; created first, then recorded, then made.

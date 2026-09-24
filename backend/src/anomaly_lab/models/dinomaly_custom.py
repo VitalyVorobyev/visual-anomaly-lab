@@ -75,6 +75,7 @@ from anomaly_lab.models.dino_backbone import (
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
+    PreprocessingConfig,
     expand_planes,
     load_array,
     to_chw,
@@ -537,6 +538,14 @@ class DinomalyCustomModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return DinomalyCustomConfig
+
+    @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        if not isinstance(config, DinomalyCustomConfig):
+            raise TypeError(
+                f"expected {DinomalyCustomConfig.__name__}, got {type(config).__name__}"
+            )
+        validate_prepared_size(config.encoder, preprocessing.width, preprocessing.height)
 
     @classmethod
     def capabilities(cls) -> Capabilities:

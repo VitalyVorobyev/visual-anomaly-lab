@@ -55,7 +55,7 @@ from anomaly_lab.models.dino_backbone import (
     validate_prepared_size,
 )
 from anomaly_lab.models.positional import INSID3_RANK, debias, positional_basis, resolved_rank
-from anomaly_lab.models.preprocessing import load_array
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
 from anomaly_lab.models.prototypes import (
     fit_linear_probe,
     lse_probability,
@@ -198,6 +198,12 @@ class ProtoSegModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return ProtoSegConfig
+
+    @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        if not isinstance(config, ProtoSegConfig):
+            raise TypeError(f"expected ProtoSegConfig, got {type(config).__name__}")
+        validate_prepared_size(config.backbone, preprocessing.width, preprocessing.height)
 
     @classmethod
     def capabilities(cls) -> Capabilities:

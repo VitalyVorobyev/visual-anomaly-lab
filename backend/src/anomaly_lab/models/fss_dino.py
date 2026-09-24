@@ -50,6 +50,7 @@ from anomaly_lab.models.dino_backbone import (
     patch_grid,
     validate_prepared_size,
 )
+from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.models.prototypes import (
     class_maps,
     combined_score,
@@ -146,6 +147,12 @@ class FssDinoModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return FssDinoConfig
+
+    @classmethod
+    def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
+        if not isinstance(config, FssDinoConfig):
+            raise TypeError(f"expected FssDinoConfig, got {type(config).__name__}")
+        validate_prepared_size(config.backbone, preprocessing.width, preprocessing.height)
 
     @classmethod
     def capabilities(cls) -> Capabilities:
