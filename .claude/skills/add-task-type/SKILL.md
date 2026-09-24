@@ -24,7 +24,9 @@ has annotation, and whether it is ready for a task is a readiness check.
    `scripts/gen-api-types.sh`.
 2. **The evaluator.** One class and one entry in `EVALUATORS`, `backend/src/anomaly_lab/eval/evaluators.py`.
    Until it exists, `create_experiment` refuses the task — that is the guard, keep it. An evaluator
-   reads stored predictions and ground truth and writes `MetricSet`s; it never imports a model.
+   reads stored predictions and ground truth and writes `MetricSet`s; it never imports a model. It
+   names a `headline` metric and answers `current_digest`, so staleness is judged against its own
+   truth (`FewShotSegmentationEvaluator` and `eval/segmentation.py` are the second example).
    - **Bound memory.** Segmentation accumulates a per-class confusion matrix, never per-pixel arrays;
      detection keeps per-class lists of (confidence, matched) pairs. Linear in images is fine;
      linear in pixels is not.

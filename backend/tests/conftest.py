@@ -22,8 +22,16 @@ from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connect, connection
 from anomaly_lab.db.migrate import apply_migrations
-from anomaly_lab.db.repositories import datasets, images, masks, region_profiles, samples, splits
-from anomaly_lab.domain.entities import JobKind, Label, Subset
+from anomaly_lab.db.repositories import (
+    datasets,
+    experiments,
+    images,
+    masks,
+    region_profiles,
+    samples,
+    splits,
+)
+from anomaly_lab.domain.entities import JobKind, Label, Subset, Task
 from anomaly_lab.experiments.infer import run_infer_job
 from anomaly_lab.experiments.train import run_train_job
 from anomaly_lab.jobs.context import JobContext
@@ -399,6 +407,53 @@ def create_experiment(client: TestClient, seeded: Fixture, **overrides: object) 
     assert response.status_code == 200, response.text
     payload: dict[str, Any] = response.json()
     return payload
+
+
+def create_few_shot_experiment(
+    client: TestClient, settings: Settings, seeded: Fixture, references: list[int]
+) -> int:
+    """A `defect` few-shot experiment row on a manual split of `references` (sample ids).
+
+    Written with the repository, past the create guard, so a handler or an evaluator can be
+    tested before a method declares the task; the anomaly run built first is only there to
+    build the region profile the row pins.
+    """
+    anomaly = create_experiment(client, seeded)
+    with connection(settings.db_path) as conn:
+        base = experiments.get_experiment(conn, anomaly["id"])
+        assert base is not None
+        split = splits.create_split(
+            conn,
+            seeded.dataset_id,
+            name="references",
+            strategy="manual",
+            seed=0,
+            params={"strategy": "manual", "sample_ids": references},
+            assignments={
+                sample: Subset.TRAIN if sample in references else Subset.TEST
+                for sample in splits.list_sample_ids(conn, seeded.split_id)
+            },
+        )
+        row = experiments.create_experiment(
+            conn,
+            name="few-shot",
+            dataset_id=seeded.dataset_id,
+            split_id=split.id,
+            region_profile_id=base.region_profile_id,
+            region_manifest_sha256=base.region_manifest_sha256,
+            model_type="pixel_reference",
+            task=Task.FEW_SHOT_SEGMENTATION.value,
+            target_label="defect",
+            model_config=base.model_config_,
+            preprocessing_config=base.preprocessing_config,
+            eval_config={},
+            artifact_dir="",
+        )
+        conn.execute(
+            "UPDATE experiment SET artifact_dir = ? WHERE id = ?",
+            (str(settings.experiment_dir(row.id)), row.id),
+        )
+    return row.id
 
 
 def run_handler(settings: Settings, kind: JobKind, params: dict[str, Any]) -> dict[str, Any]:

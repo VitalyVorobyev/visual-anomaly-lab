@@ -47,7 +47,7 @@ from anomaly_lab.eval.compare import (
     agreement,
     resolve_threshold,
 )
-from anomaly_lab.eval.ground_truth import current_digest
+from anomaly_lab.eval.evaluators import evaluator_for
 from anomaly_lab.eval.threshold import ConfusionCounts, report
 from anomaly_lab.media.overlay import read_display_range
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -200,7 +200,7 @@ def compare_experiments(
             resolve_threshold(samples, at, recall_target=recall_target)
             for samples in samples_by_run
         ]
-        metrics_by_run = [_metrics_for(conn, run.id, chosen) for run in experiments]
+        metrics_by_run = [_metrics_for(conn, run, chosen) for run in experiments]
 
         runs = [
             _compared_run(run, samples, operating, metrics)
@@ -311,10 +311,11 @@ def _default_subset(scored_by_run: list[list[Subset]]) -> Subset | None:
 
 def _metrics_for(
     conn: sqlite3.Connection,
-    experiment_id: int,
+    experiment: Experiment,
     subset: Subset | None,
 ) -> MetricSummary | None:
-    for found in results_repo.list_metric_sets(conn, experiment_id):
+    evaluator = evaluator_for(experiment.task)
+    for found in results_repo.list_metric_sets(conn, experiment.id):
         if found.subset is subset:
             return MetricSummary(
                 subset=found.subset,
@@ -322,7 +323,8 @@ def _metrics_for(
                 computed_at=found.computed_at,
                 ground_truth_digest=found.ground_truth_digest,
                 ground_truth_stale=(
-                    found.ground_truth_digest != current_digest(conn, experiment_id, found.subset)
+                    found.ground_truth_digest
+                    != evaluator.current_digest(conn, experiment, found.subset)
                 ),
             )
     return None

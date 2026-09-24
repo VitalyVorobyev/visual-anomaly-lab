@@ -89,4 +89,4 @@ def reevaluate(request: Request, experiment_id: int) -> list[MetricSummary]:
     experiment, settings = load(request, experiment_id)
     service.reevaluate(settings, experiment)
     with connection(settings.db_path) as conn:
-        return metric_summaries(conn, experiment.id)
+        return metric_summaries(conn, experiment)

@@ -30,7 +30,7 @@ from anomaly_lab.domain.entities import (
     Subset,
     Task,
 )
-from anomaly_lab.eval.ground_truth import current_digest
+from anomaly_lab.eval.evaluators import evaluator_for
 from anomaly_lab.eval.threshold import SampleVerdict
 from anomaly_lab.experiments import service
 from anomaly_lab.experiments.train import MODEL_SUBDIR, TrainingState, read_training_state
@@ -405,10 +405,11 @@ def headline(metric_sets: list[MetricSummary] | list[MetricSet]) -> float | None
     return None
 
 
-def metric_summaries(conn: sqlite3.Connection, experiment_id: int) -> list[MetricSummary]:
+def metric_summaries(conn: sqlite3.Connection, experiment: Experiment) -> list[MetricSummary]:
+    evaluator = evaluator_for(experiment.task)
     summaries: list[MetricSummary] = []
-    for found in results_repo.list_metric_sets(conn, experiment_id):
-        current = current_digest(conn, experiment_id, found.subset)
+    for found in results_repo.list_metric_sets(conn, experiment.id):
+        current = evaluator.current_digest(conn, experiment, found.subset)
         summaries.append(
             MetricSummary(
                 subset=found.subset,
@@ -444,7 +445,7 @@ def detail(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentDetail
     dataset = datasets_repo.get_dataset(conn, experiment.dataset_id)
     split = splits_repo.get_split(conn, experiment.split_id)
     profile = region_profiles_repo.get_profile(conn, experiment.region_profile_id)
-    metrics = metric_summaries(conn, experiment.id)
+    metrics = metric_summaries(conn, experiment)
 
     try:
         capabilities = get_model_class(experiment.model_type).capabilities()

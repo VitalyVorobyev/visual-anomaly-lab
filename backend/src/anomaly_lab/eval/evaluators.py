@@ -15,8 +15,9 @@ import sqlite3
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Experiment, Subset, Task
-from anomaly_lab.eval import runner
+from anomaly_lab.eval import ground_truth, runner, segmentation
 
 
 class Evaluator(Protocol):
@@ -39,6 +40,13 @@ class Evaluator(Protocol):
         """Compute every subset's metrics without storing anything."""
         ...
 
+    def current_digest(
+        self, conn: sqlite3.Connection, experiment: Experiment, subset: Subset
+    ) -> str:
+        """The ground-truth digest a subset's metrics would carry now; a stored one that
+        differs means the truth moved after they were computed."""
+        ...
+
 
 class AnomalyEvaluator:
     """Image- and pixel-level anomaly metrics over stored scores and maps (ADR-0011)."""
@@ -55,9 +63,43 @@ class AnomalyEvaluator:
     ) -> dict[Subset, dict[str, Any]]:
         return runner.evaluate_experiment(conn, experiment)
 
+    def current_digest(
+        self, conn: sqlite3.Connection, experiment: Experiment, subset: Subset
+    ) -> str:
+        return ground_truth.current_digest(conn, experiment.id, subset)
+
+
+class FewShotSegmentationEvaluator:
+    """One class against background, per image, over stored maps or masks (ADR-0040)."""
+
+    headline = "foreground_iou"
+
+    def evaluate_and_store(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        # The sample rows are the ranked list and the gallery's order: presence scores,
+        # aggregated as the anomaly runner aggregates any score.
+        runner.rebuild_sample_results(conn, experiment)
+        computed, digests = segmentation.evaluate(conn, experiment)
+        results_repo.replace_metric_sets(
+            conn, experiment.id, computed, ground_truth_digests=digests
+        )
+        return computed
+
+    def evaluate(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        return segmentation.evaluate(conn, experiment)[0]
+
+    def current_digest(
+        self, conn: sqlite3.Connection, experiment: Experiment, subset: Subset
+    ) -> str:
+        return segmentation.current_digest(conn, experiment, subset)
+
 
 EVALUATORS: dict[Task, Callable[[], Evaluator]] = {
     Task.ANOMALY: AnomalyEvaluator,
+    Task.FEW_SHOT_SEGMENTATION: FewShotSegmentationEvaluator,
 }
 
 
