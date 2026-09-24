@@ -134,9 +134,13 @@ class ExperimentSummary(BaseModel):
     status: ExperimentStatus
     created_at: str
     notes: str | None = None
-    headline_roc_auc: float | None = Field(
+    headline_metric: str = Field(
+        default="sample_roc_auc",
+        description="The task's one-line metric (its evaluator's `headline`).",
+    )
+    headline_value: float | None = Field(
         default=None,
-        description="Sample-level ROC-AUC on test, or on the best subset scored so far.",
+        description="That metric on test, or on the best subset scored so far.",
     )
 
 
@@ -395,13 +399,15 @@ class DiagnoseResponse(BaseModel):
     )
 
 
-def headline(metric_sets: list[MetricSummary] | list[MetricSet]) -> float | None:
+def headline(
+    metric_sets: list[MetricSummary] | list[MetricSet], metric: str = "sample_roc_auc"
+) -> float | None:
     """Test if there is one, otherwise whatever was scored — never a blend of subsets."""
     by_subset = {found.subset: found.metrics for found in metric_sets}
     for subset in (Subset.TEST, Subset.VAL, Subset.TRAIN):
         metrics = by_subset.get(subset)
-        if metrics and metrics.get("sample_roc_auc") is not None:
-            return float(metrics["sample_roc_auc"])
+        if metrics and metrics.get(metric) is not None:
+            return float(metrics[metric])
     return None
 
 
@@ -437,7 +443,11 @@ def summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumma
         status=experiment.status,
         created_at=experiment.created_at,
         notes=experiment.notes,
-        headline_roc_auc=headline(results_repo.list_metric_sets(conn, experiment.id)),
+        headline_metric=evaluator_for(experiment.task).headline,
+        headline_value=headline(
+            results_repo.list_metric_sets(conn, experiment.id),
+            evaluator_for(experiment.task).headline,
+        ),
     )
 
 

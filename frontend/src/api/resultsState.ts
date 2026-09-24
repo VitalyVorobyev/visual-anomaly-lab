@@ -27,14 +27,38 @@ import type { Subset } from "./client";
 import type { TabId } from "./experimentTabs";
 import { parseTab } from "./experimentTabs";
 
-/** The verdict buckets the server tags rows with. `all` is the absence of a filter. */
-export const OUTCOMES = ["tp", "fp", "tn", "fn", "unlabeled"] as const;
+/**
+ * The verdict buckets the server tags rows with. `all` is the absence of a filter.
+ *
+ * Two vocabularies, one per task, and disjoint: an anomaly run is `tp`/`fp`/`tn`/`fn` at a
+ * threshold (the threshold report), a few-shot segmentation run is `hit`/`low_iou`/`miss`/
+ * `false_presence`/`correct_absence` against its class truth (ADR-0040). Disjoint is what
+ * lets one URL parameter and one "mistakes" set serve both.
+ */
+export const OUTCOMES = [
+  "tp",
+  "fp",
+  "tn",
+  "fn",
+  "hit",
+  "low_iou",
+  "miss",
+  "false_presence",
+  "correct_absence",
+  "unlabeled",
+] as const;
 export type Outcome = (typeof OUTCOMES)[number];
 
 const SUBSETS: readonly Subset[] = ["train", "val", "test"];
 
 /** The mistakes, which is the filter anyone actually reaches for first. */
-export const MISTAKE_OUTCOMES: readonly Outcome[] = ["fp", "fn"];
+export const MISTAKE_OUTCOMES: readonly Outcome[] = [
+  "fp",
+  "fn",
+  "miss",
+  "false_presence",
+  "low_iou",
+];
 
 export type SortOrder = "score-desc" | "score-asc";
 

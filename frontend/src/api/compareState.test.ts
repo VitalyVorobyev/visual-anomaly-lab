@@ -88,6 +88,13 @@ describe("choosing which runs to compare", () => {
 
   it("allows anything while nothing is selected", () => {
     expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1 }, undefined, [])).toBeNull();
+    expect(
+      refusalReason(
+        { id: 1, dataset_id: 1, split_id: 1, task: "few_shot_segmentation" },
+        undefined,
+        [],
+      ),
+    ).toContain("anomaly runs only");
   });
 
   it("refuses a run that has nothing to compare", () => {

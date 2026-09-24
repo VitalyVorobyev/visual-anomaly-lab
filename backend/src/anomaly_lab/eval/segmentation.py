@@ -29,12 +29,15 @@ from typing import Any
 
 import numpy as np
 from PIL import Image
+from pydantic import BaseModel, Field
 
 from anomaly_lab.annotations.class_truth import ClassTruth, load_class_mask, resolve_class_truth
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.results import ScoredImage
 from anomaly_lab.domain.entities import Experiment, Subset
 from anomaly_lab.eval.metrics import roc_auc, timing_summary
+from anomaly_lab.eval.threshold import SampleVerdict
+from anomaly_lab.schemas import API_MODEL_CONFIG
 
 THRESHOLD_RULE = "foreground probability >= 0.5"
 THRESHOLD = 0.5
@@ -248,3 +251,93 @@ def current_digest(conn: sqlite3.Connection, experiment: Experiment, subset: Sub
     """The digest a subset's metrics would carry now; reads metadata only, never pixels."""
     images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
     return digest(experiment, images, _truths(conn, experiment, images))
+
+
+# ---------------------------------------------------------------------------- per sample
+
+LOW_IOU_BELOW = 0.5
+"""A present sample found with less overlap than this is a `low_iou` outcome, not a `hit`."""
+MISTAKES = ("miss", "false_presence", "low_iou")
+
+
+class SegmentationVerdict(SampleVerdict):
+    """One sample as the few-shot gallery shows it: its outcome, and its overlap."""
+
+    iou: float | None = Field(
+        default=None,
+        description="Intersection over union over the sample's answered images; null when absent.",
+    )
+
+
+class SegmentationOutcomes(BaseModel):
+    """Every scored sample of a subset, classified by what its prediction did to its truth."""
+
+    model_config = API_MODEL_CONFIG
+
+    threshold_rule: str = THRESHOLD_RULE
+    low_iou_below: float = LOW_IOU_BELOW
+    samples: list[SegmentationVerdict] = Field(default_factory=list)
+
+
+def _outcome(present: bool, predicted: bool, iou: float | None) -> str:
+    if present:
+        if iou is None or iou == 0.0:
+            return "miss"
+        return "hit" if iou >= LOW_IOU_BELOW else "low_iou"
+    return "false_presence" if predicted else "correct_absence"
+
+
+def sample_outcomes(
+    conn: sqlite3.Connection, experiment: Experiment, subset: Subset | None
+) -> SegmentationOutcomes:
+    """Per sample: `hit`, `low_iou`, `miss`, `false_presence`, `correct_absence` or `unlabeled`.
+
+    Computed on request from the stored maps, like the anomaly threshold report, and ranked by
+    presence score. A sample's images are pooled: it is present when any answered image
+    shows the class, and its IoU is over all of its answered images. Images whose truth does
+    not answer are left out of the pool; a sample with none answered is `unlabeled`.
+    """
+    images = results_repo.list_scored_images(conn, experiment.id, subset=subset)
+    samples = results_repo.list_scored_samples(conn, experiment.id, subset=subset)
+    truths = _truths(conn, experiment, images)
+    maps_dir = Path(experiment.artifact_dir) / "maps"
+
+    pooled: dict[int, list[int]] = {}
+    for image in images:
+        truth = truths.get(image.image_id)
+        predicted = predicted_mask(image, maps_dir)
+        if truth is None or predicted is None:
+            continue
+        region = load_class_mask(truth)
+        counts = pooled.setdefault(image.sample_id, [0, 0, 0, 0])
+        counts[0] += int(np.count_nonzero(region & predicted))
+        counts[1] += int(np.count_nonzero(~region & predicted))
+        counts[2] += int(np.count_nonzero(region & ~predicted))
+        counts[3] += int(bool(region.any()))
+
+    verdicts: list[SegmentationVerdict] = []
+    for sample in samples:
+        found = pooled.get(sample.sample_id)
+        if found is None:
+            outcome, iou, predicted_any = "unlabeled", None, False
+        else:
+            hit, extra, missed, shows = found
+            present = shows > 0
+            iou = hit / (hit + extra + missed) if present else None
+            predicted_any = hit + extra > 0
+            outcome = _outcome(present, predicted_any, iou)
+        verdicts.append(
+            SegmentationVerdict(
+                sample_id=sample.sample_id,
+                group_key=sample.group_key,
+                external_id=sample.external_id,
+                label=sample.label,
+                notes=sample.notes,
+                score=sample.agg_score,
+                predicted_defect=predicted_any,
+                outcome=outcome,
+                iou=iou,
+            )
+        )
+    verdicts.sort(key=lambda verdict: verdict.score, reverse=True)
+    return SegmentationOutcomes(samples=verdicts)

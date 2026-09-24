@@ -210,6 +210,52 @@ function formatTolerance(values: MetricValue): string | null {
   return fraction === null ? null : `${(fraction * 100).toFixed(1)}% of diagonal`;
 }
 
+/**
+ * A few-shot segmentation run's metrics (ADR-0040): pooled pixel overlap, then what happened
+ * per image. Every image-level rate says "image", because no sample-level rule for a class
+ * has been decided and these count images.
+ */
+export function segmentationRows(metrics: MetricValue): MetricRow[] {
+  const tolerance = asNumber(metrics.boundary_tolerance_px);
+  const small = asNumber(metrics.small_region_fraction);
+  return [
+    {
+      key: "foreground_iou",
+      label: "Foreground IoU",
+      value: formatScore(metrics.foreground_iou),
+      hint: "Pooled over every answered image, so a false region on an absent image counts.",
+    },
+    { key: "foreground_dice", label: "Foreground Dice", value: formatScore(metrics.foreground_dice) },
+    {
+      key: "boundary_f1",
+      label: tolerance === null ? "Boundary F1" : `Boundary F1 (±${tolerance} px)`,
+      value: formatScore(metrics.boundary_f1),
+    },
+    {
+      key: "image_present_recall",
+      label: "Found, of images that show it",
+      value: formatScore(metrics.image_present_recall),
+    },
+    {
+      key: "image_absent_false_positive_rate",
+      label: "Flagged, of images without it",
+      value: formatScore(metrics.image_absent_false_positive_rate),
+      hint: "Lower is better: an absent image with any predicted pixel.",
+    },
+    {
+      key: "image_small_region_recall",
+      label: small === null ? "Small-region recall" : `Small-region recall (≤${small * 100}%)`,
+      value: formatScore(metrics.image_small_region_recall),
+    },
+    {
+      key: "image_presence_roc_auc",
+      label: "Presence ROC-AUC",
+      value: formatScore(metrics.image_presence_roc_auc),
+      hint: "Threshold-free: presence scores against present and absent images.",
+    },
+  ];
+}
+
 export function timingRows(metrics: MetricValue): MetricRow[] {
   const timing = metrics.timing;
   if (timing === null || typeof timing !== "object") return [];

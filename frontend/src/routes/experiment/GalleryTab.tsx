@@ -20,26 +20,16 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 
-import type { MapScale, SamplePreview, SampleVerdict, Subset } from "../../api/client";
+import type { MapScale, SamplePreview, SampleVerdict, Subset, Task } from "../../api/client";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
-import type { Outcome, ResultsState } from "../../api/resultsState";
-import { MISTAKE_OUTCOMES, cutValue, writeResultsState } from "../../api/resultsState";
+import type { ResultsState } from "../../api/resultsState";
+import { cutValue, writeResultsState } from "../../api/resultsState";
 import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
 import { useSamplePreviews } from "../../hooks/useExperiments";
 import { OverlayControls } from "./OverlayControls";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "./ResultsPanel";
+import { taskView, type OutcomeFilter } from "./taskViews";
 import type { Verdicts } from "./useVerdicts";
-
-/** `undefined` is every sample; `mistakes` is the pair anyone actually looks for. */
-const FILTERS: { id: string; label: string; outcomes: readonly Outcome[] | undefined }[] = [
-  { id: "all", label: "all", outcomes: undefined },
-  { id: "mistakes", label: "mistakes", outcomes: MISTAKE_OUTCOMES },
-  { id: "tp", label: "true positive", outcomes: ["tp"] },
-  { id: "fn", label: "false negative", outcomes: ["fn"] },
-  { id: "fp", label: "false positive", outcomes: ["fp"] },
-  { id: "tn", label: "true negative", outcomes: ["tn"] },
-  { id: "unlabeled", label: "unlabeled", outcomes: ["unlabeled"] },
-];
 
 export function GalleryTab({
   experimentId,
@@ -48,8 +38,13 @@ export function GalleryTab({
   verdicts,
   subsets,
   range,
+  task,
+  targetLabel,
 }: {
   experimentId: number;
+  /** Decides the outcome strip and its words (`taskViews.tsx`). */
+  task: Task | undefined;
+  targetLabel: string | null;
   state: ResultsState;
   onChange: (next: Partial<ResultsState>) => void;
   verdicts: Verdicts;
@@ -58,6 +53,8 @@ export function GalleryTab({
   range: MapScale | null | undefined;
 }) {
   const previews = useSamplePreviews(experimentId, state.subset);
+  const view = taskView(task);
+  const FILTERS = view.filters;
 
   const bySample = useMemo(() => {
     const index = new Map<number, SamplePreview>();
@@ -78,7 +75,7 @@ export function GalleryTab({
     return tally;
   }, [verdicts.all]);
 
-  const countFor = (filter: (typeof FILTERS)[number]) =>
+  const countFor = (filter: OutcomeFilter) =>
     filter.outcomes === undefined
       ? verdicts.all.length
       : filter.outcomes.reduce((total, outcome) => total + (counts.get(outcome) ?? 0), 0);
@@ -113,8 +110,8 @@ export function GalleryTab({
           aria-label="Rank order"
           value={state.sort}
           options={[
-            { value: "score-desc", label: "most anomalous" },
-            { value: "score-asc", label: "least" },
+            { value: "score-desc", label: view.rank.desc },
+            { value: "score-asc", label: view.rank.asc },
           ]}
           onValueChange={(sort) =>
             onChange({ sort: sort === "score-asc" ? "score-asc" : "score-desc" })
@@ -131,16 +128,10 @@ export function GalleryTab({
         )}
       </div>
 
-      {/* The badges are a verdict *at a threshold*, and the threshold is set on Overview —
-          so say which one, or a TP here reads as a fact about the sample. */}
+      {/* The badges are a verdict against something — a threshold, a class — and the reader
+          needs to know which, or an outcome reads as a fact about the sample. */}
       {!verdicts.isPending && (
-        <p className="text-xs text-fg-muted">
-          Outcomes at threshold{" "}
-          <span className="font-mono text-fg">{verdicts.threshold.toFixed(4)}</span>
-          {verdicts.rationale === undefined
-            ? " — chosen on Overview."
-            : ` — suggested: ${verdicts.rationale}.`}
-        </p>
+        <p className="text-xs text-fg-muted">{view.outcomeNote(verdicts, targetLabel)}</p>
       )}
 
       <OverlayControls

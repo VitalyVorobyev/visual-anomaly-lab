@@ -93,6 +93,8 @@ export const queryKeys = {
     ["experiments", experimentId, "deletion-preview"] as const,
   results: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "results", subset ?? null] as const,
+  segmentationOutcomes: (experimentId: number, subset?: Subset) =>
+    ["experiments", experimentId, "segmentation-outcomes", subset ?? null] as const,
   threshold: (experimentId: number, subset: Subset | undefined, value: number) =>
     ["experiments", experimentId, "threshold", subset ?? null, value] as const,
   sampleImages: (experimentId: number, sampleId: number) =>

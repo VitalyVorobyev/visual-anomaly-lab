@@ -74,9 +74,11 @@ application.
   reproduction of the FSSDINO baseline on them, and `proto_seg`, ours, whose debiasing, prototype bank,
   adaptation and refinement are each a field. The dataset workspace is grouped as Data · Truth · Runs,
   its band says per task what is still needed, the create screen asks for the task first, and the
-  Splits tab draws references for a class. Still open:
+  Splits tab draws references for a class. A segmentation run's results are read in its own terms —
+  overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline. Still open:
   - the public gate that decides between the methods;
-  - result screens that read a segmentation run in its own terms, and an interactive reference studio.
+  - an interactive reference studio;
+  - Compare for few-shot runs, which it refuses today.
 
   The order is in [backlog.md](backlog.md).
 - **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.

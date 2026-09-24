@@ -30,6 +30,7 @@ import type {
   PruneScope,
   ResultsPage,
   SamplePreview,
+  SegmentationOutcomes,
   Subset,
   ThresholdReport,
 } from "../api/client";
@@ -194,7 +195,11 @@ export function useStartExport(experimentId: number) {
   });
 }
 
-export function useResults(experimentId: number | undefined, subset: Subset | undefined) {
+export function useResults(
+  experimentId: number | undefined,
+  subset: Subset | undefined,
+  enabled = true,
+) {
   return useQuery<ResultsPage>({
     queryKey: queryKeys.results(experimentId ?? -1, subset),
     queryFn: async () =>
@@ -207,7 +212,7 @@ export function useResults(experimentId: number | undefined, subset: Subset | un
         }),
         "the results",
       ),
-    enabled: experimentId !== undefined,
+    enabled: experimentId !== undefined && enabled,
   });
 }
 
@@ -223,6 +228,7 @@ export function useThreshold(
   experimentId: number | undefined,
   subset: Subset | undefined,
   value: number,
+  enabled = true,
 ) {
   return useQuery<ThresholdReport>({
     queryKey: queryKeys.threshold(experimentId ?? -1, subset, value),
@@ -236,7 +242,7 @@ export function useThreshold(
         }),
         "the threshold report",
       ),
-    enabled: experimentId !== undefined,
+    enabled: experimentId !== undefined && enabled,
     placeholderData: (previous) => previous,
   });
 }
@@ -317,6 +323,31 @@ export function useDiagnostics(experimentId: number | undefined) {
  * Recomputed per request from the stored scores, like the threshold report — nothing here
  * is persisted, so a curve can never disagree with the metric it is drawn beside.
  */
+/**
+ * Each sample's few-shot segmentation outcome, ranked by presence (ADR-0040): the few-shot
+ * counterpart of the threshold report, classified on the server under the evaluator's rule.
+ */
+export function useSegmentationOutcomes(
+  experimentId: number | undefined,
+  subset: Subset | undefined,
+  enabled = true,
+) {
+  return useQuery<SegmentationOutcomes>({
+    queryKey: queryKeys.segmentationOutcomes(experimentId ?? -1, subset),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/segmentation-outcomes", {
+          params: {
+            path: { experiment_id: experimentId as number },
+            query: subset === undefined ? {} : { subset },
+          },
+        }),
+        "the segmentation outcomes",
+      ),
+    enabled: experimentId !== undefined && enabled,
+  });
+}
+
 export function useCurves(
   experimentId: number | undefined,
   subset: Subset | undefined,

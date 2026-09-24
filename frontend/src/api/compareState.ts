@@ -151,11 +151,16 @@ export function toggleRun(ids: number[], id: number): number[] {
  * checked here — that one is legitimate, and the report warns about it loudly instead.
  */
 export function refusalReason(
-  candidate: { id: number; dataset_id: number; split_id: number; status?: string },
+  candidate: { id: number; dataset_id: number; split_id: number; status?: string; task?: string },
   anchor: { dataset_id: number; split_id: number } | undefined,
   selected: number[],
 ): string | null {
   if (selected.includes(candidate.id)) return null;
+  // Compare reads runs at thresholds against normal/defect labels; a few-shot run is measured
+  // against its class truth, and would sit in the table looking right and meaning nothing.
+  if (candidate.task !== undefined && candidate.task !== "anomaly") {
+    return "A segmentation run. Compare reads anomaly runs only.";
+  }
   // First, because it is true whatever else is selected: a run with no fitted model has no
   // scores, and a column of dashes is not a comparison.
   if (candidate.status !== undefined && candidate.status !== "trained") {

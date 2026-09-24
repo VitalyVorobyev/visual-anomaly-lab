@@ -13,10 +13,14 @@
 
 import { useMemo } from "react";
 
-import type { SampleVerdict } from "../../api/client";
+import type { SampleVerdict, Task } from "../../api/client";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES } from "../../api/resultsState";
-import { useResults, useThreshold } from "../../hooks/useExperiments";
+import {
+  useResults,
+  useSegmentationOutcomes,
+  useThreshold,
+} from "../../hooks/useExperiments";
 
 export interface Verdicts {
   /** Ordered and filtered exactly as the gallery draws them. */
@@ -38,21 +42,36 @@ const OUTCOME_PLURAL: Record<string, string> = {
   tn: "true negatives",
   fp: "false positives",
   fn: "false negatives",
+  hit: "hits",
+  low_iou: "low-IoU finds",
+  miss: "misses",
+  false_presence: "false presences",
+  correct_absence: "correct absences",
   unlabeled: "unlabeled",
 };
 
 export function useVerdicts(
   experimentId: number | undefined,
   state: ResultsState,
+  task: Task | undefined,
 ): Verdicts {
+  // Which report classifies the rows is the task's: an anomaly run's threshold report, or a
+  // few-shot run's segmentation outcomes (ADR-0040). Neither is asked until the task is known.
+  const anomaly = task === "anomaly";
+  const segmentation = task === "few_shot_segmentation";
+
   // The suggested threshold and its rationale, which is also where the score range comes
   // from. Requested even when a threshold is chosen: the rationale is worth showing beside
   // a choice that overrode it.
-  const results = useResults(experimentId, state.subset);
+  const results = useResults(experimentId, state.subset, anomaly);
   const threshold = state.threshold ?? results.data?.suggested_threshold ?? 0;
-  const report = useThreshold(experimentId, state.subset, threshold);
+  const report = useThreshold(experimentId, state.subset, threshold, anomaly);
+  const outcomes = useSegmentationOutcomes(experimentId, state.subset, segmentation);
 
-  const all = useMemo(() => report.data?.samples ?? [], [report.data]);
+  const all = useMemo<SampleVerdict[]>(
+    () => (segmentation ? outcomes.data?.samples : report.data?.samples) ?? [],
+    [segmentation, outcomes.data, report.data],
+  );
 
   // Filtering and ordering happen once, here, so the gallery's grid and the sample page's
   // prev/next cannot disagree about what "the next one" means.
@@ -71,10 +90,14 @@ export function useVerdicts(
     shown,
     all,
     threshold,
-    rationale: state.threshold === undefined ? results.data?.threshold_rationale : undefined,
+    rationale: segmentation
+      ? outcomes.data?.threshold_rule
+      : state.threshold === undefined
+        ? results.data?.threshold_rationale
+        : undefined,
     label: describeFilter(state, all.length),
-    isPending: results.isPending || report.isPending,
-    error: results.error ?? report.error,
+    isPending: segmentation ? outcomes.isPending : results.isPending || report.isPending,
+    error: segmentation ? outcomes.error : (results.error ?? report.error),
   };
 }
 

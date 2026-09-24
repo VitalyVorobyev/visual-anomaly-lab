@@ -249,6 +249,10 @@ facts: each image's presence `score`, its map or written mask, and the class tru
   - `timing`.
 
   Each is `None` when its denominator is empty.
+- **Per sample, on request.** `sample_outcomes` (`GET /api/experiments/{id}/segmentation-outcomes`) pools a
+  sample's answered images and classifies it: `hit` (IoU at least 0.5), `low_iou`, `miss`,
+  `false_presence`, `correct_absence`, or `unlabeled`. The IoU travels with each row. Like the anomaly
+  threshold report, it is computed from the stored maps and never stored.
 - **The ground-truth digest** hashes the class and each image's pinned answer, so a completed revision,
   a relabelled sample or a new class table makes the stored metrics read as stale.
 
