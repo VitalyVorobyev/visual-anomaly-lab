@@ -84,10 +84,6 @@ Planned in ADR-0039, and after few-shot segmentation.
       metric with `last_two` ([measurements.md](measurements.md)). Before concluding the
       backbone is weaker for this task, sweep `layers` (and consider `mid_late`) on the same
       pixels — the deficit may belong to the recipe, not the encoder.
-- [ ] **Let `diagnose` pass a whole sample group** (S): `experiments/diagnose.py` scores a single
-      record, so asking a `feature_concat` `dino_memory` model about one image of a multi-channel
-      sample lands in the channel refusal instead of producing a diagnostic. The refusal is readable
-      and names the sample; the fix is to resolve the sample's group the way `infer` does.
 - [ ] **ONNX export for `dino_memory`'s single-image modes** (M): `per_image` fusion has a real
       single-input graph — encoder, distance kernel, upsample, blur — and `portable_formats` is empty
       today because `feature_concat` does not, and a format that is true for one configuration of a
