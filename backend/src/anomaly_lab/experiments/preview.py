@@ -194,6 +194,9 @@ class PreviewSession:
             mask_projector=lambda image_id, values: build.transform_for(image_id).project_mask(
                 values
             ),
+            label_projector=lambda image_id, values: build.transform_for(image_id).project_labels(
+                values, fill=0
+            ),
         )
         self.generation = resolved.generation
 

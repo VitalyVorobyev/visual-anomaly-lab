@@ -17,7 +17,7 @@ from typing import Any, Protocol
 
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Experiment, Subset, Task
-from anomaly_lab.eval import ground_truth, runner, segmentation
+from anomaly_lab.eval import ground_truth, runner, segmentation, semantic
 
 
 class Evaluator(Protocol):
@@ -97,9 +97,38 @@ class FewShotSegmentationEvaluator:
         return segmentation.current_digest(conn, experiment, subset)
 
 
+class SemanticSegmentationEvaluator:
+    """Every pinned class per pixel, over stored label maps, as one confusion matrix per
+    subset (ADR-0039)."""
+
+    headline = "mean_iou"
+
+    def evaluate_and_store(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        # The sample rows are the ranked list and the gallery's order, as for any task.
+        runner.rebuild_sample_results(conn, experiment)
+        computed, digests = semantic.evaluate(conn, experiment)
+        results_repo.replace_metric_sets(
+            conn, experiment.id, computed, ground_truth_digests=digests
+        )
+        return computed
+
+    def evaluate(
+        self, conn: sqlite3.Connection, experiment: Experiment
+    ) -> dict[Subset, dict[str, Any]]:
+        return semantic.evaluate(conn, experiment)[0]
+
+    def current_digest(
+        self, conn: sqlite3.Connection, experiment: Experiment, subset: Subset
+    ) -> str:
+        return semantic.current_digest(conn, experiment, subset)
+
+
 EVALUATORS: dict[Task, Callable[[], Evaluator]] = {
     Task.ANOMALY: AnomalyEvaluator,
     Task.FEW_SHOT_SEGMENTATION: FewShotSegmentationEvaluator,
+    Task.SEMANTIC_SEGMENTATION: SemanticSegmentationEvaluator,
 }
 
 

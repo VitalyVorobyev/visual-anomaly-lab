@@ -391,6 +391,14 @@ class Experiment(BaseModel):
         default=None,
         description="The annotation class a targeted task segments; null for `anomaly`.",
     )
+    classes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The annotation classes a supervised segmentation run segments, pinned at "
+            "creation in taxonomy order: `classes[i]` is label index `i + 1`, and 0 is "
+            "background. Empty for every other task."
+        ),
+    )
     # `model_config` is taken by pydantic itself, so the field carries a trailing
     # underscore in Python and its database and wire name through the alias.
     model_config_: dict[str, Any] = Field(default_factory=dict, alias="model_config")
@@ -414,9 +422,9 @@ class Experiment(BaseModel):
     def _decode_config_columns(cls, value: object) -> object:
         return _decode_json_object(value)
 
-    @field_validator("channels", mode="before")
+    @field_validator("channels", "classes", mode="before")
     @classmethod
-    def _decode_channels(cls, value: object) -> object:
+    def _decode_lists(cls, value: object) -> object:
         return _decode_json_object(value)
 
 

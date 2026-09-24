@@ -23,6 +23,7 @@ from anomaly_lab.models.base import Capabilities
 from anomaly_lab.models.registry import describe_all
 
 FEW_SHOT_METHODS = {"color_prototype", "fss_dino", "proto_seg"}
+SEGMENTATION_METHODS = {"color_classifier"}
 
 
 def test_every_method_written_before_tasks_is_an_anomaly_method() -> None:
@@ -30,6 +31,8 @@ def test_every_method_written_before_tasks_is_an_anomaly_method() -> None:
     for description in describe_all():
         if description.key in FEW_SHOT_METHODS:
             assert description.capabilities.tasks == [Task.FEW_SHOT_SEGMENTATION]
+        elif description.key in SEGMENTATION_METHODS:
+            assert description.capabilities.tasks == [Task.SEMANTIC_SEGMENTATION]
         else:
             assert Task.ANOMALY in description.capabilities.tasks, description.key
 
@@ -60,7 +63,11 @@ def test_the_anomaly_evaluator_is_the_runner_unchanged(monkeypatch: pytest.Monke
 
 
 def test_a_task_without_an_evaluator_is_named_not_guessed() -> None:
-    assert set(EVALUATORS) == {Task.ANOMALY, Task.FEW_SHOT_SEGMENTATION}
+    assert set(EVALUATORS) == {
+        Task.ANOMALY,
+        Task.FEW_SHOT_SEGMENTATION,
+        Task.SEMANTIC_SEGMENTATION,
+    }
     assert not has_evaluator(Task.OBJECT_DETECTION)
     with pytest.raises(UnsupportedTaskError, match="object_detection"):
         evaluator_for(Task.OBJECT_DETECTION)

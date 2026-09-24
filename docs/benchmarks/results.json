@@ -40,6 +40,10 @@
   "proto_seg": {
    "family": "few-shot debiased prototypes",
    "maturity": "experimental"
+  },
+  "color_classifier": {
+   "family": "segmentation colour classifier",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [

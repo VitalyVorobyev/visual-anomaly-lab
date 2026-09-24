@@ -43,8 +43,13 @@ export type ReadinessStep = "prepare" | "split" | "annotate" | "references";
 /** The tasks the band speaks for, in the order it names them. */
 export const READINESS_TASKS: Task[] = ["anomaly", "few_shot_segmentation"];
 
-/** Which split strategies a task trains on: a few-shot run's `train` subset is its references. */
+/**
+ * Which split strategies a task trains on: a few-shot run's `train` subset is its references,
+ * and a supervised run fits on whatever its `train` subset holds that is annotated — which
+ * today is a hand-chosen (`manual`) split more often than a drawn one, whose train is normals.
+ */
 export function splitServesTask(split: Pick<SplitDetail, "strategy">, task: Task): boolean {
+  if (task === "semantic_segmentation") return split.strategy !== "few_shot";
   const referenceSplit = split.strategy === "manual" || split.strategy === "few_shot";
   return task === "few_shot_segmentation" ? referenceSplit : !referenceSplit;
 }

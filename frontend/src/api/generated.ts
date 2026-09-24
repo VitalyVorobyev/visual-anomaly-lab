@@ -2800,7 +2800,7 @@ export interface components {
             task: components["schemas"]["Task"];
             /**
              * Target Label
-             * @description The annotation class a targeted task segments, by key. Required for `few_shot_segmentation`, refused for `anomaly`.
+             * @description The annotation class a targeted task segments, by key. Required for `few_shot_segmentation`, refused for every other task.
              */
             target_label?: string | null;
             /** Config */
@@ -3239,6 +3239,11 @@ export interface components {
             /** Target Label */
             target_label: string | null;
             /**
+             * Classes
+             * @description The classes a supervised segmentation run segments, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
+             */
+            classes: string[];
+            /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.
              */
@@ -3354,6 +3359,11 @@ export interface components {
             task: components["schemas"]["Task"];
             /** Target Label */
             target_label: string | null;
+            /**
+             * Classes
+             * @description The classes a supervised segmentation run segments, pinned at creation: `classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks.
+             */
+            classes: string[];
             /**
              * Channels
              * @description Acquisition channels this run read. Empty means every channel, so a catalogue row can say 'bright-field only' without a second request.

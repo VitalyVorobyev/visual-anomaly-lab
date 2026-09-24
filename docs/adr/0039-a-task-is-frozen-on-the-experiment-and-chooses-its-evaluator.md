@@ -40,6 +40,19 @@ column.
   evaluator is the existing one, unchanged. A task with no evaluator cannot be created.
 - **ADR-0028 applies unchanged.** A confidence is not comparable across runs, so any cut on it is
   resolved per run by one shared rule, and comparison shows only threshold-free metrics side by side.
+- **A supervised segmentation run pins its class list at creation**: every class of the dataset, in
+  taxonomy order, stored on the experiment. Class `i` is label index `i + 1` in its targets, its
+  label maps and its confusion matrix; 0 is background. Deriving the list from the taxonomy at train
+  time was the alternative, and it fails quietly: a class added or reordered between training and
+  evaluation renumbers the labels under a stored model.
+- **An image is labelled for a supervised run only when its truth answers every pinned class**, by the
+  same presence rule a targeted task reads per class. An image with a gap is unlabelled, excluded from
+  fit and metrics and counted, because a pixel of an unanswered class would otherwise read as
+  background — a negative nobody asserted.
+- **A segmentation prediction's `score` is the share of the image given a class other than
+  background.** A mean maximum probability was the alternative; it needs a calibrated probability
+  that a Gaussian classifier and a linear head do not share, while the share is defined by the label
+  map alone and means the same thing for every method.
 - **The annotation document grows, it is not replaced** (ADR-0032): boxes and instance ids join the
   versioned document, completion keeps writing the binary mask the anomaly task reads, and a revision
   pins the class-to-index table it used so a renamed or reordered class cannot relabel old truth.
@@ -56,4 +69,5 @@ column.
 - **The taxonomy becomes load-bearing**: it needs a management screen and class hotkeys that do not
   collide with the viewer's keys before a supervised task is usable.
 - **`Sample.label` stays the anomaly verdict.** It is not a class, and a segmentation run ignores it.
-- **Class-index materialisation on revisions will cost a schema migration** (ADR-0004).
+- **Class-index materialisation on revisions, and the pinned class list, each cost a schema migration**
+  (ADR-0004).

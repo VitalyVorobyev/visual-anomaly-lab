@@ -164,6 +164,7 @@ def create_experiment(
     model_config: Mapping[str, Any],
     task: str = "anomaly",
     target_label: str | None = None,
+    classes: Sequence[str] = (),
     preprocessing_config: Mapping[str, Any],
     eval_config: Mapping[str, Any],
     artifact_dir: str,
@@ -174,9 +175,9 @@ def create_experiment(
         """
         INSERT INTO experiment
                (name, dataset_id, split_id, region_profile_id,
-                region_manifest_sha256, model_type, task, target_label, model_config,
+                region_manifest_sha256, model_type, task, target_label, classes, model_config,
                 preprocessing_config, eval_config, channels, artifact_dir, notes)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             name,
@@ -187,6 +188,7 @@ def create_experiment(
             model_type,
             task,
             target_label,
+            json.dumps(list(classes)),
             json.dumps(dict(model_config), sort_keys=True),
             json.dumps(dict(preprocessing_config), sort_keys=True),
             json.dumps(dict(eval_config), sort_keys=True),

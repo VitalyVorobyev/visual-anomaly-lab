@@ -39,10 +39,24 @@ Later, each behind the gate above:
 
 ## Supervised tasks
 
-Planned in ADR-0039, and after few-shot segmentation.
+Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, label targets, label
+maps, the confusion-matrix evaluator and the `color_classifier` floor. What remains, in dependency
+order, one PR each:
 
-- [ ] **Supervised segmentation** (L, split before starting): multi-class `label_map`, a
-      confusion-matrix evaluator and one small supervised method.
+- [ ] **A split strategy for supervised tasks** (S): the drawn strategies put normals alone in
+      `train`, so today a segmentation run needs a hand-listed `manual` split. A seeded draw over
+      annotated samples, stratified by which classes each shows, settles ADR-0039's open question
+      of whether a supervised split stratifies by class.
+- [ ] **Segmentation result screens** (M): through `taskViews.tsx` — a per-class IoU table across
+      subsets, the stored confusion matrix drawn, the label map over the image on `SampleStage`
+      (truth dashed, prediction solid), a per-sample verdict for the gallery in place of the neutral
+      `scored`, and the task in the dataset readiness band.
+- [ ] **A deep segmentation method on the frozen-DINO path** (M): a linear head on the shared patch
+      features, fitted through `label_targets`, writing label maps; `dl`-gated tests, seed
+      reproducibility in both directions, and one module plus one registry entry.
+- [ ] **Public segmentation gate** (M): predeclared in `measurements.md` before it runs — VisA's
+      masks as a `defect`-only segmentation benchmark on a supervised split, the deep head against
+      `color_classifier`, with mean IoU as the decision and the others reported.
 - [ ] **Detection** (L, split before starting): COCO-style AP, and predictions drawn against truth
       on the vector layer.
 

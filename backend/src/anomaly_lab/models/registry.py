@@ -64,6 +64,12 @@ def _color_prototype() -> type[AnomalyModel]:
     return ColorPrototypeModel
 
 
+def _color_classifier() -> type[AnomalyModel]:
+    from anomaly_lab.models.color_classifier import ColorClassifierModel
+
+    return ColorClassifierModel
+
+
 def _fss_dino() -> type[AnomalyModel]:
     from anomaly_lab.models.fss_dino import FssDinoModel
 
@@ -109,6 +115,9 @@ def _subspace_ad() -> type[AnomalyModel]:
 # this one line. `fss_dino` reproduces a published few-shot baseline on the shared frozen-DINO
 # blocks, and writes its own mask beside its map; the same cost. `proto_seg` is ours on those
 # blocks, with debiasing, the bank, the adaptation and the refinement each a field.
+# `color_classifier` is the first method of supervised segmentation (ADR-0039): it fits on
+# label maps through `TrainContext.label_targets` and writes label maps through
+# `InferContext.write_label_map`, and still cost one module and this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -120,6 +129,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "color_prototype": _color_prototype,
     "fss_dino": _fss_dino,
     "proto_seg": _proto_seg,
+    "color_classifier": _color_classifier,
 }
 
 

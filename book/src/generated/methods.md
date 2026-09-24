@@ -15,6 +15,7 @@ This page is generated from the live model registry and checked method metadata.
 | `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | experimental | no | — |
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
 | `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
+| `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -161,6 +162,21 @@ Positionally debiased DINO patches matched against a mean-plus-cluster prototype
 
 - Tasks: `few_shot_segmentation`
 - Preferred device: `mps`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: no
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## Colour classifier (segmentation floor)
+
+`color_classifier` · **segmentation colour classifier** · experimental
+
+Fits one colour model to each annotated class and one to background, then gives each pixel the class with the highest posterior. CPU, seconds, no torch.
+
+- Tasks: `semantic_segmentation`
+- Preferred device: `cpu`
 - Requires fitting: yes
 - Anomaly map: yes
 - Diagnostics: no

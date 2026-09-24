@@ -64,6 +64,40 @@ describe("the task views", () => {
     expect(screen.queryByText("Sample ROC-AUC")).toBeNull();
   });
 
+  it("reads a supervised segmentation run off its confusion matrix, per class", () => {
+    const view = taskView("semantic_segmentation");
+    const semantic = [
+      {
+        subset: "test" as const,
+        computed_at: "2026-09-24T00:00:00Z",
+        ground_truth_digest: null,
+        ground_truth_stale: false,
+        metrics: {
+          classes: ["scratch", "stain"],
+          mean_iou: 0.4667,
+          per_class_iou: { scratch: 0.3333, stain: null },
+          background_iou: 0.6667,
+          pixel_accuracy: 0.75,
+          mean_class_accuracy: 0.625,
+          frequency_weighted_iou: 0.6208,
+          images: { labelled: 4, unlabeled: 1, without_prediction: 0 },
+        },
+      },
+    ];
+    render(
+      withProviders(
+        <MemoryRouter>{view.MetricTables({ ...props(), metrics: semantic })}</MemoryRouter>,
+      ),
+    );
+    expect(screen.getByText("Mean IoU")).toBeTruthy();
+    expect(screen.getByText("0.467")).toBeTruthy();
+    expect(screen.getByText("IoU · scratch")).toBeTruthy();
+    // A class nobody drew or predicted has no IoU, and reads as a dash rather than a zero.
+    expect(screen.getByText("IoU · stain").nextElementSibling?.textContent).toBe("—");
+    expect(screen.queryByText("Foreground IoU")).toBeNull();
+    expect(view.filters.map((filter) => filter.id)).toEqual(["all"]);
+  });
+
   it("gives each task its own outcome strip and rank words", () => {
     const anomaly = taskView("anomaly");
     const segmentation = taskView("few_shot_segmentation");

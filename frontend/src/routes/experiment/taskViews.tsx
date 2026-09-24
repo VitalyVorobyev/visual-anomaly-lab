@@ -7,14 +7,15 @@
  * that is all this registry holds: the gallery's outcome filters and the words around them,
  * and the bodies of Overview and Benchmark. An anomaly run reads a threshold and a
  * confusion matrix; a few-shot segmentation run reads overlap against its class and what
- * happened on each image (ADR-0040). Neither body is reached except through here.
+ * happened on each image (ADR-0040); a supervised segmentation run reads the summary of its
+ * per-class confusion matrix (ADR-0039). No body is reached except through here.
  */
 
 import type { ReactNode } from "react";
 
 import type { MetricSummary, SampleVerdict, Subset, Task } from "../../api/client";
 import type { MetricValue } from "../../api/metrics";
-import { segmentationRows, timingRows } from "../../api/metrics";
+import { segmentationRows, semanticRows, timingRows } from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES } from "../../api/resultsState";
 import {
@@ -173,9 +174,47 @@ const FEW_SHOT: TaskView = {
   Benchmark: ({ verdicts }) => <OverlapDistribution verdicts={verdicts} />,
 };
 
+const SEMANTIC_HEADLINE = [
+  { key: "mean_iou", label: "mean IoU" },
+  { key: "pixel_accuracy", label: "pixel accuracy" },
+  { key: "mean_class_accuracy", label: "mean class accuracy" },
+  { key: "frequency_weighted_iou", label: "frequency-weighted IoU" },
+];
+
+const SEMANTIC: TaskView = {
+  filters: [{ id: "all", label: "all", outcomes: undefined }],
+  rank: { desc: "most found", asc: "least" },
+  outcomeNote: () => (
+    <>Ranked by the share of each image given a class; there is no per-sample verdict.</>
+  ),
+  Scored: ({ metrics, state }) => (
+    <Headline metrics={metrics} subset={state.subset} keys={SEMANTIC_HEADLINE} />
+  ),
+  MetricTables: ({ experimentId, metrics }) => (
+    <Metrics
+      experimentId={experimentId}
+      metrics={metrics}
+      note={
+        <>
+          Read off one confusion matrix per subset, from the label maps the method wrote —
+          nothing is thresholded. Counted per image; unlabelled images are left out and
+          counted.
+        </>
+      }
+      body={(subset, values) => <SemanticSubset subset={subset} metrics={values} />}
+    />
+  ),
+  Benchmark: () => (
+    <Panel title="Per class">
+      <Empty>Each class&apos;s IoU is in the metric tables on Overview.</Empty>
+    </Panel>
+  ),
+};
+
 const VIEWS: Partial<Record<Task, TaskView>> = {
   anomaly: ANOMALY,
   few_shot_segmentation: FEW_SHOT,
+  semantic_segmentation: SEMANTIC,
 };
 
 /** The view for a run's task; an unknown or still-loading task reads as anomaly. */
@@ -229,6 +268,35 @@ function SegmentationSubset({ subset, metrics }: { subset: Subset; metrics: Metr
       {(images.without_prediction ?? 0) > 0 && (
         <p className="text-xs text-warn">
           {images.without_prediction} scored images have neither a map nor a mask.
+        </p>
+      )}
+      {timingRows(metrics).length > 0 && (
+        <>
+          <h4 className="mt-1 text-xs font-semibold text-fg">Timing</h4>
+          <MetricList rows={timingRows(metrics)} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function SemanticSubset({ subset, metrics }: { subset: Subset; metrics: MetricValue }) {
+  const images = (metrics.images ?? {}) as Record<string, number>;
+  return (
+    <div className="flex flex-col gap-2">
+      <h3 className="flex items-center gap-2 text-sm font-semibold">
+        {subset}
+        <CountRun
+          counts={[
+            ["labelled", images.labelled ?? 0, "normal"],
+            ["unlabeled", images.unlabeled ?? 0, "unlabeled"],
+          ]}
+        />
+      </h3>
+      <MetricList rows={semanticRows(metrics)} />
+      {(images.without_prediction ?? 0) > 0 && (
+        <p className="text-xs text-warn">
+          {images.without_prediction} scored images have no label map.
         </p>
       )}
       {timingRows(metrics).length > 0 && (
