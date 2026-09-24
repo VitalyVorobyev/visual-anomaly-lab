@@ -501,7 +501,9 @@ foreground-share score, like `color_classifier`.
   label targets, or when the sampled pixels hold no class at all. The encoder is not saved: `save` writes
   the head (each file whole, then renamed into place) and the encoder's fingerprint, and `load` refuses
   a different backbone or layer set.
-- **Experimental** until the public segmentation gate in the backlog has run. ONNX: none.
+- **Experimental.** The public gate kept it there: it beat the floor on one VisA class by the predeclared
+  margin and not on the other, and on a small defect class its evenly spaced pixel sample holds almost
+  none of the class ([measurements](../measurements.md)). ONNX: none.
 
 ### `fss_dino`
 
