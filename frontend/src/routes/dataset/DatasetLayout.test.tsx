@@ -7,7 +7,7 @@
  * once the query settled, dropping the strip by a line when it did.
  */
 
-import { render } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -177,5 +177,23 @@ describe("the dataset band", () => {
       expect(action?.textContent).toContain("New experiment");
       unmount();
     }
+  });
+
+  it("groups the strip by the stage of the work, in the order it is done", () => {
+    renderAt("/datasets/7");
+    const strip = screen.getByRole("navigation", { name: "Dataset workspace" });
+    const stages = within(strip).getAllByRole("group");
+    expect(stages.map((stage) => stage.getAttribute("aria-label"))).toEqual([
+      "Data",
+      "Truth",
+      "Runs",
+    ]);
+    expect(
+      stages.map((stage) =>
+        within(stage)
+          .getAllByRole("link")
+          .map((link) => link.textContent),
+      ),
+    ).toEqual([["Browse", "Prepare"], ["Annotate"], ["Splits", "Experiments"]]);
   });
 });

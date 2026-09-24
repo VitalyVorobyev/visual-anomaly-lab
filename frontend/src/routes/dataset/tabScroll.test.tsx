@@ -17,10 +17,11 @@ import { RegionPreparationRoute } from "../RegionPreparationRoute";
 import { SplitsRoute } from "../SplitsRoute";
 import { withProviders } from "../../test-harness";
 
+// In the strip's order: Data (Browse, Prepare), Truth (Annotate), Runs (Splits, Experiments).
 const TABS: [string, () => React.JSX.Element][] = [
   ["Browse", DatasetRoute],
-  ["Annotate", AnnotationQueueRoute],
   ["Prepare", RegionPreparationRoute],
+  ["Annotate", AnnotationQueueRoute],
   ["Splits", SplitsRoute],
   ["Experiments", DatasetExperimentsRoute],
 ];

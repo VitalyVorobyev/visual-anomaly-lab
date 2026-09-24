@@ -6,20 +6,51 @@ import { queryKeys } from "../../api/queryKeys";
 import { withProviders } from "../../test-harness";
 import { DatasetReadiness } from "./DatasetReadiness";
 
-function renderWith(seed: [readonly unknown[], unknown][]) {
+function method(key: string, tasks: string[]) {
+  return { key, capabilities: { tasks } };
+}
+
+const ANOMALY_ONLY: [readonly unknown[], unknown] = [
+  queryKeys.modelTypes(),
+  { methods: [method("pixel_reference", ["anomaly"])] },
+];
+const BOTH: [readonly unknown[], unknown] = [
+  queryKeys.modelTypes(),
+  {
+    methods: [
+      method("pixel_reference", ["anomaly"]),
+      method("color_prototype", ["few_shot_segmentation"]),
+    ],
+  },
+];
+
+function renderWith(seed: [readonly unknown[], unknown][], catalog = ANOMALY_ONLY) {
   return render(
     withProviders(
       <MemoryRouter>
         <DatasetReadiness datasetId={7} />
       </MemoryRouter>,
-      seed,
+      [catalog, ...seed],
     ),
   );
 }
 
+const BUILT: [readonly unknown[], unknown][] = [
+  [queryKeys.regionProfiles(7), [{ id: 11 }]],
+  [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
+  [queryKeys.experiments({ datasetId: 7 }), []],
+];
+
 describe("dataset readiness", () => {
   it("says nothing until it knows", () => {
-    const { container } = renderWith([]);
+    const { container } = render(
+      withProviders(
+        <MemoryRouter>
+          <DatasetReadiness datasetId={7} />
+        </MemoryRouter>,
+        [],
+      ),
+    );
     expect(container.textContent).toBe("");
   });
 
@@ -42,7 +73,7 @@ describe("dataset readiness", () => {
     renderWith([
       [queryKeys.regionProfiles(7), [{ id: 11 }]],
       [queryKeys.regionBuild(11), { failed: 2, succeeded: 8, total: 10 }],
-      [queryKeys.splits(7), [{ id: 3 }]],
+      [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]],
       [queryKeys.experiments({ datasetId: 7 }), []],
     ]);
     expect(screen.getByRole("link").textContent).toBe("1. Build a region profile");
@@ -52,10 +83,54 @@ describe("dataset readiness", () => {
     renderWith([
       [queryKeys.regionProfiles(7), [{ id: 11 }]],
       [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
-      [queryKeys.splits(7), [{ id: 3 }]],
+      [queryKeys.splits(7), [{ id: 3, strategy: "normal_only_train" }]],
       [queryKeys.experiments({ datasetId: 7 }), [{ id: 1 }, { id: 2 }]],
     ]);
     expect(screen.getByText(/Ready to train/)).toBeTruthy();
     expect(screen.getByRole("link").textContent).toBe("2 runs");
+  });
+
+  it("with two tasks, puts the shared first step first and nothing else", () => {
+    renderWith(
+      [
+        [queryKeys.regionProfiles(7), []],
+        [queryKeys.splits(7), []],
+        [queryKeys.experiments({ datasetId: 7 }), []],
+        [queryKeys.classCoverage(7), []],
+      ],
+      BOTH,
+    );
+    expect(screen.getAllByRole("link").map((step) => step.textContent)).toEqual([
+      "1. Build a region profile",
+    ]);
+  });
+
+  it("then says per task whether it is ready, or what it needs next", () => {
+    renderWith(
+      [
+        ...BUILT,
+        [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]],
+        [queryKeys.classCoverage(7), [{ label_key: "scratch", present: 0, absent: 5, unlabeled: 0 }]],
+      ],
+      BOTH,
+    );
+    const band = screen.getByRole("navigation", { name: "Readiness by task" });
+    expect(band.textContent).toContain("Anomaly");
+    const next = screen.getByRole("link", { name: /Annotate a class/ });
+    expect(next.getAttribute("href")).toBe("/datasets/7/annotate");
+  });
+
+  it("asks for references once a class can supply them", () => {
+    renderWith(
+      [
+        ...BUILT,
+        [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]],
+        [queryKeys.classCoverage(7), [{ label_key: "scratch", present: 3, absent: 5, unlabeled: 0 }]],
+      ],
+      BOTH,
+    );
+    expect(screen.getByRole("link", { name: /Choose references/ }).getAttribute("href")).toBe(
+      "/datasets/7/splits",
+    );
   });
 });

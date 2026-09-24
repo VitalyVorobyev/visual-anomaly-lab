@@ -49,7 +49,7 @@ import {
 import { refusalReason, toggleRun } from "../api/compareState";
 import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
-import { isUsableBuild } from "../hooks/useDatasetReadiness";
+import { isUsableBuild, splitServesTask } from "../hooks/useDatasetReadiness";
 import { experimentStatusTone } from "../api/statusTone";
 
 type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
@@ -511,6 +511,12 @@ function CreateExperiment({
     () => (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
     [catalog.data, task],
   );
+  // A task trains on its own kind of split: an anomaly run on a drawn or adopted partition,
+  // a few-shot run on a split of references (ADR-0040). The others are not offered.
+  const taskSplits = useMemo(
+    () => (splits.data ?? []).filter((split) => splitServesTask(split, task)),
+    [splits.data, task],
+  );
   const method: ModelDescription | undefined = methodsForTask.find(
     (entry) => entry.key === methodKey,
   );
@@ -568,9 +574,15 @@ function CreateExperiment({
     if (regionProfileId === undefined && only) setRegionProfileId(only.id);
   }, [regionProfiles.data, regionProfileId]);
   useEffect(() => {
-    const only = splits.data?.length === 1 ? splits.data[0] : undefined;
+    if (splits.data === undefined) return;
+    // A split chosen for another task is not a choice for this one.
+    if (splitId !== undefined && !taskSplits.some((split) => split.id === splitId)) {
+      setSplitId(undefined);
+      return;
+    }
+    const only = taskSplits.length === 1 ? taskSplits[0] : undefined;
     if (splitId === undefined && only) setSplitId(only.id);
-  }, [splits.data, splitId]);
+  }, [splits.data, taskSplits, splitId]);
 
   useEffect(() => {
     writeDraft(storageKey, {
@@ -675,14 +687,31 @@ function CreateExperiment({
     );
   };
 
-  const noSplits = datasetId !== undefined && splits.data?.length === 0;
+  const noSplits = datasetId !== undefined && splits.data !== undefined && taskSplits.length === 0;
+  // With one task there is nothing to choose, and the form starts at its inputs.
+  const offset = tasks.length > 1 ? 1 : 0;
 
   return (
     <Panel title={title}>
       <div className="flex flex-col gap-7">
         {catalog.error && <ErrorBox>{catalog.error.message}</ErrorBox>}
 
-        <Section step={1} title="What to train on">
+        {tasks.length > 1 && (
+          <Section
+            step={1}
+            title="Task"
+            hint="What the run is asked to do. It decides the split, the methods and the results."
+          >
+            <SegmentedControl
+              aria-label="Task"
+              value={task}
+              options={tasks.map((entry) => ({ value: entry, label: TASK_LABEL[entry] }))}
+              onValueChange={(value) => setTask(value as Task)}
+            />
+          </Section>
+        )}
+
+        <Section step={1 + offset} title="What to train on">
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
             <Field label="Name" error={attempted ? fieldError.name : undefined}>
               <Input
@@ -772,12 +801,12 @@ function CreateExperiment({
               description={
                 noSplits ? (
                   <>
-                    This dataset has no splits.{" "}
+                    {targeted ? "No split of references yet." : "This dataset has no splits."}{" "}
                     <Link
                       className="text-signal underline underline-offset-2"
                       to={`/datasets/${datasetId}/splits`}
                     >
-                      Create one
+                      {targeted ? "Choose references" : "Create one"}
                     </Link>
                     .
                   </>
@@ -789,7 +818,7 @@ function CreateExperiment({
                 value={splitId === undefined ? "" : String(splitId)}
                 placeholder={datasetId === undefined ? "Pick a dataset first" : "Choose a split…"}
                 disabled={datasetId === undefined}
-                options={(splits.data ?? []).map((split) => ({
+                options={taskSplits.map((split) => ({
                   value: String(split.id),
                   label: split.name,
                   note: split.strategy,
@@ -797,6 +826,22 @@ function CreateExperiment({
                 onValueChange={(value) => setSplitId(value === "" ? undefined : Number(value))}
               />
             </Field>
+
+            {targeted && (
+              <Field as="group" label="Target class">
+                <Select
+                  aria-label="Target class"
+                  value={effectiveTarget}
+                  placeholder="Choose a class"
+                  options={(labels.data ?? []).map((label) => ({
+                    value: label.key,
+                    label: label.name,
+                    note: label.key,
+                  }))}
+                  onValueChange={setTargetLabel}
+                />
+              </Field>
+            )}
 
             {/* Absent entirely for a single-view dataset: there is nothing to select, and
                 a control offering one option is a question with no answer. Two channels
@@ -833,35 +878,8 @@ function CreateExperiment({
           </div>
         </Section>
 
-        <Section step={2} title="Method">
+        <Section step={2 + offset} title="Method">
           {catalog.isPending && <SkeletonRows rows={2} />}
-          {tasks.length > 1 && (
-            <div className="mb-3">
-              <SegmentedControl
-                aria-label="Task"
-                value={task}
-                options={tasks.map((entry) => ({ value: entry, label: TASK_LABEL[entry] }))}
-                onValueChange={(value) => setTask(value as Task)}
-              />
-            </div>
-          )}
-          {targeted && (
-            <div className="mb-3 max-w-xs">
-              <Field label="Target class">
-                <Select
-                  aria-label="Target class"
-                  value={effectiveTarget}
-                  placeholder="Choose a class"
-                  options={(labels.data ?? []).map((label) => ({
-                    value: label.key,
-                    label: label.name,
-                    note: label.key,
-                  }))}
-                  onValueChange={setTargetLabel}
-                />
-              </Field>
-            </div>
-          )}
           <div className="grid gap-3 sm:grid-cols-2">
             {methodsForTask.map((entry) => (
               <MethodCard
@@ -875,7 +893,7 @@ function CreateExperiment({
         </Section>
 
         <Section
-          step={3}
+          step={3 + offset}
           title="Configuration"
           hint="Anything left alone uses the backend's own default."
         >

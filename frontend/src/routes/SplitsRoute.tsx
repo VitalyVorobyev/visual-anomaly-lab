@@ -28,11 +28,12 @@ import {
   Table,
   type Column,
 } from "@vitavision/lab-ui";
+import { useClassCoverage } from "../hooks/useAnnotations";
 import { useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import { EMPTY_BROWSE, writeBrowseState } from "../api/browseState";
 
-type Strategy = "normal_only_train" | "imported";
+type Strategy = "normal_only_train" | "imported" | "few_shot";
 
 export function SplitsRoute() {
   const params = useParams();
@@ -48,8 +49,15 @@ export function SplitsRoute() {
   const [valFraction, setValFraction] = useState(0.2);
   const [valDefectFraction, setValDefectFraction] = useState(0.3);
   const [holdout, setHoldout] = useState(0);
+  const [labelKey, setLabelKey] = useState("");
+  const [shots, setShots] = useState(5);
 
   const drawn = strategy === "normal_only_train";
+  const references = strategy === "few_shot";
+  // A class can supply references once some sample shows it (ADR-0040).
+  const coverage = useClassCoverage(datasetId);
+  const drawable = (coverage.data ?? []).filter((entry) => entry.present > 0);
+  const chosenClass = drawable.find((entry) => entry.label_key === labelKey);
 
   const create = useMutation({
     mutationFn: async () =>
@@ -66,7 +74,8 @@ export function SplitsRoute() {
               val_defect_fraction: valDefectFraction,
               // Only meaningful for `imported`, and zero everywhere else so a drawn
               // split's stored params do not imply a holdout was considered.
-              holdout_from_train: drawn ? 0 : holdout,
+              holdout_from_train: strategy === "imported" ? holdout : 0,
+              ...(references ? { label_key: labelKey, shots } : {}),
               // Assigned rather than left out: unlabelled samples are excluded from
               // every metric later, but they have to be scored to appear in the
               // ranked lists.
@@ -103,10 +112,51 @@ export function SplitsRoute() {
                 options={[
                   { value: "normal_only_train", label: "Draw one", note: "normal_only_train" },
                   { value: "imported", label: "Adopt the published one", note: "imported" },
+                  { value: "few_shot", label: "Draw references for a class", note: "few_shot" },
                 ]}
               />
             </Field>
-            {!drawn && (
+            {references && (
+              <>
+                <Field
+                  as="group"
+                  label="Class"
+                  description={
+                    coverage.data !== undefined && drawable.length === 0
+                      ? "No sample shows a class yet. Annotate references first."
+                      : chosenClass
+                        ? `${chosenClass.present} samples show it · ${chosenClass.absent} confirmed without it · ${chosenClass.unlabeled} unanswered`
+                        : undefined
+                  }
+                >
+                  <Select
+                    aria-label="Class"
+                    value={labelKey}
+                    placeholder="Choose a class"
+                    options={drawable.map((entry) => ({
+                      value: entry.label_key,
+                      label: entry.label_key,
+                      note: `${entry.present} present`,
+                    }))}
+                    onValueChange={setLabelKey}
+                  />
+                </Field>
+                <Field label="References (shots)">
+                  <NumberInput
+                    min={1}
+                    value={shots}
+                    onChange={(event) => setShots(Number(event.target.value))}
+                  />
+                </Field>
+                <Field label="Seed">
+                  <NumberInput
+                    value={seed}
+                    onChange={(event) => setSeed(Number(event.target.value))}
+                  />
+                </Field>
+              </>
+            )}
+            {strategy === "imported" && (
               <>
                 <Fraction
                   label="Hold out this share of the published training normals"
@@ -149,7 +199,14 @@ export function SplitsRoute() {
           </div>
 
           <p className="text-xs text-fg-muted">
-            {drawn ? (
+            {references ? (
+              <>
+                Draws this many samples that show the class, under the seed, as the references a
+                few-shot run learns from; every other sample is a query it is scored on. The same
+                class with three seeds is three reference draws, which is how sensitivity to the
+                choice of references is measured.
+              </>
+            ) : drawn ? (
               <>
                 Training is normals only, assignment is per sample so no two views of one
                 part can straddle the boundary, and the draw is stratified by capture
@@ -184,7 +241,11 @@ export function SplitsRoute() {
           {create.error && <ErrorBox>{create.error.message}</ErrorBox>}
 
           <div>
-            <Button type="submit" variant="primary" disabled={create.isPending}>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={create.isPending || (references && chosenClass === undefined)}
+            >
               {create.isPending ? "Creating…" : "Create"}
             </Button>
           </div>
@@ -233,7 +294,11 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
               the manifest that asserted the partition. */}
           {split.strategy === "imported"
             ? `${split.strategy} · ${split.params.manifest_id ?? "no manifest"}`
-            : `seed ${split.seed} · ${split.strategy}`}
+            : split.strategy === "few_shot"
+              ? `seed ${split.seed} · ${split.params.shots ?? "?"} × ${split.params.label_key ?? "?"}`
+              : split.strategy === "manual"
+                ? `${split.params.sample_ids.length} references · manual`
+                : `seed ${split.seed} · ${split.strategy}`}
         </span>
       }
     >

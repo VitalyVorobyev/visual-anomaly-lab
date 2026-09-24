@@ -44,6 +44,13 @@ export const queryKeys = {
     ["datasets", datasetId, "sample", sampleId] as const,
   annotationLabels: (datasetId: number) =>
     ["datasets", datasetId, "annotation-labels"] as const,
+  /**
+   * How much truth each class has (ADR-0040). Its own root rather than under the dataset,
+   * because completing any annotation moves it and a completion knows its images, not its
+   * dataset: it invalidates `classCoverageAll()`.
+   */
+  classCoverage: (datasetId: number) => ["class-coverage", datasetId] as const,
+  classCoverageAll: () => ["class-coverage"] as const,
   annotationScope: (datasetId: number) =>
     ["datasets", datasetId, "annotation-scope"] as const,
   annotationDraft: (imageId: number) => ["annotations", imageId, "draft"] as const,

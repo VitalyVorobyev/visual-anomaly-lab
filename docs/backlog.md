@@ -25,10 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **The workflow: Data · Truth · Runs** (M):
-      - The dataset nav is regrouped into three stages.
-      - Readiness is shown per task in the band, from the class coverage read.
-      - Create experiment asks for the task first.
 - [ ] **Task-specific result bodies** (M):
       - A `taskViews` registry keyed by task supplies the bodies of Overview, Samples, Benchmark
         and Compare.
