@@ -237,6 +237,24 @@ and caches them. Overlay opacity is applied in CSS, never baked into the image (
 A method declaring `produces_diagnostics` pushes entries into a self-describing index the UI renders by
 `kind`, never by method name. The whole contract is on **[diagnostics](diagnostics.md)**.
 
+## Frozen-DINO building blocks
+
+Shared by every method that reads a frozen DINOv2/DINOv3 encoder, so two methods that differ in what they
+do with patch features do not also differ in how they got them.
+
+- `dino_backbone.image_patch_features` is the one encoding path: pixels through `load_array`, ImageNet
+  standardisation, the chosen blocks with each layer L2-normalised on its own, then the concatenation
+  normalised, returned as `(N, P, D)` on the CPU.
+- `positional.py` is INSID3's positional debiasing. `dino_backbone.noise_patch_features` passes one seeded
+  standard-normal image at the prepared size through the encoder. The top `s` right singular vectors of its
+  `(P, D)` features span where position lives, and `debias` projects features onto their complement and
+  renormalises. INSID3 fixes `s = 500` for ViT-L. The rank is clipped to half of `min(P, D)`, because a
+  small grid would otherwise lose every direction the noise spans.
+- `refine.py` brings a patch-grid probability to prepared-pixel resolution: `bilinear`, or `guided` (He et
+  al.'s guided filter, with the grey image as guide), which is edge-preserving smoothing. It concentrates a
+  transition on the image's own edge and keeps the local mean in flat regions; it is not a threshold. numpy
+  only.
+
 ## Shipped methods
 
 | key | family | trains | resume | channel-aware | ONNX | device |

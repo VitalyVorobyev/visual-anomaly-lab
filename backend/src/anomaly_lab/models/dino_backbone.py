@@ -26,12 +26,26 @@ plan must not cost three seconds of torch.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from anomaly_lab.models.model_assets import fingerprint_state, huggingface_environment
+from anomaly_lab.models.preprocessing import (
+    IMAGENET_MEAN,
+    IMAGENET_STD,
+    PreprocessingConfig,
+    expand_planes,
+    load_array,
+    to_chw,
+)
+
+if TYPE_CHECKING:
+    from anomaly_lab.models.base import ImageRecord
 
 
 class DinoBackbone(StrEnum):
@@ -507,6 +521,86 @@ def extract_layer_tokens(model: Any, batch: Any, indices: tuple[int, ...]) -> li
         intermediates_only=True,
     )
     return [torch.cat((prefix, patches), dim=1) for patches, prefix in pairs]
+
+
+def standardized_batch(
+    records: Sequence[ImageRecord],
+    preprocessing: PreprocessingConfig,
+    device: str,
+) -> Any:
+    """Load a batch through the shared bridge, then standardize it for the encoder.
+
+    Two separate acts. `load_array` is the experiment's decision and is identical for every
+    method; the plane count and the ImageNet statistics belong to the backbone, which is why
+    they live on this side of the seam (`preprocessing.py`).
+    """
+    import torch
+
+    stacked = np.stack(
+        [expand_planes(to_chw(load_array(record.path, preprocessing)), 3) for record in records]
+    )
+    batch = torch.from_numpy(stacked).to(device)
+    mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
+    std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
+    return (batch - mean) / std
+
+
+def image_patch_features(
+    model: Any,
+    records: Sequence[ImageRecord],
+    preprocessing: PreprocessingConfig,
+    indices: tuple[int, ...],
+    device: str,
+) -> Any:
+    """`(N, P, D)` float32 patch features on the **CPU**, one row per patch.
+
+    The one encoding path every frozen-DINO method shares. The encoder forward happens on
+    `device` — measured at about 2x on MPS for `dino_memory` — and the result comes straight
+    back to the CPU, where every bank and prototype set built on it lives.
+
+    The final normalization is over the channel dimension of the whole concatenated feature,
+    *after* `extract_patch_features` has already normalized each layer on its own. Both are
+    load-bearing and they are not the same act: the per-layer step makes each block an equal
+    vote, and this one makes every stored vector a unit vector — which is what lets every
+    distance kernel drop the norm terms and read `d^2 = 2 - 2 cos`.
+    """
+    import torch
+
+    with torch.no_grad():
+        batch = standardized_batch(records, preprocessing, device)
+        features = extract_patch_features(model, batch, indices)
+        features = torch.nn.functional.normalize(features, p=2.0, dim=1)
+        width = int(features.shape[1])
+        flat = features.permute(0, 2, 3, 1).reshape(len(records), -1, width)
+        return flat.float().cpu().contiguous()
+
+
+def noise_patch_features(
+    model: Any,
+    preprocessing: PreprocessingConfig,
+    indices: tuple[int, ...],
+    device: str,
+    *,
+    seed: int,
+) -> np.ndarray:
+    """`(P, D)` patch features of one standard-normal image — position without content.
+
+    The input to `positional.positional_basis` (INSID3). The noise is drawn in the encoder's
+    standardised input space, at the experiment's prepared size, from a seeded numpy stream,
+    so the same seed gives the same basis on every run.
+    """
+    import torch
+
+    noise = np.random.default_rng(seed).standard_normal(
+        (1, 3, preprocessing.height, preprocessing.width)
+    )
+    with torch.no_grad():
+        batch = torch.from_numpy(noise.astype(np.float32)).to(device)
+        features = extract_patch_features(model, batch, indices)
+        features = torch.nn.functional.normalize(features, p=2.0, dim=1)
+        width = int(features.shape[1])
+        flat = features.permute(0, 2, 3, 1).reshape(-1, width)
+        return np.asarray(flat.float().cpu().numpy(), dtype=np.float32)
 
 
 def backbone_fingerprint(model: Any) -> str:
