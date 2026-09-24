@@ -2,8 +2,9 @@
  * One label map over the photograph, inside a `SampleStage`: a canvas at the plane's size,
  * stretched to the stage's image box.
  *
- * A canvas rather than a server-rendered PNG because the colours are the interface's
- * (`labelPaint.ts`); rather than `VectorLayer` because a label map is a raster by nature and
+ * A canvas over the value plane rather than the gallery's server-drawn PNG, which is bounded
+ * to a thumbnail: here the map is drawn at the plane's own resolution, in the interface's
+ * colours (`labelPaint.ts`); rather than `VectorLayer` because a label map is a raster by nature and
  * tracing it into polygons would be a second, lossy copy of what the method wrote.
  * `pixelated` keeps a decimated plane's class borders hard instead of blurring two classes
  * into a colour neither has.

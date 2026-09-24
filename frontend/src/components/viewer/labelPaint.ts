@@ -1,12 +1,14 @@
 /**
  * A label map, painted: one colour per class, from the design system's palette.
  *
- * The backend serves a supervised run's label maps as class indices (a value plane), never as
- * a picture, because a class's colour belongs to the interface — the lab-ui chart palette by
- * the class's pinned position, so the same run reads the same on every screen and no dataset
- * decides it. Painting happens here, once per plane, into RGBA at the plane's own size; the
- * stage stretches that over the photograph, which is exact because the plane is in the
- * source frame and any decimation is an integer stride.
+ * A class's colour belongs to the interface — the lab-ui chart palette by the class's pinned
+ * position, so the same run reads the same on every screen and no dataset decides it. The
+ * sample page fetches class indices (a value plane) and paints them here, once per plane,
+ * into RGBA at the plane's own size; the stage stretches that over the photograph, which is
+ * exact because the plane is in the source frame and any decimation is an integer stride.
+ * A gallery tile cannot afford a plane each, so the server draws the same rule into a
+ * thumbnail-sized PNG (`labelMapUrl`) — in the colours `classColour` names in its URL, and
+ * with `FILL_ALPHA` and `LINE_ALPHA` mirrored in `media/overlay.py`.
  *
  * Two styles, after the viewer's one convention: **a prediction is solid** (a faint fill and a
  * full outline) and **truth is dashed** (an outline only, broken along the diagonal). Pixels

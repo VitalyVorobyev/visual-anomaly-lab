@@ -306,6 +306,7 @@ export function ExperimentRoute() {
           experimentId={experimentId}
           task={detail.task}
           targetLabel={detail.target_label ?? null}
+          classes={detail.task === "semantic_segmentation" ? detail.classes : undefined}
           state={results}
           onChange={updateResults}
           verdicts={verdicts}

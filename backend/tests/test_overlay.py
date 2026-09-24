@@ -9,6 +9,7 @@ region the reader thinks they are looking at.
 from __future__ import annotations
 
 import io
+from typing import ClassVar
 
 import numpy as np
 import pytest
@@ -16,9 +17,14 @@ from PIL import Image
 
 from anomaly_lab.media.overlay import (
     CONTOUR_RGB,
+    LABEL_FILL_ALPHA,
+    LABEL_LINE_ALPHA,
     PREDICTION_RGB,
     boundary_of,
+    fit_label_plane,
+    parse_label_colours,
     render_anomaly_map,
+    render_label_map,
     render_mask_contour,
     render_prediction_region,
 )
@@ -235,3 +241,51 @@ class TestPreparedFrameMask:
 def test_every_render_returns_a_png(threshold: float) -> None:
     payload = render_prediction_region(a_map_with_a_hot_square(), threshold)
     assert payload.startswith(b"\x89PNG")
+
+
+class TestLabelMap:
+    """The gallery's raster twin of the sample page's `LabelLayer` (`labelPaint.ts`)."""
+
+    COLOURS: ClassVar[list[tuple[int, int, int]]] = [(59, 201, 219), (240, 136, 62)]
+
+    @staticmethod
+    def two_classes() -> np.ndarray:
+        """Class 1 in rows 2-7 x columns 2-7, class 2 in rows 10-13 x columns 10-13, one
+        pixel of an unknown class (NaN) at (0, 15)."""
+        labels = np.zeros((16, 16), dtype=np.float32)
+        labels[2:8, 2:8] = 1
+        labels[10:14, 10:14] = 2
+        labels[0, 15] = np.nan
+        return labels
+
+    def test_a_prediction_is_filled_in_its_class_colour_with_a_solid_border(self) -> None:
+        pixels = decode(render_label_map(self.two_classes(), self.COLOURS, truth=False))
+        assert tuple(pixels[4, 4]) == (*self.COLOURS[0], LABEL_FILL_ALPHA)
+        assert tuple(pixels[11, 11]) == (*self.COLOURS[1], LABEL_FILL_ALPHA)
+        # Every border pixel is drawn, none skipped.
+        assert all(pixels[2, column, 3] == LABEL_LINE_ALPHA for column in range(2, 8))
+        assert tuple(pixels[12, 13]) == (*self.COLOURS[1], LABEL_LINE_ALPHA)
+        # Background and an unknown class stay clear.
+        assert pixels[0, 0, 3] == 0 and pixels[0, 15, 3] == 0 and pixels[9, 9, 3] == 0
+
+    def test_truth_is_a_dashed_border_and_nothing_inside(self) -> None:
+        pixels = decode(render_label_map(self.two_classes(), self.COLOURS, truth=True))
+        assert pixels[4, 4, 3] == 0 and pixels[11, 11, 3] == 0
+        border = [pixels[2, column] for column in range(2, 8)]
+        drawn = [pixel for pixel in border if pixel[3] == LABEL_LINE_ALPHA]
+        # Broken, not solid: `(x + y) // 4` alternates along the top edge's (2..7, 2).
+        assert 0 < len(drawn) < len(border)
+        assert all(tuple(pixel[:3]) == self.COLOURS[0] for pixel in drawn)
+
+    def test_colours_parse_from_the_query_form(self) -> None:
+        assert parse_label_colours("3bc9db,#F0883E") == self.COLOURS
+        with pytest.raises(ValueError, match="six-digit"):
+            parse_label_colours("3bc9d")
+
+    def test_a_large_plane_is_strided_to_the_edge_never_resampled(self) -> None:
+        labels = np.zeros((1000, 600), dtype=np.float32)
+        labels[::2, ::2] = 3
+        fitted = fit_label_plane(labels, 256)
+        assert max(fitted.shape) <= 256
+        assert set(np.unique(fitted)) <= {0.0, 3.0}
+        assert fit_label_plane(labels[:100, :100], 256).shape == (100, 100)

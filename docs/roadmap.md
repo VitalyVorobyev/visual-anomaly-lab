@@ -88,7 +88,8 @@ application.
   features, trained on a bounded sample of annotated pixels), and `class_stratified` draws a split for
   them from annotated samples, stratified by the classes each shows. Its results read in its own terms: IoU per class across subsets, the
   confusion matrix drawn, a per-sample verdict (`false_class` beside the few-shot outcomes), the label
-  maps over the image — prediction solid, truth dashed, one palette colour per pinned class — and the
+  maps over the image on the sample page and on every gallery tile — prediction solid, truth dashed, one
+  palette colour per pinned class — and the
   task in the dataset's readiness band. The public VisA gate kept `dino_linear_seg` experimental in both its
   legs — ahead of the floor on both classes, by the predeclared margin on one, and by less when the
   defect is sampled in its own share (`pixel_sampling` `per_class`) — and showed that neither method draws

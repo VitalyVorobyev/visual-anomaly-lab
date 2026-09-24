@@ -258,3 +258,91 @@ def render_prediction_region(
     if outline:
         return _paint(boundary_of(region, width), PREDICTION_RGB, _UINT8_MAX, size)
     return _paint(region, PREDICTION_RGB, PREDICTION_FILL_ALPHA, size)
+
+
+LABEL_FILL_ALPHA = 80
+"""A predicted label map's fill. Must match `FILL_ALPHA` in the frontend's `labelPaint.ts`."""
+
+LABEL_LINE_ALPHA = 235
+"""A label map's class borders. Must match `LINE_ALPHA` in the frontend's `labelPaint.ts`."""
+
+LABEL_DASH_PERIOD = 4
+"""Pixels on, then off, along the diagonal of a truth outline — `labelPaint.ts`'s period at
+the one-pixel line a map this size is drawn with."""
+
+
+def parse_label_colours(spec: str) -> list[tuple[int, int, int]]:
+    """`"3bc9db,f0883e"` as RGB triples; `ValueError` on anything else.
+
+    The colours arrive from the client because a class's colour is the interface's — the
+    design system's series palette by pinned position — and this layer must not keep a
+    second copy of it to drift out of step.
+    """
+    colours: list[tuple[int, int, int]] = []
+    for entry in spec.split(","):
+        text = entry.strip().removeprefix("#")
+        if len(text) != 6:
+            raise ValueError(f"{entry!r} is not a six-digit hex colour")
+        value = int(text, 16)
+        colours.append(((value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF))
+    return colours
+
+
+def fit_label_plane(labels: np.ndarray, long_edge: int) -> np.ndarray:
+    """A label plane decimated by the smallest integer stride that fits `long_edge`.
+
+    Strided, never resampled: every pixel kept is a class the method or the annotator gave,
+    where an interpolating resize would invent a class between two neighbours.
+    """
+    plane = np.asarray(labels)
+    height, width = plane.shape
+    stride = max(1, -(-max(height, width) // max(1, long_edge)))
+    return plane[::stride, ::stride]
+
+
+def render_label_map(
+    labels: np.ndarray,
+    colours: list[tuple[int, int, int]],
+    *,
+    truth: bool,
+) -> bytes:
+    """One label map as a transparent RGBA PNG, at the plane's own size.
+
+    The raster twin of the sample page's `LabelLayer` (`labelPaint.ts`), for a surface that
+    cannot afford a value plane per image — a gallery tile. Label `i` is `colours[i - 1]`;
+    0 (background) and NaN (a class the run does not know) stay clear. A border pixel is a
+    labelled one with a 4-neighbour of another label. **A prediction is solid** — a faint
+    fill and a full border — and **truth is dashed**: the border alone, broken along the
+    diagonal, so the two read apart where they overlap exactly as they do on the sample page.
+    """
+    values = np.asarray(labels, dtype=np.float32)
+    index = np.where(np.isfinite(values), np.rint(values), -1).astype(np.int32)
+    labelled = index > 0
+
+    edge = np.zeros_like(labelled)
+    edge[:, 1:] |= index[:, 1:] != index[:, :-1]
+    edge[:, :-1] |= index[:, :-1] != index[:, 1:]
+    edge[1:, :] |= index[1:, :] != index[:-1, :]
+    edge[:-1, :] |= index[:-1, :] != index[1:, :]
+    edge &= labelled
+
+    alpha = np.zeros(index.shape, dtype=np.uint8)
+    if truth:
+        rows, columns = np.indices(index.shape)
+        dash_on = ((rows + columns) // LABEL_DASH_PERIOD) % 2 == 0
+        alpha[edge & dash_on] = LABEL_LINE_ALPHA
+    else:
+        alpha[labelled] = LABEL_FILL_ALPHA
+        alpha[edge] = LABEL_LINE_ALPHA
+
+    palette = np.zeros((int(index.max(initial=0)) + 1, 3), dtype=np.uint8)
+    for label in range(1, palette.shape[0]):
+        palette[label] = colours[(label - 1) % len(colours)]
+    rgba = np.zeros((*index.shape, 4), dtype=np.uint8)
+    rgba[..., :3] = palette[np.clip(index, 0, None)]
+    rgba[..., 3] = alpha
+    rgba[alpha == 0, :3] = 0
+
+    buffer = io.BytesIO()
+    Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", optimize=True)
+    return buffer.getvalue()

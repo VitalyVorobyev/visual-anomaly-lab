@@ -10,6 +10,7 @@
 
 import type { StageView } from "@vitavision/lab-ui";
 
+import { classColour, rgbOf } from "../components/viewer/labelPaint";
 import { apiBaseUrl } from "./client";
 import type { ImageTier } from "./client";
 
@@ -74,6 +75,32 @@ export function predictionUrl(
     threshold: String(threshold),
   });
   return `${apiBaseUrl}/api/images/${imageId}/anomaly-map?${query.toString()}`;
+}
+
+/**
+ * A supervised run's label map drawn for a gallery tile: the method's (filled, solid border)
+ * or the truth's (dashed border only), at the thumbnail's size.
+ *
+ * The colours travel in the URL, one per pinned class, from `classColour` — the same
+ * function `LabelLayer` and the legend paint with — so the palette has exactly one home,
+ * the design system, and the server keeps no copy of it to drift.
+ */
+export function labelMapUrl(
+  imageId: number,
+  experimentId: number,
+  classes: readonly string[],
+  truth: boolean,
+): string {
+  const colours = classes
+    .map((_, index) =>
+      rgbOf(classColour(index + 1))
+        .map((byte) => byte.toString(16).padStart(2, "0"))
+        .join(""),
+    )
+    .join(",");
+  const query = new URLSearchParams({ colours });
+  if (truth) query.set("truth", "true");
+  return `${apiBaseUrl}/api/experiments/${experimentId}/images/${imageId}/label-map?${query.toString()}`;
 }
 
 /**

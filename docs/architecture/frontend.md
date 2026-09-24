@@ -248,6 +248,12 @@ pinned classes as a value plane of class indices, and `LabelLayer` paints it on 
 `SampleStage` (`components/viewer/labelPaint.ts`) — prediction solid (faint fill, full outline), truth
 dashed (outline only), background and ignored pixels clear. Class `i` is lab-ui's `seriesColour(i - 1)`,
 by pinned position, never the dataset's own label colour, and the overlay row carries the legend.
+The Samples tab is the same set: `GalleryTab` passes the run's `classes` to `OverlayControls`, so its
+toggles are prediction / truth / foreground with the class legend, and each tile lays
+`GET /api/experiments/{id}/images/{iid}/label-map?colours=[&truth=true]` over its thumbnail — the server
+drawing `labelPaint`'s rule at the thumbnail's size, because a tile cannot afford a value plane each.
+The colours travel in the URL, one per pinned class, from `classColour` (`labelMapUrl`), so lab-ui stays
+the palette's only home. An anomaly or few-shot tile draws the cut and the outline.
 
 **Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
 where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each
