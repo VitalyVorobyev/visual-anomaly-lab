@@ -100,8 +100,9 @@ comparing them under one evaluation protocol.
   cleared its paired VisA gate, `docs/measurements.md`) and `subspace_ad` (a PCA of normal
   patch appearance over the same frozen encoders; nothing is trained, and **its defaults are the
   verdict of a sweep that ran outside the application**, ADR-0038). The second task, few-shot
-  segmentation (ADR-0040), runs end to end with `color_prototype` (numpy, the floor) and `fss_dino`
-  (a reproduction of FSSDINO over a frozen DINO):
+  segmentation (ADR-0040), runs end to end with `color_prototype` (numpy, the floor), `fss_dino`
+  (a reproduction of FSSDINO over a frozen DINO) and `proto_seg` (ours: debiased features, a
+  hybrid prototype bank, optional linear adaptation):
   a split of references, a target class, masks into `fit` through `TrainContext.targets`, and an
   evaluator for masks and presence. A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are

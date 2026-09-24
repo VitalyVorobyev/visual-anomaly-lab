@@ -9,10 +9,15 @@ import pytest
 from anomaly_lab.models.prototypes import (
     class_maps,
     combined_score,
+    fit_linear_probe,
     foreground_probability,
     gram_energy,
     gram_matrix,
+    lse_probability,
+    mean_prototype,
     patch_coverage,
+    presence_score,
+    probe_probability,
     spherical_kmeans,
 )
 
@@ -72,3 +77,41 @@ def test_the_class_whose_prototypes_match_wins_the_pixel() -> None:
     probability = foreground_probability(fg_score, bg_score)
     assert np.array_equal(probability > 0.5, decided)
     assert foreground_probability(np.array([-1.0]), np.array([-2.0]))[0] == 0.5
+
+
+def test_lse_gives_the_pixel_to_the_side_whose_best_prototype_is_closest() -> None:
+    foreground = _unit(np.array([[1.0, 0.0, 0.0], [0.8, 0.6, 0.0]]))
+    background = _unit(np.array([[0.0, 0.0, 1.0]]))
+    query = _unit(np.array([[1.0, 0.1, 0.0], [0.0, 0.1, 1.0], [0.6, 0.0, 0.6]]))
+    sharp = lse_probability(query, foreground, background, temperature=0.05)
+    soft = lse_probability(query, foreground, background, temperature=1.0)
+    assert sharp[0] > 0.99 and sharp[1] < 0.01
+    assert 0.0 < soft[1] < soft[0] < 1.0
+    # Hot enough, the softmax forgets similarity and counts prototypes: two against one.
+    hot = lse_probability(query, foreground, background, temperature=1e6)
+    assert hot == pytest.approx(np.full(3, 2 / 3), abs=1e-4)
+    assert mean_prototype(foreground).shape == (1, 3)
+
+
+def test_the_probe_is_balanced_and_deterministic() -> None:
+    rng = np.random.default_rng(5)
+    # Nine background patches for every class patch: an unweighted probe would learn "no".
+    fg = rng.standard_normal((50, 4)) + np.array([2.0, 0, 0, 0])
+    bg = rng.standard_normal((450, 4)) - np.array([2.0, 0, 0, 0])
+    features = np.concatenate([fg, bg]).astype(np.float32)
+    labels = np.concatenate([np.ones(50), np.zeros(450)])
+    weights, bias = fit_linear_probe(features, labels, l2=1e-3, iterations=300, learning_rate=1.0)
+    again = fit_linear_probe(features, labels, l2=1e-3, iterations=300, learning_rate=1.0)
+    assert np.array_equal(weights, again[0]) and bias == again[1]
+    predicted = probe_probability(features, weights, bias) > 0.5
+    assert predicted[:50].mean() > 0.9 and predicted[50:].mean() < 0.1
+
+
+def test_presence_needs_a_region_not_one_patch() -> None:
+    lone = np.zeros(100, dtype=np.float32)
+    lone[7] = 1.0
+    region = np.zeros(100, dtype=np.float32)
+    region[:4] = 0.9
+    assert presence_score(lone, 4) == 0.25
+    assert presence_score(region, 4) == pytest.approx(0.9)
+    assert presence_score(np.array([0.3], dtype=np.float32), 4) == pytest.approx(0.3)

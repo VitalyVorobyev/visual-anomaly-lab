@@ -108,3 +108,71 @@ def foreground_probability(foreground: np.ndarray, background: np.ndarray) -> np
     bg = np.maximum(background, 0.0)
     total = fg + bg
     return np.asarray(np.where(total > 0, fg / np.maximum(total, 1e-12), 0.5), dtype=np.float32)
+
+
+def mean_prototype(features: np.ndarray) -> np.ndarray:
+    """`(1, D)`: the class's unit mean direction — the global prototype."""
+    return _unit(features.mean(axis=0, keepdims=True))
+
+
+def lse_probability(
+    query: np.ndarray, foreground: np.ndarray, background: np.ndarray, temperature: float
+) -> np.ndarray:
+    """`(P,)` foreground probability as the foreground's share of a softmax over all prototypes.
+
+    Each side scores a patch by the log-sum-exp of its cosine similarities over the
+    temperature — a soft maximum over that side's prototypes — and the probability is the
+    two-way softmax of those scores. Computed stably, relative to each patch's best match.
+
+    The sum makes a side's prototype count part of its score, and as the temperature rises
+    the probability drifts toward the ratio of the counts; at a working temperature the best
+    match dominates. `proto_seg` gives both sides the same number of prototypes.
+    """
+    logits = np.concatenate([query @ foreground.T, query @ background.T], axis=1) / temperature
+    logits -= logits.max(axis=1, keepdims=True)
+    weights = np.exp(logits)
+    share = weights[:, : len(foreground)].sum(axis=1) / weights.sum(axis=1)
+    return np.asarray(share, dtype=np.float32)
+
+
+def fit_linear_probe(
+    features: np.ndarray,
+    labels: np.ndarray,
+    *,
+    l2: float,
+    iterations: int,
+    learning_rate: float,
+) -> tuple[np.ndarray, float]:
+    """A class-balanced, L2-regularised logistic regression by full-batch gradient descent.
+
+    Deterministic — zero initialisation, the whole batch every step — so it needs no seed.
+    Balanced because a reference is mostly background, and an unweighted probe learns that.
+    """
+    x = features.astype(np.float64)
+    y = labels.astype(np.float64)
+    positives = max(float(y.sum()), 1.0)
+    negatives = max(float(len(y) - y.sum()), 1.0)
+    sample_weight = np.where(y > 0, 0.5 / positives, 0.5 / negatives)
+    weights = np.zeros(x.shape[1])
+    bias = 0.0
+    for _ in range(iterations):
+        predicted = 1.0 / (1.0 + np.exp(-np.clip(x @ weights + bias, -60, 60)))
+        error = (predicted - y) * sample_weight
+        weights -= learning_rate * (x.T @ error + l2 * weights)
+        bias -= learning_rate * float(error.sum())
+    return weights.astype(np.float32), float(bias)
+
+
+def probe_probability(query: np.ndarray, weights: np.ndarray, bias: float) -> np.ndarray:
+    logits = np.clip(query @ weights + bias, -60, 60)
+    return np.asarray(1.0 / (1.0 + np.exp(-logits)), dtype=np.float32)
+
+
+def presence_score(patch_probability: np.ndarray, region_patches: int) -> float:
+    """The mean of the `region_patches` most confident patches.
+
+    A presence claim has to be carried by a region of at least that size, not by one patch.
+    """
+    count = max(1, min(region_patches, patch_probability.size))
+    top = np.partition(patch_probability.ravel(), -count)[-count:]
+    return float(top.mean())

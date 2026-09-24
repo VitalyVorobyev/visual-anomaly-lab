@@ -603,6 +603,58 @@ def noise_patch_features(
         return np.asarray(flat.float().cpu().numpy(), dtype=np.float32)
 
 
+class FrozenEncoder:
+    """One method's frozen encoder: built once, and refused if its weights have moved.
+
+    The weights are never saved with a fitted model — `load_backbone` rebuilds them from the
+    app cache — so a fitted model stores the fingerprint instead, and the first `model()`
+    after `expect()` compares the rebuilt weights against it.
+    """
+
+    def __init__(
+        self,
+        backbone: DinoBackbone,
+        *,
+        pretrained: bool,
+        allow_downloads: bool,
+        seed: int,
+        method: str,
+    ) -> None:
+        self.backbone = backbone
+        self._pretrained = pretrained
+        self._allow_downloads = allow_downloads
+        self._seed = seed
+        self._method = method
+        self.fingerprint: str | None = None
+        self._model: Any = None
+
+    def expect(self, fingerprint: str) -> None:
+        """Require the next build to match a stored fingerprint."""
+        self.fingerprint = fingerprint
+        self._model = None
+
+    def model(self, device: str, cache_dir: Path) -> Any:
+        if self._model is None:
+            model = load_backbone(
+                self.backbone,
+                pretrained=self._pretrained,
+                allow_downloads=self._allow_downloads,
+                cache_dir=cache_dir,
+                seed=self._seed,
+                method=self._method,
+            )
+            fingerprint = backbone_fingerprint(model)
+            if self.fingerprint is not None and fingerprint != self.fingerprint:
+                msg = (
+                    f"the encoder {self._method} was fitted with has changed: its weights no "
+                    "longer match the stored fingerprint. Refit the run."
+                )
+                raise RuntimeError(msg)
+            self.fingerprint = fingerprint
+            self._model = model.to(device)
+        return self._model
+
+
 def backbone_fingerprint(model: Any) -> str:
     """A stable digest of the frozen encoder's weights.
 
