@@ -39,6 +39,17 @@ exactly the crop and letterbox ([diagnostics](diagnostics.md)). The contour is t
 the `ETag` carries the frame and the pinned manifest digest so the two never answer for each other out of a
 cache.
 
+**A supervised run's label map is drawn for a gallery tile.**
+`GET /api/experiments/{id}/images/{iid}/label-map?colours=…[&truth=true]` paints the method's label map
+(a faint fill and a solid border) or the truth over the pinned classes (a dashed border only) as a
+transparent PNG, with the sample page's rule (`labelPaint.ts`; its two alphas are mirrored in
+`media/overlay.py`). Class `i` is the `i`-th of `colours`, which the client sends from the design
+system's palette, so the server keeps no copy of it; fewer colours than pinned classes is a 422. The
+plane is strided — never resampled — to the `thumb` tier's 256 px long edge before its borders are
+traced, so the response is bounded whatever the image's size. It is revalidated rather than immutable,
+because re-scoring or completing an annotation changes it: the `ETag` is the drawn plane's digest plus
+the colours, and a match is a 304 without encoding.
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

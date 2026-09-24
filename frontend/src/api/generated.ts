@@ -778,6 +778,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/images/{image_id}/label-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One image's label map, predicted or true, drawn for a gallery tile
+         * @description The `labels` plane above as a picture, at the thumbnail tier's size.
+         *
+         *     A gallery tile cannot afford a value plane per tile painted in the browser, so this
+         *     draws the same map with the same rule as the sample page's `LabelLayer`. The colours
+         *     come from the client rather than from a table here: the palette has one home, the
+         *     design system, and a server copy would be a second one to keep in step. The size is
+         *     bounded by the thumbnail's long edge, never by the image, and the plane is decimated by
+         *     an integer stride before it is painted, so every border is traced at the size it is
+         *     drawn and every pixel is a class somebody gave.
+         *
+         *     Revalidated rather than immutable: re-running inference or completing an annotation
+         *     changes the answer. The `ETag` is the drawn plane's digest, so an unchanged map is a
+         *     304 without being encoded.
+         */
+        get: operations["read_label_map_image_api_experiments__experiment_id__images__image_id__label_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/threshold": {
         parameters: {
             query?: never;
@@ -6992,6 +7024,50 @@ export interface operations {
                 content: {
                     "application/octet-stream": unknown;
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_label_map_image_api_experiments__experiment_id__images__image_id__label_map_get: {
+        parameters: {
+            query: {
+                /** @description One hex colour per pinned class, in the run's order: class `i` is drawn in the `i`-th. The client's palette, so no class colour is kept on this side. */
+                colours: string;
+                /** @description Draw the image's truth over the run's pinned classes — dashed border only — instead of the method's map, which is filled with a solid border. */
+                truth?: boolean;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description The client's copy is current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

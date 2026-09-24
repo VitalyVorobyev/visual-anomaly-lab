@@ -6,6 +6,7 @@ a filter over a few hundred floats and never a database write (ADR-0011).
 
 from __future__ import annotations
 
+import hashlib
 from pathlib import Path
 
 import numpy as np
@@ -35,6 +36,7 @@ from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.eval.segmentation import SegmentationOutcomes, sample_outcomes
 from anomaly_lab.eval.threshold import ThresholdReport, classify, report, suggest_threshold
+from anomaly_lab.media.overlay import fit_label_plane, parse_label_colours, render_label_map
 from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.base import evenly_spaced
 
@@ -43,6 +45,10 @@ router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 # A ROC curve has one point per distinct score, so a large test set produces more points
 # than a chart has pixels. Capped, and the cap is reported rather than applied silently.
 CURVE_POINT_LIMIT = 2000
+
+# A drawn label map lies on a gallery tile, over the `thumb` tier, so it is no larger than
+# that tier's long edge — whatever the image's size, the response is bounded.
+LABEL_MAP_LONG_EDGE = 256
 
 
 @router.get("/{experiment_id}/results", summary="Ranked samples for one subset")
@@ -140,6 +146,82 @@ def read_label_plane(
         media_type="application/octet-stream",
         # Revalidated: re-running inference or completing an annotation changes the answer.
         headers={"Cache-Control": "no-cache"},
+    )
+
+
+@router.get(
+    "/{experiment_id}/images/{image_id}/label-map",
+    summary="One image's label map, predicted or true, drawn for a gallery tile",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/png": {}}},
+        304: {"description": "The client's copy is current."},
+    },
+)
+def read_label_map_image(
+    request: Request,
+    experiment_id: int,
+    image_id: int,
+    colours: str = Query(
+        pattern=r"^#?[0-9a-fA-F]{6}(,#?[0-9a-fA-F]{6})*$",
+        description=(
+            "One hex colour per pinned class, in the run's order: class `i` is drawn in the "
+            "`i`-th. The client's palette, so no class colour is kept on this side."
+        ),
+    ),
+    truth: bool = Query(
+        default=False,
+        description=(
+            "Draw the image's truth over the run's pinned classes — dashed border only — "
+            "instead of the method's map, which is filled with a solid border."
+        ),
+    ),
+) -> Response:
+    """The `labels` plane above as a picture, at the thumbnail tier's size.
+
+    A gallery tile cannot afford a value plane per tile painted in the browser, so this
+    draws the same map with the same rule as the sample page's `LabelLayer`. The colours
+    come from the client rather than from a table here: the palette has one home, the
+    design system, and a server copy would be a second one to keep in step. The size is
+    bounded by the thumbnail's long edge, never by the image, and the plane is decimated by
+    an integer stride before it is painted, so every border is traced at the size it is
+    drawn and every pixel is a class somebody gave.
+
+    Revalidated rather than immutable: re-running inference or completing an annotation
+    changes the answer. The `ETag` is the drawn plane's digest, so an unchanged map is a
+    304 without being encoded.
+    """
+    experiment, settings = load(request, experiment_id)
+    if experiment.task is not Task.SEMANTIC_SEGMENTATION:
+        raise ConflictError(
+            f"experiment {experiment.id} is a {experiment.task.value} run; it wrote no label maps"
+        )
+    palette = parse_label_colours(colours)
+    classes = experiment.classes
+    if len(palette) < len(classes):
+        raise HTTPException(
+            status_code=422,
+            detail=f"{len(classes)} pinned classes need {len(classes)} colours, got {len(palette)}",
+        )
+    with connection(settings.db_path) as conn:
+        scored = results_repo.get_image_result(conn, experiment.id, image_id) is not None
+        plane = semantic.label_plane(conn, experiment, image_id, truth=truth) if scored else None
+    if plane is None:
+        what = "no truth for every pinned class" if truth else "no label map"
+        raise HTTPException(
+            status_code=404, detail=f"image {image_id} has {what} in experiment {experiment.id}"
+        )
+
+    drawn = fit_label_plane(plane, LABEL_MAP_LONG_EDGE)
+    digest = hashlib.sha256(np.ascontiguousarray(drawn, dtype="<f4").tobytes()).hexdigest()
+    etag = f'W/"label-map-{experiment.id}-{image_id}-{int(truth)}-{digest[:16]}-{colours.lower()}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(
+        content=render_label_map(drawn, palette, truth=truth),
+        media_type="image/png",
+        headers=headers,
     )
 
 

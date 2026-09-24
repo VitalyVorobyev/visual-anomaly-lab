@@ -23,14 +23,6 @@ until its output has been reviewed.
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
       `ButtonLink` there, release, and replace all five.
 
-- [ ] **A supervised segmentation run's gallery tiles show its label maps** (S): the Samples
-      tab's overlay row is the anomaly set (`GalleryTab` passes no `classes` to `OverlayControls`),
-      and a tile's `prediction` layer is the foreground map cut by `predictionUrl`, not the label
-      map the sample page draws. A tile cannot afford the sample page's route — one class-index
-      plane per tile, painted by `LabelLayer` — so the server needs a rendered label-map thumbnail
-      beside `anomaly-map` and `prediction`, in the pinned-class colours; then pass `classes` to the
-      gallery's `OverlayControls` and have `Tile` draw that image and the truth's.
-
 ## Few-shot segmentation
 
 The second task (ADR-0040), in dependency order. Each item is one PR.

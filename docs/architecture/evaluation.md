@@ -304,7 +304,8 @@ map as the method wrote it (`maps/<id>.labels.png`, source frame) and the label 
   label map, and `?truth=true` its truth over the pinned classes, as a value plane of class indices
   (`media/values.py`; a truth pixel of a class the run does not know is NaN). Only for a
   `semantic_segmentation` run (409 otherwise) and a scored image (404 otherwise); colour is the
-  interface's.
+  interface's. `…/label-map?colours=&truth=` draws the same map as a PNG for a gallery tile
+  ([media](media.md)).
 - **The ground-truth digest** hashes the pinned class list and each image's pinned answer.
 
 ## Run audit

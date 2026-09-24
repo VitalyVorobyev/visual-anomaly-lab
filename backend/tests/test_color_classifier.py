@@ -4,6 +4,7 @@ write label maps, read a confusion matrix."""
 
 from __future__ import annotations
 
+import io
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -17,6 +18,7 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.experiments.context import ExperimentJobError
+from anomaly_lab.media.overlay import LABEL_FILL_ALPHA
 from anomaly_lab.models.base import (
     IGNORE_INDEX,
     Device,
@@ -280,6 +282,40 @@ def test_the_whole_supervised_slice_runs_without_torch(
     assert missing.status_code == 404
     refused = client.get(f"/api/experiments/{anomaly['id']}/images/{image_id}/labels")
     assert refused.status_code == 409
+
+    # The same maps drawn for a gallery tile, in the colours the client names.
+    drawn_url = f"/api/experiments/{created['id']}/images/{image_id}/label-map"
+    colour = {"colours": "3bc9db"}
+    fill = client.get(drawn_url, params=colour)
+    assert fill.status_code == 200 and fill.headers["content-type"] == "image/png"
+    painted = np.asarray(Image.open(io.BytesIO(fill.content)).convert("RGBA"))
+    assert painted.shape[:2] == predicted.shape
+    inside = np.argwhere(
+        (predicted[1:-1, 1:-1] == 1)
+        & (predicted[:-2, 1:-1] == 1)
+        & (predicted[2:, 1:-1] == 1)
+        & (predicted[1:-1, :-2] == 1)
+        & (predicted[1:-1, 2:] == 1)
+    )
+    row, column = (int(value) + 1 for value in inside[0])
+    assert tuple(painted[row, column]) == (59, 201, 219, LABEL_FILL_ALPHA)
+    assert not painted[predicted == 0, 3].any()
+    outline = np.asarray(
+        Image.open(
+            io.BytesIO(client.get(drawn_url, params={**colour, "truth": "true"}).content)
+        ).convert("RGBA")
+    )
+    # An outline: drawn on the class's border only, never inside it or off it.
+    assert outline[..., 3].any()
+    assert not outline[truth != 1, 3].any()
+    assert outline[..., 3].sum() < painted[..., 3].sum()
+    cached = client.get(drawn_url, params=colour, headers={"If-None-Match": fill.headers["etag"]})
+    assert cached.status_code == 304
+    assert client.get(drawn_url, params={"colours": "3bc9db,f0"}).status_code == 422
+    unscored_drawn = f"/api/experiments/{created['id']}/images/{unscored}/label-map"
+    assert client.get(unscored_drawn, params=colour).status_code == 404
+    anomaly_drawn = f"/api/experiments/{anomaly['id']}/images/{image_id}/label-map"
+    assert client.get(anomaly_drawn, params=colour).status_code == 409
 
     # An anomaly fit is still given no ground truth of either kind.
     seen: dict[str, Any] = {}

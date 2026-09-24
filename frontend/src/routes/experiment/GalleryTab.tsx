@@ -21,7 +21,7 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 
 import type { MapScale, SamplePreview, SampleVerdict, Subset, Task } from "../../api/client";
-import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
+import { anomalyMapUrl, imageUrl, labelMapUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue, writeResultsState } from "../../api/resultsState";
 import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
@@ -40,8 +40,14 @@ export function GalleryTab({
   range,
   task,
   targetLabel,
+  classes,
 }: {
   experimentId: number;
+  /**
+   * A supervised segmentation run's pinned classes. Given, the overlay row is the label-map
+   * set with its legend, and each tile draws the run's label maps instead of a cut.
+   */
+  classes?: readonly string[];
   /** Decides the outcome strip and its words (`taskViews.tsx`). */
   task: Task | undefined;
   targetLabel: string | null;
@@ -140,6 +146,7 @@ export function GalleryTab({
         range={range}
         hasMask={anyMask}
         hasMap={anyMap}
+        classes={classes}
       />
 
       {verdicts.isPending || previews.isPending ? (
@@ -161,6 +168,7 @@ export function GalleryTab({
               state={state}
               task={task}
               cut={cut}
+              classes={classes}
             />
           ))}
         </ul>
@@ -176,6 +184,7 @@ function Tile({
   state,
   task,
   cut,
+  classes,
 }: {
   experimentId: number;
   verdict: SampleVerdict;
@@ -183,6 +192,7 @@ function Tile({
   state: ResultsState;
   task: Task | undefined;
   cut: number | null;
+  classes: readonly string[] | undefined;
 }) {
   const search = writeResultsState(state, task).toString();
 
@@ -217,23 +227,53 @@ function Tile({
                   className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-80"
                 />
               )}
-              {state.region && preview.has_map && cut !== null && (
-                <img
-                  src={predictionUrl(preview.image_id, experimentId, cut)}
-                  alt=""
-                  aria-hidden
-                  loading="lazy"
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                />
-              )}
-              {state.truth && preview.has_mask && (
-                <img
-                  src={maskUrl(preview.image_id)}
-                  alt=""
-                  aria-hidden
-                  loading="lazy"
-                  className="pointer-events-none absolute inset-0 h-full w-full object-cover"
-                />
+              {classes !== undefined ? (
+                <>
+                  {/* The label maps, drawn by the server at the thumbnail's size in the
+                      colours `labelMapUrl` names — the sample page's `LabelLayer`, one image
+                      per layer instead of a value plane. */}
+                  {state.region && (
+                    <img
+                      src={labelMapUrl(preview.image_id, experimentId, classes, false)}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      data-labels="prediction"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
+                  {state.truth && preview.has_mask && (
+                    <img
+                      src={labelMapUrl(preview.image_id, experimentId, classes, true)}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      data-labels="truth"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  {state.region && preview.has_map && cut !== null && (
+                    <img
+                      src={predictionUrl(preview.image_id, experimentId, cut)}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
+                  {state.truth && preview.has_mask && (
+                    <img
+                      src={maskUrl(preview.image_id)}
+                      alt=""
+                      aria-hidden
+                      loading="lazy"
+                      className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                    />
+                  )}
+                </>
               )}
             </>
           )}
