@@ -45,6 +45,7 @@ export function useFreezeReferences() {
               val_normal_fraction: 0.2,
               val_defect_fraction: 0.3,
               holdout_from_train: 0,
+              train_fraction: 0.7,
               unlabeled_subset: "test",
             },
           },

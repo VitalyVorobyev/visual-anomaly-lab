@@ -211,9 +211,11 @@ Splits are assigned at **sample** level, so a part's channels never straddle sub
 
 A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
 and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
-A semantic segmentation run fits on the annotated images of whatever `train` holds, so any strategy but
-`few_shot` serves it; the drawn ones put normals alone in `train`, which leaves `manual` the useful one
-until a strategy is drawn for supervised tasks.
+A semantic segmentation run fits on the annotated images of whatever `train` holds, so it is offered
+`class_stratified` — annotated samples drawn under the seed, stratified by the set of classes each
+shows, with the rest parked in `test` where they are scored but measured against nothing — and
+`manual`. The anomaly strategies put normals alone in `train`, and a supervised run cannot learn a
+class from them.
 
 **A missing `val` subset is normal.** VisA's official protocol has train and test only, so every layer
 tolerates an empty subset:

@@ -28,13 +28,22 @@ The `manual` and `few_shot` strategies partition for a few-shot task (ADR-0040),
 `train` is a handful of references and `test` is every other sample. `manual` takes the
 references as listed; `few_shot` draws `shots` of the samples that show one class, under the
 seed, so the same request with three seeds is three reference draws. Neither has a `val`.
+
+The `class_stratified` strategy partitions for a supervised task (ADR-0039), which fits on
+annotated samples of every class rather than on normals. It draws only over samples whose
+ground truth answers for every class of the dataset, stratified by the set of classes each
+one shows (see `draw_class_stratified`); every other sample goes to `unlabeled_subset`, where
+it is scored but has no truth to be measured against. It has no `val` either — a supervised
+run calibrates nothing on held-out data.
 """
 
 from __future__ import annotations
 
+import math
 import random
 import sqlite3
-from collections import defaultdict
+from collections import Counter, defaultdict
+from collections.abc import Mapping
 from enum import StrEnum
 
 from pydantic import BaseModel, Field, model_validator
@@ -54,6 +63,8 @@ class SplitStrategy(StrEnum):
     """Few-shot references chosen by hand: `sample_ids` train, everything else tests."""
     FEW_SHOT = "few_shot"
     """Few-shot references drawn under the seed from the samples that show `label_key`."""
+    CLASS_STRATIFIED = "class_stratified"
+    """Annotated samples drawn under the seed into train and test, stratified by class."""
 
 
 class SplitPlanError(Exception):
@@ -87,8 +98,9 @@ class SplitParams(BaseModel):
     unlabeled_subset: Subset | None = Field(
         default=Subset.TEST,
         description=(
-            "Where unlabelled samples go. They are excluded from every metric but must be "
-            "scored to appear in the ranked lists. `null` leaves them out of the split."
+            "Where unlabelled samples go — for `class_stratified`, samples whose ground "
+            "truth does not answer for every class. They are excluded from every metric but "
+            "must be scored to appear in the ranked lists. `null` leaves them out of the split."
         ),
     )
 
@@ -127,6 +139,25 @@ class SplitParams(BaseModel):
         ge=1,
         description="For `few_shot` only: how many references to draw.",
     )
+    train_fraction: float = Field(
+        default=0.7,
+        gt=0.0,
+        lt=1.0,
+        description=(
+            "For `class_stratified` only: share of the annotated samples that train; the "
+            "rest test. Drawn per class signature, so every mix of classes is represented "
+            "in both subsets in proportion."
+        ),
+    )
+    classes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "For `class_stratified`: the classes the draw answered for and stratified by — "
+            "every class of the dataset when the split was drawn. Recorded, not chosen, so "
+            "the split stays traceable to the taxonomy it was drawn against; ignored by "
+            "every other strategy."
+        ),
+    )
 
     @model_validator(mode="after")
     def _normals_must_add_up(self) -> SplitParams:
@@ -144,6 +175,12 @@ class SplitParams(BaseModel):
                 raise ValueError("a few_shot split needs the label_key its references show")
             if self.shots is None:
                 raise ValueError("a few_shot split needs the number of shots to draw")
+            return self
+        if self.strategy is SplitStrategy.CLASS_STRATIFIED:
+            if self.unlabeled_subset is Subset.TRAIN:
+                raise ValueError(
+                    "a class_stratified split cannot train on samples with no ground truth"
+                )
             return self
         if self.strategy is SplitStrategy.IMPORTED:
             return self
@@ -330,6 +367,126 @@ def plan_few_shot_split(
         sample_id: Subset.TRAIN if sample_id in references else Subset.TEST
         for sample_id in presence
     }
+
+
+def plan_class_stratified_split(
+    conn: sqlite3.Connection,
+    dataset_id: int,
+    *,
+    seed: int,
+    classes: list[str],
+    train_fraction: float,
+    unlabeled_subset: Subset | None,
+) -> dict[int, Subset]:
+    """Draw the annotated samples into train and test by class; place the rest.
+
+    A sample is annotated when every one of its images answers for every class in
+    `classes` (the rule a supervised run's training set applies), so each image of a
+    training sample is one the run can fit on. The rest go to `unlabeled_subset`.
+    """
+    if not classes:
+        msg = f"dataset {dataset_id} has no annotation class to stratify by"
+        raise SplitPlanError(msg)
+    shown = annotations_repo.classes_shown_by_sample(conn, dataset_id, classes)
+    if not shown:
+        msg = f"dataset {dataset_id} has no samples to split"
+        raise SplitPlanError(msg)
+    annotated = {sample_id: found for sample_id, found in shown.items() if found is not None}
+    if len(annotated) < 2:
+        msg = (
+            f"{len(annotated)} of {len(shown)} samples have ground truth for every one of "
+            f"{', '.join(classes)}; a split needs at least two, one to train on and one to "
+            "test. Complete an annotation of more samples."
+        )
+        raise SplitPlanError(msg)
+
+    assignments = draw_class_stratified(annotated, seed=seed, train_fraction=train_fraction)
+    if Subset.TRAIN not in assignments.values():
+        msg = f"a training share of {train_fraction} of {len(annotated)} samples rounds to none"
+        raise SplitPlanError(msg)
+    if Subset.TEST not in assignments.values():
+        msg = (
+            f"a training share of {train_fraction} of {len(annotated)} samples leaves none "
+            "to test on"
+        )
+        raise SplitPlanError(msg)
+
+    if unlabeled_subset is not None:
+        for sample_id in sorted(set(shown) - set(annotated)):
+            assignments[sample_id] = unlabeled_subset
+    return assignments
+
+
+def draw_class_stratified(
+    shown: Mapping[int, frozenset[str]], *, seed: int, train_fraction: float
+) -> dict[int, Subset]:
+    """Split samples into train and test, stratified by the set of classes each one shows.
+
+    **Strata are class signatures.** Samples showing exactly the same classes — `{}`,
+    `{scratch}`, `{scratch, dent}` — form one stratum, so a multi-label sample is never
+    counted towards a class it shares with a rarer one. Each stratum's share of `train` is
+    `len * train_fraction`, floored, and the samples left over to reach
+    `round(total * train_fraction)` go to the strata with the largest remainders, ties broken
+    under the seed — so the total is exact and no stratum is off by more than one.
+
+    **Then every class seen at least twice is put in both subsets where it can be.** A class
+    with no training sample gets one of its test samples moved into `train` (always
+    possible: every sample showing it is in `test`). A class with no test sample then gets
+    one of its training samples moved into `test`, but only a sample whose every other class
+    keeps a training sample without it; when no such sample exists, the class has no test
+    sample and its test metrics are `None`. A class shown by a single sample goes wherever
+    its stratum's draw puts it. These moves can shift the training share by a sample per
+    class.
+
+    Seeded once and consumed in a fixed order — strata sorted by signature, samples by id,
+    classes by key — so the same inputs give the same split and another seed another one.
+    """
+    rng = random.Random(seed)
+    strata: dict[tuple[str, ...], list[int]] = defaultdict(list)
+    for sample_id in sorted(shown):
+        strata[tuple(sorted(shown[sample_id]))].append(sample_id)
+    signatures = sorted(strata)
+    for signature in signatures:
+        rng.shuffle(strata[signature])
+
+    exact = {signature: len(strata[signature]) * train_fraction for signature in signatures}
+    quota = {signature: math.floor(exact[signature]) for signature in signatures}
+    tiebreak = {signature: rng.random() for signature in signatures}
+    leftover = round(len(shown) * train_fraction) - sum(quota.values())
+    by_remainder = sorted(
+        signatures, key=lambda signature: (quota[signature] - exact[signature], tiebreak[signature])
+    )
+    for signature in by_remainder[:leftover]:
+        quota[signature] += 1
+
+    plan: dict[int, Subset] = {}
+    for signature in signatures:
+        for index, sample_id in enumerate(strata[signature]):
+            plan[sample_id] = Subset.TRAIN if index < quota[signature] else Subset.TEST
+
+    def holders(label_key: str, subset: Subset) -> list[int]:
+        return sorted(
+            sample_id
+            for sample_id, found in shown.items()
+            if label_key in found and plan[sample_id] is subset
+        )
+
+    seen = Counter(label_key for found in shown.values() for label_key in found)
+    repeated = sorted(label_key for label_key, count in seen.items() if count >= 2)
+    for label_key in repeated:
+        if not holders(label_key, Subset.TRAIN):
+            plan[rng.choice(holders(label_key, Subset.TEST))] = Subset.TRAIN
+    for label_key in repeated:
+        if holders(label_key, Subset.TEST):
+            continue
+        movable = [
+            sample_id
+            for sample_id in holders(label_key, Subset.TRAIN)
+            if all(len(holders(other, Subset.TRAIN)) >= 2 for other in shown[sample_id])
+        ]
+        if movable:
+            plan[rng.choice(movable)] = Subset.TEST
+    return plan
 
 
 def _hold_out_from_train(

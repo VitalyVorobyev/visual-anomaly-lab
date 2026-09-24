@@ -187,6 +187,19 @@ describe("the create-experiment form", () => {
     expect(screen.queryByText("Pixel reference")).toBeNull();
   });
 
+  it("offers a segmentation run only a split of annotated samples, and links to drawing one", () => {
+    const floor = {
+      ...METHOD,
+      key: "color_classifier",
+      title: "Colour classifier",
+      capabilities: { ...METHOD.capabilities, tasks: ["semantic_segmentation"] },
+    };
+    renderForm([SPLIT], [METHOD, floor]);
+    fireEvent.click(screen.getByRole("radio", { name: "Segmentation" }));
+    const link = screen.getByRole("link", { name: "Draw one by class" });
+    expect(link.getAttribute("href")).toBe("/datasets/7/splits?strategy=class_stratified");
+  });
+
   it("brings back what was typed before following a prerequisite link", () => {
     sessionStorage.setItem(
       draftKey(7),

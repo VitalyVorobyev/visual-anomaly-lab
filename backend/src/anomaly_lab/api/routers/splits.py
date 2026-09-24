@@ -19,6 +19,7 @@ from anomaly_lab.datasets.splitting import (
     SplitParams,
     SplitPlanError,
     SplitStrategy,
+    plan_class_stratified_split,
     plan_few_shot_split,
     plan_imported_split,
     plan_manual_split,
@@ -127,7 +128,9 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
     The `imported` strategy instead reads the partition out of the manifest the dataset
     was committed from, because a benchmark's published number is only comparable against
     the benchmark's own partition. `manual` and `few_shot` hold a few-shot task's
-    references in `train` and everything else in `test` (ADR-0040).
+    references in `train` and everything else in `test` (ADR-0040). `class_stratified`
+    draws the samples annotated for every class into `train` and `test`, stratified by the
+    classes each shows, for a supervised task (ADR-0039).
     """
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -166,6 +169,19 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
                     label_key=params.label_key,
                     shots=params.shots,
                 )
+            elif params.strategy is SplitStrategy.CLASS_STRATIFIED:
+                # Every class, in taxonomy order — the list a supervised run pins — recorded
+                # so the split says which taxonomy "annotated" was judged against.
+                classes = [label.key for label in annotations_repo.list_labels(conn, dataset.id)]
+                assignments = plan_class_stratified_split(
+                    conn,
+                    body.dataset_id,
+                    seed=body.seed,
+                    classes=classes,
+                    train_fraction=params.train_fraction,
+                    unlabeled_subset=params.unlabeled_subset,
+                )
+                params = params.model_copy(update={"classes": classes})
             else:
                 assignments = plan_split(conn, body.dataset_id, seed=body.seed, params=params)
         except SplitPlanError as exc:
