@@ -8,9 +8,11 @@ and the schema already refuses to let the dataset or split be deleted out from u
 
 from __future__ import annotations
 
+import base64
 import json
 import sqlite3
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from typing import Any, Literal
 
 from anomaly_lab.domain.entities import Experiment, ExperimentStatus
@@ -25,48 +27,121 @@ def get_experiment(conn: sqlite3.Connection, experiment_id: int) -> Experiment |
     return _to_experiment(row) if row is not None else None
 
 
+# Each catalogue order is a column and a direction, with the id as the tie-break in the same
+# direction, so a (value, id) pair is a total order a cursor can resume after.
+_ORDERS: dict[str, tuple[str, str]] = {
+    "newest": ("id", "DESC"),
+    "oldest": ("id", "ASC"),
+    "name": ("name COLLATE NOCASE", "ASC"),
+    "method": ("model_type", "ASC"),
+    "status": ("status", "ASC"),
+}
+ExperimentOrder = Literal["newest", "oldest", "name", "method", "status"]
+
+
+@dataclass(frozen=True)
+class ExperimentPage:
+    items: list[Experiment]
+    total: int
+    """Every experiment the filters match, across all pages."""
+    next_cursor: str | None
+    """Where the next page starts, or `None` on the last one."""
+
+
+def _encode_cursor(value: object, experiment_id: int) -> str:
+    payload = json.dumps([value, experiment_id]).encode()
+    return base64.urlsafe_b64encode(payload).decode().rstrip("=")
+
+
+def _decode_cursor(cursor: str) -> tuple[object, int]:
+    try:
+        padded = cursor + "=" * (-len(cursor) % 4)
+        value, experiment_id = json.loads(base64.urlsafe_b64decode(padded))
+        return value, int(experiment_id)
+    except (ValueError, TypeError) as exc:
+        raise ValueError("the cursor is not one this catalogue issued") from exc
+
+
 def list_experiments(
     conn: sqlite3.Connection,
     *,
     dataset_id: int | None = None,
-    model_type: str | None = None,
+    model_types: Sequence[str] = (),
     status: ExperimentStatus | None = None,
     query: str | None = None,
-    sort: Literal["newest", "oldest", "name"] = "newest",
+    created_from: str | None = None,
+    created_to: str | None = None,
+    sort: ExperimentOrder = "newest",
     limit: int = 200,
-) -> list[Experiment]:
-    """Experiments matching the catalogue's composable filters."""
+    cursor: str | None = None,
+) -> ExperimentPage:
+    """One page of the experiments matching the catalogue's composable filters.
+
+    Keyset pagination rather than an offset: a run created while someone pages through the
+    catalogue neither shifts every later page nor appears twice.
+    """
     clauses: list[str] = []
     params: list[object] = []
     if dataset_id is not None:
         clauses.append("dataset_id = ?")
         params.append(dataset_id)
-    if model_type is not None:
-        clauses.append("model_type = ?")
-        params.append(model_type)
+    if model_types:
+        clauses.append(f"model_type IN ({','.join('?' * len(model_types))})")
+        params.extend(model_types)
     if status is not None:
         clauses.append("status = ?")
         params.append(status.value)
     if query is not None and query.strip():
-        # Search is intentionally limited to human-authored text. A method has its own
-        # exact filter, and searching serialized configuration would make a typo look like
-        # a supported query language.
-        clauses.append("(name LIKE ? COLLATE NOCASE OR notes LIKE ? COLLATE NOCASE)")
-        needle = f"%{query.strip()}%"
-        params.extend([needle, needle])
+        # Search is intentionally limited to human-authored text — and the id, since a run is
+        # named by its number everywhere else on screen. A method has its own exact filter, and
+        # searching serialized configuration would make a typo look like a query language.
+        needle = query.strip()
+        text = "(name LIKE ? COLLATE NOCASE OR notes LIKE ? COLLATE NOCASE)"
+        number = needle.removeprefix("#")
+        if number.isdigit():
+            clauses.append(f"({text} OR id = ?)")
+            params.extend([f"%{needle}%", f"%{needle}%", int(number)])
+        else:
+            clauses.append(text)
+            params.extend([f"%{needle}%", f"%{needle}%"])
+    # Inclusive calendar days, compared against the stored UTC timestamp's date.
+    if created_from is not None:
+        clauses.append("substr(created_at, 1, 10) >= ?")
+        params.append(created_from)
+    if created_to is not None:
+        clauses.append("substr(created_at, 1, 10) <= ?")
+        params.append(created_to)
 
-    order_by = {
-        "newest": "id DESC",
-        "oldest": "id ASC",
-        "name": "name COLLATE NOCASE ASC, id DESC",
-    }[sort]
     where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
-    params.append(limit)
+    total = int(conn.execute(f"SELECT COUNT(*) FROM experiment{where}", params).fetchone()[0])
+
+    column, direction = _ORDERS[sort]
+    keyset: list[str] = []
+    keyset_params: list[object] = []
+    if cursor is not None:
+        value, last_id = _decode_cursor(cursor)
+        beyond = ">" if direction == "ASC" else "<"
+        if column == "id":
+            keyset.append(f"id {beyond} ?")
+            keyset_params.append(last_id)
+        else:
+            keyset.append(f"({column} {beyond} ? OR ({column} = ? AND id {beyond} ?))")
+            keyset_params.extend([value, value, last_id])
+    page_where = " WHERE " + " AND ".join(clauses + keyset) if clauses or keyset else ""
     rows = conn.execute(
-        f"SELECT * FROM experiment{where} ORDER BY {order_by} LIMIT ?",
-        params,
+        f"SELECT * FROM experiment{page_where} ORDER BY {column} {direction}, id {direction} "
+        "LIMIT ?",
+        [*params, *keyset_params, limit + 1],
     ).fetchall()
-    return [_to_experiment(row) for row in rows]
+
+    items = [_to_experiment(row) for row in rows[:limit]]
+    next_cursor = None
+    if len(rows) > limit and items:
+        last = rows[limit - 1]
+        key = {"name COLLATE NOCASE": "name", "model_type": "model_type", "status": "status"}
+        value = None if column == "id" else last[key[column]]
+        next_cursor = _encode_cursor(value, int(last["id"]))
+    return ExperimentPage(items=items, total=total, next_cursor=next_cursor)
 
 
 def list_experiments_for_dataset(conn: sqlite3.Connection, dataset_id: int) -> list[Experiment]:

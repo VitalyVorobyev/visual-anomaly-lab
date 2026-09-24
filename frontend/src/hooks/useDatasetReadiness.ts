@@ -103,7 +103,7 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
     profiles: profiles.data?.length ?? 0,
     builtProfiles,
     splits: splits.data?.length ?? 0,
-    runs: runs.data?.length ?? 0,
+    runs: runs.data?.total ?? 0,
     tasks,
   };
 }

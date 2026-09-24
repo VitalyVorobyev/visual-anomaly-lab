@@ -9,7 +9,7 @@
  * ADR-0007 buys — a new method appears in the picker without a line changing here.
  */
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import type { ExperimentListQuery } from "../api/experimentState";
@@ -18,9 +18,9 @@ import type {
   CurveSet,
   DiagnoseResponse,
   ExperimentDetail,
+  ExperimentPage,
   ExperimentDeletionPreview,
   ExperimentDeletionResult,
-  ExperimentSummary,
   DiagnosticIndex,
   ImageScore,
   MethodCatalog,
@@ -46,26 +46,59 @@ export function useModelTypes() {
   });
 }
 
+function listParams(query: ExperimentListQuery) {
+  return {
+    ...(query.datasetId === undefined ? {} : { dataset_id: query.datasetId }),
+    ...(query.modelTypes && query.modelTypes.length > 0 ? { model_type: query.modelTypes } : {}),
+    ...(query.status === undefined ? {} : { status: query.status }),
+    ...(query.query === undefined ? {} : { q: query.query }),
+    ...(query.createdFrom === undefined ? {} : { created_from: query.createdFrom }),
+    ...(query.createdTo === undefined ? {} : { created_to: query.createdTo }),
+    ...(query.sort === undefined ? {} : { sort: query.sort }),
+  };
+}
+
+/**
+ * The first page of runs matching `query`, up to the API's largest page, with the total.
+ * For readers that need the runs of one dataset or split — the picker, readiness — rather
+ * than a catalogue to browse; the catalogue pages with `useExperimentPages`.
+ */
 export function useExperiments(query: ExperimentListQuery = {}) {
-  return useQuery<ExperimentSummary[]>({
+  return useQuery<ExperimentPage>({
     queryKey: queryKeys.experiments(query),
     queryFn: async () =>
       unwrap(
         await api.GET("/api/experiments", {
-          params: {
-            query: {
-              ...(query.datasetId === undefined ? {} : { dataset_id: query.datasetId }),
-              ...(query.modelType === undefined ? {} : { model_type: query.modelType }),
-              ...(query.status === undefined ? {} : { status: query.status }),
-              ...(query.query === undefined ? {} : { q: query.query }),
-              ...(query.sort === undefined ? {} : { sort: query.sort }),
-            },
-          },
+          params: { query: { ...listParams(query), limit: 500 } },
         }),
         "the experiment list",
       ),
   });
 }
+
+/** The catalogue, a page at a time by cursor, so a thousand runs are one "Load more" away. */
+export function useExperimentPages(query: ExperimentListQuery) {
+  return useInfiniteQuery({
+    queryKey: [...queryKeys.experiments(query), "pages"] as const,
+    initialPageParam: undefined as string | undefined,
+    queryFn: async ({ pageParam }) =>
+      unwrap(
+        await api.GET("/api/experiments", {
+          params: {
+            query: {
+              ...listParams(query),
+              limit: CATALOGUE_PAGE,
+              ...(pageParam === undefined ? {} : { cursor: pageParam }),
+            },
+          },
+        }),
+        "the experiment list",
+      ),
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
+  });
+}
+
+export const CATALOGUE_PAGE = 50;
 
 export function useExperiment(experimentId: number | undefined) {
   return useQuery<ExperimentDetail>({

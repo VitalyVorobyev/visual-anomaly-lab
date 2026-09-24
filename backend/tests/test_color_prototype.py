@@ -196,7 +196,7 @@ def test_the_whole_few_shot_slice_runs_without_torch(
     tally = [verdict["outcome"] for verdict in outcomes.json()["samples"]]
     assert len(tally) == 13 and "unlabeled" not in tally
 
-    anomaly_id = client.get("/api/experiments").json()[-1]["id"]
+    anomaly_id = client.get("/api/experiments").json()["items"][-1]["id"]
     refused = client.get(f"/api/experiments/{anomaly_id}/segmentation-outcomes")
     assert refused.status_code == 409
 

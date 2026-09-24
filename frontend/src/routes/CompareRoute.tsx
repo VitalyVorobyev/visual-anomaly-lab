@@ -41,7 +41,7 @@ export function CompareRoute() {
   // The first run picked decides which comparison this is (ADR-0040): anomaly runs of one
   // split at an operating point, or few-shot runs of one class across reference draws.
   const experiments = useExperiments();
-  const anchor = experiments.data?.find((run) => run.id === state.ids[0]);
+  const anchor = experiments.data?.items.find((run) => run.id === state.ids[0]);
   const fewShot = anchor?.task === "few_shot_segmentation";
   const comparison = useComparison({
     ids: state.ids,

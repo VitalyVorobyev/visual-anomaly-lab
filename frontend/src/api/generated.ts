@@ -3221,11 +3221,29 @@ export interface components {
             map_range: components["schemas"]["MapScale"] | null;
         };
         /**
+         * ExperimentPage
+         * @description One page of the catalogue, and where the next one starts.
+         */
+        ExperimentPage: {
+            /** Items */
+            items: components["schemas"]["ExperimentSummary"][];
+            /**
+             * Total
+             * @description Every experiment the filters match, across all pages.
+             */
+            total: number;
+            /**
+             * Next Cursor
+             * @description Pass back as `cursor` for the next page; null on the last.
+             */
+            next_cursor: string | null;
+        };
+        /**
          * ExperimentSort
          * @description Stable orders offered by the experiment catalogue.
          * @enum {string}
          */
-        ExperimentSort: "newest" | "oldest" | "name";
+        ExperimentSort: "newest" | "oldest" | "name" | "method" | "status";
         /**
          * ExperimentStatus
          * @enum {string}
@@ -6410,11 +6428,19 @@ export interface operations {
         parameters: {
             query?: {
                 dataset_id?: number | null;
-                model_type?: string | null;
+                /** @description One or more method keys; a run matches any of them. */
+                model_type?: string[] | null;
                 status?: components["schemas"]["ExperimentStatus"] | null;
+                /** @description Name or notes; a number (optionally `#12`) also matches the id. */
                 q?: string | null;
+                /** @description Inclusive, a UTC date. */
+                created_from?: string | null;
+                /** @description Inclusive, a UTC date. */
+                created_to?: string | null;
                 sort?: components["schemas"]["ExperimentSort"];
                 limit?: number;
+                /** @description `next_cursor` of the previous page. */
+                cursor?: string | null;
             };
             header?: never;
             path?: never;
@@ -6428,7 +6454,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ExperimentSummary"][];
+                    "application/json": components["schemas"]["ExperimentPage"];
                 };
             };
             /** @description Validation Error */

@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Query, Request
+from datetime import date
+
+from fastapi import APIRouter, HTTPException, Query, Request
 
 from anomaly_lab.api.routers.experiments.views import (
     CreateExperimentRequest,
     ExperimentDeletionPreview,
     ExperimentDeletionResult,
     ExperimentDetail,
+    ExperimentPage,
     ExperimentSort,
-    ExperimentSummary,
     MethodCatalog,
     detail,
     load,
@@ -78,24 +80,43 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
 def list_experiments(
     request: Request,
     dataset_id: int | None = Query(default=None),
-    model_type: str | None = Query(default=None),
+    model_type: list[str] | None = Query(
+        default=None, description="One or more method keys; a run matches any of them."
+    ),
     status: ExperimentStatus | None = Query(default=None),
-    q: str | None = Query(default=None, max_length=200),
+    q: str | None = Query(
+        default=None,
+        max_length=200,
+        description="Name or notes; a number (optionally `#12`) also matches the id.",
+    ),
+    created_from: date | None = Query(default=None, description="Inclusive, a UTC date."),
+    created_to: date | None = Query(default=None, description="Inclusive, a UTC date."),
     sort: ExperimentSort = Query(default=ExperimentSort.NEWEST),
     limit: int = Query(default=100, ge=1, le=500),
-) -> list[ExperimentSummary]:
+    cursor: str | None = Query(default=None, description="`next_cursor` of the previous page."),
+) -> ExperimentPage:
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        found = experiments_repo.list_experiments(
-            conn,
-            dataset_id=dataset_id,
-            model_type=model_type,
-            status=status,
-            query=q,
-            sort=sort.value,
-            limit=limit,
+        try:
+            page = experiments_repo.list_experiments(
+                conn,
+                dataset_id=dataset_id,
+                model_types=model_type or [],
+                status=status,
+                query=q,
+                created_from=created_from.isoformat() if created_from else None,
+                created_to=created_to.isoformat() if created_to else None,
+                sort=sort.value,
+                limit=limit,
+                cursor=cursor,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        return ExperimentPage(
+            items=[summary(conn, experiment) for experiment in page.items],
+            total=page.total,
+            next_cursor=page.next_cursor,
         )
-        return [summary(conn, experiment) for experiment in found]
 
 
 @router.get("/{experiment_id}", summary="One experiment, with its metrics and job history")

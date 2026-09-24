@@ -53,6 +53,8 @@ class ExperimentSort(StrEnum):
     NEWEST = "newest"
     OLDEST = "oldest"
     NAME = "name"
+    METHOD = "method"
+    STATUS = "status"
 
 
 class MethodCatalog(BaseModel):
@@ -141,6 +143,18 @@ class ExperimentSummary(BaseModel):
     headline_value: float | None = Field(
         default=None,
         description="That metric on test, or on the best subset scored so far.",
+    )
+
+
+class ExperimentPage(BaseModel):
+    """One page of the catalogue, and where the next one starts."""
+
+    model_config = API_MODEL_CONFIG
+
+    items: list[ExperimentSummary] = Field(default_factory=list)
+    total: int = Field(description="Every experiment the filters match, across all pages.")
+    next_cursor: str | None = Field(
+        default=None, description="Pass back as `cursor` for the next page; null on the last."
     )
 
 
