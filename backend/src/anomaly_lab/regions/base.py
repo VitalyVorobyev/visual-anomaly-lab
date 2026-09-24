@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 from pydantic import BaseModel, Field
@@ -54,6 +54,10 @@ class RegionExtractor(ABC):
     title: str
     summary: str
     required_assets: tuple[str, ...] = ()
+    # Whether the resolved transform is an axis-aligned box in the source frame. A
+    # profile may share one crop across a sample's images (`sample_alignment = union`)
+    # only when it is: the union of two boxes is a box, of two arbitrary warps it is not.
+    crops_to_box: ClassVar[bool] = True
 
     def __init__(self, config: BaseModel, *, assets: dict[str, Path] | None = None) -> None:
         self.config = config

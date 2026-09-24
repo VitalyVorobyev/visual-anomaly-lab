@@ -149,7 +149,8 @@ a subset.
 ### RegionProfileRevision
 
 `id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `prepared_width`,
-`prepared_height`, `padding_fraction`, `resample`, `failure_policy`, `seed`, `created_at`. One immutable
+`prepared_height`, `padding_fraction`, `resample`, `failure_policy`, `seed`, `created_at`,
+`sample_alignment`. One immutable
 dataset-owned configuration for localising and preparing input (ADR-0033); the database rejects updates, so
 changing any value appends a revision. `failure_policy` is `fail`: an extractor failure may reduce build
 coverage but never silently substitutes the full frame. A completed build lives under
@@ -158,6 +159,17 @@ transform manifest and a bounded summary whose digests make configuration and ma
 Transforms (`regions/transform.py`) name points in pixel-centre coordinates and crops in half-open
 pixel-edge coordinates, matching numpy and Pillow, so a contained resize projects back without half-pixel
 drift.
+
+`sample_alignment` decides whether the images of one sample are cropped independently. `per_image` (the
+default) keeps each image's own extractor box. `union` runs the extractor per image, then gives every image
+of the sample one transform whose crop is the union of their padded, clipped crops, so the channels of a
+part stay registered for per-position fusion; a single-image sample is unchanged. A union needs one frame:
+a sample whose images differ in source size fails every one of them by name, and a sample with a failed
+image fails its siblings too, with a reason naming the failure, rather than cropping the rest on their
+own. It is accepted only for an extractor whose transform is an axis-aligned box in the source frame
+(`RegionExtractor.crops_to_box`, true of every shipped extractor); anything else is refused at creation
+with a 422. The field enters the configuration digest only at a non-default value, so every revision
+authored before it keeps the digest its build recorded.
 
 ### Experiment
 

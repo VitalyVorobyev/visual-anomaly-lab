@@ -20,7 +20,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import Image as ImageEntity
-from anomaly_lab.domain.entities import RegionProfileRevision, SpatialResample
+from anomaly_lab.domain.entities import RegionProfileRevision, SampleAlignment, SpatialResample
 from anomaly_lab.jobs.context import JobContext
 from anomaly_lab.media import decode
 from anomaly_lab.model_assets.catalog import get_spec
@@ -29,7 +29,7 @@ from anomaly_lab.models.base import evenly_spaced
 from anomaly_lab.regions.base import RegionExtractionError
 from anomaly_lab.regions.registry import build as build_extractor
 from anomaly_lab.regions.registry import get_extractor_class
-from anomaly_lab.regions.transform import SpatialTransform
+from anomaly_lab.regions.transform import PixelBounds, SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 PREVIEW_LIMIT = 24
@@ -132,6 +132,39 @@ def preview_indices(channels: Sequence[int | None], limit: int = PREVIEW_LIMIT) 
     return sorted(chosen)
 
 
+def preview_sample_indices(sample_ids: Sequence[int], limit: int = PREVIEW_LIMIT) -> list[int]:
+    """Spread a preview over whole samples, for a profile that unites a sample's crops.
+
+    A union crop is computed from every image of a sample, so a preview that showed one
+    channel of a part would show a crop it did not compute. The budget is spent on complete
+    samples instead, evenly spaced over the dataset: as many as fit in `limit` images. Every
+    channel of each chosen sample is included by construction, which is the stratification
+    `preview_indices` has to arrange explicitly when it picks single images. One sample is
+    always chosen, even if it alone holds more than `limit` images; the caller reports at
+    most `limit`.
+    """
+    groups: dict[int, list[int]] = {}
+    for index, sample_id in enumerate(sample_ids):
+        groups.setdefault(sample_id, []).append(index)
+    members = list(groups.values())
+    if not members:
+        return []
+    for count in range(min(len(members), limit), 0, -1):
+        picked = [members[position] for position in evenly_spaced(len(members), count)]
+        if count == 1 or sum(len(group) for group in picked) <= limit:
+            return sorted(index for group in picked for index in group)
+    raise AssertionError("unreachable")  # pragma: no cover
+
+
+def preview_selection(
+    images: Sequence[ImageEntity], alignment: SampleAlignment, limit: int = PREVIEW_LIMIT
+) -> list[int]:
+    """The images a preview (and a build summary's preview) shows under this alignment."""
+    if alignment is SampleAlignment.UNION:
+        return preview_sample_indices([image.sample_id for image in images], limit)
+    return preview_indices([image.channel_id for image in images], limit)
+
+
 def read_build_summary(settings: Settings, profile_id: int) -> RegionBuildSummary | None:
     root = settings.region_profile_dir(profile_id)
     path = root / SUMMARY_FILENAME
@@ -224,7 +257,7 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
     selected = (
         images
         if mode == "build"
-        else [images[index] for index in preview_indices([image.channel_id for image in images])]
+        else [images[index] for index in preview_selection(images, profile.sample_alignment)]
     )
     assets = _resolve_assets(ctx.settings, profile)
     extractor = build_extractor(
@@ -238,7 +271,11 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
     )
 
     if mode == "preview":
-        entries = _process_images(ctx, profile, selected, extractor=extractor, output_dir=None)
+        # Bounded: a union preview can exceed the budget only through one sample larger
+        # than it, whose crop needs every image — so the result, not the work, is cut.
+        entries = _process_images(ctx, profile, selected, extractor=extractor, output_dir=None)[
+            :PREVIEW_LIMIT
+        ]
         succeeded = sum(entry.status == "succeeded" for entry in entries)
         return {
             "mode": "preview",
@@ -296,8 +333,8 @@ def _build_all(
             storage_bytes=sum(path.stat().st_size for path in files),
             elapsed_ms=(time.perf_counter() - started) * 1000.0,
             preview_entries=[
-                entries[index] for index in preview_indices([image.channel_id for image in images])
-            ],
+                entries[index] for index in preview_selection(images, profile.sample_alignment)
+            ][:PREVIEW_LIMIT],
             failure_examples=[entry for entry in entries if entry.status == "failed"][:24],
         )
         summary_path = staging / SUMMARY_FILENAME
@@ -328,6 +365,19 @@ def _build_all(
 
 
 def _process_images(
+    ctx: JobContext,
+    profile: RegionProfileRevision,
+    images: list[ImageEntity],
+    *,
+    extractor: Any,
+    output_dir: Path | None,
+) -> list[RegionPreparationEntry]:
+    if profile.sample_alignment is SampleAlignment.UNION:
+        return _process_samples(ctx, profile, images, extractor=extractor, output_dir=output_dir)
+    return _process_each_image(ctx, profile, images, extractor=extractor, output_dir=output_dir)
+
+
+def _process_each_image(
     ctx: JobContext,
     profile: RegionProfileRevision,
     images: list[ImageEntity],
@@ -390,6 +440,165 @@ def _process_images(
     return entries
 
 
+@dataclass
+class _Located:
+    """One decoded image and its own extraction, held only while its sample is processed."""
+
+    record: ImageEntity
+    started: float
+    source: Image.Image | None = None
+    extraction: Any = None
+    transform: SpatialTransform | None = None
+    error: str | None = None
+
+
+def _process_samples(
+    ctx: JobContext,
+    profile: RegionProfileRevision,
+    images: list[ImageEntity],
+    *,
+    extractor: Any,
+    output_dir: Path | None,
+) -> list[RegionPreparationEntry]:
+    """Prepare one sample at a time, giving all of its images the union of their crops.
+
+    Memory is one sample's decoded images, never the dataset's. Entries come back in the
+    order `images` was given, so the manifest is ordered exactly as a per-image build's.
+    """
+    groups: dict[int, list[int]] = {}
+    for index, record in enumerate(images):
+        groups.setdefault(record.sample_id, []).append(index)
+    by_index: dict[int, RegionPreparationEntry] = {}
+    done = 0
+    total = len(images)
+    for sample_id, indices in groups.items():
+        located: list[_Located] = []
+        for index in indices:
+            ctx.raise_if_cancelled()
+            located.append(_locate(profile, images[index], extractor))
+        for index, entry in zip(
+            indices, _unite_sample(profile, sample_id, located, output_dir), strict=True
+        ):
+            by_index[index] = entry
+            if entry.status == "failed":
+                ctx.log(f"Image {entry.image_id} failed: {entry.error}", level="warning")
+        done += len(indices)
+        ctx.progress(done / max(total, 1), f"{profile.extractor_type}: {done}/{total}")
+    return [by_index[index] for index in range(total)]
+
+
+def _locate(profile: RegionProfileRevision, record: ImageEntity, extractor: Any) -> _Located:
+    located = _Located(record=record, started=time.perf_counter())
+    try:
+        source = decode.load(Path(record.path))
+        if source.size != (record.width, record.height):
+            raise RegionExtractionError(
+                f"decoded size {source.size} differs from catalog {(record.width, record.height)}"
+            )
+        rgb = np.asarray(source.convert("RGB"), dtype=np.uint8)
+        located.extraction = extractor.extract(rgb)
+        located.transform = SpatialTransform.resolve(
+            source_size=source.size,
+            prepared_size=(profile.prepared_width, profile.prepared_height),
+            region=located.extraction.bounds,
+            padding_fraction=profile.padding_fraction,
+        )
+        located.source = source
+    except Exception as exc:
+        located.error = str(exc) or type(exc).__name__
+    return located
+
+
+def _unite_sample(
+    profile: RegionProfileRevision,
+    sample_id: int,
+    located: list[_Located],
+    output_dir: Path | None,
+) -> list[RegionPreparationEntry]:
+    """Replace each image's crop with the union of its sample's crops, or fail the sample.
+
+    A sample is united only when every image was located and all share one source size:
+    cropping the surviving images on their own would be exactly the misregistration this
+    mode exists to prevent, and a box has no meaning across two frames of different sizes.
+    """
+    failed = [item for item in located if item.error is not None]
+    if failed:
+        named = ", ".join(f"image {item.record.id}" for item in failed)
+        return [
+            _failed_entry(
+                item,
+                item.error
+                if item.error is not None
+                else f"sample {sample_id} was not united because {named} failed",
+            )
+            for item in located
+        ]
+    sizes = {(item.record.width, item.record.height) for item in located}
+    if len(sizes) > 1:
+        described = ", ".join(
+            f"image {item.record.id} is {item.record.width}x{item.record.height}"
+            for item in located
+        )
+        reason = (
+            f"sample {sample_id} cannot share one crop: its images differ in size ({described})"
+        )
+        return [_failed_entry(item, reason) for item in located]
+
+    transforms = [item.transform for item in located if item.transform is not None]
+    union = PixelBounds(
+        left=min(transform.crop_left for transform in transforms),
+        top=min(transform.crop_top for transform in transforms),
+        right=max(transform.crop_right for transform in transforms),
+        bottom=max(transform.crop_bottom for transform in transforms),
+    )
+    shared = SpatialTransform.resolve(
+        source_size=sizes.pop(),
+        prepared_size=(profile.prepared_width, profile.prepared_height),
+        # The members are already padded and clipped; the union is taken as it is.
+        region=union,
+        padding_fraction=0.0,
+    )
+    entries: list[RegionPreparationEntry] = []
+    for item in located:
+        try:
+            prepared_digest = None
+            if output_dir is not None and item.source is not None:
+                prepared = shared.prepare_image(
+                    item.source, resample=_RESAMPLE_FILTERS[profile.resample]
+                )
+                image_path = output_dir / "images" / f"{item.record.id}.png"
+                prepared.save(image_path, format="PNG", optimize=False)
+                prepared_digest = sha256_file(image_path)
+        except Exception as exc:
+            # Same rule as a failed extraction: the sample fails as a whole.
+            error = str(exc) or type(exc).__name__
+            sibling = f"sample {sample_id} was not united because image {item.record.id} failed"
+            return [_failed_entry(other, error if other is item else sibling) for other in located]
+        entries.append(
+            RegionPreparationEntry(
+                image_id=item.record.id,
+                source_sha256=item.record.sha256,
+                status="succeeded",
+                transform=shared,
+                prepared_sha256=prepared_digest,
+                extractor_confidence=item.extraction.confidence,
+                extractor_metadata=item.extraction.metadata,
+                elapsed_ms=(time.perf_counter() - item.started) * 1000.0,
+            )
+        )
+    return entries
+
+
+def _failed_entry(item: _Located, error: str) -> RegionPreparationEntry:
+    return RegionPreparationEntry(
+        image_id=item.record.id,
+        source_sha256=item.record.sha256,
+        status="failed",
+        error=error,
+        elapsed_ms=(time.perf_counter() - item.started) * 1000.0,
+    )
+
+
 def _resolve_assets(settings: Settings, profile: RegionProfileRevision) -> dict[str, Path]:
     extractor_type = get_extractor_class(profile.extractor_type)
     assets: dict[str, Path] = {}
@@ -405,10 +614,12 @@ def _resolve_assets(settings: Settings, profile: RegionProfileRevision) -> dict[
 
 
 def _config_digest(profile: RegionProfileRevision) -> str:
-    payload = profile.model_dump(
-        mode="json",
-        exclude={"id", "created_at"},
-    )
+    # A field added after builds were published enters the digest only at a non-default
+    # value, so every revision authored before it keeps the digest its build recorded.
+    exclude = {"id", "created_at"}
+    if profile.sample_alignment is SampleAlignment.PER_IMAGE:
+        exclude.add("sample_alignment")
+    payload = profile.model_dump(mode="json", exclude=exclude)
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 

@@ -24,7 +24,8 @@ application.
   the object instances beside the masks. Truth is versioned and lives in the source frame.
   One annotation covers every channel of a part, while revisions stay per image.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
-  immutable revision an experiment can reference, so a run's spatial input is reproducible.
+  immutable revision an experiment can reference, so a run's spatial input is reproducible. On a
+  grouped dataset the channels of one part can share one union crop, so they stay registered.
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
 - **Train and score** through one plugin interface. Seven anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,

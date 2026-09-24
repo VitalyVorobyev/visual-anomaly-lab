@@ -18,7 +18,12 @@ from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
-from anomaly_lab.domain.entities import JobKind, RegionProfileRevision, SpatialResample
+from anomaly_lab.domain.entities import (
+    JobKind,
+    RegionProfileRevision,
+    SampleAlignment,
+    SpatialResample,
+)
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.owned_storage import path_usage
 from anomaly_lab.regions.base import RegionExtractorDescription
@@ -30,6 +35,7 @@ from anomaly_lab.regions.preparation import (
 from anomaly_lab.regions.registry import (
     UnknownRegionExtractorError,
     describe_all,
+    get_extractor_class,
     validate_config,
 )
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -86,6 +92,14 @@ class RegionProfileCreate(BaseModel):
     padding_fraction: float = Field(default=0.05, ge=0.0, le=1.0)
     resample: SpatialResample = SpatialResample.BILINEAR
     seed: int = 17
+    sample_alignment: SampleAlignment = Field(
+        default=SampleAlignment.PER_IMAGE,
+        description=(
+            "Whether each image keeps its own crop (per_image) or every image of a sample "
+            "gets the union of their crops (union), keeping the channels of one part "
+            "registered. Union requires the sample's images to share a source size."
+        ),
+    )
 
     @field_validator("name")
     @classmethod
@@ -126,6 +140,17 @@ def create_region_profile(
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+    if body.sample_alignment is SampleAlignment.UNION and not (
+        get_extractor_class(body.extractor_type).crops_to_box
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"region extractor {body.extractor_type!r} does not crop to a box in the "
+                "source frame, so its crops cannot be united across a sample; "
+                "use sample_alignment 'per_image'"
+            ),
+        )
 
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -144,6 +169,7 @@ def create_region_profile(
                     padding_fraction=body.padding_fraction,
                     resample=body.resample,
                     seed=body.seed,
+                    sample_alignment=body.sample_alignment,
                 )
         except sqlite3.IntegrityError as exc:
             raise HTTPException(

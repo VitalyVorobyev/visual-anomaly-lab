@@ -32,6 +32,7 @@ const profile = {
   resample: "bilinear",
   seed: 17,
   created_at: "2026-01-01T00:00:00Z",
+  sample_alignment: "per_image",
 } as RegionProfileRevision;
 
 function deletionPreview(
@@ -100,5 +101,28 @@ describe("deleting a saved profile revision", () => {
     expect(
       screen.getByRole("button", { name: "Delete revision" }).hasAttribute("disabled"),
     ).toBe(true);
+  });
+});
+
+describe("sharing one crop across a sample", () => {
+  it("starts per image, and revising a shared profile carries the choice over", () => {
+    render(
+      withProviders(
+        <MemoryRouter initialEntries={[`/datasets/${DATASET_ID}/prepare?profile=${profile.id}`]}>
+          <Routes>
+            <Route path="datasets/:datasetId/prepare" element={<RegionPreparationRoute />} />
+          </Routes>
+        </MemoryRouter>,
+        [[queryKeys.regionProfiles(DATASET_ID), [{ ...profile, sample_alignment: "union" }]]],
+      ),
+    );
+    const shared = () => screen.getByRole("radio", { name: "Shared" }) as HTMLInputElement;
+
+    expect(shared().checked).toBe(false);
+    expect(screen.getByText(/shared crop/)).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
+
+    expect(shared().checked).toBe(true);
   });
 });

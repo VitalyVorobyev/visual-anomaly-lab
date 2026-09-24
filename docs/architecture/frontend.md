@@ -150,7 +150,7 @@ checkpoint downloads from the model-asset catalogue only after explicit licence 
 
 **Region preparation** — immutable profile configuration in a sticky rail, the crop audit central.
 Revision and followed job are in the URL (`profile`, `job`, `mode`, `jobProfile`). Preview samples 24
-images without writing; Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a
+images without writing (whole samples under a shared crop); Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a
 revision names the experiments pinning it. `GET /api/region-extractors`,
 `GET/POST /api/datasets/{id}/region-profiles`, `POST /api/region-profiles/{id}/preview`,
 `POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}`,

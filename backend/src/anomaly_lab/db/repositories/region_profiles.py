@@ -7,7 +7,7 @@ import sqlite3
 from collections.abc import Mapping
 from typing import Any
 
-from anomaly_lab.domain.entities import RegionProfileRevision, SpatialResample
+from anomaly_lab.domain.entities import RegionProfileRevision, SampleAlignment, SpatialResample
 
 
 def _to_profile(row: sqlite3.Row) -> RegionProfileRevision:
@@ -86,6 +86,7 @@ def create_revision(
     padding_fraction: float,
     resample: SpatialResample = SpatialResample.BILINEAR,
     seed: int,
+    sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE,
 ) -> RegionProfileRevision:
     row = conn.execute(
         """
@@ -100,8 +101,9 @@ def create_revision(
         """
         INSERT INTO region_profile_revision (
             dataset_id, name, revision_no, extractor_type, extractor_config,
-            prepared_width, prepared_height, padding_fraction, failure_policy, seed, resample
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fail', ?, ?)
+            prepared_width, prepared_height, padding_fraction, failure_policy, seed, resample,
+            sample_alignment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fail', ?, ?, ?)
         """,
         (
             dataset_id,
@@ -114,6 +116,7 @@ def create_revision(
             padding_fraction,
             seed,
             resample.value,
+            sample_alignment.value,
         ),
     )
     created = get_profile(conn, int(cursor.lastrowid or 0))

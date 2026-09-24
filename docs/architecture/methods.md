@@ -146,9 +146,10 @@ option. An extractor receives one source RGB array and returns one source pixel-
 failure; its pydantic schema drives the client as model schemas do.
 
 - `identity` — the full-source control;
-- `center_crop` — a fixed fractional window around a configured centre, content-free by design and the
-  only extractor identical across the channels of one grouped sample by construction; content-based
-  extraction can disagree between channels and misregister per-position channel fusion;
+- `center_crop` — a fixed fractional window around a configured centre, content-free by design and so
+  identical across the channels of one grouped sample by construction; content-based extraction can
+  disagree between channels, which a profile's `sample_alignment = union` resolves by giving the whole
+  sample the union of its crops ([domain model](domain-model.md#regionprofilerevision));
 - `foreground_threshold` — border-estimated background, absolute-contrast threshold on a bounded grid,
   largest connected component;
 - `mobile_sam` — the verified TinyViT checkpoint with a bounded automatic prompt grid, largest mask

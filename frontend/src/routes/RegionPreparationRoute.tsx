@@ -13,6 +13,7 @@ import type {
   JobDetail,
   RegionPreparationEntry,
   RegionProfileRevision,
+  SampleAlignment,
   SpatialResample,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -49,6 +50,11 @@ const RESAMPLE_OPTIONS = [
   { value: "lanczos", label: "Lanczos" },
 ];
 
+const ALIGNMENT_OPTIONS = [
+  { value: "per_image", label: "Per image" },
+  { value: "union", label: "Shared" },
+];
+
 export function RegionPreparationRoute() {
   const datasetId = Number(useParams()["datasetId"]);
   const dataset = useDataset(datasetId);
@@ -77,6 +83,7 @@ export function RegionPreparationRoute() {
   const [padding, setPadding] = useState("0.05");
   const [resample, setResample] = useState<SpatialResample>("bilinear");
   const [seed, setSeed] = useState("17");
+  const [alignment, setAlignment] = useState<SampleAlignment>("per_image");
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [view, setView] = useState("source");
   const [pendingDelete, setPendingDelete] = useState<RegionProfileRevision | null>(null);
@@ -160,6 +167,7 @@ export function RegionPreparationRoute() {
       padding_fraction: Number(padding),
       resample,
       seed: Number(seed),
+      sample_alignment: alignment,
     });
     updatePrep({ profile: profile.id });
   };
@@ -180,6 +188,7 @@ export function RegionPreparationRoute() {
     setPadding(String(profile.padding_fraction));
     setResample(profile.resample);
     setSeed(String(profile.seed));
+    setAlignment(profile.sample_alignment);
     // The next render has the right extractor schema; preserve values as strings so the
     // schema layer can apply its own numeric/enum conversion on submit.
     setConfigValues(
@@ -259,6 +268,7 @@ export function RegionPreparationRoute() {
                   <div className="min-w-0 text-xs text-fg-muted">
                     <span className="font-mono text-fg">{selected.prepared_width}×{selected.prepared_height}</span>
                     <span> · {selected.resample} · pad {selected.padding_fraction}</span>
+                    {selected.sample_alignment === "union" && <span> · shared crop</span>}
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     <Button size="sm" variant="ghost" icon={<Copy />} onClick={() => revise(selected)}>
@@ -334,6 +344,17 @@ export function RegionPreparationRoute() {
               <Field label="Resampling">
                 <Select aria-label="Resampling" value={resample} onValueChange={(value) => setResample(value as SpatialResample)} options={RESAMPLE_OPTIONS} />
               </Field>
+              <Field label="Crop per sample">
+                <SegmentedControl
+                  aria-label="Crop per sample"
+                  value={alignment}
+                  options={ALIGNMENT_OPTIONS}
+                  onValueChange={(value) => setAlignment(value as SampleAlignment)}
+                />
+              </Field>
+              <p className="-mt-2 text-xs leading-5 text-fg-muted">
+                Shared gives every channel of a part the union of their crops, so they stay registered; its images must share one size.
+              </p>
 
               {/* Said out loud rather than left to a greyed-out button: "why can't I press
                   this" is a question the screen should answer on its own. */}
