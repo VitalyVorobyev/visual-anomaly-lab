@@ -38,7 +38,15 @@ sample, whether a class is present, absent or unlabelled:
 `GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
 `GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
 outlines one class's region from its own truth (`annotations/class_truth.py`), in the source frame; an
-image whose truth does not answer for the class is a 404, and a confirmed absence is an empty outline. It is what a few-shot
+image whose truth does not answer for the class is a 404, and a confirmed absence is an empty outline.
+
+**One class's region, set from outside the editor.** `service.class_region_document` rebuilds an image's
+current truth with one class replaced, for the reference studio's accept, fix and mark-absent. It appends
+rather than rewrites: a bitmap `subtract` over the class's old pixels (which hold that class alone), then a
+bitmap `add` of the new region wherever no other class is. Every other class's shapes stay exactly as they
+were, so the result is still a document the editor opens. It goes through the ordinary draft lifecycle —
+create, then complete unless the reader will fix it — and is refused while the image has an open draft,
+because that is someone's unfinished work. It is what a few-shot
 split draws references from, and what a run on the class can test on.
 
 ## Document contract

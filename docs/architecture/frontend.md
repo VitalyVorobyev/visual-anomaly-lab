@@ -231,8 +231,18 @@ whether the resident was warm. The left rail can also list the samples *without*
 answer for it, which is where a preview is most worth reading; only samples that show the class can be
 ticked as references.
 
-The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studio stores and evaluates
-nothing: the run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
+**This image's truth.** From what the stage shows, the studio writes ordinary annotation revisions
+(`POST /api/images/{id}/studio/region`):
+- **accept** the preview's region as the class's truth;
+- **fix** it, which opens the same region as a draft and lands in the editor;
+- **mark the class absent**.
+
+The region is read from the preview's own map on the server, never sent by the client
+(`annotations.class_region_document`, [annotations](annotations.md)). Accepting a sample makes it
+eligible as a reference; the pseudo-label loop is accept, then tick.
+
+The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studio evaluates nothing: the
+run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
 sample viewer.
 
 **Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an

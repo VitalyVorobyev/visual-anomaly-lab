@@ -10,13 +10,16 @@ from __future__ import annotations
 
 import asyncio
 import time
+from enum import StrEnum
 from pathlib import Path
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel, Field
 
+from anomaly_lab.annotations import service as annotation_service
 from anomaly_lab.config import Settings
+from anomaly_lab.domain.annotations import AnnotationRevision
 from anomaly_lab.experiments.preview import (
     MAX_REFERENCES,
     PreviewError,
@@ -123,4 +126,66 @@ def preview_map(request: Request, generation: str, image_id: int) -> Response:
         content=payload,
         media_type="image/png",
         headers={"Cache-Control": "no-store"},
+    )
+
+
+class RegionAction(StrEnum):
+    ACCEPT = "accept"
+    """The preview's region becomes the class's truth for this image, completed."""
+    FIX = "fix"
+    """The same, opened as a draft for the editor instead of completed."""
+    ABSENT = "absent"
+    """The class is confirmed absent from this image: its region is removed, completed."""
+
+
+class RegionRequest(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    class_key: str
+    action: RegionAction
+    generation: str | None = Field(
+        default=None,
+        description="The preview whose region to take; required by `accept` and `fix`.",
+    )
+
+
+class RegionOutcome(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    image_id: int
+    action: RegionAction
+    completed: bool = Field(description="A revision was completed; false leaves an open draft.")
+    revision_id: int | None = None
+
+
+@router.post(
+    "/api/images/{image_id}/studio/region",
+    summary="Accept a preview as truth, open it for fixing, or confirm the class absent",
+)
+def set_region(request: Request, image_id: int, body: RegionRequest) -> RegionOutcome:
+    """Turn what the studio shows into truth, through the ordinary draft lifecycle (ADR-0040).
+
+    The region comes from a preview's own map on disk, cut at 0.5 — never from the request —
+    so what is written is what was drawn on the stage. Refused while the image has an open
+    draft, and in a dataset edited in sample scope, by the annotation service's own rules.
+    """
+    settings = _settings(request)
+    region = None
+    if body.action is not RegionAction.ABSENT:
+        if body.generation is None or not body.generation.isalnum():
+            raise HTTPException(status_code=422, detail=f"{body.action.value} needs a preview")
+        path = preview_dir(settings, body.generation) / "maps" / f"{image_id}.npy"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="that preview has no map of this image")
+        region = np.nan_to_num(np.load(path, allow_pickle=False), nan=0.0) >= 0.5
+    document = annotation_service.class_region_document(settings, image_id, body.class_key, region)
+    written = annotation_service.write_class_region(
+        settings, image_id, document, complete=body.action is not RegionAction.FIX
+    )
+    revision_id = written.id if isinstance(written, AnnotationRevision) else None
+    return RegionOutcome(
+        image_id=image_id,
+        action=body.action,
+        completed=revision_id is not None,
+        revision_id=revision_id,
     )

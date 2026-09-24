@@ -32,7 +32,12 @@ import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
 import { isUsableBuild } from "../hooks/useDatasetReadiness";
 import { useModelTypes } from "../hooks/useExperiments";
 import { useRegionBuild, useRegionProfiles } from "../hooks/useRegionProfiles";
-import { useFreezeReferences, useStudioPreview } from "../hooks/useStudio";
+import {
+  useFreezeReferences,
+  useSetStudioRegion,
+  useStudioPreview,
+  type RegionAction,
+} from "../hooks/useStudio";
 import {
   Button,
   cn,
@@ -124,6 +129,28 @@ export function StudioRoute() {
     (profiles.data?.length === 1 ? profiles.data[0]?.id : undefined);
   const build = useRegionBuild(profileId);
   const freeze = useFreezeReferences();
+  const setRegion = useSetStudioRegion(datasetId);
+
+  const act = (action: RegionAction) => {
+    if (!shown || !focused.data) return;
+    const sampleId = focused.data.id;
+    setRegion.mutate(
+      {
+        imageId: shown.id,
+        classKey,
+        action,
+        generation: action === "absent" ? undefined : preview.data?.generation,
+      },
+      {
+        // Fixing ends in the editor, on the draft this just opened.
+        onSuccess: (outcome) => {
+          if (!outcome.completed) {
+            void navigate(`/datasets/${datasetId}/annotate/${sampleId}/${shown.id}`);
+          }
+        },
+      },
+    );
+  };
 
   const update = (next: Record<string, string | undefined>) => {
     const merged = new URLSearchParams(search);
@@ -378,8 +405,42 @@ export function StudioRoute() {
             ) : null}
             <p className="text-xs text-fg-subtle">
               A look, not a result: nothing is stored or evaluated until the references are
-              frozen into a run.
+              frozen into a run — or until it is accepted below.
             </p>
+          </RailSection>
+
+          <RailSection title="This image's truth">
+            <div className="flex flex-col gap-1.5">
+              <Button
+                disabled={!shown || !preview.data || setRegion.isPending}
+                onClick={() => act("accept")}
+              >
+                Accept the preview as truth
+              </Button>
+              <Button
+                disabled={!shown || !preview.data || setRegion.isPending}
+                onClick={() => act("fix")}
+              >
+                Fix it in the editor
+              </Button>
+              <Button disabled={!shown || setRegion.isPending} onClick={() => act("absent")}>
+                Mark {label?.name ?? classKey} absent
+              </Button>
+            </div>
+            {setRegion.error ? (
+              <ErrorBox>{setRegion.error.message}</ErrorBox>
+            ) : setRegion.data?.completed ? (
+              <p className="text-xs text-fg-muted">
+                {setRegion.data.action === "absent"
+                  ? "Recorded: this image does not show the class."
+                  : "Recorded as truth. The sample now shows the class and can be a reference."}
+              </p>
+            ) : (
+              <p className="text-xs text-fg-muted">
+                Each completes an ordinary annotation revision; other classes on the image are
+                left as they are.
+              </p>
+            )}
           </RailSection>
 
           <RailSection title="Run">

@@ -1729,6 +1729,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}/studio/region": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accept a preview as truth, open it for fixing, or confirm the class absent
+         * @description Turn what the studio shows into truth, through the ordinary draft lifecycle (ADR-0040).
+         *
+         *     The region comes from a preview's own map on disk, cut at 0.5 — never from the request —
+         *     so what is written is what was drawn on the stage. Refused while the image has an open
+         *     draft, and in a dataset edited in sample scope, by the annotation service's own rules.
+         */
+        post: operations["set_region_api_images__image_id__studio_region_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4165,6 +4189,11 @@ export interface components {
          * @enum {string}
          */
         ReferencePackStatus: "absent" | "incomplete" | "available" | "registered";
+        /**
+         * RegionAction
+         * @enum {string}
+         */
+        RegionAction: "accept" | "fix" | "absent";
         /** RegionAvailability */
         RegionAvailability: {
             /**
@@ -4229,6 +4258,19 @@ export interface components {
          * @enum {string}
          */
         RegionFailurePolicy: "fail";
+        /** RegionOutcome */
+        RegionOutcome: {
+            /** Image Id */
+            image_id: number;
+            action: components["schemas"]["RegionAction"];
+            /**
+             * Completed
+             * @description A revision was completed; false leaves an open draft.
+             */
+            completed: boolean;
+            /** Revision Id */
+            revision_id: number | null;
+        };
         /** RegionPreparationEntry */
         RegionPreparationEntry: {
             /** Image Id */
@@ -4378,6 +4420,17 @@ export interface components {
             seed: number;
             /** Created At */
             created_at: string;
+        };
+        /** RegionRequest */
+        RegionRequest: {
+            /** Class Key */
+            class_key: string;
+            action: components["schemas"]["RegionAction"];
+            /**
+             * Generation
+             * @description The preview whose region to take; required by `accept` and `fix`.
+             */
+            generation?: string | null;
         };
         /** RegisterReferencePacksParams */
         RegisterReferencePacksParams: {
@@ -8195,6 +8248,41 @@ export interface operations {
                 };
                 content: {
                     "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_region_api_images__image_id__studio_region_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionOutcome"];
                 };
             };
             /** @description Validation Error */
