@@ -172,19 +172,60 @@ def test_the_plan_is_logged_before_encoding_and_ignored_pixels_are_never_learned
     assert 2 not in np.unique(predicted)
 
 
-def test_one_seed_is_one_answer_and_another_seed_is_another(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "overrides", [{}, {"pixel_sampling": "per_class", "logit_bias": "held_out_iou"}]
+)
+def test_one_seed_is_one_answer_and_another_seed_is_another(
+    tmp_path: Path, overrides: dict[str, Any]
+) -> None:
     training, labels = _records(tmp_path / "images", 2)
     queries, _ = _records(tmp_path / "images", 2, first_id=11)
     fitted: list[tuple[np.ndarray, list[np.ndarray]]] = []
     for name, seed in (("a", 0), ("b", 0), ("c", 1)):
         train_ctx, _ = _contexts(tmp_path / name, labels)
-        model = _model(seed, epochs=3)
+        model = _model(seed, epochs=3, **overrides)
         model.fit(training, train_ctx)
-        fitted.append((model._state["weights"].copy(), _segment(model, tmp_path / name, queries)))
+        state = np.concatenate(
+            [model._state["weights"].ravel(), model._state.get("held_out_bias", np.zeros(0))]
+        )
+        fitted.append((state, _segment(model, tmp_path / name, queries)))
     (first, first_maps), (again, again_maps), (other, _) = fitted
     assert np.array_equal(first, again)
     assert all(np.array_equal(a, b) for a, b in zip(first_maps, again_maps, strict=True))
     assert not np.array_equal(first, other)
+
+
+def test_restoring_the_prior_reads_the_same_head_and_gives_up_only_foreground(
+    tmp_path: Path,
+) -> None:
+    """The bias is applied at prediction: one head, several readings. Both foreground classes
+    cover a quarter of every frame and background half, so under `inverse_frequency` each is
+    shifted by the same `log(1/2)` and the corrected map can only hand pixels to background."""
+    training, labels = _records(tmp_path / "images", 4)
+    queries, truth = _records(tmp_path / "images", 2, first_id=11)
+    readings: dict[str, tuple[np.ndarray, list[np.ndarray]]] = {}
+    for choice in ("none", "training_prior", "held_out_iou"):
+        train_ctx, _ = _contexts(tmp_path / choice, labels)
+        model = _model(epochs=3, logit_bias=choice)
+        model.fit(training, train_ctx)
+        shift = model._state["prior_shift"]
+        assert shift[0] == 0.0
+        np.testing.assert_allclose(shift[1:], np.log(0.5), rtol=1e-4)
+        assert ("held_out_bias" in model._state) is (choice == "held_out_iou")
+        readings[choice] = (
+            model._state["weights"].copy(),
+            _segment(model, tmp_path / choice, queries),
+        )
+    plain, plain_maps = readings["none"]
+    corrected, corrected_maps = readings["training_prior"]
+    fitted, fitted_maps = readings["held_out_iou"]
+    assert np.array_equal(plain, corrected) and np.array_equal(plain, fitted)
+    for before, after in zip(plain_maps, corrected_maps, strict=True):
+        assert np.all((after > 0) <= (before > 0))
+        assert np.all(after[after > 0] == before[after > 0])
+    # Fitted for IoU on held-out folds, the classes are still found.
+    for predicted, record in zip(fitted_maps, queries, strict=True):
+        assert float(np.mean(predicted == truth[record.image_id])) > 0.8
 
 
 def test_a_saved_model_segments_identically_after_loading(tmp_path: Path) -> None:
@@ -207,6 +248,39 @@ def test_a_saved_model_segments_identically_after_loading(tmp_path: Path) -> Non
 
     with pytest.raises(RuntimeError, match="fitted with dinov3_vit_s16 \\(last\\)"):
         _model(layers="last_two").load(tmp_path / "run")
+
+    # The prior is saved with the head, so the corrected reading survives the round trip too.
+    corrected = _model(epochs=3, logit_bias="training_prior")
+    corrected.load(tmp_path / "run")
+    first = _segment(corrected, tmp_path / "corrected-a", queries)
+    again = _model(epochs=3, logit_bias="training_prior")
+    again.load(tmp_path / "run")
+    assert all(
+        np.array_equal(a, b)
+        for a, b in zip(first, _segment(again, tmp_path / "corrected-b", queries), strict=True)
+    )
+    # The held-out constants are fitted only when asked for, so this head cannot be read so.
+    folded = _model(epochs=3, logit_bias="held_out_iou")
+    folded.load(tmp_path / "run")
+    with pytest.raises(RuntimeError, match="not fitted with logit_bias 'held_out_iou'"):
+        _segment(folded, tmp_path / "corrected-c", queries)
+
+
+def test_a_head_fitted_for_held_out_iou_segments_identically_after_loading(
+    tmp_path: Path,
+) -> None:
+    training, labels = _records(tmp_path / "images", 4)
+    queries, _ = _records(tmp_path / "images", 2, first_id=11)
+    train_ctx, _ = _contexts(tmp_path / "run", labels)
+    model = _model(epochs=3, logit_bias="held_out_iou")
+    model.fit(training, train_ctx)
+    before = _segment(model, tmp_path / "run", queries)
+    model.save(tmp_path / "run")
+    restored = _model(epochs=3, logit_bias="held_out_iou")
+    restored.load(tmp_path / "run")
+    np.testing.assert_array_equal(restored._state["held_out_bias"], model._state["held_out_bias"])
+    after = _segment(restored, tmp_path / "loaded", queries)
+    assert all(np.array_equal(a, b) for a, b in zip(before, after, strict=True))
 
 
 def test_a_cancelled_fit_leaves_no_artefact(tmp_path: Path) -> None:

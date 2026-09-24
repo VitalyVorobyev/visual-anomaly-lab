@@ -537,18 +537,37 @@ foreground-share score, like `color_classifier`.
   once. Weighting and sampling do different work: per-class sampling balances the classes *within* an
   image, and the weights balance what remains *across* images, because an image without the class still
   contributes its budget to background. Either way `inverse_frequency` trains the head as if every class
-  were equally common, so its argmax is not calibrated to a class that covers a fraction of a percent of
-  the pixels; that is the open question the gate leaves (backlog, Supervised tasks). One seeded generator draws the initial weights and the batch order, so nothing depends on torch's
-  global stream; the tests assert the seed in both directions. The per-epoch loss is a metric.
+  were equally common. One seeded generator draws the initial weights and the batch order, so nothing
+  depends on torch's global stream; the tests assert the seed in both directions. The per-epoch loss is a
+  metric.
+- **`logit_bias` is one constant per class, added to the logits before the argmax**, because a head
+  trained as if every class were equally common labels a class that covers a fraction of a percent of the
+  pixels as readily as the background around it. The head is fitted identically whatever the field says;
+  the constants are saved beside it, and a checkpoint asked for a constant it was not fitted with refuses
+  by name. `none` (default) is the head's own answer. `training_prior` is the standard logit adjustment
+  (`prior_shift`): `log p_c − log q_c`, with `p` the class's share of the chosen images' labelled pixels
+  and `q` its share of the fit's loss weight (sampled count times class weight), which makes the argmax
+  the Bayes answer for pixel accuracy — and on a VisA defect, at a shift near −8, that answer is almost
+  never the class ([measurements](../measurements.md)). `held_out_iou` fits the constant for the measure
+  the task is read by: the training images with sampled pixels are split into `BIAS_FOLDS` (3) folds by
+  position, a head fitted on the other folds (same rule, a seed derived from `seed` and the fold) scores
+  each fold's sampled pixels, and `pixel_weights` makes each pixel stand for `available / sampled` pixels
+  of its class in its image, so the pooled sample reads as the training frames themselves.
+  `fit_class_bias` then visits each class but background once, holding the constants already fitted,
+  sorts the held-out margins and takes the cut with the highest weighted IoU; a class no cut overlaps
+  keeps zero and says so. It costs `BIAS_FOLDS` more head fits on the CPU and no second encoding pass.
+  Both are torch-free and tested without the `dl` extra. `guided` refinement filters probabilities after
+  the constant, so the fitted cut is exact only under `bilinear`.
 - `layers` defaults to the last block; `refine` is `bilinear` (the function the head was trained on) or
   `guided`, which filters each class's probability against the image before the argmax.
 - A class with no sampled pixel is never predicted and is named in a warning. It refuses to fit without
   label targets, or when the sampled pixels hold no class at all. The encoder is not saved: `save` writes
   the head (each file whole, then renamed into place) and the encoder's fingerprint, and `load` refuses
   a different backbone or layer set.
-- **Experimental.** Both legs of the public gate kept it there: under `raster` sampling it beat the floor
-  by the predeclared margin on one VisA class and not the other, and under `per_class` sampling its lead
-  shrank on both ([measurements](../measurements.md)). ONNX: none.
+- **Experimental.** Both legs of the first public gate kept it there: under `raster` sampling it beat the
+  floor by the predeclared margin on one VisA class and not the other, and under `per_class` sampling its
+  lead shrank on both. A second gate, of `held_out_iou` under `per_class` sampling, is predeclared
+  ([measurements](../measurements.md)). ONNX: none.
 
 ### `fss_dino`
 
