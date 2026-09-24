@@ -70,9 +70,9 @@ application.
   reference splits, per-class coverage, class-index masks with a pinned class table, references reaching
   `fit` as targets, predicted masks, an evaluator for masks and presence, and `color_prototype`, the
   torch-free floor that runs the slice end to end, and the shared frozen-DINO blocks the next methods
-  build on (one encoding path, INSID3's positional debiasing, guided refinement). The create screen asks
-  for the target class. Still open:
-  - two DINO methods;
+  build on (one encoding path, INSID3's positional debiasing, guided refinement), and `fss_dino`, a
+  reproduction of the FSSDINO baseline on them. The create screen asks for the target class. Still open:
+  - `proto_seg`, our debiased multi-prototype method;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
 
   The order is in [backlog.md](backlog.md).

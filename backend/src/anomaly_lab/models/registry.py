@@ -64,6 +64,12 @@ def _color_prototype() -> type[AnomalyModel]:
     return ColorPrototypeModel
 
 
+def _fss_dino() -> type[AnomalyModel]:
+    from anomaly_lab.models.fss_dino import FssDinoModel
+
+    return FssDinoModel
+
+
 def _subspace_ad() -> type[AnomalyModel]:
     from anomaly_lab.models.subspace_ad import SubspaceAdModel
 
@@ -94,7 +100,8 @@ def _subspace_ad() -> type[AnomalyModel]:
 # it the cheapest strong baseline in the table and the one to run first on a new dataset.
 # `color_prototype` is the first method of another task (few-shot segmentation, ADR-0040): it
 # fits on references' masks through `TrainContext.targets`, and still cost one module and
-# this one line.
+# this one line. `fss_dino` reproduces a published few-shot baseline on the shared frozen-DINO
+# blocks, and writes its own mask beside its map; the same cost.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -104,6 +111,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "dino_memory": _dino_memory,
     "subspace_ad": _subspace_ad,
     "color_prototype": _color_prototype,
+    "fss_dino": _fss_dino,
 }
 
 

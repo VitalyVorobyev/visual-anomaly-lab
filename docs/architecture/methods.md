@@ -267,9 +267,10 @@ do with patch features do not also differ in how they got them.
 | `dino_memory` | frozen DINO patch memory | fit | no | yes | no | mps |
 | `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
 | `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
+| `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
 
-Every method but `color_prototype` declares the `anomaly` task; `color_prototype` declares
-`few_shot_segmentation` alone. Gate verdicts for each are in [measurements](../measurements.md).
+`color_prototype` and `fss_dino` declare `few_shot_segmentation` alone; every other method declares
+`anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -430,6 +431,25 @@ writes no mask, so the evaluator cuts the map at its rule.
 - It knows only colour. It proves the task's slice in the torch-free CI job, and a deep method that does
   not beat it has learned nothing about shape or texture.
 - ONNX: none.
+
+### `fss_dino`
+
+A reproduction of FSSDINO (arXiv 2602.07550) for one class, training-free, on the shared encoding path.
+The references' last-block patch features are split by their masks: a patch is the class when at least
+half of it is covered after bilinear downsampling. Each side gets `prototypes_per_class` (5) prototypes by
+seeded cosine k-means, and a Gram matrix. A query patch's cosine map per prototype, and its Gram energy
+(min-max normalised per image), are upsampled; each side combines them as `mean * max`, and a pixel goes
+to the higher side. The arithmetic is `models/prototypes.py`, in numpy.
+
+- It writes that argmax as its own mask. Its map is the foreground's share of the two scores, floored at
+  zero, so `>= 0.5` agrees with the argmax. Presence is a high percentile of the map; the paper has none.
+- The default encoder is the ungated DINOv2 ViT-B/14. The paper's DINOv3 ViT-B/16 is one field away and
+  licence-gated. The prepared size is the experiment's, not the paper's 512 px.
+- `max_features_per_class` (20 000) caps k-means and the Gram matrix, sampled evenly and logged. `seed`
+  reaches k-means and, without pretrained weights, the encoder; the tests assert both directions.
+- The encoder is not saved. `load` restores the prototypes, and the first prediction refuses an encoder
+  whose fingerprint moved.
+- Accuracy is the public gate's question; the plugin tests run a seeded random ViT. ONNX: none.
 
 ### `classical_circular` (optional, not built)
 

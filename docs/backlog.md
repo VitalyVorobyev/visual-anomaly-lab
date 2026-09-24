@@ -25,8 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **`fss_dino`** (M): a reproduction of FSSDINO, with a DINOv3 last-layer prototype and Gram
-      refinement.
 - [ ] **`proto_seg`** (L): our method. It uses debiased features and a hybrid fg/bg prototype bank
       with LSE scoring, and has two fields: `adaptation` (`training_free` | `linear_adapt`) and
       `refine`. Presence is calibrated from the foreground evidence, region size and margin.
