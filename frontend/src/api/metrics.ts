@@ -211,9 +211,10 @@ function formatTolerance(values: MetricValue): string | null {
 }
 
 /**
- * A few-shot segmentation run's metrics (ADR-0040): pooled pixel overlap, then what happened
- * per image. Every image-level rate says "image", because no sample-level rule for a class
- * has been decided and these count images.
+ * A few-shot segmentation run's metrics (ADR-0040): pooled pixel overlap at the printed cut,
+ * the threshold-free ranking of the probability map, then what happened per image. Every
+ * image-level rate says "image", because no sample-level rule for a class has been decided
+ * and these count images.
  */
 export function segmentationRows(metrics: MetricValue): MetricRow[] {
   const tolerance = asNumber(metrics.boundary_tolerance_px);
@@ -226,6 +227,17 @@ export function segmentationRows(metrics: MetricValue): MetricRow[] {
       hint: "Pooled over every answered image, so a false region on an absent image counts.",
     },
     { key: "foreground_dice", label: "Foreground Dice", value: formatScore(metrics.foreground_dice) },
+    {
+      key: "pixel_average_precision",
+      label: "Pixel AP (threshold-free)",
+      value: formatScore(metrics.pixel_average_precision),
+      hint: "The foreground probability ranked against the truth, over present and absent images; no cut.",
+    },
+    {
+      key: "pixel_roc_auc",
+      label: "Pixel ROC-AUC (threshold-free)",
+      value: formatScore(metrics.pixel_roc_auc),
+    },
     {
       key: "boundary_f1",
       label: tolerance === null ? "Boundary F1" : `Boundary F1 (±${tolerance} px)`,

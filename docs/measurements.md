@@ -287,8 +287,9 @@ and the floor ranks worse than chance.
 below 0.04, and the false-positive rate on absent images is near 1. The foreground probability is not
 calibrated to the evaluator's fixed `>= 0.5` rule — on a small, subtle defect class most of an image
 clears it — so the primary measures the cut as much as the segmentation. The methods do rank *which*
-images hold the class. Two open items follow (backlog, Few-shot segmentation): a threshold-free pixel
-metric, so mask ranking is measured apart from the cut, and a calibrated foreground probability. VisA
+images hold the class. Mask ranking apart from the cut is `pixel_average_precision`, which the
+evaluator reports and this verdict predates; a calibrated foreground probability is open (backlog,
+Few-shot segmentation). VisA
 defects are also a hard target for a method built for objects, which is why a cross-domain few-shot
 dataset is the next gate.
 

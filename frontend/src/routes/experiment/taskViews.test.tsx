@@ -64,6 +64,23 @@ describe("the task views", () => {
     expect(screen.queryByText("Sample ROC-AUC")).toBeNull();
   });
 
+  it("reads the probability map's ranking beside the overlap, as its own threshold-free row", () => {
+    const view = taskView("few_shot_segmentation");
+    const withRanking = METRICS.map((entry) => ({
+      ...entry,
+      metrics: { ...entry.metrics, pixel_average_precision: 0.4321 },
+    }));
+    render(
+      withProviders(
+        <MemoryRouter>{view.MetricTables({ ...props(), metrics: withRanking })}</MemoryRouter>,
+      ),
+    );
+    expect(screen.getByText("Pixel AP (threshold-free)")).toBeTruthy();
+    expect(screen.getByText("0.432")).toBeTruthy();
+    // A run without maps has no pixel ROC-AUC: a dash beside its label, never a zero.
+    expect(screen.getByText("Pixel ROC-AUC (threshold-free)")).toBeTruthy();
+  });
+
   it("reads a supervised segmentation run off its confusion matrix, per class", () => {
     const view = taskView("semantic_segmentation");
     const semantic = [

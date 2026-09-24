@@ -70,7 +70,8 @@ application.
   - **Methods:** `color_prototype` (the torch-free floor), `fss_dino` (a reproduction of FSSDINO) and
     `proto_seg` (ours), on one frozen-DINO encoding path with INSID3's positional debiasing and guided
     refinement.
-  - **Reading:** an evaluator for masks and presence, result screens in the task's own terms, and Compare
+  - **Reading:** an evaluator for masks and presence, with the probability map's pixel AP read
+    threshold-free beside the cut's IoU, result screens in the task's own terms, and Compare
     across reference draws.
   - **Workflow:** the dataset workspace as Data · Truth · Runs with per-task readiness, a task-first create
     screen, and the reference studio — choose references by eye, preview any image live, accept / fix /
@@ -78,7 +79,7 @@ application.
 
   The public VisA gate made `proto_seg` the default, and showed that no method yet draws a usable mask of
   a small defect at the fixed `>= 0.5` cut ([measurements.md](measurements.md)). Still open: a
-  threshold-free pixel metric, a calibrated foreground probability, and a cross-domain gate.
+  calibrated foreground probability, and a cross-domain gate.
 - **Supervised segmentation** (ADR-0039) runs end to end on the few-shot task's seams: a run pins its
   dataset's classes at creation, fits on the annotated images of its train subset through
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix

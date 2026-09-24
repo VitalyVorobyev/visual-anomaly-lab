@@ -11,9 +11,12 @@ like the anomaly runner, never imports a model and never re-runs one.
   the class is neither a hit nor a miss (`images.unlabeled`).
 - **One threshold rule, printed.** A method that writes its own mask is read as written.
   Otherwise the map is its foreground probability and is cut at one fixed rule, whose name
-  and value are stored beside the numbers (ADR-0028). Everything else is threshold-free.
-- **Constant memory in pixels.** Pixel quantities are pooled counts; only the per-image
-  presence scores and latencies are kept, which is linear in images.
+  and value are stored beside the numbers (ADR-0028). Everything else is threshold-free,
+  and pixel average precision is the threshold-free reading of the map itself: the stored
+  foreground probability ranked against the class truth, over present and absent images.
+- **Constant memory in pixels.** Pixel quantities are pooled counts, and the probability
+  ranking is folded into the anomaly evaluator's fixed-bin histograms (`eval.pixel`); only
+  the per-image presence scores and latencies are kept, which is linear in images.
 - **A metric that cannot be computed is `None`.** A subset with no absent image has no
   false-positive rate on absent images.
 """
@@ -36,6 +39,7 @@ from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.results import ScoredImage
 from anomaly_lab.domain.entities import Experiment, Subset
 from anomaly_lab.eval.metrics import roc_auc, timing_summary
+from anomaly_lab.eval.pixel import PixelAccumulator
 from anomaly_lab.eval.threshold import SampleVerdict
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -104,16 +108,33 @@ class SegmentationAccumulator:
     small_found: int = 0
     unlabeled: int = 0
     without_prediction: int = 0
+    map_images: int = 0
+    pixels: PixelAccumulator = field(default_factory=lambda: PixelAccumulator(vmin=0.0, vmax=1.0))
     scores: list[float] = field(default_factory=list)
     presence: list[bool] = field(default_factory=list)
     milliseconds: list[float] = field(default_factory=list)
 
     def add(
-        self, truth: np.ndarray, predicted: np.ndarray, *, score: float, inference_ms: float
+        self,
+        truth: np.ndarray,
+        predicted: np.ndarray,
+        *,
+        score: float,
+        inference_ms: float,
+        probability: np.ndarray | None = None,
     ) -> None:
+        """Fold one answered image in; `probability` is its stored map, when there is one."""
         if truth.shape != predicted.shape:
             msg = f"prediction of shape {predicted.shape} against truth of shape {truth.shape}"
             raise SegmentationEvalError(msg)
+        if probability is not None:
+            if probability.shape != truth.shape:
+                msg = f"map of shape {probability.shape} against truth of shape {truth.shape}"
+                raise SegmentationEvalError(msg)
+            # No regions: AU-PRO is an anomaly metric, and skipping it skips the union-find
+            # over what may be most of the frame.
+            self.pixels.add(probability, truth, regions=())
+            self.map_images += 1
         is_present = bool(truth.any())
         self.true_positive += int(np.count_nonzero(truth & predicted))
         self.false_positive += int(np.count_nonzero(~truth & predicted))
@@ -162,6 +183,9 @@ class SegmentationAccumulator:
                 else 2 * precision * recall / (precision + recall)
             ),
             "boundary_tolerance_px": BOUNDARY_TOLERANCE_PX,
+            "pixel_average_precision": self.pixels.average_precision(),
+            "pixel_roc_auc": self.pixels.roc_auc(),
+            "pixel_map_images": self.map_images,
             "image_present_recall": _ratio(self.present_found, self.present),
             "image_absent_false_positive_rate": _ratio(self.absent_flagged, self.absent),
             "image_small_region_recall": _ratio(self.small_found, self.small),
@@ -177,19 +201,33 @@ def _ratio(numerator: int, denominator: int) -> float | None:
     return None if denominator == 0 else numerator / denominator
 
 
-def predicted_mask(image: ScoredImage, maps_dir: Path) -> np.ndarray | None:
+def probability_map(image: ScoredImage) -> np.ndarray | None:
+    """The stored foreground probability, or `None` when the method wrote no map.
+
+    Pixels a region crop left uncovered are `NaN`; they read as background everywhere.
+    """
+    if image.map_path is None or not Path(image.map_path).is_file():
+        return None
+    return np.asarray(np.load(image.map_path), dtype=np.float32)
+
+
+def predicted_mask(
+    image: ScoredImage, maps_dir: Path, probability: np.ndarray | None = None
+) -> np.ndarray | None:
     """The method's own mask if it wrote one, else its map cut at the rule; `None` if neither.
 
-    Pixels a region crop left uncovered (`NaN` in the map) are background.
+    `probability` is the image's map when the caller has already loaded it. Pixels a region
+    crop left uncovered (`NaN` in the map) are background.
     """
     written = maps_dir / f"{image.image_id}.mask.png"
     if written.is_file():
         with Image.open(written) as opened:
             return np.asarray(opened.convert("L")) > 0
-    if image.map_path is None or not Path(image.map_path).is_file():
+    if probability is None:
+        probability = probability_map(image)
+    if probability is None:
         return None
-    values = np.asarray(np.load(image.map_path), dtype=np.float32)
-    return np.asarray(np.nan_to_num(values, nan=0.0) >= THRESHOLD, dtype=bool)
+    return np.asarray(np.nan_to_num(probability, nan=0.0) >= THRESHOLD, dtype=bool)
 
 
 def _truths(
@@ -231,14 +269,19 @@ def evaluate(
             if truth is None:
                 accumulator.unlabeled += 1
                 continue
-            predicted = predicted_mask(image, maps_dir)
+            probability = probability_map(image)
+            predicted = predicted_mask(image, maps_dir, probability)
             if predicted is None:
                 accumulator.without_prediction += 1
                 continue
             region = load_class_mask(truth)
             try:
                 accumulator.add(
-                    region, predicted, score=image.score, inference_ms=image.inference_ms
+                    region,
+                    predicted,
+                    score=image.score,
+                    inference_ms=image.inference_ms,
+                    probability=probability,
                 )
             except SegmentationEvalError as exc:
                 raise SegmentationEvalError(f"image {image.image_id}: {exc}") from exc
