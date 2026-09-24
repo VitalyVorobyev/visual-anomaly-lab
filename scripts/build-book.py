@@ -40,6 +40,7 @@ def _methods(data: dict[str, Any]) -> str:
         details.append(
             f"## {item.title}\n\n`{item.key}` · **{meta['family']}** · "
             f"{meta['maturity']}\n\n{item.summary}\n\n"
+            f"- Tasks: {', '.join(f'`{task.value}`' for task in capabilities.tasks)}\n"
             f"- Preferred device: `{capabilities.preferred_device.value}`\n"
             f"- Requires fitting: {'yes' if capabilities.requires_training else 'no'}\n"
             f"- Anomaly map: {'yes' if capabilities.produces_anomaly_map else 'no'}\n"

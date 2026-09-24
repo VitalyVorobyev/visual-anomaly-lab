@@ -12,6 +12,7 @@ This page is generated from the live model registry and checked method metadata.
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
 | `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
+| `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -21,6 +22,7 @@ This page is generated from the live model registry and checked method metadata.
 
 Per-pixel median and MAD over the training normals, then a smoothed robust z-map. Trains in seconds on CPU and gives every deep result a floor to beat.
 
+- Tasks: `anomaly`
 - Preferred device: `cpu`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -35,6 +37,7 @@ Per-pixel median and MAD over the training normals, then a smoothed robust z-map
 
 Our implementation of student-teacher distillation with an autoencoder branch, measured against the anomalib version rather than copied from it.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -49,6 +52,7 @@ Our implementation of student-teacher distillation with an autoencoder branch, m
 
 A coreset memory bank of patch features from a frozen ImageNet backbone, scored by nearest-neighbour distance. Nothing is trained; the bank is the model.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -63,6 +67,7 @@ A coreset memory bank of patch features from a frozen ImageNet backbone, scored 
 
 Our implementation of Dinomaly: a frozen DINOv2/DINOv3 encoder with a trainable bottleneck and linear-attention decoder that reconstructs normal feature maps. Reconstruction disagreement is the anomaly map.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -77,6 +82,7 @@ Our implementation of Dinomaly: a frozen DINOv2/DINOv3 encoder with a trainable 
 
 A frozen WRN-50 feature extractor with learned global and local anomaly synthesis. Its bounded public gate missed the image-level promotion floor; keep it as an experimental learned-synthesis comparison.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -91,6 +97,7 @@ A frozen WRN-50 feature extractor with learned global and local anomaly synthesi
 
 A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of normal images and scored globally, per position, or as a per-position Gaussian. Nothing is trained; the memory is the model.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
@@ -105,10 +112,26 @@ A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of nor
 
 PCA of frozen DINO patch features over a few normal images; a patch scores the part of itself the normal subspace cannot reconstruct. Nothing is trained.
 
+- Tasks: `anomaly`
 - Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
 - Diagnostics: yes
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## Colour prototype (few-shot floor)
+
+`color_prototype` · **few-shot colour prototype** · experimental
+
+Fits one colour model to the class and one to everything else in the references, then paints each query pixel with the class's posterior. CPU, seconds, no torch.
+
+- Tasks: `few_shot_segmentation`
+- Preferred device: `cpu`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: no
 - Exact continuation: no
 - Dataset-specific: no
 - Portable formats: —

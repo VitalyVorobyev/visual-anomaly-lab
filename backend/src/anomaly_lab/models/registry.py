@@ -58,6 +58,12 @@ def _dinomaly_custom() -> type[AnomalyModel]:
     return DinomalyCustomModel
 
 
+def _color_prototype() -> type[AnomalyModel]:
+    from anomaly_lab.models.color_prototype import ColorPrototypeModel
+
+    return ColorPrototypeModel
+
+
 def _subspace_ad() -> type[AnomalyModel]:
     from anomaly_lab.models.subspace_ad import SubspaceAdModel
 
@@ -86,6 +92,9 @@ def _subspace_ad() -> type[AnomalyModel]:
 # shipped was one module, this one line, and an entry in the measurements record (ADR-0038).
 # It trains nothing at all — the fit is a covariance and an eigendecomposition — which makes
 # it the cheapest strong baseline in the table and the one to run first on a new dataset.
+# `color_prototype` is the first method of another task (few-shot segmentation, ADR-0040): it
+# fits on references' masks through `TrainContext.targets`, and still cost one module and
+# this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -94,6 +103,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "glass_anomalib": _glass_anomalib,
     "dino_memory": _dino_memory,
     "subspace_ad": _subspace_ad,
+    "color_prototype": _color_prototype,
 }
 
 

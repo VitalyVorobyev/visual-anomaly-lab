@@ -78,6 +78,13 @@ function seed({
     [queryKeys.splits(7), splits],
     [queryKeys.regionProfiles(7), [PROFILE]],
     [queryKeys.regionBuild(11), { profile_id: 11, dataset_id: 7, total: 10, succeeded: 10, failed: 0 }],
+    [
+      queryKeys.annotationLabels(7),
+      [
+        { id: 1, dataset_id: 7, key: "defect", name: "Defect", color: "#c026d3", position: 0 },
+        { id: 2, dataset_id: 7, key: "scratch", name: "Scratch", color: "#00aa00", position: 1 },
+      ],
+    ],
   ];
 }
 
@@ -135,6 +142,23 @@ describe("the create-experiment form", () => {
     expect(screen.getAllByText("Pixel reference").length).toBeGreaterThan(0);
     expect(screen.queryByText("Box finder")).toBeNull();
     expect(screen.getAllByText("Object detection").length).toBeGreaterThan(0);
+  });
+
+  it("asks a few-shot run for its class, and takes it from a split drawn for one", () => {
+    const floor = {
+      ...METHOD,
+      key: "color_prototype",
+      title: "Colour prototype",
+      capabilities: { ...METHOD.capabilities, tasks: ["few_shot_segmentation"] },
+    };
+    const drawn = { ...SPLIT, strategy: "few_shot", params: { label_key: "scratch", shots: 3 } };
+    renderForm([drawn], [METHOD, floor]);
+    expect(screen.queryByRole("combobox", { name: "Target class" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Few-shot segmentation" }));
+    expect(screen.getByRole("combobox", { name: "Target class" }).textContent).toContain(
+      "Scratch",
+    );
   });
 
   it("brings back what was typed before following a prerequisite link", () => {

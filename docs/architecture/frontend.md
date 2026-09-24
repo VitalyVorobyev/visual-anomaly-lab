@@ -155,7 +155,8 @@ in the URL and are applied in SQLite. A checkbox column picks runs for Compare u
 and method. The band lists what is missing as links in order, using the form's rule for "built"
 (`isUsableBuild`); the unsent form is kept in `sessionStorage` (`api/experimentDraft.ts`). Method cards are
 those whose `capabilities.tasks` include the chosen task; a task picker appears only when methods offer
-more than one (ADR-0039). A lone profile or split is preselected; an empty name becomes
+more than one (ADR-0039). A targeted task adds a **Target class** select over the dataset's classes,
+defaulting to the class a `few_shot` split was drawn for (ADR-0040). A lone profile or split is preselected; an empty name becomes
 `<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.
 `GET /api/experiments/model-types`, `POST /api/experiments`.
 

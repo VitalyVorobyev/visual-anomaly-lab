@@ -25,9 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **`color_prototype`, the torch-free floor** (M): a numpy colour prototype that declares
-      `few_shot_segmentation`, so the whole slice — create, train on references, score,
-      evaluate — runs in the torch-free CI job.
 - [ ] **Shared DINO encoding, debiasing and refinement** (M):
       - One encoding path in `dino_backbone.py`, taken out of `dino_memory`.
       - A positional-debias transform (INSID3), available to every frozen-DINO method.

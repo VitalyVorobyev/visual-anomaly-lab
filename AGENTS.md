@@ -90,7 +90,7 @@ comparing them under one evaluation protocol.
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
-  as a verified ONNX bundle. Seven methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  as a verified ONNX bundle. Seven anomaly methods ship: `pixel_reference` (numpy + Pillow, the floor),
   `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
   bank; nothing is trained), `dinomaly_custom`
   (ours; the same method with the encoder and the decoder depth as fields, reached VisA parity
@@ -99,7 +99,10 @@ comparing them under one evaluation protocol.
   coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
   cleared its paired VisA gate, `docs/measurements.md`) and `subspace_ad` (a PCA of normal
   patch appearance over the same frozen encoders; nothing is trained, and **its defaults are the
-  verdict of a sweep that ran outside the application**, ADR-0038). A grouped multi-view dataset is now *usable* and not merely
+  verdict of a sweep that ran outside the application**, ADR-0038). The second task, few-shot
+  segmentation (ADR-0040), runs end to end with one method, `color_prototype` (numpy, the floor):
+  a split of references, a target class, masks into `fit` through `TrainContext.targets`, and an
+  evaluator for masks and presence. A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
   aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
   the registration the scan measured.
