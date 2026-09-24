@@ -154,7 +154,8 @@ def test_the_plan_is_logged_before_encoding_and_ignored_pixels_are_never_learned
             events.append(f"progress {message}")
 
     train_ctx, _ = _contexts(tmp_path / "run", labels, Recorder())
-    model = _model(epochs=2, pixels_per_image=64)
+    # The default draws in raster order everywhere else; this fit takes the per-class path.
+    model = _model(epochs=2, pixels_per_image=64, pixel_sampling="per_class")
     model.fit(training, train_ctx)
     plan = next(index for index, line in enumerate(events) if line.startswith("pixel plan"))
     encoded = next(index for index, line in enumerate(events) if "encoded 1/2" in line)

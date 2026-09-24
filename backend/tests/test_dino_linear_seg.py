@@ -157,7 +157,7 @@ def test_the_configuration_is_bounded() -> None:
     with pytest.raises(ValidationError):
         DinoLinearSegConfig.model_validate({"class_balancing": "median"})
     assert DinoLinearSegConfig().class_balancing is ClassBalancing.INVERSE_FREQUENCY
-    assert DinoLinearSegConfig().pixel_sampling is PixelSampling.PER_CLASS
+    assert DinoLinearSegConfig().pixel_sampling is PixelSampling.RASTER
     with pytest.raises(ValidationError):
         DinoLinearSegConfig.model_validate({"pixel_sampling": "random"})
 
