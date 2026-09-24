@@ -9,18 +9,11 @@
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 import { api } from "../api/client";
-import type { JobDetail, JobStatus } from "../api/client";
+import type { JobDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows, type Tone } from "@vitavision/lab-ui";
-
-const STATUS_TONE: Record<JobStatus, Tone> = {
-  queued: "neutral",
-  running: "info",
-  succeeded: "normal",
-  failed: "defect",
-  cancelled: "unlabeled",
-};
+import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows } from "@vitavision/lab-ui";
+import { jobStatusTone } from "../api/statusTone";
 
 /** How much of the log is worth seeing without asking for the rest. */
 const TAIL_LINES = 12;
@@ -55,7 +48,7 @@ export function JobProgress({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-center gap-2">
-        <Badge tone={STATUS_TONE[job.status]}>{job.status}</Badge>
+        <Badge tone={jobStatusTone(job.status)}>{job.status}</Badge>
         <span className="min-w-0 truncate text-sm text-fg-muted">{job.message ?? ""}</span>
         {!finished && (
           <Button

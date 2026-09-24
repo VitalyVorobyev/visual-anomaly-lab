@@ -21,15 +21,9 @@ import {
 } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { MetricSummary, Subset, TrainingState } from "../../api/client";
-import { Button, Callout, CountRun, Disclosure, Panel, type Tone } from "@vitavision/lab-ui";
+import { Button, Callout, CountRun, Disclosure, Panel } from "@vitavision/lab-ui";
 import { useReevaluate } from "../../hooks/useExperiments";
 
-export function jobTone(status: string): Tone {
-  if (status === "succeeded") return "normal";
-  if (status === "failed") return "defect";
-  if (status === "running") return "info";
-  return "neutral";
-}
 
 /**
  * The four numbers someone opens this screen for, above everything else.

@@ -29,6 +29,7 @@ import {
   useStartRegionBuild,
   useStartRegionPreview,
 } from "../hooks/useRegionProfiles";
+import { formatBytes } from "../api/format";
 
 type PreviewResult = {
   mode: "preview";
@@ -548,8 +549,3 @@ function validNumber(value: string, min: number, max: number): boolean {
   return Number.isFinite(number) && number >= min && number <= max;
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 ** 2) return `${(value / 1024).toFixed(1)} KiB`;
-  return `${(value / 1024 ** 2).toFixed(1)} MiB`;
-}

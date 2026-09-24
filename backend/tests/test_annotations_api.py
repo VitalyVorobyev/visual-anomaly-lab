@@ -369,6 +369,70 @@ def test_completed_revision_becomes_the_overlay_and_marks_metrics_stale(
     assert fresh["ground_truth_digest"] != before_metric["ground_truth_digest"]
 
 
+def test_the_document_base_is_the_imported_mask_not_the_newest_revision(
+    client: TestClient,
+    seeded: Fixture,
+) -> None:
+    """The editor draws a `source_mask` document's base from this route.
+
+    It used to draw it from `/mask`, which serves the newest completed revision — so once a
+    revision existed the "base" on screen was that revision, edits included. Here the only
+    revision subtracts the whole frame, and the base must still be the imported mask.
+    """
+    image_id = seeded.defect_image_ids[0]
+    before = client.get(f"/api/images/{image_id}/annotations/source-mask")
+    assert before.status_code == 200, before.text
+    with Image.open(io.BytesIO(before.content)) as opened:
+        imported = np.asarray(opened)
+    assert set(np.unique(imported)) <= {0, 255}
+    assert imported.any()
+
+    opened_draft, etag = _open(client, image_id)
+    document = opened_draft["document"]
+    assert isinstance(document, dict)
+    assert document["base"] == "source_mask"
+    width = int(document["image_width"])
+    height = int(document["image_height"])
+    erased = {
+        **document,
+        "shapes": [
+            {
+                "id": "erase-all",
+                "label_key": "defect",
+                "kind": "polygon",
+                "operation": "subtract",
+                "points": [
+                    {"x": 0, "y": 0},
+                    {"x": width, "y": 0},
+                    {"x": width, "y": height},
+                    {"x": 0, "y": height},
+                ],
+            }
+        ],
+    }
+    saved = client.put(
+        f"/api/images/{image_id}/annotations/draft", json=erased, headers={"If-Match": etag}
+    )
+    assert saved.status_code == 200, saved.text
+    completed = client.post(
+        f"/api/images/{image_id}/annotations/complete",
+        headers={"If-Match": saved.headers["etag"]},
+    )
+    assert completed.status_code == 200, completed.text
+
+    after = client.get(f"/api/images/{image_id}/annotations/source-mask")
+    assert after.status_code == 200
+    assert after.content == before.content
+
+
+def test_an_image_without_an_imported_mask_has_no_source_mask(
+    client: TestClient,
+    seeded: Fixture,
+) -> None:
+    missing = client.get(f"/api/images/{seeded.normal_image_ids[0]}/annotations/source-mask")
+    assert missing.status_code == 404
+
+
 def test_reevaluation_refuses_a_changed_pinned_source_mask(
     client: TestClient,
     settings: Settings,

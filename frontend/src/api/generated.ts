@@ -146,6 +146,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}/annotations/source-mask": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The imported mask a `source_mask` document is based on, as a binary PNG
+         * @description The base layer of a `base="source_mask"` document, and nothing else.
+         *
+         *     The editor used to draw this base from `GET /api/images/{id}/mask`, which answers a
+         *     different question — the *current* truth, newest completed revision first. Once an
+         *     image had a revision the "base" on screen was that revision's outline, already
+         *     containing the regions being edited above it, and after an import that subtracts the
+         *     whole base it showed truth the document no longer had. A document's base is the
+         *     imported mask it pins, so that is what this serves: source-sized 0/255, verified
+         *     against the digest the catalog recorded, and never a revision.
+         */
+        get: operations["read_annotation_source_mask_api_images__image_id__annotations_source_mask_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/images/{image_id}/annotations/draft/import/png": {
         parameters: {
             query?: never;
@@ -4938,6 +4966,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_annotation_source_mask_api_images__image_id__annotations_source_mask_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

@@ -35,7 +35,7 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, cn, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues, type Tone } from "@vitavision/lab-ui";
+import { Badge, Button, Callout, cn, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
 import {
@@ -45,6 +45,8 @@ import {
   useExperiments,
   useModelTypes,
 } from "../hooks/useExperiments";
+import { formatBytes } from "../api/format";
+import { experimentStatusTone } from "../api/statusTone";
 
 type ExperimentRow = NonNullable<ReturnType<typeof useExperiments>["data"]>[number];
 
@@ -124,7 +126,7 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
     {
       key: "status",
       header: "Status",
-      cell: (row) => <Badge tone={statusTone(row.status)}>{row.status}</Badge>,
+      cell: (row) => <Badge tone={experimentStatusTone(row.status)}>{row.status}</Badge>,
     },
     {
       key: "auroc",
@@ -370,12 +372,6 @@ export function DatasetCreateExperimentRoute() {
   );
 }
 
-function statusTone(status: string): Tone {
-  if (status === "trained") return "normal";
-  if (status === "failed") return "defect";
-  if (status === "training") return "info";
-  return "unlabeled";
-}
 
 const DATE_FORMAT = new Intl.DateTimeFormat(undefined, {
   dateStyle: "medium",
@@ -387,18 +383,6 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? value : DATE_FORMAT.format(date);
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let amount = value / 1024;
-  let unit = units[0];
-  for (const next of units.slice(1)) {
-    if (amount < 1024) break;
-    amount /= 1024;
-    unit = next;
-  }
-  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
-}
 
 type ConfigTab = "method" | "preprocessing" | "evaluation";
 

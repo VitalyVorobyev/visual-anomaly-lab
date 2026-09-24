@@ -20,11 +20,11 @@
 import { useMemo } from "react";
 import { Link } from "react-router";
 
-import type { MapScale, SamplePreview, SampleVerdict } from "../../api/client";
+import type { MapScale, SamplePreview, SampleVerdict, Subset } from "../../api/client";
 import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES, cutValue, writeResultsState } from "../../api/resultsState";
-import { Badge, Empty, ErrorBox, SegmentedControl, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
+import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
 import { useSamplePreviews } from "../../hooks/useExperiments";
 import { OverlayControls } from "./OverlayControls";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "./ResultsPanel";
@@ -46,12 +46,15 @@ export function GalleryTab({
   state,
   onChange,
   verdicts,
+  subsets,
   range,
 }: {
   experimentId: number;
   state: ResultsState;
   onChange: (next: Partial<ResultsState>) => void;
   verdicts: Verdicts;
+  /** The subsets this run scored; the picker appears only when there is a choice. */
+  subsets: readonly Subset[];
   range: MapScale | null | undefined;
 }) {
   const previews = useSamplePreviews(experimentId, state.subset);
@@ -117,7 +120,28 @@ export function GalleryTab({
             onChange({ sort: sort === "score-asc" ? "score-asc" : "score-desc" })
           }
         />
+        {subsets.length > 1 && (
+          <Select
+            className="w-32"
+            aria-label="Subset"
+            value={state.subset ?? subsets.at(-1) ?? ""}
+            options={subsets.map((name) => ({ value: name, label: name }))}
+            onValueChange={(value) => onChange({ subset: value as Subset, threshold: undefined })}
+          />
+        )}
       </div>
+
+      {/* The badges are a verdict *at a threshold*, and the threshold is set on Overview —
+          so say which one, or a TP here reads as a fact about the sample. */}
+      {!verdicts.isPending && (
+        <p className="text-xs text-fg-muted">
+          Outcomes at threshold{" "}
+          <span className="font-mono text-fg">{verdicts.threshold.toFixed(4)}</span>
+          {verdicts.rationale === undefined
+            ? " — chosen on Overview."
+            : ` — suggested: ${verdicts.rationale}.`}
+        </p>
+      )}
 
       <OverlayControls
         state={state}

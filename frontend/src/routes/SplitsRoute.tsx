@@ -30,6 +30,7 @@ import {
 } from "@vitavision/lab-ui";
 import { useSplits } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
+import { EMPTY_BROWSE, writeBrowseState } from "../api/browseState";
 
 type Strategy = "normal_only_train" | "imported";
 
@@ -240,7 +241,7 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
         caption={`Composition of ${split.name}`}
         rows={split.composition}
         rowKey={(row) => row.subset}
-        columns={compositionColumns(datasetId)}
+        columns={compositionColumns(datasetId, split.id)}
       />
     </Panel>
   );
@@ -248,7 +249,7 @@ function SplitCard({ split, datasetId }: { split: SplitDetail; datasetId: number
 
 type CompositionRow = SplitDetail["composition"][number];
 
-function compositionColumns(datasetId: number): Column<CompositionRow>[] {
+function compositionColumns(datasetId: number, splitId: number): Column<CompositionRow>[] {
   return [
     {
       key: "subset",
@@ -275,9 +276,14 @@ function compositionColumns(datasetId: number): Column<CompositionRow>[] {
     {
       key: "browse",
       header: "",
-      cell: () => (
+      // Into the browser *filtered to this row*. It used to open the whole dataset, which
+      // made "browse" beside a subset's counts a link to something other than that subset.
+      cell: (row) => (
         <Link
-          to={`/datasets/${datasetId}`}
+          to={{
+            pathname: `/datasets/${datasetId}`,
+            search: writeBrowseState({ ...EMPTY_BROWSE, splitId, subset: row.subset }).toString(),
+          }}
           className="text-xs text-fg-muted transition-colors hover:text-signal"
         >
           browse

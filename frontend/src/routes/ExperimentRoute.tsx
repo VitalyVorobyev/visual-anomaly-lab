@@ -27,10 +27,11 @@ import { modelScoped, ofKinds } from "../api/diagnostics";
 import type { TabId } from "../api/experimentTabs";
 import { parseTab } from "../api/experimentTabs";
 import type { ResultsState } from "../api/resultsState";
-import { readResultsState, writeResultsState } from "../api/resultsState";
-import { Badge, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows, Tabs } from "@vitavision/lab-ui";
+import { readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
+import { Badge, Button, Callout, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows, Tabs } from "@vitavision/lab-ui";
+import { experimentStatusTone } from "../api/statusTone";
 import { useJob, isTerminal } from "../hooks/useJob";
-import { useDiagnostics, useExperiment } from "../hooks/useExperiments";
+import { useDiagnostics, useExperiment, useModelTypes } from "../hooks/useExperiments";
 import { BenchmarkTab } from "./experiment/BenchmarkTab";
 import { GalleryTab } from "./experiment/GalleryTab";
 import { JobsFilesTab } from "./experiment/JobsFilesTab";
@@ -52,6 +53,7 @@ export function ExperimentRoute() {
   const experimentId = raw === undefined ? undefined : Number(raw);
   const experiment = useExperiment(experimentId);
   const diagnostics = useDiagnostics(experimentId);
+  const methods = useModelTypes();
   const [params, setParams] = useSearchParams();
   const [followingJobId, setFollowingJobId] = useState<number | undefined>();
 
@@ -107,8 +109,9 @@ export function ExperimentRoute() {
 
   // The results view's own state — tab, subset, filter, layers — lives in the same query
   // string so the gallery hands it to the sample page and gets it back on the way out.
-  // The tab is part of that state now, so nothing here has to re-attach it by hand.
-  const results = readResultsState(params);
+  // The tab is part of that state now, so nothing here has to re-attach it by hand. The
+  // subset is resolved here, once, so Overview, Benchmark and Samples all read the same one.
+  const results = resolveSubset(readResultsState(params), experiment.data?.scored_subsets ?? []);
   const updateResults = (next: Partial<ResultsState>) => {
     setParams(writeResultsState({ ...results, ...next }), { replace: true });
   };
@@ -123,15 +126,27 @@ export function ExperimentRoute() {
   const hasStructure = ofKinds(runScoped, STRUCTURE_KINDS).length > 0;
   const hasPictures = ofKinds(runScoped, PICTURE_KINDS).length > 0;
   const hasScores = detail.scored_subsets.length > 0;
-  const hasTrained = detail.jobs.some((job) => job.kind === "train");
+  // The Training tab opens on any train job, failed ones included — a failure's log is
+  // exactly what it is for. Whether the model *exists* is the status, and RunBar reads that.
+  const hasTrainJob = detail.jobs.some((job) => job.kind === "train");
+  // `jobs` is newest first, so this is the run that decided the current status.
+  const failedTrain =
+    detail.status === "failed"
+      ? detail.jobs.find((job) => job.kind === "train" && job.status === "failed")
+      : undefined;
 
   return (
     <div className="flex flex-col gap-6">
       <PageHeader
-        back={{ to: "/experiments", label: "All experiments" }}
+        // Back to where the run lives. The global catalogue is one click away in the top
+        // bar; the dataset is not, and every other screen here is dataset-scoped.
+        back={{
+          to: `/datasets/${detail.dataset_id}/experiments`,
+          label: `${detail.dataset_name} experiments`,
+        }}
         title={detail.name}
         actions={
-          <Badge tone={detail.status === "trained" ? "normal" : "unlabeled"}>{detail.status}</Badge>
+          <Badge tone={experimentStatusTone(detail.status)}>{detail.status}</Badge>
         }
         meta={
           /* The readout: what this run is, in one line, in the same slot on every screen
@@ -140,10 +155,25 @@ export function ExperimentRoute() {
              name in the heading. */
           <ReadoutStrip
             items={[
-              { label: "dataset", value: detail.dataset_name },
-              { label: "split", value: detail.split_name },
-              { label: "input", value: detail.region_profile_name },
-              { label: "method", value: detail.model_type },
+              { label: "dataset", value: detail.dataset_name, to: `/datasets/${detail.dataset_id}` },
+              {
+                label: "split",
+                value: detail.split_name,
+                to: `/datasets/${detail.dataset_id}/splits`,
+              },
+              {
+                label: "input",
+                value: detail.region_profile_name,
+                to: `/datasets/${detail.dataset_id}/prepare`,
+              },
+              // The method's title, as the picker and the catalogue print it; the key is
+              // what a config diff needs, not what a reader recognises.
+              {
+                label: "method",
+                value:
+                  methods.data?.methods.find((method) => method.key === detail.model_type)?.title ??
+                  detail.model_type,
+              },
             ]}
           />
         }
@@ -156,9 +186,9 @@ export function ExperimentRoute() {
         detail={detail}
         jobs={detail.jobs}
         liveJob={charted.job}
-        hasTrained={hasTrained}
         onFollow={setFollowingJobId}
         onViewLog={() => selectTab("training")}
+        onViewFiles={() => selectTab("jobs")}
       />
 
       {/* A tab appears when there is something in it. Gated on what the run recorded, never
@@ -179,8 +209,8 @@ export function ExperimentRoute() {
           {
             id: "training",
             label: "Training",
-            disabled: !hasTrained,
-            title: hasTrained ? undefined : "Nothing has been trained yet.",
+            disabled: !hasTrainJob,
+            title: hasTrainJob ? undefined : "Nothing has been trained yet.",
           },
           {
             id: "benchmark",
@@ -209,11 +239,28 @@ export function ExperimentRoute() {
           a reason for it not to be the first thing on it. */}
       {tab === "overview" && (
         <>
+          {/* A failed run used to be a grey badge and an Overview saying "nothing has been
+              scored yet" — true, and the least useful thing to say about a failure. */}
+          {failedTrain !== undefined && (
+            <Callout
+              tone="error"
+              title="Training failed"
+              actions={
+                <Button variant="secondary" onClick={() => selectTab("training")}>
+                  View log
+                </Button>
+              }
+            >
+              {failedTrain.error ?? "The job ended without an error message; its log has the detail."}
+            </Callout>
+          )}
           {hasScores ? (
             <OverviewResults
               experimentId={experimentId}
               subsets={detail.scored_subsets}
               metrics={detail.metrics}
+              state={results}
+              onChange={updateResults}
             />
           ) : (
             <Empty>
@@ -240,6 +287,7 @@ export function ExperimentRoute() {
           state={results}
           onChange={updateResults}
           verdicts={verdicts}
+          subsets={detail.scored_subsets}
           range={detail.map_range}
         />
       )}
@@ -263,6 +311,8 @@ export function ExperimentRoute() {
           experimentId={experimentId}
           subsets={detail.scored_subsets}
           metrics={detail.metrics}
+          state={results}
+          onChange={updateResults}
         />
       )}
 
@@ -296,20 +346,23 @@ function OverviewResults({
   experimentId,
   subsets,
   metrics,
+  state,
+  onChange,
 }: {
   experimentId: number;
   subsets: Subset[];
   metrics: MetricSummary[];
+  state: ResultsState;
+  onChange: (next: Partial<ResultsState>) => void;
 }) {
-  const [subset, setSubset] = useState<Subset>(subsets[subsets.length - 1] ?? "test");
   return (
     <>
-      <Headline metrics={metrics} subset={subset} />
+      <Headline metrics={metrics} subset={state.subset} />
       <Results
         experimentId={experimentId}
         subsets={subsets}
-        subset={subset}
-        onSubset={setSubset}
+        state={state}
+        onChange={onChange}
         metrics={metrics}
       />
     </>

@@ -25,16 +25,18 @@ import {
 import type { ExperimentDetail, JobDetail, JobSummary } from "../../api/client";
 import { isTerminal } from "../../hooks/useJob";
 import { useCancelJob, useStartExport, useStartRun } from "../../hooks/useExperiments";
-import { jobTone } from "./OverviewTab";
+import { jobStatusTone } from "../../api/statusTone";
+
+const NOT_TRAINED = "Nothing has been trained yet.";
 
 export function RunBar({
   experimentId,
   detail,
   jobs,
   liveJob,
-  hasTrained,
   onFollow,
   onViewLog,
+  onViewFiles,
 }: {
   experimentId: number;
   detail: ExperimentDetail;
@@ -53,18 +55,26 @@ export function RunBar({
    * the summary carries the same fields, one refresh behind.
    */
   liveJob?: JobDetail | undefined;
-  hasTrained: boolean;
   onFollow: (jobId: number) => void;
   /** Take the reader to the tab where the chart and the console are. */
   onViewLog: () => void;
+  /** Take the reader to the tab that lists the run's files, where a bundle lands. */
+  onViewFiles?: () => void;
 }) {
   const start = useStartRun(experimentId);
   const startExport = useStartExport(experimentId);
   const cancel = useCancelJob(experimentId);
   const [confirmRetrain, setConfirmRetrain] = useState(false);
 
+  /*
+   * Trained means the experiment's own status says so — the only thing the scoring and
+   * export endpoints accept. It used to be read off `training_state`, a sidecar only a
+   * *resumable* method writes, so a trained PatchCore or pixel_reference run still offered
+   * a primary "Train" that retrained without asking; and a failed train job, counted as
+   * "has trained", enabled scoring a model that was never saved.
+   */
+  const trained = detail.status === "trained";
   const state = detail.training_state ?? null;
-  const trained = state !== null;
   /*
    * Defaults to the configured per-run budget, so "another 4000" is one click. `max_steps`
    * is the frozen config's field; a method without one starts the box empty rather than
@@ -73,10 +83,10 @@ export function RunBar({
   const budget = Number(detail.config?.["max_steps"]);
   const [steps, setSteps] = useState<number>(Number.isFinite(budget) ? budget : 0);
 
-  const canContinue = detail.supports_resume && trained;
+  const canContinue = detail.supports_resume && trained && state !== null;
   const continueReason = !detail.supports_resume
     ? "This method has no notion of a training step, so there is nothing to continue."
-    : "Nothing has been trained yet.";
+    : NOT_TRAINED;
 
   // `jobs` arrives newest first, so the first unfinished one is the live one. The queue
   // runs a single job at a time (ADR-0009), so there is never more than one.
@@ -86,6 +96,9 @@ export function RunBar({
   const reading = liveJob !== undefined && liveJob.id === live?.id ? liveJob : live;
   const busy = live !== undefined || start.isPending || startExport.isPending;
   const canExportOnnx = detail.portable_formats.includes("onnx");
+  // The newest job, when it is a finished export: the bundle exists, and the only place
+  // that says where is another tab — so say so here, where the button was pressed.
+  const exported = live === undefined && jobs[0]?.kind === "export" && jobs[0].status === "succeeded";
 
   const run = (kind: "train" | "infer", additionalSteps?: number) =>
     start.mutate({ kind, additionalSteps }, { onSuccess: (job) => onFollow(job.id) });
@@ -128,21 +141,21 @@ export function RunBar({
           </span>
         )}
         <Button
-          disabled={busy || !hasTrained}
-          title={hasTrained ? undefined : "Nothing has been trained yet."}
+          disabled={busy || !trained}
+          title={trained ? undefined : NOT_TRAINED}
           onClick={() => run("infer")}
         >
           Score &amp; evaluate
         </Button>
         <Button
           variant="secondary"
-          disabled={busy || !hasTrained || !canExportOnnx}
+          disabled={busy || !trained || !canExportOnnx}
           loading={startExport.isPending}
           title={
             !canExportOnnx
               ? "This method has no numerically verified ONNX exporter yet."
-              : !hasTrained
-                ? "Nothing has been trained yet."
+              : !trained
+                ? NOT_TRAINED
                 : "Create a checksummed ONNX bundle with parity fixtures."
           }
           onClick={() =>
@@ -154,14 +167,14 @@ export function RunBar({
 
         {live !== undefined && (
           <>
-            <StatusDot tone={jobTone(live.status)}>
+            <StatusDot tone={jobStatusTone(live.status)}>
               <span className="font-mono">
                 #{live.id} {live.kind}
               </span>
             </StatusDot>
             <button
               type="button"
-              className="text-xs text-fg-muted hover:text-fg hover:underline"
+              className="text-xs text-fg-muted hover:text-fg hover:underline focus-visible:outline-2 focus-visible:outline-signal"
               onClick={onViewLog}
             >
               view log
@@ -183,16 +196,32 @@ export function RunBar({
         <ProgressBar fraction={reading.progress ?? 0} label={reading.message ?? reading.status} />
       )}
 
-      {/* The consequence is surprising enough that it is printed before the run rather
-          than discovered afterwards in the learning-rate chart (handbook jobs.md). */}
+      {/* What a continuation will do, before it is started. Deliberately in terms every
+          resumable method shares — checkpoint, optimizer, step counter. How a particular
+          method's schedule treats the added steps is that method's business, and naming
+          one method's schedule here is how this bar came to describe EfficientAD for
+          every run that could resume (ADR-0007; handbook jobs.md). */}
       {canContinue && state !== null && steps > 0 && (
         <p className="text-xs text-fg-muted">
           {state.completed_steps} steps completed over {state.runs} run
-          {state.runs === 1 ? "" : "s"}. Continuing to {state.completed_steps + steps} moves the
-          learning-rate drop to step {Math.floor(0.95 * (state.completed_steps + steps))}, so the
-          rate returns to its base value at the resume point. The optimizer, the schedule, the
-          step counter and the training image order resume exactly; the penalty-set order
-          restarts.
+          {state.runs === 1 ? "" : "s"}. Continuing trains {steps} more, to{" "}
+          {state.completed_steps + steps} in total, from the stored checkpoint and optimizer
+          state rather than from the beginning.
+        </p>
+      )}
+
+      {exported && (
+        <p className="text-xs text-fg-muted">
+          ONNX bundle written.{" "}
+          {onViewFiles && (
+            <button
+              type="button"
+              className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
+              onClick={onViewFiles}
+            >
+              Open Jobs &amp; files
+            </button>
+          )}
         </p>
       )}
 
@@ -206,10 +235,10 @@ export function RunBar({
         title="Retrain from scratch?"
         description={
           <>
-            This discards the current checkpoint
-            {state ? ` and the ${state.completed_steps} steps it has completed` : ""}, and starts
-            again from the pretrained teacher. The stored scores and anomaly maps stay until you
-            score again, so the results screens would describe a model that no longer exists.
+            This discards the fitted model
+            {state ? ` and the ${state.completed_steps} steps it has completed` : ""}, and fits
+            it again from the beginning. The stored scores and anomaly maps stay until you score
+            again, so the results screens would describe a model that no longer exists.
           </>
         }
         confirmLabel="Retrain"

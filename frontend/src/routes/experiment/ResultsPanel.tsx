@@ -8,21 +8,16 @@
  * the two drift (§12).
  */
 
-import { useEffect, useState } from "react";
 import { Link } from "react-router";
 
 import type { MetricSummary, SampleVerdict, Subset } from "../../api/client";
-import { imageUrl } from "../../api/imageUrl";
 import type { MetricValue } from "../../api/metrics";
 import { localizationTolerancePx } from "../../api/metrics";
+import type { Outcome, ResultsState } from "../../api/resultsState";
+import { MISTAKE_OUTCOMES, writeResultsState } from "../../api/resultsState";
 import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
-import { Badge, DEFECT_COLOUR, Empty, ErrorBox, InfoHint, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, Tabs, type Tone } from "@vitavision/lab-ui";
-import {
-  useCurves,
-  useResults,
-  useSamplePreviews,
-  useThreshold,
-} from "../../hooks/useExperiments";
+import { DEFECT_COLOUR, Empty, ErrorBox, InfoHint, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, type Tone } from "@vitavision/lab-ui";
+import { useCurves, useResults, useThreshold } from "../../hooks/useExperiments";
 
 export const OUTCOME_TONE: Record<string, Tone> = {
   tp: "normal",
@@ -84,15 +79,23 @@ export function localizationSummary(
 export function Results({
   experimentId,
   subsets,
-  subset,
-  onSubset,
+  state,
+  onChange,
   metrics,
   charts = false,
 }: {
   experimentId: number;
   subsets: Subset[];
-  subset: Subset;
-  onSubset: (subset: Subset) => void;
+  /**
+   * The experiment's shared results state — the same object the Samples tab filters by.
+   *
+   * The subset and the threshold used to be this panel's own `useState`, one copy on
+   * Overview and another on Benchmark, while the gallery read them from the URL that
+   * nothing wrote. A cut chosen here therefore never reached the TP/FP badges one tab
+   * over. Reading and writing the URL state is what makes it one threshold.
+   */
+  state: ResultsState;
+  onChange: (next: Partial<ResultsState>) => void;
   /**
    * The stored metric sets, read for one thing only: the tolerance the localization
    * verdicts were decided against, so the strip can name the radius rather than leave the
@@ -102,14 +105,11 @@ export function Results({
   /** The benchmark tab wants the distribution charts; the overview does not. */
   charts?: boolean;
 }) {
+  const subset = state.subset ?? subsets.at(-1) ?? "test";
   const results = useResults(experimentId, subset);
-  const [threshold, setThreshold] = useState<number | null>(null);
-
-  // The suggested threshold is the starting position, and it moves when the subset does —
-  // but an operator's own drag must survive a re-render, so it is only adopted when the
-  // slider has never been touched for this subset.
-  useEffect(() => setThreshold(null), [subset]);
-  const active = threshold ?? results.data?.suggested_threshold ?? 0;
+  // `undefined` is the server's suggestion, which moves with the subset; a drag is written
+  // to the URL and survives changing tab, reloading and the round trip to a sample.
+  const active = state.threshold ?? results.data?.suggested_threshold ?? 0;
   const report = useThreshold(experimentId, subset, active);
   // The same curve the Benchmark tab draws, read here against the threshold axis instead
   // of against recall. One request, cached across both tabs.
@@ -131,7 +131,9 @@ export function Results({
           aria-label="Subset"
           value={subset}
           options={subsets.map((name) => ({ value: name, label: name }))}
-          onValueChange={(value) => onSubset(value as Subset)}
+          // A chosen cut is a position on *this* subset's score range, so it does not
+          // survive a change of subset; the next one opens on its own suggestion.
+          onValueChange={(value) => onChange({ subset: value as Subset, threshold: undefined })}
         />
       }
     >
@@ -151,13 +153,25 @@ export function Results({
                 max={results.data.score_max}
                 step={step}
                 value={active}
-                onValueChange={setThreshold}
+                onValueChange={(value) => onChange({ threshold: value })}
                 readout={<span className="inline-block w-16 text-right">{active.toFixed(4)}</span>}
               />
             </div>
             <p className="text-xs text-fg-muted">
-              Opens at {results.data.suggested_threshold.toFixed(4)} —{" "}
-              {results.data.threshold_rationale}.
+              {state.threshold === undefined ? "Opens" : "Opened"} at{" "}
+              {results.data.suggested_threshold.toFixed(4)} — {results.data.threshold_rationale}.
+              {state.threshold !== undefined && (
+                <>
+                  {" "}
+                  <button
+                    type="button"
+                    className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
+                    onClick={() => onChange({ threshold: undefined })}
+                  >
+                    Back to the suggestion
+                  </button>
+                </>
+              )}
             </p>
           </div>
 
@@ -179,11 +193,7 @@ export function Results({
                 tolerancePx={localizationTolerancePx(stored)}
               />
               {charts && <DefectTypes samples={report.data.samples} />}
-              <VerdictTable
-                experimentId={experimentId}
-                subset={subset}
-                samples={report.data.samples}
-              />
+              <OutcomeLinks state={{ ...state, subset }} samples={report.data.samples} />
             </>
           )}
         </div>
@@ -357,98 +367,63 @@ export function Confusion({
   );
 }
 
-function VerdictTable({
-  experimentId,
-  subset,
+/**
+ * Where each cell of the matrix goes to be looked at.
+ *
+ * This used to be a second verdict browser — its own outcome filter in local state, its
+ * own scrolling list inside the page's scroller, and links that dropped the threshold, so
+ * prev/next on the sample page walked a different set from the one listed. The Samples
+ * tab is that browser; this hands it the filter, at the threshold in force here.
+ */
+function OutcomeLinks({
+  state,
   samples,
 }: {
-  experimentId: number;
-  subset: Subset;
-  samples: SampleVerdict[];
+  state: ResultsState;
+  samples: readonly SampleVerdict[];
 }) {
-  const [filter, setFilter] = useState<string>("all");
-  /*
-   * One image standing for each sample, so a row is a picture rather than a path.
-   *
-   * A list of `candle/Data/Images/Anomaly/097` tells a reader nothing they can act on; the
-   * question a results table exists to answer — *what does the model think this looks
-   * like* — needs the thing itself. The previews endpoint already exists for the gallery
-   * and is keyed by sample, so this costs one cached request and no backend change; the
-   * path stays beside the thumbnail, because it is what identifies the sample to anyone
-   * going back to the source tree.
-   */
-  const previews = useSamplePreviews(experimentId, subset);
-  const imageBySample = new Map(
-    (previews.data ?? []).map((preview) => [preview.sample_id, preview.image_id]),
-  );
-  // Already classified by the server, at the threshold currently in force. The rule "a
-  // score at or above the threshold is a defect" therefore exists in exactly one place.
-  const classified = samples;
-  const shown = filter === "all" ? classified : classified.filter((s) => s.outcome === filter);
-
-  const keys = ["all", "tp", "fp", "tn", "fn", "unlabeled"];
+  const count = (outcomes: readonly Outcome[]) =>
+    samples.filter((sample) => outcomes.includes(sample.outcome as Outcome)).length;
+  const targets: { key: string; label: string; count: number; next: Partial<ResultsState> }[] = [
+    {
+      key: "mistakes",
+      label: "mistakes",
+      count: count(MISTAKE_OUTCOMES),
+      next: { mistakesOnly: true, outcome: undefined },
+    },
+    ...(["fn", "fp", "tp", "tn"] as const).map((outcome) => ({
+      key: outcome,
+      label: OUTCOME_PLURAL[outcome],
+      count: count([outcome]),
+      next: { mistakesOnly: false, outcome },
+    })),
+  ];
 
   return (
-    <div className="flex flex-col gap-2">
-      <Tabs
-        label="Outcome filter"
-        active={filter}
-        onSelect={setFilter}
-        items={keys.map((key) => {
-          const count =
-            key === "all" ? classified.length : classified.filter((s) => s.outcome === key).length;
-          return {
-            id: key,
-            label: key === "all" ? "all" : (OUTCOME_LABEL[key] ?? key),
-            count,
-            disabled: count === 0 && key !== "all",
-          };
-        })}
-      />
-
-      <ul className="max-h-[32rem] divide-y divide-line overflow-y-auto text-sm">
-        {shown.map((sample) => {
-          const path = `${sample.group_key}/${sample.external_id}`;
-          const imageId = imageBySample.get(sample.sample_id);
-          // Only the failure is marked. A badge on every localized row would put a second
-          // column of green beside the outcome and bury the handful of rows that got the
-          // right answer from the wrong pixels, which is the only thing to scan for here.
-          const offTarget = sample.localized === false;
-          return (
-            <li key={sample.sample_id} className="flex items-center gap-3 py-1.5">
-              {/* A fixed width so the badges line up into columns down the list. Ragged
-                  columns turn "scan for the false positives" into reading every row. */}
-              <Link
-                to={`/experiments/${experimentId}/samples/${sample.sample_id}`}
-                className="flex w-72 shrink-0 items-center gap-2.5 hover:underline"
-                title={path}
-              >
-                {/* A fixed box whatever the source aspect ratio, so the rows stay a list
-                    rather than a ragged column. `object-cover` crops; the sample page is
-                    one click away for the whole picture. */}
-                <span className="size-14 shrink-0 overflow-hidden rounded border border-line bg-raised">
-                  {imageId !== undefined && (
-                    <img
-                      src={imageUrl(imageId, "thumb")}
-                      alt=""
-                      loading="lazy"
-                      className="size-full object-cover"
-                    />
-                  )}
-                </span>
-                <span className="truncate font-mono text-[0.6875rem] text-fg-muted">{path}</span>
-              </Link>
-              <Badge tone={sample.label === "defect" ? "defect" : "normal"}>{sample.label}</Badge>
-              <Badge tone={OUTCOME_TONE[sample.outcome] ?? "neutral"}>
-                {OUTCOME_LABEL[sample.outcome] ?? sample.outcome}
-              </Badge>
-              {offTarget && <Badge tone="warning">off target</Badge>}
-              {sample.notes && <span className="text-xs text-fg-muted">{sample.notes}</span>}
-              <span className="ml-auto shrink-0 font-mono text-xs">{sample.score.toFixed(4)}</span>
-            </li>
-          );
-        })}
-      </ul>
-    </div>
+    <nav aria-label="Open in Samples" className="flex flex-wrap items-center gap-x-4 gap-y-1 text-sm">
+      <span className="text-xs text-fg-muted">Open in Samples</span>
+      {targets.map((target) =>
+        target.count === 0 ? (
+          <span key={target.key} className="text-fg-subtle">
+            {target.label} <span className="font-mono">0</span>
+          </span>
+        ) : (
+          <Link
+            key={target.key}
+            to={{ search: writeResultsState({ ...state, ...target.next, tab: "samples" }).toString() }}
+            className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
+          >
+            {target.label} <span className="font-mono">{target.count}</span>
+          </Link>
+        ),
+      )}
+    </nav>
   );
 }
+
+const OUTCOME_PLURAL: Record<"tp" | "tn" | "fp" | "fn", string> = {
+  tp: "true positives",
+  tn: "true negatives",
+  fp: "false positives",
+  fn: "false negatives",
+};

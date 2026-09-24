@@ -38,6 +38,7 @@ import { DatasetGrid, DatasetGroup } from "./DatasetGroup";
 import { groupDatasets } from "./grouping";
 import { ReferencePackStrip } from "./ReferencePackStrip";
 import { useCollapsedGroups } from "./useCollapsedGroups";
+import { formatBytes } from "../../api/format";
 
 export function DatasetsRoute() {
   const datasets = useDatasets();
@@ -225,15 +226,3 @@ export function DatasetsRoute() {
   }
 }
 
-function formatBytes(value: number): string {
-  if (value < 1024) return `${value} B`;
-  const units = ["KB", "MB", "GB", "TB"];
-  let amount = value / 1024;
-  let unit = units[0];
-  for (const next of units.slice(1)) {
-    if (amount < 1024) break;
-    amount /= 1024;
-    unit = next;
-  }
-  return `${amount.toFixed(amount >= 10 ? 1 : 2)} ${unit}`;
-}

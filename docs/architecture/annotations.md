@@ -39,6 +39,10 @@ shape is a polygon with a stable id, dataset taxonomy key, `add` / `subtract` op
 points. A bitmap shape is a cropped binary PNG with the same identity, taxonomy and operation fields plus
 its integer source-frame rectangle. Duplicate shape ids, geometry outside the source frame, malformed bitmap
 bytes, unknown label keys, dimension changes and base-layer changes are rejected before persistence.
+The editor draws a `source_mask` base from `GET /api/images/{id}/annotations/source-mask` — the pinned
+import, binary, digest-checked, tinted in the dataset's first class colour — and **not** from
+`GET /api/images/{id}/mask`, which is the image's *current* truth with the newest completed revision
+first. Drawn as the base, that showed a revision's own regions underneath themselves.
 
 The source frame is load-bearing. A future crop/localisation profile may change what a method sees, but an
 annotation never moves into model-input or canvas coordinates. The UI transform and the spatial input

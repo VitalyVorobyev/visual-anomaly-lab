@@ -113,6 +113,7 @@ import {
   useBrushSize,
 } from "../hooks/useBrushSize";
 import { useMaskOpacity } from "../hooks/useMaskOpacity";
+import { useHotkeys } from "../hooks/useHotkeys";
 import { useCancelJob } from "../hooks/useExperiments";
 import { isTerminal, useJob } from "../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../hooks/useModelAssets";
@@ -862,8 +863,15 @@ function EditorReady({
     if (assetJob.job?.status === "succeeded") setMessage("MobileSAM is ready");
   }, [assetJob.job?.status, capability, followedAssetJobId, modelAssets]);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
+  /*
+   * The page-level guard — text entry, lists, an open dialog — is `useHotkeys`'s. This
+   * handler used to carry its own, which did not know about dialogs: with Copy or Discard
+   * open, `C` completed the document and Backspace deleted the selected region behind it.
+   * Modified keys are let through because ⌘S and ⌘Z are bound here; every other command
+   * is a bare key, so a held modifier returns early rather than turning ⌘V into Select.
+   */
+  useHotkeys(
+    (event) => {
       const target = event.target;
       if (
         target instanceof HTMLElement &&
@@ -872,19 +880,9 @@ function EditorReady({
       ) {
         return;
       }
-      if (
-        target instanceof HTMLInputElement ||
-        target instanceof HTMLTextAreaElement ||
-        target instanceof HTMLSelectElement ||
-        // Rich text was the gap. It did not matter while every shortcut here was a tool
-        // switch; `n`/`d`/`u` rewrite the part's verdict, which is exactly the keystroke that
-        // must never escape a field somebody is typing in.
-        (target instanceof HTMLElement && target.isContentEditable)
-      ) {
-        return;
-      }
       const key = event.key.toLowerCase();
       const command = event.metaKey || event.ctrlKey;
+      if (event.altKey || (command && key !== "s" && key !== "z")) return;
       const labelKeyed = command ? undefined : LABEL_KEYS[key];
       if (command && key === "s") {
         event.preventDefault();
@@ -963,7 +961,11 @@ function EditorReady({
       } else if (key === "1") {
         canvasRef.current?.actualPixels();
       }
-    };
+    },
+    { allowModifiers: true },
+  );
+
+  useEffect(() => {
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key.toLowerCase() !== "h") return;
       const started = peekStartedAt.current;
@@ -974,13 +976,9 @@ function EditorReady({
         setRegionsHidden((hidden) => !hidden);
       }
     };
-    globalThis.addEventListener("keydown", onKey);
     globalThis.addEventListener("keyup", onKeyUp);
-    return () => {
-      globalThis.removeEventListener("keydown", onKey);
-      globalThis.removeEventListener("keyup", onKeyUp);
-    };
-  }, [activeIndex, applyLabel, clearAssist, complete.isPending, completeCurrent, dirty, finishPolygon, openChannel, openQueueItem, pendingPoints.length, persist, queueIndex, removeSelected, selectedId, setRegionsHidden]);
+    return () => globalThis.removeEventListener("keyup", onKeyUp);
+  }, [setRegionsHidden]);
 
   useEffect(() => {
     if (!message) return;
@@ -1078,7 +1076,14 @@ function EditorReady({
             )}
           </span>
           <span className="hidden text-xs text-fg-muted sm:inline">
-            {message ?? (dirty ? "Unsaved changes" : `Draft v${draftVersion}`)}
+            {/* No version until the first save creates the draft (a page view writes
+                nothing), and that state printed as "Draft vnull". */}
+            {message ??
+              (dirty
+                ? "Unsaved changes"
+                : draftVersion === null || draftVersion === undefined
+                  ? "Not edited yet"
+                  : `Draft v${draftVersion}`)}
           </span>
           <Button
             variant="ghost"

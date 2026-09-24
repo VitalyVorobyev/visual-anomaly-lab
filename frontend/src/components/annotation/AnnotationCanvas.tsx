@@ -29,7 +29,7 @@ import type {
 } from "../../api/client";
 import { tintedMask } from "../../api/annotationBitmap";
 import { polygonClick, snapTolerance } from "../../api/annotationPolygon";
-import { imageUrl, maskUrl } from "../../api/imageUrl";
+import { imageUrl, sourceMaskUrl } from "../../api/imageUrl";
 import { useScenePalette, withAlpha, type ScenePalette } from "./scenePalette";
 
 export type EditorTool = "select" | "polygon" | "brush" | "eraser" | "assist";
@@ -178,8 +178,11 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   const overlay = useHtmlImage(
     overlayImageId === undefined ? undefined : imageUrl(overlayImageId, "full"),
   );
-  const baseMask = useHtmlImage(
-    document.base === "source_mask" ? maskUrl(imageId) : undefined,
+  // Requested with CORS: the pixels are read back to tint them, and an image from the
+  // sidecar's origin drawn without it taints the canvas and makes `getImageData` throw.
+  const baseMaskSource = useHtmlImage(
+    document.base === "source_mask" ? sourceMaskUrl(imageId) : undefined,
+    "anonymous",
   );
 
   useEffect(() => {
@@ -209,6 +212,19 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     () => new Map(labels.map((label) => [label.key, label.color])),
     [labels],
   );
+  // The import carries no class, so it takes the dataset's first one — which is the class
+  // every region drawn on a single-class dataset gets too, so base and edits read as one.
+  const baseColor = labels[0]?.color ?? palette.unknownLabel;
+  const baseMask = useMemo(() => {
+    if (baseMaskSource === null) return null;
+    try {
+      return tintedMask(baseMaskSource, document.image_width, document.image_height, baseColor);
+    } catch {
+      // A base layer that cannot be read is context lost, not an editor lost: this threw
+      // inside render once, and the crash boundary took the whole workbench with it.
+      return null;
+    }
+  }, [baseMaskSource, document.image_width, document.image_height, baseColor]);
 
   const fitView = () => {
     previousView.current = view;
@@ -879,12 +895,16 @@ function useTintedMask(shape: BitmapShape, color: string): HTMLCanvasElement | n
   return painted;
 }
 
-function useHtmlImage(src: string | undefined): HTMLImageElement | null {
+function useHtmlImage(
+  src: string | undefined,
+  crossOrigin?: "anonymous",
+): HTMLImageElement | null {
   const [image, setImage] = useState<HTMLImageElement | null>(null);
   useEffect(() => {
     setImage(null);
     if (!src) return;
     const next = new globalThis.Image();
+    if (crossOrigin) next.crossOrigin = crossOrigin;
     next.onload = () => setImage(next);
     next.onerror = () => setImage(null);
     next.src = src;
@@ -892,7 +912,7 @@ function useHtmlImage(src: string | undefined): HTMLImageElement | null {
       next.onload = null;
       next.onerror = null;
     };
-  }, [src]);
+  }, [src, crossOrigin]);
   return image;
 }
 
