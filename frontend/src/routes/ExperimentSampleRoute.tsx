@@ -42,11 +42,12 @@ import { ChevronLeft, ChevronRight, Microscope } from "lucide-react";
 
 import { imageScoped, isOnDemand, missingNote, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
-import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl, tierFor } from "../api/imageUrl";
+import { anomalyMapUrl, maskUrl, predictionUrl } from "../api/imageUrl";
 import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
-import { Badge, Button, Disclosure, Empty, ErrorBox, ImageStage, SkeletonRows, StageReadout, StageToolbar, Tooltip, cn, type StageView } from "@vitavision/lab-ui";
+import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, StageReadout, Tooltip, type StageView } from "@vitavision/lab-ui";
+import { SampleStage, type RasterLayer } from "../components/viewer/SampleStage";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { useAnomalyValues, useSourceValues } from "../hooks/useMapValues";
 import {
@@ -349,7 +350,7 @@ function ChannelView({
   // and an RGB one are the same code path, and neither is encoded here.
   const sourceValues = useSourceValues(experimentId, image.image_id, hover !== null);
 
-  const layers: { key: string; src: string; className?: string }[] = [];
+  const layers: RasterLayer[] = [];
   if (state.heatmap && image.has_map) {
     layers.push({
       key: "heatmap",
@@ -382,44 +383,26 @@ function ChannelView({
           `max-w-full` plus `aspectRatio` box got wrong the moment the column was narrower
           than the image. */}
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <ImageStage
-          image={{ width: image.width, height: image.height }}
+        <SampleStage
+          image={{ id: image.image_id, width: image.width, height: image.height }}
+          alt={`Channel ${image.channel ?? "single view"}`}
           view={view}
           onView={onView}
           onHover={setHover}
           // The arrows step through the filtered sample list; the stage keeps 0/1/+/-.
           panKeys={false}
           label={`${image.channel ?? "single view"} canvas`}
-          toolbar={<StageToolbar />}
           readout={<StageReadout cursor={hover} />}
+          // Every layer is already in source coordinates, projected by the backend through
+          // this image's pinned region transform, and the stage is laid out at exactly
+          // those coordinates. Filling it is therefore exact.
+          layers={layers}
         >
-          <img
-            src={imageUrl(image.image_id, tierFor(view))}
-            alt={`Channel ${image.channel ?? "single view"}`}
-            draggable={false}
-            className="absolute inset-0 h-full w-full"
-          />
-          {/* Every layer is already in source coordinates, projected by the backend through
-              this image's pinned region transform, and the stage is laid out at exactly
-              those coordinates. Filling it is therefore exact. */}
-          {layers.map((layer) => (
-            <img
-              key={layer.key}
-              src={layer.src}
-              alt=""
-              aria-hidden
-              draggable={false}
-              className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full",
-                layer.className,
-              )}
-            />
-          ))}
           {/* A vector layer among the raster ones, and inside the same transform for the
               same reason: a marker that drifts from the heatmap it marks is worse than no
               marker. It draws itself in image coordinates. */}
           {state.peak && <PeakMarker image={image} />}
-        </ImageStage>
+        </SampleStage>
       </div>
 
       <div className="flex flex-col gap-0.5">

@@ -29,8 +29,9 @@ import type { ComparedRun, ComparedSample, ImageScore } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { cutFor, readCompareState, writeCompareState } from "../../api/compareState";
 import { preferredImageIndex } from "../../api/defaultChannel";
-import { anomalyMapUrl, imageUrl, maskUrl, predictionUrl, tierFor } from "../../api/imageUrl";
-import { Badge, Empty, ErrorBox, ImageStage, PageHeader, SkeletonRows, Slider, StageReadout, StageToolbar, Tabs, ToggleChip, cn, type StageView } from "@vitavision/lab-ui";
+import { anomalyMapUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
+import { SampleStage, type RasterLayer } from "../../components/viewer/SampleStage";
+import { Badge, Empty, ErrorBox, PageHeader, SkeletonRows, Slider, StageReadout, Tabs, ToggleChip, type StageView } from "@vitavision/lab-ui";
 import { useDataset } from "../../hooks/useCatalog";
 import { useComparison, useSampleImageSets } from "../../hooks/useComparison";
 import {
@@ -248,7 +249,7 @@ function RunPane({
   const score = row?.scores[index] ?? null;
   const localization = localizationBadge(image?.localized);
 
-  const layers: { key: string; src: string; className?: string }[] = [];
+  const layers: RasterLayer[] = [];
   if (image && state.heatmap && image.has_map) {
     layers.push({
       key: "heatmap",
@@ -278,8 +279,9 @@ function RunPane({
       </figcaption>
 
       <div className="relative min-h-0 flex-1 overflow-hidden">
-        <ImageStage
-          image={{ width: shown.width, height: shown.height }}
+        <SampleStage
+          image={{ id: shown.image_id, width: shown.width, height: shown.height }}
+          alt={run.name}
           view={view}
           onView={onView}
           // Off for the same reason as the results viewer, where the arrows step the
@@ -287,34 +289,15 @@ function RunPane({
           // and the stage keeps 0 / 1 / + / -.
           panKeys={false}
           label={`${run.name} canvas`}
-          toolbar={<StageToolbar />}
           readout={<StageReadout />}
+          layers={layers}
         >
-          <img
-            src={imageUrl(shown.image_id, tierFor(view))}
-            alt={run.name}
-            draggable={false}
-            className="absolute inset-0 h-full w-full"
-          />
-          {layers.map((layer) => (
-            <img
-              key={layer.key}
-              src={layer.src}
-              alt=""
-              aria-hidden
-              draggable={false}
-              className={cn(
-                "pointer-events-none absolute inset-0 h-full w-full",
-                layer.className,
-              )}
-            />
-          ))}
           {/* Per pane, from that run's own `ImageScore` — the peak is where *this* method
               fired, and two methods disagreeing about it is exactly what the screen is for.
               Drawn only for a run that scored this sample; the fallback photograph carries
               another run's pixels and would put its peak under this run's name. */}
           {state.peak && image !== undefined && <PeakMarker image={image} />}
-        </ImageStage>
+        </SampleStage>
       </div>
 
       {/* Both scales, under every pane. Without them two panes look like one axis, which is
