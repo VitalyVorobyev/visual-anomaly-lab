@@ -23,6 +23,7 @@ from anomaly_lab.models.base import (
     NullReporter,
     TrainContext,
 )
+from anomaly_lab.models.calibration import Calibration
 from anomaly_lab.models.diagnostics import DiagnosticWriter
 from anomaly_lab.models.dino_backbone import DinoBackbone
 from anomaly_lab.models.fss_dino import FssDinoConfig, FssDinoModel
@@ -72,13 +73,14 @@ def _contexts(tmp_path: Path, targets: _Targets | None) -> tuple[TrainContext, I
     return TrainContext(**common, targets=targets), InferContext(**common)
 
 
-def _model(seed: int = 0) -> FssDinoModel:
+def _model(seed: int = 0, **overrides: Any) -> FssDinoModel:
     return FssDinoModel(
         FssDinoConfig(
             backbone=DinoBackbone.DINOV3_VIT_S16,
             pretrained_backbone=False,
             allow_downloads=False,
             seed=seed,
+            **overrides,
         )
     )
 
@@ -142,3 +144,61 @@ def test_it_refuses_to_fit_without_masks(tmp_path: Path) -> None:
     train_ctx, _ = _contexts(tmp_path, None)
     with pytest.raises(RuntimeError, match="needs references with masks"):
         _model().fit(references, train_ctx)
+
+
+class _Recorder(NullReporter):
+    def __init__(self) -> None:
+        self.lines: list[str] = []
+
+    def log(self, message: str, level: str = "info") -> None:
+        self.lines.append(message)
+
+
+def test_leave_one_out_rescales_the_same_prototypes_and_cuts_the_mask_there(
+    tmp_path: Path,
+) -> None:
+    references, masks = _records(tmp_path, 3)
+    queries, _ = _records(tmp_path, 1, first_id=10)
+    plain_dir, calibrated_dir = tmp_path / "plain", tmp_path / "calibrated"
+    plain_dir.mkdir()
+    calibrated_dir.mkdir()
+    train_ctx, plain_ctx = _contexts(plain_dir, _Targets(masks))
+    _, calibrated_ctx = _contexts(calibrated_dir, _Targets(masks))
+    recorder = _Recorder()
+    train_ctx.reporter = recorder
+
+    plain = _model()
+    plain.fit(references, train_ctx)
+    calibrated = _model(calibration=Calibration.LEAVE_ONE_OUT)
+    calibrated.fit(references, train_ctx)
+    assert any("leave-one-out over 3 references" in line for line in recorder.lines), recorder.lines
+    scale = calibrated._calibration
+    assert not scale.is_identity
+
+    (before,) = plain.predict(queries, plain_ctx)
+    (after,) = calibrated.predict(queries, calibrated_ctx)
+    probability = np.load(calibrated_ctx.map_path(10))
+    np.testing.assert_allclose(
+        probability, scale.apply(np.load(plain_ctx.map_path(10))), rtol=1e-5, atol=1e-6
+    )
+    assert after.score == pytest.approx(scale.apply_score(before.score))
+    with Image.open(calibrated_ctx.mask_path(10)) as opened:
+        assert np.array_equal(np.asarray(opened) > 0, probability >= 0.5)
+
+    calibrated.save(calibrated_dir)
+    restored = _model(calibration=Calibration.LEAVE_ONE_OUT)
+    restored.load(calibrated_dir)
+    assert [p.score for p in restored.predict(queries, calibrated_ctx)] == [after.score]
+
+
+def test_one_reference_is_left_unscaled_and_says_so(tmp_path: Path) -> None:
+    references, masks = _records(tmp_path, 1)
+    queries, _ = _records(tmp_path, 1, first_id=10)
+    recorder = _Recorder()
+    train_ctx, infer_ctx = _contexts(tmp_path, _Targets(masks))
+    train_ctx.reporter = recorder
+    calibrated = _model(calibration=Calibration.LEAVE_ONE_OUT)
+    calibrated.fit(references, train_ctx)
+    assert any("cannot be left out" in line for line in recorder.lines), recorder.lines
+    plain = _run(_model(), tmp_path / "plain", queries, masks, references)
+    assert [p.score for p in calibrated.predict(queries, infer_ctx)] == plain

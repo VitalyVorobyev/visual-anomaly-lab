@@ -18,6 +18,9 @@ Training-free by default, and built from the shared blocks so each axis is a fie
   (`refine.py`).
 - **Presence.** The mean of the `presence_patches` most confident patches, so a claim has
   to be carried by a region rather than one patch.
+- **`calibration`.** `leave_one_out` fits a Platt scale on the references, each scored by a
+  bank of the others (`calibration.py`), and applies it to the map and the presence score.
+  The bank itself is the one an uncalibrated run builds.
 """
 
 from __future__ import annotations
@@ -45,6 +48,7 @@ from anomaly_lab.models.base import (
     evenly_spaced,
     module_available,
 )
+from anomaly_lab.models.calibration import IDENTITY, Calibration, PlattScale, leave_one_out
 from anomaly_lab.models.dino_backbone import (
     DinoBackbone,
     FeatureLayers,
@@ -139,6 +143,15 @@ class ProtoSegConfig(BaseModel):
             "moves transitions onto the image's own edges."
         ),
     )
+    calibration: Calibration = Field(
+        default=Calibration.NONE,
+        description=(
+            "'leave_one_out' rescales the foreground probability on the references: each is "
+            "scored by a bank of the others, and a Platt scale fitted to those pixels is "
+            "applied to every map and presence score, so the 0.5 cut means the same on every "
+            "class. One reference cannot be left out and stays unscaled."
+        ),
+    )
     presence_patches: int = Field(
         default=4,
         ge=1,
@@ -194,6 +207,7 @@ class ProtoSegModel(AnomalyModel):
             method="proto_seg",
         )
         self._state: dict[str, np.ndarray] = {}
+        self._calibration: PlattScale = IDENTITY
 
     @classmethod
     def config_model(cls) -> type[BaseModel]:
@@ -257,40 +271,71 @@ class ProtoSegModel(AnomalyModel):
         validate_prepared_size(self.config.backbone, width, height)
         grid = patch_grid(self.config.backbone, width, height)
 
-        self._state = {"basis": self._basis(ctx)}
+        basis = self._basis(ctx)
+        self._state = {"basis": basis}
 
+        # Kept per reference, whole, so a leave-one-out fold can pool every reference but one
+        # and score the one it left out.
+        encoded: list[np.ndarray] = []
         parts: dict[str, list[np.ndarray]] = {side: [] for side in SIDES}
         for position, record in enumerate(train):
             ctx.raise_if_cancelled()
             features = self._features(record, ctx)
             covered, background = split_patches(patch_coverage(targets.mask(record.image_id), grid))
+            encoded.append(features)
             parts["foreground"].append(features[covered])
             parts["background"].append(features[background])
             ctx.progress(0.7 * (position + 1) / len(train), f"encoded {position + 1}/{len(train)}")
 
-        rng = np.random.default_rng(self.config.seed)
+        self._state.update(
+            self._build(parts, targets.label_key, np.random.default_rng(self.config.seed), ctx)
+        )
+        self._calibration = IDENTITY
+        if self.config.calibration is Calibration.LEAVE_ONE_OUT:
+            ctx.progress(0.85, "calibrating on the references")
+            self._calibration = leave_one_out(
+                len(train),
+                lambda fold: self._held_out(fold, train, encoded, parts, ctx),
+                ctx.log,
+                cancelled=ctx.raise_if_cancelled,
+            )
+            ctx.metric("calibration_slope", self._calibration.slope)
+            ctx.metric("calibration_bias", self._calibration.bias)
+        self._state["calibration"] = self._calibration.to_array()
+        ctx.progress(1.0, "bank built")
+
+    def _build(
+        self,
+        parts: dict[str, list[np.ndarray]],
+        label_key: str,
+        rng: np.random.Generator,
+        ctx: TrainContext | None,
+    ) -> dict[str, np.ndarray]:
+        """The bank (and probe) from per-reference patches; `ctx` is `None` in a quiet fold."""
         samples: dict[str, np.ndarray] = {}
         for side in SIDES:
             pooled = np.concatenate(parts[side])
             if len(pooled) == 0:
                 msg = (
-                    f"the references hold no {side} patch for {targets.label_key!r}: a patch "
+                    f"the references hold no {side} patch for {label_key!r}: a patch "
                     "is the class when half of it, or the most of any patch, is covered"
                 )
                 raise RuntimeError(msg)
             chosen = evenly_spaced(len(pooled), self.config.max_features_per_class)
-            if len(chosen) < len(pooled):
+            if ctx is not None and len(chosen) < len(pooled):
                 ctx.log(
                     f"{side}: {len(chosen)} of {len(pooled)} reference patches, sampled evenly "
                     f"(max_features_per_class={self.config.max_features_per_class})"
                 )
             samples[side] = pooled[np.asarray(chosen, dtype=np.int64)]
-            ctx.metric(f"{side}_patches", float(len(chosen)))
+            if ctx is not None:
+                ctx.metric(f"{side}_patches", float(len(chosen)))
 
+        state: dict[str, np.ndarray] = {}
         # One cluster count for both sides: the LSE score sums over a side's prototypes, so
         # a side with more of them would be favoured for having more (`lse_probability`).
         clusters = min(self.config.clusters_per_class, *(len(found) for found in samples.values()))
-        if clusters < self.config.clusters_per_class:
+        if ctx is not None and clusters < self.config.clusters_per_class:
             ctx.log(f"{clusters} clusters per side: the smaller side has too few patches for more")
         for side in SIDES:
             bank = [mean_prototype(samples[side])]
@@ -300,7 +345,7 @@ class ProtoSegModel(AnomalyModel):
                         samples[side], clusters, iterations=self.config.kmeans_iterations, rng=rng
                     )
                 )
-            self._state[f"bank_{side}"] = np.concatenate(bank)
+            state[f"bank_{side}"] = np.concatenate(bank)
 
         if self.config.adaptation is Adaptation.LINEAR_ADAPT:
             features = np.concatenate([samples["foreground"], samples["background"]])
@@ -314,23 +359,54 @@ class ProtoSegModel(AnomalyModel):
                 iterations=self.config.probe_iterations,
                 learning_rate=1.0,
             )
-            self._state["probe_weights"] = weights
-            self._state["probe_bias"] = np.array([bias], dtype=np.float32)
-            ctx.log(f"linear probe fitted on {len(labels)} reference patches")
-        ctx.progress(1.0, "bank built")
+            state["probe_weights"] = weights
+            state["probe_bias"] = np.array([bias], dtype=np.float32)
+            if ctx is not None:
+                ctx.log(f"linear probe fitted on {len(labels)} reference patches")
+        return state
+
+    def _held_out(
+        self,
+        fold: int,
+        train: Sequence[ImageRecord],
+        encoded: list[np.ndarray],
+        parts: dict[str, list[np.ndarray]],
+        ctx: TrainContext,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Reference `fold`'s pixel map from a bank of the others, and its truth; `None`
+        when the others hold no patch of one side.
+
+        Each fold draws its own k-means stream from the seed, so the final bank — built
+        first, from the seed alone — is the same with calibration on or off.
+        """
+        targets = ctx.targets
+        if targets is None:
+            raise RuntimeError("proto_seg calibrates on references with masks")
+        others = {side: [p for i, p in enumerate(parts[side]) if i != fold] for side in SIDES}
+        if any(sum(len(part) for part in others[side]) == 0 for side in SIDES):
+            return None
+        state = self._build(
+            others, targets.label_key, np.random.default_rng([self.config.seed, fold + 1]), None
+        )
+        rows, cols = patch_grid(
+            self.config.backbone, ctx.preprocessing.width, ctx.preprocessing.height
+        )
+        record = train[fold]
+        patches = self._patch_probability(encoded[fold], state)
+        image = load_array(record.path, ctx.preprocessing)
+        probability = refine(patches.reshape(rows, cols), image, self.config.refine)
+        return probability, targets.mask(record.image_id)
 
     # ------------------------------------------------------------------ predict
 
-    def _patch_probability(self, query: np.ndarray) -> np.ndarray:
+    def _patch_probability(
+        self, query: np.ndarray, state: dict[str, np.ndarray] | None = None
+    ) -> np.ndarray:
+        state = self._state if state is None else state
         if self.config.adaptation is Adaptation.LINEAR_ADAPT:
-            return probe_probability(
-                query, self._state["probe_weights"], float(self._state["probe_bias"][0])
-            )
+            return probe_probability(query, state["probe_weights"], float(state["probe_bias"][0]))
         return lse_probability(
-            query,
-            self._state["bank_foreground"],
-            self._state["bank_background"],
-            self.config.temperature,
+            query, state["bank_foreground"], state["bank_background"], self.config.temperature
         )
 
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
@@ -345,12 +421,15 @@ class ProtoSegModel(AnomalyModel):
             started = time.perf_counter()
             patches = self._patch_probability(self._features(record, ctx))
             image = load_array(record.path, ctx.preprocessing)
-            probability = refine(patches.reshape(rows, cols), image, self.config.refine)
+            probability = self._calibration.apply(
+                refine(patches.reshape(rows, cols), image, self.config.refine)
+            )
             map_path = ctx.write_map(record.image_id, probability)
+            presence = presence_score(patches, self.config.presence_patches)
             predictions.append(
                 Prediction(
                     image_id=record.image_id,
-                    score=presence_score(patches, self.config.presence_patches),
+                    score=self._calibration.apply_score(presence),
                     anomaly_map=map_path,
                     inference_ms=(time.perf_counter() - started) * 1000.0,
                 )
@@ -379,3 +458,4 @@ class ProtoSegModel(AnomalyModel):
         self._encoder.expect(str(meta["fingerprint"]))
         with np.load(artifact_dir / STATE_FILENAME, allow_pickle=False) as stored:
             self._state = {key: stored[key] for key in stored.files}
+        self._calibration = PlattScale.from_array(self._state.get("calibration"))
