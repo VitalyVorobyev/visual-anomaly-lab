@@ -50,6 +50,8 @@ from anomaly_lab.regions.preparation import (
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 MAX_REFERENCES = 10
+# One batch is one request under the resident's timeout, and one page of the studio's rail.
+MAX_BATCH = 48
 
 
 class PreviewError(ValueError):
@@ -213,3 +215,10 @@ class PreviewSession:
             "foreground_share": float(np.nanmean(values >= 0.5)),
             "generation": self.generation,
         }
+
+    def answer_many(self, image_ids: list[int], settings: Settings) -> dict[str, object]:
+        """Several images, one request: what orders the studio's rail by uncertainty."""
+        if len(image_ids) > MAX_BATCH:
+            raise PreviewError(f"at most {MAX_BATCH} images per request, not {len(image_ids)}")
+        results = [self.answer(image_id, settings) for image_id in image_ids]
+        return {"results": results, "generation": self.generation}

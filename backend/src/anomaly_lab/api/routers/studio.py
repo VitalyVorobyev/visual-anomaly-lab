@@ -21,6 +21,7 @@ from anomaly_lab.annotations import service as annotation_service
 from anomaly_lab.config import Settings
 from anomaly_lab.domain.annotations import AnnotationRevision
 from anomaly_lab.experiments.preview import (
+    MAX_BATCH,
     MAX_REFERENCES,
     PreviewError,
     PreviewSpec,
@@ -104,6 +105,91 @@ async def preview(request: Request, dataset_id: int, body: PreviewRequest) -> Pr
         map_url=f"/api/studio/previews/{resolved.generation}/{body.image_id}.png",
         warm=warm,
         elapsed_ms=(time.perf_counter() - started) * 1000.0,
+    )
+
+
+class BatchRequest(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    class_key: str
+    method: str
+    profile_id: int
+    references: list[int] = Field(min_length=1, max_length=MAX_REFERENCES)
+    image_ids: list[int] = Field(
+        min_length=1, max_length=MAX_BATCH, description="At most one rail page of images."
+    )
+
+
+class BatchEntry(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    image_id: int
+    score: float
+    foreground_share: float
+    uncertainty: float = Field(
+        description="How close the presence score is to 0.5, on [0, 1]; 1 is a coin flip."
+    )
+
+
+class BatchResult(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    generation: str
+    warm: bool
+    elapsed_ms: float
+    results: list[BatchEntry] = Field(description="Least certain first.")
+
+
+@router.post(
+    "/api/datasets/{dataset_id}/studio/preview-batch",
+    summary="Segment up to one rail page of images, least certain first",
+)
+async def preview_batch(request: Request, dataset_id: int, body: BatchRequest) -> BatchResult:
+    """What orders the studio's rail by uncertainty: where the references are weakest.
+
+    Bounded to one page (`MAX_BATCH`) so a request stays one resident answer; the rail
+    says it ordered a page, never the whole dataset.
+    """
+    settings = _settings(request)
+    queue: JobQueue = request.app.state.job_queue
+    resident: ResidentWorker = request.app.state.resident
+    spec = PreviewSpec(
+        dataset_id=dataset_id,
+        class_key=body.class_key,
+        method=body.method,
+        profile_id=body.profile_id,
+        references=body.references,
+    )
+    try:
+        resolved = await asyncio.to_thread(resolve, settings, spec)
+    except PreviewError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    await asyncio.to_thread(refuse_while_a_job_runs, settings, queue)
+
+    started = time.perf_counter()
+    try:
+        result, warm = await resident.preview(
+            spec_json=spec.canonical(), generation=resolved.generation, image_ids=body.image_ids
+        )
+    except ResidentError as exc:
+        tail = resident.stderr_tail()
+        raise HTTPException(status_code=503, detail=f"{exc}\n{tail}" if tail else str(exc)) from exc
+    raw = result.get("results")
+    entries = [
+        BatchEntry(
+            image_id=int(item["image_id"]),
+            score=float(item["score"]),
+            foreground_share=float(item["foreground_share"]),
+            uncertainty=1.0 - min(1.0, abs(float(item["score"]) - 0.5) * 2.0),
+        )
+        for item in (raw if isinstance(raw, list) else [])
+    ]
+    entries.sort(key=lambda entry: entry.uncertainty, reverse=True)
+    return BatchResult(
+        generation=resolved.generation,
+        warm=warm,
+        elapsed_ms=(time.perf_counter() - started) * 1000.0,
+        results=entries,
     )
 
 

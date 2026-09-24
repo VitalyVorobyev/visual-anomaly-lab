@@ -263,7 +263,12 @@ class ResidentWorker:
             return result, warm
 
     async def preview(
-        self, *, spec_json: str, generation: str, image_id: int
+        self,
+        *,
+        spec_json: str,
+        generation: str,
+        image_id: int | None = None,
+        image_ids: list[int] | None = None,
     ) -> tuple[dict[str, object], bool]:
         """Segment one image with a few-shot method fitted on the studio's references.
 
@@ -283,7 +288,10 @@ class ResidentWorker:
                         args=(spec_json,),
                         experiment_id=None,
                     )
-                result = await self._exchange({"image_id": image_id})
+                payload: dict[str, object] = (
+                    {"image_ids": image_ids} if image_ids is not None else {"image_id": image_id}
+                )
+                result = await self._exchange(payload)
             except ResidentError:
                 await self._kill()
                 raise

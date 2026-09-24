@@ -54,7 +54,10 @@ def serve(spec: PreviewSpec, settings: Settings) -> int:
 def _answer(session: PreviewSession, settings: Settings, request: dict[str, Any]) -> None:
     rid = request.get(REQUEST_ID)
     try:
-        result = session.answer(int(request["image_id"]), settings)
+        if "image_ids" in request:
+            result = session.answer_many([int(value) for value in request["image_ids"]], settings)
+        else:
+            result = session.answer(int(request["image_id"]), settings)
     except PreviewError as exc:
         emit(ErrorEvent(error_type=type(exc).__name__, message=str(exc)))
         return

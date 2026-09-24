@@ -229,7 +229,9 @@ the resident worker (`POST /api/datasets/{id}/studio/preview`, [jobs](jobs.md)).
 probability under the class outline, and reads the presence score, the share of the image at 0.5 and
 whether the resident was warm. The left rail can also list the samples *without* the class, or with no
 answer for it, which is where a preview is most worth reading; only samples that show the class can be
-ticked as references.
+ticked as references. **Least certain first** orders the rail's current page by how close each sample's
+presence score is to 0.5 under the current references (`POST …/studio/preview-batch`, one resident
+request of at most one page, `MAX_BATCH` = 48). The rail says it ordered a page, not the dataset.
 
 **This image's truth.** From what the stage shows, the studio writes ordinary annotation revisions
 (`POST /api/images/{id}/studio/region`):

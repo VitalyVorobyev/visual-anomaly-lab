@@ -29,9 +29,6 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
       patch does not divide is created, and fails at fit. A plugin classmethod that checks the frozen
       preprocessing, called by `create_experiment`, would refuse it on the create screen and in the
       studio by name — no route or TypeScript learns about patch sizes.
-- [ ] **Reference studio: an uncertainty queue** (M): score the queries with the current
-      references and list them least certain first, so the reader looks where the references are
-      weakest. It needs a bounded batch preview (N images per request, evenly spaced when capped).
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
 

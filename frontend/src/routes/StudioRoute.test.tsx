@@ -135,4 +135,24 @@ describe("the reference studio", () => {
     expect(screen.getByTitle("candle/003")).toBeTruthy();
     expect(screen.queryByRole("checkbox", { name: /as a reference/ })).toBeNull();
   });
+
+  it("orders a page least certain first under the current references", () => {
+    const { container } = renderAt("?refs=1&order=uncertain", true, [
+      [
+        ["studio-batch", 7, "scratch", "fss_dino", 11, [1], [101, 102]],
+        {
+          generation: "abc",
+          warm: true,
+          elapsed_ms: 120,
+          results: [
+            { image_id: 102, score: 0.5, foreground_share: 0.1, uncertainty: 1 },
+            { image_id: 101, score: 0.95, foreground_share: 0.4, uncertainty: 0.1 },
+          ],
+        },
+      ],
+    ]);
+    const tiles = [...container.querySelectorAll('aside[aria-label="Samples that show the class"] button[title]')];
+    expect(tiles.map((tile) => tile.getAttribute("title"))).toEqual(["candle/002", "candle/001"]);
+    expect(screen.getByText(/least certain first under the current references/)).toBeTruthy();
+  });
 });

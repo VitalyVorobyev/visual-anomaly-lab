@@ -10,7 +10,8 @@
  *
  * Built from what the other viewers use: `SampleTile` for the candidates, `SampleStage` for
  * the picture, `RailSection` for the rails, the lab-ui controls for the rest. The session is
- * the URL (`refs`, `focus`, `method`, `profile`, `show`), so a reload or a shared link keeps it.
+ * the URL (`refs`, `focus`, `method`, `profile`, `show`, `order`), so a reload or a shared link
+ * keeps it.
  *
  * **The preview** segments the open image with the chosen method fitted on the current
  * references, through the resident worker (ADR-0026) — a look, not a result: it is drawn on
@@ -35,6 +36,7 @@ import { useRegionBuild, useRegionProfiles } from "../hooks/useRegionProfiles";
 import {
   useFreezeReferences,
   useSetStudioRegion,
+  useStudioBatch,
   useStudioPreview,
   type RegionAction,
 } from "../hooks/useStudio";
@@ -200,6 +202,36 @@ export function StudioRoute() {
     },
     previewOn && previewable,
   );
+  // The rail's own order, or least certain first under the current references: one page
+  // scored in one resident request, and said to be one page.
+  const byUncertainty = search.get("order") === "uncertain";
+  const pageSamples = candidates.data?.items ?? [];
+  const coverOf = (sample: SampleSummary) =>
+    sample.images[preferredImageIndex(sample.images, dataset.data?.default_channel)];
+  const batch = useStudioBatch(
+    {
+      datasetId,
+      classKey,
+      methodKey: method?.key,
+      profileId,
+      references,
+      imageIds: pageSamples
+        .map((sample) => coverOf(sample)?.id)
+        .filter((id): id is number => id !== undefined),
+    },
+    byUncertainty && previewable,
+  );
+  const railSamples = useMemo(() => {
+    if (!byUncertainty || !batch.data) return pageSamples;
+    const rank = new Map(batch.data.results.map((entry, index) => [entry.image_id, index]));
+    return [...pageSamples].sort(
+      (left, right) =>
+        (rank.get(coverOf(left)?.id ?? -1) ?? Infinity) -
+        (rank.get(coverOf(right)?.id ?? -1) ?? Infinity),
+    );
+    // `coverOf` reads the dataset's default channel, which `pageSamples` already follows.
+  }, [byUncertainty, batch.data, pageSamples]);
+
   const layers = [
     ...(previewOn && preview.data
       ? [{ key: "preview", src: `${apiBaseUrl}${preview.data.map_url}` }]
@@ -280,8 +312,34 @@ export function StudioRoute() {
               ) : (
                 <Empty>None.</Empty>
               ))}
+            <SegmentedControl
+              aria-label="Order"
+              value={byUncertainty ? "uncertain" : "catalogue"}
+              onValueChange={(value) =>
+                update({ order: value === "uncertain" ? "uncertain" : undefined })
+              }
+              options={[
+                { value: "catalogue", label: "in order" },
+                { value: "uncertain", label: "least certain" },
+              ]}
+            />
+            {byUncertainty &&
+              (!previewable ? (
+                <p className="text-xs text-fg-muted">
+                  Ordering needs references, a method and a built profile.
+                </p>
+              ) : batch.isFetching ? (
+                <p className="text-xs text-fg-muted">Scoring this page…</p>
+              ) : batch.error ? (
+                <ErrorBox>{batch.error.message}</ErrorBox>
+              ) : batch.data ? (
+                <p className="text-xs text-fg-muted">
+                  This page of {pageSamples.length}, least certain first under the current
+                  references.
+                </p>
+              ) : null)}
             <div className="grid grid-cols-2 gap-2">
-              {(candidates.data?.items ?? []).map((sample: SampleSummary) => (
+              {railSamples.map((sample: SampleSummary) => (
                 <SampleTile
                   key={sample.id}
                   datasetId={datasetId}
