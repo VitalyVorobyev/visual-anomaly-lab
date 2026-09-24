@@ -5,10 +5,15 @@
  * Every edit becomes one `commit` on the draft session's history, so one gesture is one undo
  * step. The Konva scene never holds a second copy of the truth; it reports gestures in source
  * pixels and this hook turns them into documents.
+ *
+ * **Every edit is built from `latest()`, never from a render's `history.present`.** Most edits
+ * are synchronous and the two are the same thing, but painting and tracing await a decode,
+ * and a document captured before the await is a document from the past by the time it is
+ * committed. See `applyStroke`.
  */
 
-import type { Dispatch } from "react";
-import { useCallback, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
+import { useCallback, useRef, useState } from "react";
 
 import {
   type AnnotationHistory,
@@ -28,6 +33,7 @@ import {
   traceBitmapShape,
 } from "../../api/annotationBitmap";
 import type {
+  AnnotationDocument,
   AnnotationLabel,
   AnnotationPoint,
   AnnotationShape,
@@ -37,9 +43,20 @@ import type {
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
 import type { Flash } from "./useFlashMessage";
 
+/** How often a stroke is repainted because the document moved under it before it gives up. */
+const STROKE_ATTEMPTS = 3;
+
+interface StrokeRequest {
+  points: AnnotationPoint[];
+  erase: boolean;
+  size: number;
+  labelKey: string;
+}
+
 export function useDocumentCommands({
   history,
   dispatch,
+  latest,
   labels,
   tool,
   setTool,
@@ -47,7 +64,9 @@ export function useDocumentCommands({
   flash,
 }: {
   history: AnnotationHistory;
-  dispatch: Dispatch<HistoryAction>;
+  dispatch: (action: HistoryAction) => void;
+  /** The document every dispatched edit has produced so far, rendered or not. */
+  latest: () => AnnotationDocument;
   labels: AnnotationLabel[];
   tool: EditorTool;
   setTool: (tool: EditorTool) => void;
@@ -59,11 +78,30 @@ export function useDocumentCommands({
   // document, one control, and no state that has to be remembered between two strokes.
   const operation = "add" as const;
   const [labelKey, setLabelKey] = useState(labels[0]?.key ?? "defect");
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedState] = useState<string | null>(null);
   const [pendingPoints, setPendingPoints] = useState<AnnotationPoint[]>([]);
   const [traceError, setTraceError] = useState<string | null>(null);
   const [tracing, setTracing] = useState(false);
   const selected = history.present.shapes.find((shape) => shape.id === selectedId) ?? null;
+
+  // The selection, readable by a stroke that runs after the render that set it. Written
+  // eagerly by `setSelectedId` for the same reason `latest()` exists: a brush stroke queued
+  // behind the one that minted a region has to extend that region, not start another.
+  const selection = useRef(selectedId);
+  const renderedSelection = useRef(selectedId);
+  if (renderedSelection.current !== selectedId) {
+    renderedSelection.current = selectedId;
+    selection.current = selectedId;
+  }
+  const setSelectedId = useCallback((id: string | null) => {
+    selection.current = id;
+    setSelectedState(id);
+  }, []);
+
+  const commit = useCallback(
+    (document: AnnotationDocument) => dispatch({ type: "commit", document }),
+    [dispatch],
+  );
 
   const finishPolygon = useCallback(() => {
     if (pendingPoints.length < 3) return;
@@ -74,12 +112,12 @@ export function useDocumentCommands({
       operation,
       points: pendingPoints,
     };
-    dispatch({ type: "commit", document: withShape(history.present, polygon) });
+    commit(withShape(latest(), polygon));
     setPendingPoints([]);
     setSelectedId(polygon.id);
     // The tool stays where it is. Most parts carry more than one defect, and dropping back to
     // Select after every ring meant pressing P again for each of them.
-  }, [dispatch, history.present, labelKey, operation, pendingPoints]);
+  }, [commit, labelKey, latest, operation, pendingPoints, setSelectedId]);
 
   const addPendingPoint = useCallback((point: AnnotationPoint) => {
     setPendingPoints((points) => [...points, point]);
@@ -87,19 +125,95 @@ export function useDocumentCommands({
 
   const moveShape = useCallback(
     (shapeId: string, dx: number, dy: number) => {
-      dispatch({ type: "commit", document: translateShape(history.present, shapeId, dx, dy) });
+      commit(translateShape(latest(), shapeId, dx, dy));
     },
-    [dispatch, history.present],
+    [commit, latest],
   );
 
   const movePoint = useCallback(
     (shapeId: string, pointIndex: number, point: AnnotationPoint) => {
-      dispatch({
-        type: "commit",
-        document: withPolygonPoint(history.present, shapeId, pointIndex, point),
-      });
+      commit(withPolygonPoint(latest(), shapeId, pointIndex, point));
     },
-    [dispatch, history.present],
+    [commit, latest],
+  );
+
+  /**
+   * Paint one stroke into whatever document is current *when it runs*.
+   *
+   * Returns `false` when the document changed while the paint was being decoded, so the
+   * caller paints again against the new one rather than committing over it.
+   */
+  const paint = useCallback(
+    async ({ points, erase, size, labelKey: key }: StrokeRequest): Promise<boolean> => {
+      const base = latest();
+      const selectedShape = base.shapes.find((shape) => shape.id === selection.current) ?? null;
+      const geometry = {
+        points,
+        size,
+        imageWidth: base.image_width,
+        imageHeight: base.image_height,
+      };
+      const target = selectedShape?.kind === "bitmap" ? selectedShape : null;
+
+      if (erase) {
+        // The selection scopes the eraser exactly as it scopes the brush; without one, the
+        // pointer itself is the scope.
+        const targets = target
+          ? [target]
+          : strokeTargets(
+              base.shapes,
+              strokeBounds(points, size, geometry.imageWidth, geometry.imageHeight),
+            );
+        if (targets.length === 0) {
+          flash(
+            selectedShape?.kind === "polygon"
+              ? "The eraser takes paint off painted regions. Reshape this polygon by its vertices, or delete it."
+              : "Nothing painted here to erase.",
+          );
+          return true;
+        }
+        const painted = await Promise.all(
+          targets.map((shape) => paintStroke(shape, { ...geometry, erase: true })),
+        );
+        if (latest() !== base) return false;
+        let next = base;
+        let removed = 0;
+        targets.forEach((shape, index) => {
+          const result = painted[index];
+          if (result === undefined) return;
+          if (result === null) {
+            next = withoutShape(next, shape.id);
+            removed += 1;
+            if (shape.id === selection.current) setSelectedId(null);
+            return;
+          }
+          next = replaceShape(next, shape.id, [result]);
+        });
+        commit(next);
+        if (removed > 0) flash(removed === 1 ? "Region erased" : `${removed} regions erased`);
+        return true;
+      }
+
+      if (target) {
+        const painted = await paintStroke(target, { ...geometry, erase: false });
+        if (latest() !== base) return false;
+        // A brush cannot empty a region, but `paintStroke` promises `null` for an empty result
+        // and honouring it here keeps the one contract rather than two.
+        if (painted === null) {
+          commit(withoutShape(base, target.id));
+          setSelectedId(null);
+          return true;
+        }
+        commit(replaceShape(base, target.id, [painted]));
+        return true;
+      }
+      const shape = bitmapStroke({ ...geometry, labelKey: key, operation });
+      if (!shape) return true;
+      commit(withShape(base, shape));
+      setSelectedId(shape.id);
+      return true;
+    },
+    [commit, flash, latest, operation, setSelectedId],
   );
 
   /**
@@ -115,97 +229,57 @@ export function useDocumentCommands({
    * region list. Cutting a hole through a *polygon* is still possible, but by drawing the
    * region and turning it into a Subtract in the Selection panel, rather than as the
    * eraser's side effect.
+   *
+   * **Strokes run one at a time, each against the document the previous one left.** Painting
+   * into an existing region awaits a PNG decode, and this used to commit a document built from
+   * the `history.present` its closure had captured before the await. Anything dispatched in
+   * between was overwritten: two strokes in flight at once — Space held on the focused canvas
+   * auto-repeats, and every repeat is a stroke — both painted from the same region and the
+   * last to finish won, dropping the others; an undo pressed while a stroke decoded came
+   * straight back when the stroke committed on top of the pre-undo document. Now the strokes
+   * are queued, each reads `latest()` when it starts, and one that finds the document moved
+   * when its decode returns is painted again rather than committed over the move.
+   *
+   * The tool, size and class are the gesture's own, captured when it was made; the document
+   * and the selection are read when it is applied.
    */
+  const strokes = useRef<Promise<void>>(Promise.resolve());
   const applyStroke = useCallback(
-    async (points: AnnotationPoint[]) => {
-      const geometry = {
+    (points: AnnotationPoint[]): Promise<void> => {
+      const request: StrokeRequest = {
         points,
+        erase: tool === "eraser",
         size: brushSize,
-        imageWidth: history.present.image_width,
-        imageHeight: history.present.image_height,
+        labelKey,
       };
-      const target = selected?.kind === "bitmap" ? selected : null;
-
-      if (tool === "eraser") {
-        // The selection scopes the eraser exactly as it scopes the brush; without one, the
-        // pointer itself is the scope.
-        const targets = target
-          ? [target]
-          : strokeTargets(
-              history.present.shapes,
-              strokeBounds(points, brushSize, geometry.imageWidth, geometry.imageHeight),
-            );
-        if (targets.length === 0) {
-          flash(
-            selected?.kind === "polygon"
-              ? "The eraser takes paint off painted regions. Reshape this polygon by its vertices, or delete it."
-              : "Nothing painted here to erase.",
-          );
-          return;
+      const run = strokes.current.then(async () => {
+        for (let attempt = 0; attempt < STROKE_ATTEMPTS; attempt += 1) {
+          if (await paint(request)) return;
         }
-        const painted = await Promise.all(
-          targets.map((shape) => paintStroke(shape, { ...geometry, erase: true })),
-        );
-        let next = history.present;
-        let removed = 0;
-        targets.forEach((shape, index) => {
-          const result = painted[index];
-          if (result === undefined) return;
-          if (result === null) {
-            next = withoutShape(next, shape.id);
-            removed += 1;
-            if (shape.id === selectedId) setSelectedId(null);
-            return;
-          }
-          next = replaceShape(next, shape.id, [result]);
-        });
-        dispatch({ type: "commit", document: next });
-        if (removed > 0) flash(removed === 1 ? "Region erased" : `${removed} regions erased`);
-        return;
-      }
-
-      if (target) {
-        const painted = await paintStroke(target, { ...geometry, erase: false });
-        // A brush cannot empty a region, but `paintStroke` promises `null` for an empty result
-        // and honouring it here keeps the one contract rather than two.
-        if (painted === null) {
-          dispatch({ type: "commit", document: withoutShape(history.present, target.id) });
-          setSelectedId(null);
-          return;
-        }
-        dispatch({
-          type: "commit",
-          document: replaceShape(history.present, target.id, [painted]),
-        });
-        return;
-      }
-      const shape = bitmapStroke({ ...geometry, labelKey, operation });
-      if (!shape) return;
-      dispatch({ type: "commit", document: withShape(history.present, shape) });
-      setSelectedId(shape.id);
+        flash("The document kept changing under that stroke; paint it again.");
+      });
+      // The queue must outlive a stroke that fails to decode, or every later one would wait on
+      // a rejection forever.
+      strokes.current = run.catch(() => undefined);
+      return run;
     },
-    [brushSize, dispatch, flash, history.present, labelKey, operation, selected, selectedId, tool],
+    [brushSize, flash, labelKey, paint, tool],
   );
 
   const removeSelected = useCallback(() => {
     if (!selectedId) return;
-    dispatch({
-      type: "commit",
-      document: withoutShape(history.present, selectedId),
-    });
+    commit(withoutShape(latest(), selectedId));
     setSelectedId(null);
-  }, [dispatch, history.present, selectedId]);
+  }, [commit, latest, selectedId, setSelectedId]);
 
   const updateSelected = (patch: Partial<Pick<AnnotationShape, "label_key" | "operation">>) => {
     if (!selectedId) return;
-    dispatch({
-      type: "commit",
-      document: {
-        ...history.present,
-        shapes: history.present.shapes.map((shape) =>
-          shape.id === selectedId ? { ...shape, ...patch } : shape,
-        ),
-      },
+    const document = latest();
+    commit({
+      ...document,
+      shapes: document.shapes.map((shape) =>
+        shape.id === selectedId ? { ...shape, ...patch } : shape,
+      ),
     });
   };
 
@@ -216,10 +290,10 @@ export function useDocumentCommands({
     try {
       const polygons = await traceBitmapShape(selected);
       if (polygons.length === 0) throw new Error("No contour could be derived from this region.");
-      dispatch({
-        type: "commit",
-        document: replaceShape(history.present, selected.id, polygons),
-      });
+      // Replaced in the document as it is now. If the region was edited while it was being
+      // traced, `replaceShape` finds it by id and the newer edit is what gets replaced — the
+      // reader asked for *this region* as contours, and it is still selected.
+      commit(replaceShape(latest(), selected.id, polygons));
       setSelectedId(polygons[0]?.id ?? null);
       setTool("select");
       flash(polygons.length === 1 ? "Editable contour created" : `${polygons.length} editable contours created`);
@@ -239,16 +313,11 @@ export function useDocumentCommands({
       if (asContour) {
         const polygons = await traceBitmapShape(shape);
         if (polygons.length === 0) throw new Error("No editable contour could be derived.");
-        dispatch({
-          type: "commit",
-          document: {
-            ...history.present,
-            shapes: [...history.present.shapes, ...polygons],
-          },
-        });
+        const document = latest();
+        commit({ ...document, shapes: [...document.shapes, ...polygons] });
         setSelectedId(polygons[0]?.id ?? null);
       } else {
-        dispatch({ type: "commit", document: withShape(history.present, shape) });
+        commit(withShape(latest(), shape));
         setSelectedId(shape.id);
       }
       setTool("select");
@@ -267,7 +336,7 @@ export function useDocumentCommands({
     setSelectedId,
     selected,
     pendingPoints,
-    setPendingPoints,
+    setPendingPoints: setPendingPoints as Dispatch<SetStateAction<AnnotationPoint[]>>,
     addPendingPoint,
     finishPolygon,
     moveShape,

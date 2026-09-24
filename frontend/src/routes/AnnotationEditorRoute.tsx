@@ -187,6 +187,7 @@ function EditorReady({
   const commands = useDocumentCommands({
     history,
     dispatch: session.dispatch,
+    latest: session.latest,
     labels,
     tool,
     setTool,

@@ -4,9 +4,20 @@
  * and every edit leaves through a callback as source-image pixels. The same document can
  * therefore be saved, rendered on the backend and evaluated without a canvas transform
  * leaking into truth.
+ *
+ * Three pieces, each doing one job:
+ *
+ * - **tools** (`tools/`) turn pointer and key input into effects, as pure functions;
+ * - the **static layer** (`SceneLayer`) draws the photograph and the committed document, and
+ *   re-renders only when they or the view change;
+ * - the **live layer** (`LiveLayer`) draws the gesture in progress and the cursors, fed by a
+ *   small store (`liveStore`) so a pointer move re-renders it and nothing else.
+ *
+ * This component wires them together: it owns the view arithmetic (`canvasView`), the pan
+ * gesture, and the translation of tool effects into the callbacks below.
  */
 
-import Konva from "konva";
+import type Konva from "konva";
 import type { KonvaEventObject } from "konva/lib/Node";
 import {
   forwardRef,
@@ -17,7 +28,7 @@ import {
   useState,
   type KeyboardEvent,
 } from "react";
-import { Circle, Group, Image as KonvaImage, Layer, Line, Rect, Stage } from "react-konva";
+import { Stage } from "react-konva";
 
 import type {
   AnnotationDocument,
@@ -28,19 +39,28 @@ import type {
   BitmapShape,
 } from "../../api/client";
 import { tintedMask } from "../../api/annotationBitmap";
-import { polygonClick, snapTolerance } from "../../api/annotationPolygon";
 import { imageUrl, sourceMaskUrl } from "../../api/imageUrl";
-import { useScenePalette, withAlpha, type ScenePalette } from "./scenePalette";
+import {
+  type CanvasView,
+  INITIAL_CANVAS_VIEW,
+  actualPixelsView,
+  clamp,
+  fitScale,
+  isFitView,
+  toSource,
+  viewOrigin,
+  zoomAbout,
+} from "./canvasView";
+import { canvasBindingFor } from "./editorKeys";
+import { LiveLayer } from "./LiveLayer";
+import { createLiveStore, useLive, type LiveStore } from "./liveStore";
+import { SceneLayer } from "./SceneLayer";
+import { useScenePalette } from "./scenePalette";
+import { TOOLS, type EditorTool, type ToolContext, type ToolEffect } from "./tools";
+import { useHtmlImage } from "./useHtmlImage";
 
-export type EditorTool = "select" | "polygon" | "brush" | "eraser" | "assist";
-
-export interface CanvasView {
-  zoom: number;
-  panX: number;
-  panY: number;
-}
-
-export const INITIAL_CANVAS_VIEW: CanvasView = { zoom: 1, panX: 0, panY: 0 };
+export type { EditorTool } from "./tools";
+export { INITIAL_CANVAS_VIEW, type CanvasView } from "./canvasView";
 
 export interface AnnotationCanvasHandle {
   fit: () => void;
@@ -108,6 +128,23 @@ interface Props {
   onAssistBox: (box: AssistBox | null) => void;
 }
 
+const ARROW_STEPS: Partial<Record<string, [number, number]>> = {
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+};
+
+interface Pan {
+  x: number;
+  y: number;
+  panX: number;
+  panY: number;
+  moved: boolean;
+  /** A primary-button click on the empty scene, without movement, clears the selection. */
+  clearOnClick: boolean;
+}
+
 export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(function AnnotationCanvas({
   imageId,
   overlayImageId,
@@ -138,42 +175,24 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
   onAssistBox,
 }, forwardedRef) {
   const palette = useScenePalette();
+  const toolModule = TOOLS[tool];
   // Selecting, dragging and reshaping are all the same permission.
   const interactive = editable && tool === "select";
   const hostRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<Konva.Stage>(null);
   const [size, setSize] = useState({ width: 1, height: 1 });
-  const [panning, setPanning] = useState<{
-    x: number;
-    y: number;
-    panX: number;
-    panY: number;
-    moved: boolean;
-    clearOnClick: boolean;
-  } | null>(null);
+  const panning = useRef<Pan | null>(null);
+  const [grabbing, setGrabbing] = useState(false);
   const previousView = useRef<CanvasView | null>(null);
-  const [brushPoints, setBrushPoints] = useState<AnnotationPoint[]>([]);
-  const [boxStart, setBoxStart] = useState<AnnotationPoint | null>(null);
-  /**
-   * A vertex mid-drag, and whether the pointer is over the ring's first vertex.
-   *
-   * Transient gesture state, exactly like `brushPoints` and `boxStart` above it — the scene
-   * still never becomes a second store of annotation truth. The vertex override is what makes
-   * a drag *look* like a drag: the outline used to be read straight from the committed
-   * document, which only changes on `dragEnd`, so the handle moved and the polygon it belonged
-   * to stayed where it was until the mouse came up.
-   */
-  const [vertexDrag, setVertexDrag] = useState<{
-    shapeId: string;
-    index: number;
-    point: AnnotationPoint;
-  } | null>(null);
-  const [snapReady, setSnapReady] = useState(false);
-  const [keyboardFocused, setKeyboardFocused] = useState(false);
-  const [keyboardPoint, setKeyboardPoint] = useState<AnnotationPoint>({
-    x: document.image_width / 2,
-    y: document.image_height / 2,
-  });
+  const [store] = useState<LiveStore>(() =>
+    createLiveStore({
+      gesture: null,
+      revision: 0,
+      snapReady: false,
+      keyboardPoint: { x: document.image_width / 2, y: document.image_height / 2 },
+      keyboardFocused: false,
+    }),
+  );
   const source = useHtmlImage(imageUrl(imageId, "full"));
   const overlay = useHtmlImage(
     overlayImageId === undefined ? undefined : imageUrl(overlayImageId, "full"),
@@ -199,19 +218,10 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     return () => observer.disconnect();
   }, []);
 
-  const fit = Math.min(
-    size.width / document.image_width,
-    size.height / document.image_height,
-  ) * 0.94;
+  const image = { width: document.image_width, height: document.image_height };
+  const fit = fitScale(size, image);
   const scale = fit * view.zoom;
-  const origin = {
-    x: (size.width - document.image_width * fit) / 2 + view.panX,
-    y: (size.height - document.image_height * fit) / 2 + view.panY,
-  };
-  const colors = useMemo(
-    () => new Map(labels.map((label) => [label.key, label.color])),
-    [labels],
-  );
+  const origin = viewOrigin(size, image, fit, view);
   // The import carries no class, so it takes the dataset's first one — which is the class
   // every region drawn on a single-class dataset gets too, so base and edits read as one.
   const baseColor = labels[0]?.color ?? palette.unknownLabel;
@@ -226,6 +236,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     }
   }, [baseMaskSource, document.image_width, document.image_height, baseColor]);
 
+  const context: ToolContext = { pendingPoints, scale, assistMode };
+
   const fitView = () => {
     previousView.current = view;
     onView(INITIAL_CANVAS_VIEW);
@@ -233,29 +245,13 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
 
   const actualPixels = () => {
     previousView.current = view;
-    const actualOrigin = {
-      x: (size.width - document.image_width) / 2,
-      y: (size.height - document.image_height) / 2,
-    };
-    const fitOrigin = {
-      x: (size.width - document.image_width * fit) / 2,
-      y: (size.height - document.image_height * fit) / 2,
-    };
-    onView({
-      zoom: 1 / fit,
-      panX: actualOrigin.x - fitOrigin.x,
-      panY: actualOrigin.y - fitOrigin.y,
-    });
+    onView(actualPixelsView(size, image));
   };
 
   useImperativeHandle(forwardedRef, () => ({ fit: fitView, actualPixels }));
 
   const toggleFit = () => {
-    const isFit =
-      Math.abs(view.zoom - 1) < 0.0001 &&
-      Math.abs(view.panX) < 0.5 &&
-      Math.abs(view.panY) < 0.5;
-    if (isFit && previousView.current) {
+    if (isFitView(view) && previousView.current) {
       const previous = previousView.current;
       previousView.current = null;
       onView(previous);
@@ -265,78 +261,98 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
     onView(INITIAL_CANVAS_VIEW);
   };
 
-  const sourcePoint = (): AnnotationPoint | null => {
-    const pointer = stageRef.current?.getPointerPosition();
-    if (!pointer) return null;
-    return {
-      x: clamp((pointer.x - origin.x) / scale, 0, document.image_width),
-      y: clamp((pointer.y - origin.y) / scale, 0, document.image_height),
-    };
+  const emit = (effects: ToolEffect[]) => {
+    for (const effect of effects) {
+      if (effect.type === "deselect") onSelect(null);
+      else if (effect.type === "stroke") onBrush(effect.points);
+      else if (effect.type === "vertex") onPoint(effect.point);
+      else if (effect.type === "closePolygon") onFinishPolygon();
+      else if (effect.type === "assistPoint") onAssistPoint(effect.point);
+      else if (effect.type === "assistBox") onAssistBox(effect.box);
+      else toggleFit();
+    }
   };
 
+  const pointerPosition = () => stageRef.current?.getPointerPosition() ?? null;
+
   const onStageDown = (event: KonvaEventObject<MouseEvent | TouchEvent>) => {
-    const pointer = stageRef.current?.getPointerPosition();
+    const pointer = pointerPosition();
     if (!pointer) return;
     const native = event.evt;
     const button = native instanceof MouseEvent ? native.button : 0;
-    const panGesture = button === 2 || (button === 0 && tool === "select");
-    if (panGesture) {
-      setPanning({
+    if (button === 2 || (button === 0 && toolModule.pansWithPrimary)) {
+      panning.current = {
         x: pointer.x,
         y: pointer.y,
         panX: view.panX,
         panY: view.panY,
         moved: false,
         clearOnClick: button === 0,
+      };
+      setGrabbing(true);
+      return;
+    }
+    const point = toSource(pointer, origin, scale, image);
+    store.set({ keyboardPoint: point });
+    const step = toolModule.down(context, point, {
+      shiftKey: native instanceof MouseEvent && native.shiftKey,
+    });
+    if (step.gesture) store.set({ gesture: step.gesture, revision: store.get().revision + 1 });
+    emit(step.effects);
+  };
+
+  const onStageMove = () => {
+    const pointer = pointerPosition();
+    if (!pointer) return;
+    const pan = panning.current;
+    if (pan) {
+      onView({
+        ...view,
+        panX: pan.panX + pointer.x - pan.x,
+        panY: pan.panY + pointer.y - pan.y,
       });
-      return;
+      if (!pan.moved && Math.hypot(pointer.x - pan.x, pointer.y - pan.y) > 2) pan.moved = true;
     }
-    if (tool === "assist") {
-      const point = sourcePoint();
-      if (!point) return;
-      setKeyboardPoint(point);
-      if (assistMode === "point") {
-        const negative = native instanceof MouseEvent && native.shiftKey;
-        onAssistPoint({ ...point, kind: negative ? "negative" : "positive" });
-      } else {
-        setBoxStart(point);
-        onAssistBox({ x0: point.x, y0: point.y, x1: point.x, y1: point.y });
-      }
-      return;
+    const point = toSource(pointer, origin, scale, image);
+    const live = store.get();
+    if (live.gesture) {
+      const step = toolModule.move(context, live.gesture, point);
+      store.set({ gesture: step.gesture, revision: live.revision + 1 });
+      emit(step.effects);
     }
-    if (tool === "brush" || tool === "eraser") {
-      const point = sourcePoint();
-      if (point) {
-        setKeyboardPoint(point);
-        setBrushPoints([point]);
-      }
-      return;
+    // Light up the first vertex while the pointer is over it, so "click here to close" is
+    // visible before the click.
+    const snapReady = toolModule.snaps(context, point);
+    if (snapReady !== live.snapReady) store.set({ snapReady });
+  };
+
+  const finishGesture = () => {
+    const pan = panning.current;
+    if (pan) {
+      if (pan.clearOnClick && !pan.moved) onSelect(null);
+      panning.current = null;
+      setGrabbing(false);
     }
-    // Source pixels are themselves Konva Image nodes, so a useful canvas click almost
-    // never targets the Stage object. Shape handlers stop propagation; anything reaching
-    // here is the image/background and is therefore an empty-scene gesture.
-    onSelect(null);
-    if (tool === "polygon") {
-      const point = sourcePoint();
-      if (!point) return;
-      setKeyboardPoint(point);
-      const decision = polygonClick(pendingPoints, point, snapTolerance(scale));
-      // `ignore` is not a no-op worth skipping: it is what lets a double-click close a ring
-      // without leaving the duplicate vertex its second click would otherwise add.
-      if (decision === "close") onFinishPolygon();
-      else if (decision === "add") onPoint(point);
+    const live = store.get();
+    if (live.gesture) {
+      store.set({ gesture: null, revision: live.revision + 1 });
+      emit(toolModule.up(context, live.gesture));
     }
   };
 
+  const onWheel = (event: KonvaEventObject<WheelEvent>) => {
+    event.evt.preventDefault();
+    const pointer = pointerPosition();
+    if (!pointer) return;
+    onView(zoomAbout(view, event.evt.deltaY > 0 ? 0.9 : 1.1, pointer, size, image));
+  };
+
   const onCanvasKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
-    const directions: Partial<Record<string, [number, number]>> = {
-      ArrowUp: [0, -1],
-      ArrowDown: [0, 1],
-      ArrowLeft: [-1, 0],
-      ArrowRight: [1, 0],
-    };
-    const direction = directions[event.key];
-    if (direction) {
+    const binding = canvasBindingFor(event);
+    if (!binding) return;
+    if (binding.command === "cursor.move") {
+      const direction = ARROW_STEPS[event.key];
+      if (!direction) return;
       event.preventDefault();
       event.stopPropagation();
       const step = event.shiftKey ? 10 : 1;
@@ -346,105 +362,23 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         onMoveShape(selectedId, direction[0] * step, direction[1] * step);
         return;
       }
-      setKeyboardPoint((point) => ({
-        x: clamp(point.x + direction[0] * step, 0, document.image_width),
-        y: clamp(point.y + direction[1] * step, 0, document.image_height),
-      }));
+      const point = store.get().keyboardPoint;
+      store.set({
+        keyboardPoint: {
+          x: clamp(point.x + direction[0] * step, 0, document.image_width),
+          y: clamp(point.y + direction[1] * step, 0, document.image_height),
+        },
+      });
       return;
     }
-    if (event.key !== "Enter" && event.key !== " ") return;
-    if (tool === "select" || (tool === "assist" && assistMode === "box")) return;
+    const effects = toolModule.key(context, store.get().keyboardPoint, {
+      key: event.key,
+      shiftKey: event.shiftKey,
+    });
+    if (!effects) return;
     event.preventDefault();
     event.stopPropagation();
-    if (tool === "polygon") {
-      if (event.key === "Enter" && pendingPoints.length >= 3) onFinishPolygon();
-      else onPoint(keyboardPoint);
-    } else if (tool === "brush" || tool === "eraser") {
-      onBrush([keyboardPoint]);
-    } else if (tool === "assist") {
-      onAssistPoint({
-        ...keyboardPoint,
-        kind: event.shiftKey ? "negative" : "positive",
-      });
-    }
-  };
-
-  const onStageMove = () => {
-    if (!panning) return;
-    const pointer = stageRef.current?.getPointerPosition();
-    if (!pointer) return;
-    onView({
-      ...view,
-      panX: panning.panX + pointer.x - panning.x,
-      panY: panning.panY + pointer.y - panning.y,
-    });
-    if (!panning.moved && Math.hypot(pointer.x - panning.x, pointer.y - panning.y) > 2) {
-      setPanning({ ...panning, moved: true });
-    }
-  };
-
-  const trackBrush = () => {
-    if (tool !== "brush" && tool !== "eraser") return;
-    if (brushPoints.length === 0) return;
-    const point = sourcePoint();
-    if (!point) return;
-    setBrushPoints((points) => [...points, point]);
-  };
-
-  /** Light up the first vertex while the pointer is over it, so "click here to close" is visible. */
-  const trackPolygonSnap = () => {
-    if (tool !== "polygon" || pendingPoints.length < 3) {
-      if (snapReady) setSnapReady(false);
-      return;
-    }
-    const point = sourcePoint();
-    const first = pendingPoints[0];
-    const ready =
-      point !== null &&
-      first !== undefined &&
-      polygonClick(pendingPoints, point, snapTolerance(scale)) === "close";
-    if (ready !== snapReady) setSnapReady(ready);
-  };
-
-  const trackAssistBox = () => {
-    if (tool !== "assist" || assistMode !== "box" || !boxStart) return;
-    const point = sourcePoint();
-    if (!point) return;
-    onAssistBox({
-      x0: Math.min(boxStart.x, point.x),
-      y0: Math.min(boxStart.y, point.y),
-      x1: Math.max(boxStart.x, point.x),
-      y1: Math.max(boxStart.y, point.y),
-    });
-  };
-
-  const finishGesture = () => {
-    if (panning?.clearOnClick && !panning.moved) onSelect(null);
-    setPanning(null);
-    if (brushPoints.length > 0) onBrush(brushPoints);
-    setBrushPoints([]);
-    setBoxStart(null);
-  };
-
-  const onWheel = (event: KonvaEventObject<WheelEvent>) => {
-    event.evt.preventDefault();
-    const pointer = stageRef.current?.getPointerPosition();
-    if (!pointer) return;
-    const before = {
-      x: (pointer.x - origin.x) / scale,
-      y: (pointer.y - origin.y) / scale,
-    };
-    const zoom = clamp(view.zoom * (event.evt.deltaY > 0 ? 0.9 : 1.1), 0.25, 12);
-    const nextScale = fit * zoom;
-    const fitOrigin = {
-      x: (size.width - document.image_width * fit) / 2,
-      y: (size.height - document.image_height * fit) / 2,
-    };
-    onView({
-      zoom,
-      panX: pointer.x - before.x * nextScale - fitOrigin.x,
-      panY: pointer.y - before.y * nextScale - fitOrigin.y,
-    });
+    emit(effects);
   };
 
   return (
@@ -455,8 +389,8 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
       data-annotation-canvas
       aria-label={label}
       aria-description="Use arrow keys to move the source-pixel cursor. Shift moves ten pixels. Space applies the current drawing tool; Enter closes a polygon after three points."
-      onFocus={() => setKeyboardFocused(true)}
-      onBlur={() => setKeyboardFocused(false)}
+      onFocus={() => store.set({ keyboardFocused: true })}
+      onBlur={() => store.set({ keyboardFocused: false })}
       onKeyDown={onCanvasKeyDown}
       className="relative min-h-0 min-w-0 flex-1 overflow-hidden bg-canvas focus-visible:-outline-offset-2 focus-visible:outline-2 focus-visible:outline-signal"
     >
@@ -466,456 +400,74 @@ export const AnnotationCanvas = forwardRef<AnnotationCanvasHandle, Props>(functi
         height={size.height}
         onMouseDown={onStageDown}
         onTouchStart={onStageDown}
-        onMouseMove={() => {
-          onStageMove();
-          trackBrush();
-          trackPolygonSnap();
-          trackAssistBox();
-        }}
-        onTouchMove={() => {
-          onStageMove();
-          trackBrush();
-          trackPolygonSnap();
-          trackAssistBox();
-        }}
+        onMouseMove={onStageMove}
+        onTouchMove={onStageMove}
         onMouseUp={finishGesture}
         onMouseLeave={finishGesture}
         onTouchEnd={finishGesture}
         onWheel={onWheel}
         onContextMenu={(event) => event.evt.preventDefault()}
-        onDblClick={() => {
-          if (tool === "select") toggleFit();
-          // The second click of the pair was dropped as a duplicate, so this closes the ring
-          // the first click completed — a polygon tool's ordinary gesture, and the reason the
-          // "Close" button in the inspector is gone.
-          else if (tool === "polygon" && pendingPoints.length >= 3) onFinishPolygon();
-        }}
+        onDblClick={() => emit(toolModule.doubleClick(context))}
         className={
-          panning
+          grabbing
             ? "cursor-grabbing"
-            : tool === "polygon" || tool === "brush" || tool === "eraser" || tool === "assist"
+            : toolModule.cursor === "crosshair"
               ? "cursor-crosshair"
               : "cursor-grab"
         }
       >
-        <Layer imageSmoothingEnabled>
-          <Group x={origin.x} y={origin.y} scaleX={scale} scaleY={scale}>
-            <Rect
-              width={document.image_width}
-              height={document.image_height}
-              fill={palette.canvas}
-              shadowColor="#000000"
-              shadowBlur={16 / scale}
-              shadowOpacity={0.4}
-            />
-            {source && (
-              <KonvaImage
-                image={source}
-                width={document.image_width}
-                height={document.image_height}
-                listening={false}
-              />
-            )}
-            {overlay && (
-              <KonvaImage
-                image={overlay}
-                width={document.image_width}
-                height={document.image_height}
-                opacity={overlayOpacity}
-                listening={false}
-              />
-            )}
-            {showRegions && baseMask && (
-              // The imported base, at half the weight of the editable regions above it: it is
-              // context for what is being edited, not one of the things being edited.
-              <KonvaImage
-                image={baseMask}
-                width={document.image_width}
-                height={document.image_height}
-                opacity={maskOpacity * 0.5}
-                listening={false}
-              />
-            )}
-
-            {showRegions &&
-              document.shapes.map((shape) => {
-                if (shape.kind === "bitmap") {
-                  return (
-                    <BitmapLayer
-                      key={shape.id}
-                      shape={shape}
-                      color={colors.get(shape.label_key) ?? palette.unknownLabel}
-                      palette={palette}
-                      opacity={maskOpacity}
-                      scale={scale}
-                      selected={shape.id === selectedId}
-                      onSelect={() => onSelect(shape.id)}
-                      onMove={(dx, dy) => onMoveShape(shape.id, dx, dy)}
-                      selectable={interactive}
-                    />
-                  );
-                }
-                const color = colors.get(shape.label_key) ?? palette.unknownLabel;
-                const selected = shape.id === selectedId;
-                // The dragged vertex is applied here rather than committed on every mouse move:
-                // the outline follows the handle, and undo still steps one drag at a time.
-                const points =
-                  vertexDrag?.shapeId === shape.id
-                    ? shape.points.map((point, index) =>
-                        index === vertexDrag.index ? vertexDrag.point : point,
-                      )
-                    : shape.points;
-                return (
-                  <Group
-                    key={shape.id}
-                    draggable={interactive}
-                    // A click has to survive a shaking hand, or selecting a region would drag it
-                    // a pixel and land in undo history.
-                    dragDistance={4}
-                    // Selection is claimed *here*, on the draggable node, and not on the line
-                    // inside it. Konva starts a drag from a `mousedown` listener on the
-                    // draggable node itself, reached by bubbling — so cancelling the bubble on
-                    // the line would have selected the region and then silently refused to move
-                    // it. Cancelling here still stops the stage's pan gesture, which is the only
-                    // thing that had to stop.
-                    onMouseDown={(event) => {
-                      if (event.evt.button === 2) return;
-                      event.cancelBubble = true;
-                      onSelect(shape.id);
-                    }}
-                    onTap={(event) => {
-                      event.cancelBubble = true;
-                      onSelect(shape.id);
-                    }}
-                    onDragEnd={(event) => {
-                      // `dragend` bubbles, and a selected polygon's vertices are draggable
-                      // children — without this, dragging a vertex would also read the
-                      // *vertex's* position as a whole-region offset and fling the shape across
-                      // the frame.
-                      if (event.target !== event.currentTarget) return;
-                      const node = event.target;
-                      const dx = node.x();
-                      const dy = node.y();
-                      // Konva moving the group *is* the live feedback; the committed document
-                      // then carries the offset, so the node has to go back to the origin or it
-                      // would be applied twice.
-                      node.position({ x: 0, y: 0 });
-                      onMoveShape(shape.id, dx, dy);
-                    }}
-                  >
-                    <Line
-                      points={points.flatMap((point) => [point.x, point.y])}
-                      closed
-                      fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
-                      stroke={shape.operation === "add" ? color : palette.cut}
-                      strokeWidth={(selected ? 2.5 : 1.5) / scale}
-                      hitStrokeWidth={10 / scale}
-                      listening={interactive}
-                    />
-                    {selected &&
-                      points.map((point, index) => (
-                        <Circle
-                          key={`${shape.id}-${index}`}
-                          x={point.x}
-                          y={point.y}
-                          radius={4.5 / scale}
-                          fill={palette.frame}
-                          stroke={color}
-                          strokeWidth={1.5 / scale}
-                          hitStrokeWidth={12 / scale}
-                          // Silent under every other tool. A selected polygon stays on screen
-                          // while brushing, and a vertex that still took the click swallowed the
-                          // start of the stroke.
-                          listening={interactive}
-                          draggable={interactive}
-                          onDragMove={(event) =>
-                            setVertexDrag({
-                              shapeId: shape.id,
-                              index,
-                              point: {
-                                x: clamp(event.target.x(), 0, document.image_width),
-                                y: clamp(event.target.y(), 0, document.image_height),
-                              },
-                            })
-                          }
-                          onDragEnd={(event) => {
-                            event.cancelBubble = true;
-                            setVertexDrag(null);
-                            onMovePoint(shape.id, index, {
-                              x: clamp(event.target.x(), 0, document.image_width),
-                              y: clamp(event.target.y(), 0, document.image_height),
-                            });
-                          }}
-                          onMouseDown={(event) => {
-                            // The vertex owns this gesture: without cancelling, the group under
-                            // it would drag the whole region at the same time.
-                            event.cancelBubble = true;
-                          }}
-                        />
-                      ))}
-                  </Group>
-                );
-              })}
-
-            {pendingPoints.length > 0 && (
-              <Group listening={false}>
-                <Line
-                  points={pendingPoints.flatMap((point) => [point.x, point.y])}
-                  stroke={palette.signal}
-                  strokeWidth={2 / scale}
-                  dash={[6 / scale, 4 / scale]}
-                />
-                {pendingPoints.map((point, index) => (
-                  <Circle
-                    key={`${point.x}-${point.y}-${index}`}
-                    x={point.x}
-                    y={point.y}
-                    // The first vertex swells and fills while the pointer is over it, so
-                    // "click here to close" is something the ring says rather than something
-                    // a button elsewhere claims.
-                    radius={(index === 0 ? (snapReady ? 8 : 5) : 3.5) / scale}
-                    fill={index === 0 && snapReady ? palette.signal : palette.frame}
-                    stroke={palette.signal}
-                    strokeWidth={1.5 / scale}
-                  />
-                ))}
-              </Group>
-            )}
-            {brushPoints.length > 0 && (
-              <Line
-                points={brushPoints.flatMap((point) => [point.x, point.y])}
-                stroke={tool === "eraser" ? palette.cut : palette.signal}
-                /* True size in source pixels, floored at one *screen* pixel. A one-pixel
-                   brush at fit zoom is otherwise a fraction of a pixel wide, so the
-                   gesture would leave no visible trail while it was being made. The
-                   `n / scale` idiom is how every outline in this scene is drawn. */
-                strokeWidth={Math.max(brushSize, 1 / scale)}
-                lineCap="round"
-                lineJoin="round"
-                opacity={0.72}
-                listening={false}
-              />
-            )}
-            {assistShape && (
-              <BitmapLayer
-                shape={assistShape}
-                color={palette.suggestion}
-                palette={palette}
-                opacity={maskOpacity}
-                scale={scale}
-                selected
-                selectable={false}
-                suggestion
-                onSelect={() => undefined}
-              />
-            )}
-            {assistBox && (
-              <Rect
-                x={assistBox.x0}
-                y={assistBox.y0}
-                width={assistBox.x1 - assistBox.x0}
-                height={assistBox.y1 - assistBox.y0}
-                stroke={palette.signal}
-                strokeWidth={2 / scale}
-                dash={[7 / scale, 4 / scale]}
-                listening={false}
-              />
-            )}
-            {assistPoints.map((point, index) => (
-              <Group key={`assist-point-${index}`} listening={false}>
-                <Circle
-                  x={point.x}
-                  y={point.y}
-                  radius={6 / scale}
-                  fill={point.kind === "positive" ? palette.positive : palette.negative}
-                  stroke={palette.frame}
-                  strokeWidth={1.5 / scale}
-                />
-                <Line
-                  points={[-3 / scale, 0, 3 / scale, 0]}
-                  x={point.x}
-                  y={point.y}
-                  stroke={palette.frame}
-                  strokeWidth={1.5 / scale}
-                />
-                {point.kind === "positive" && (
-                  <Line
-                    points={[0, -3 / scale, 0, 3 / scale]}
-                    x={point.x}
-                    y={point.y}
-                    stroke={palette.frame}
-                    strokeWidth={1.5 / scale}
-                  />
-                )}
-              </Group>
-            ))}
-            {keyboardFocused && tool !== "select" && (
-              <Group listening={false}>
-                <Circle
-                  x={keyboardPoint.x}
-                  y={keyboardPoint.y}
-                  radius={7 / scale}
-                  fill={withAlpha(palette.canvas, 0.67)}
-                  stroke={palette.signal}
-                  strokeWidth={2 / scale}
-                />
-                <Line
-                  x={keyboardPoint.x}
-                  y={keyboardPoint.y}
-                  points={[-11 / scale, 0, 11 / scale, 0]}
-                  stroke={palette.frame}
-                  strokeWidth={1 / scale}
-                />
-                <Line
-                  x={keyboardPoint.x}
-                  y={keyboardPoint.y}
-                  points={[0, -11 / scale, 0, 11 / scale]}
-                  stroke={palette.frame}
-                  strokeWidth={1 / scale}
-                />
-              </Group>
-            )}
-            <Rect
-              width={document.image_width}
-              height={document.image_height}
-              stroke={withAlpha(palette.frame, 0.55)}
-              strokeWidth={1 / scale}
-              listening={false}
-            />
-          </Group>
-        </Layer>
+        <SceneLayer
+          document={document}
+          labels={labels}
+          palette={palette}
+          source={source}
+          overlay={overlay}
+          overlayOpacity={overlayOpacity}
+          baseMask={baseMask}
+          maskOpacity={maskOpacity}
+          showRegions={showRegions}
+          selectedId={selectedId}
+          interactive={interactive}
+          assistShape={assistShape}
+          originX={origin.x}
+          originY={origin.y}
+          scale={scale}
+          smoothing
+          onSelect={onSelect}
+          onMoveShape={onMoveShape}
+          onMovePoint={onMovePoint}
+        />
+        <LiveLayer
+          store={store}
+          palette={palette}
+          tool={tool}
+          brushSize={brushSize}
+          pendingPoints={pendingPoints}
+          assistPoints={assistPoints}
+          assistBox={assistBox}
+          originX={origin.x}
+          originY={origin.y}
+          scale={scale}
+        />
       </Stage>
       {!source && (
         <div className="pointer-events-none absolute inset-0 grid place-items-center text-sm text-white/55">
           Loading source image…
         </div>
       )}
-      {keyboardFocused && (
-        <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-control border border-line bg-surface/90 px-2 py-1 font-mono text-[10px] text-fg-muted shadow-panel backdrop-blur-sm">
-          {Math.round(keyboardPoint.x)}, {Math.round(keyboardPoint.y)} px · arrows move · Shift 10 px · Space draws
-        </div>
-      )}
+      <KeyboardReadout store={store} />
     </div>
   );
 });
 
-function BitmapLayer({
-  shape,
-  color,
-  palette,
-  opacity,
-  scale,
-  selected,
-  selectable,
-  suggestion = false,
-  onSelect,
-  onMove,
-}: {
-  shape: BitmapShape;
-  color: string;
-  palette: ScenePalette;
-  opacity: number;
-  scale: number;
-  selected: boolean;
-  selectable: boolean;
-  suggestion?: boolean;
-  onSelect: () => void;
-  onMove?: (dx: number, dy: number) => void;
-}) {
-  const cut = shape.operation === "subtract";
-  const tint = suggestion ? palette.suggestion : cut ? palette.cut : color;
-  const painted = useTintedMask(shape, tint);
-  if (!painted) return null;
+/** Where the keyboard cursor is, while the canvas has focus. */
+function KeyboardReadout({ store }: { store: LiveStore }) {
+  const focused = useLive(store, (state) => state.keyboardFocused);
+  const point = useLive(store, (state) => state.keyboardPoint);
+  if (!focused) return null;
   return (
-    <Group
-      clipX={shape.x}
-      clipY={shape.y}
-      clipWidth={shape.width}
-      clipHeight={shape.height}
-      draggable={selectable && onMove !== undefined}
-      dragDistance={4}
-      onDragEnd={(event) => {
-        const node = event.target;
-        const dx = node.x();
-        const dy = node.y();
-        node.position({ x: 0, y: 0 });
-        onMove?.(dx, dy);
-      }}
-      onMouseDown={(event) => {
-        if (!selectable || event.evt.button === 2) return;
-        event.cancelBubble = true;
-        onSelect();
-      }}
-      listening={selectable}
-    >
-      <KonvaImage
-        image={painted}
-        x={shape.x}
-        y={shape.y}
-        width={shape.width}
-        height={shape.height}
-        opacity={suggestion ? Math.min(1, opacity + 0.2) : opacity}
-      />
-      {/* A cut is outlined even when it is not selected. Rendered like an added region it was
-          indistinguishable from one, which is what made the eraser look like a second brush. */}
-      {(cut || selected) && (
-        <Rect
-          x={shape.x}
-          y={shape.y}
-          width={shape.width}
-          height={shape.height}
-          stroke={selected ? (suggestion ? palette.suggestion : palette.signal) : palette.cut}
-          strokeWidth={(selected ? 1.5 : 1) / scale}
-          dash={cut && !selected ? [6 / scale, 4 / scale] : undefined}
-        />
-      )}
-    </Group>
+    <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-control border border-line bg-surface/90 px-2 py-1 font-mono text-[10px] text-fg-muted shadow-panel backdrop-blur-sm">
+      {Math.round(point.x)}, {Math.round(point.y)} px · arrows move · Shift 10 px · Space draws
+    </div>
   );
-}
-
-/**
- * The shape's mask, painted in one colour with alpha taken from its luminance.
- *
- * Two bugs in one: the mask used to be drawn untinted, so a brush region was white-on-grey at a
- * third opacity — invisible — and an opaque backend-produced mask covered its whole crop
- * rectangle in flat grey. `tintedMask` fixes both by deriving alpha rather than trusting it.
- */
-function useTintedMask(shape: BitmapShape, color: string): HTMLCanvasElement | null {
-  const source = useHtmlImage(`data:image/png;base64,${shape.png_base64}`);
-  const [painted, setPainted] = useState<HTMLCanvasElement | null>(null);
-
-  useEffect(() => {
-    if (!source) {
-      setPainted(null);
-      return;
-    }
-    setPainted(tintedMask(source, shape.width, shape.height, color));
-  }, [source, shape.width, shape.height, color]);
-
-  return painted;
-}
-
-function useHtmlImage(
-  src: string | undefined,
-  crossOrigin?: "anonymous",
-): HTMLImageElement | null {
-  const [image, setImage] = useState<HTMLImageElement | null>(null);
-  useEffect(() => {
-    setImage(null);
-    if (!src) return;
-    const next = new globalThis.Image();
-    if (crossOrigin) next.crossOrigin = crossOrigin;
-    next.onload = () => setImage(next);
-    next.onerror = () => setImage(null);
-    next.src = src;
-    return () => {
-      next.onload = null;
-      next.onerror = null;
-    };
-  }, [src, crossOrigin]);
-  return image;
-}
-
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
 }

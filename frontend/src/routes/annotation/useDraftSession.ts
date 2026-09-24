@@ -10,7 +10,12 @@
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { useBeforeUnload } from "react-router";
 
-import { canonical, createHistory, historyReducer } from "../../api/annotationState";
+import {
+  type HistoryAction,
+  canonical,
+  createHistory,
+  historyReducer,
+} from "../../api/annotationState";
 import { ApiError } from "../../api/client";
 import {
   type DraftEnvelope,
@@ -41,7 +46,30 @@ export function useDraftSession({
   imageIds: number[];
   flash: Flash;
 }) {
-  const [history, dispatch] = useReducer(historyReducer, initial.document, createHistory);
+  const [history, dispatchHistory] = useReducer(historyReducer, initial.document, createHistory);
+
+  /**
+   * The history as it will be once every dispatched action has rendered.
+   *
+   * `history` in a closure is the history *of the render that made the closure*, and an async
+   * edit that commits a document built from it discards everything dispatched in between — see
+   * `useDocumentCommands.applyStroke`. The reducer is pure, so running it here as well as in
+   * React gives every caller the same answer React is about to render; a render adopts React's
+   * own object, which is the same value.
+   */
+  const latestHistory = useRef(history);
+  const renderedHistory = useRef(history);
+  if (renderedHistory.current !== history) {
+    renderedHistory.current = history;
+    latestHistory.current = history;
+  }
+  const dispatch = useCallback((action: HistoryAction) => {
+    latestHistory.current = historyReducer(latestHistory.current, action);
+    dispatchHistory(action);
+  }, []);
+  /** The document every dispatched edit so far has produced, rendered or not. */
+  const latest = useCallback(() => latestHistory.current.present, []);
+
   const [etag, setEtag] = useState(initial.etag);
   const [draftVersion, setDraftVersion] = useState(initial.version);
   const [savedDocument, setSavedDocument] = useState(initial.document);
@@ -134,6 +162,7 @@ export function useDraftSession({
   return {
     history,
     dispatch,
+    latest,
     etag,
     draftVersion,
     dirty,
