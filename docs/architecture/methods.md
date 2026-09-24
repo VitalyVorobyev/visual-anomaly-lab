@@ -438,8 +438,10 @@ writes no mask, so the evaluator cuts the map at its rule.
 ### `fss_dino`
 
 A reproduction of FSSDINO (arXiv 2602.07550) for one class, training-free, on the shared encoding path.
-The references' last-block patch features are split by their masks: a patch is the class when at least
-half of it is covered after bilinear downsampling. Each side gets `prototypes_per_class` (5) prototypes by
+The references' last-block patch features are split by their masks after bilinear downsampling
+(`prototypes.split_patches`): a patch is the class when half of it is covered, or when it is the most covered
+patch of a region smaller than that, which small defects are at ViT patch sizes; it is background only when
+the mask does not touch it, so mixed patches teach neither side. Each side gets `prototypes_per_class` (5) prototypes by
 seeded cosine k-means, and a Gram matrix. A query patch's cosine map per prototype, and its Gram energy
 (min-max normalised per image), are upsampled; each side combines them as `mean * max`, and a pixel goes
 to the higher side. The arithmetic is `models/prototypes.py`, in numpy.

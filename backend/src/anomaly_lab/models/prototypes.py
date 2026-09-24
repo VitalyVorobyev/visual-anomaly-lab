@@ -3,8 +3,9 @@
 The arithmetic `fss_dino` reproduces from FSSDINO, and that `proto_seg` builds on, kept in
 numpy so it is tested without torch:
 
-- a reference's mask is brought to the patch grid by bilinear interpolation, and a patch
-  belongs to the class when at least half of it is covered;
+- a reference's mask is brought to the patch grid by bilinear interpolation (`split_patches`):
+  a patch is the class when half of it is covered, or when it is the most covered patch of a
+  region smaller than that, and background only when the mask does not touch it;
 - a class's patch features are summarised by `k` prototypes from spherical (cosine)
   k-means, seeded;
 - a query patch's similarity to each prototype is a cosine map;
@@ -30,6 +31,21 @@ def patch_coverage(mask: np.ndarray, grid: tuple[int, int]) -> np.ndarray:
     image = Image.fromarray(mask.astype(np.float32), mode="F")
     resized = image.resize((cols, rows), Image.Resampling.BILINEAR)
     return np.asarray(resized, dtype=np.float32).reshape(-1)
+
+
+def split_patches(coverage: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Which patches of one reference are the class, and which are background.
+
+    A patch is the class when its coverage reaches half, or — for a region smaller than half
+    a patch, which small defects are at ViT patch sizes — when it is the reference's most
+    covered patch. A patch is background only when the mask does not touch it: a mixed patch
+    is left out of the background rather than teaching it the class.
+    """
+    best = float(coverage.max()) if coverage.size else 0.0
+    if best <= 0.0:
+        return np.zeros_like(coverage, dtype=bool), np.ones_like(coverage, dtype=bool)
+    foreground = coverage >= min(0.5, best)
+    return foreground, coverage <= 0.0
 
 
 def _unit(rows: np.ndarray) -> np.ndarray:

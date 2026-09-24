@@ -64,6 +64,7 @@ from anomaly_lab.models.prototypes import (
     presence_score,
     probe_probability,
     spherical_kmeans,
+    split_patches,
 )
 from anomaly_lab.models.refine import Refinement, refine
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -256,9 +257,9 @@ class ProtoSegModel(AnomalyModel):
         for position, record in enumerate(train):
             ctx.raise_if_cancelled()
             features = self._features(record, ctx)
-            covered = patch_coverage(targets.mask(record.image_id), grid) >= 0.5
+            covered, background = split_patches(patch_coverage(targets.mask(record.image_id), grid))
             parts["foreground"].append(features[covered])
-            parts["background"].append(features[~covered])
+            parts["background"].append(features[background])
             ctx.progress(0.7 * (position + 1) / len(train), f"encoded {position + 1}/{len(train)}")
 
         rng = np.random.default_rng(self.config.seed)
@@ -268,7 +269,7 @@ class ProtoSegModel(AnomalyModel):
             if len(pooled) == 0:
                 msg = (
                     f"the references hold no {side} patch for {targets.label_key!r}: a patch "
-                    "is the class when at least half of it is covered by the mask"
+                    "is the class when half of it, or the most of any patch, is covered"
                 )
                 raise RuntimeError(msg)
             chosen = evenly_spaced(len(pooled), self.config.max_features_per_class)
