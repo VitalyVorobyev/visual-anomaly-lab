@@ -7,7 +7,7 @@
  * path to a result: the session ends on the experiment page.
  */
 
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { api, unwrap } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
@@ -82,5 +82,58 @@ export function useFreezeReferences() {
       void queryClient.invalidateQueries({ queryKey: queryKeys.splits(request.datasetId) });
       void queryClient.invalidateQueries({ queryKey: ["experiments"] });
     },
+  });
+}
+
+export interface PreviewInput {
+  datasetId: number;
+  classKey: string;
+  methodKey: string | undefined;
+  profileId: number | undefined;
+  references: number[];
+  imageId: number | undefined;
+}
+
+/**
+ * The focused image segmented by the current references, through the resident worker
+ * (ADR-0026). Keyed by everything the fit depends on, so a changed reference is a new answer
+ * rather than an old one; the first request of a set of references pays the fit.
+ */
+export function useStudioPreview(input: PreviewInput, enabled: boolean) {
+  const references = [...input.references].sort((a, b) => a - b);
+  return useQuery({
+    queryKey: [
+      "studio-preview",
+      input.datasetId,
+      input.classKey,
+      input.methodKey,
+      input.profileId,
+      references,
+      input.imageId,
+    ] as const,
+    queryFn: async () =>
+      unwrap(
+        await api.POST("/api/datasets/{dataset_id}/studio/preview", {
+          params: { path: { dataset_id: input.datasetId } },
+          body: {
+            class_key: input.classKey,
+            method: input.methodKey as string,
+            profile_id: input.profileId as number,
+            references,
+            image_id: input.imageId as number,
+          },
+        }),
+        "the preview",
+      ),
+    enabled:
+      enabled &&
+      references.length > 0 &&
+      input.methodKey !== undefined &&
+      input.profileId !== undefined &&
+      input.imageId !== undefined,
+    // A refused preview (a job is running, a reference lost its truth) is an answer to
+    // show, not a transient to retry into.
+    retry: false,
+    staleTime: Infinity,
   });
 }

@@ -10,14 +10,19 @@
  *
  * Built from what the other viewers use: `SampleTile` for the candidates, `SampleStage` for
  * the picture, `RailSection` for the rails, the lab-ui controls for the rest. The session is
- * the URL (`refs`, `focus`, `method`, `profile`), so a reload or a shared link keeps it.
+ * the URL (`refs`, `focus`, `method`, `profile`, `show`), so a reload or a shared link keeps it.
+ *
+ * **The preview** segments the open image with the chosen method fitted on the current
+ * references, through the resident worker (ADR-0026) — a look, not a result: it is drawn on
+ * the stage and stored for nobody. The rail can list the samples without the class, or with
+ * no answer for it, which is where a preview is most worth reading.
  */
 
 import { ArrowLeft } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
-import type { SampleSummary } from "../api/client";
+import { apiBaseUrl, type ClassPresence, type SampleSummary } from "../api/client";
 import { preferredImageIndex } from "../api/defaultChannel";
 import { classMaskUrl } from "../api/imageUrl";
 import { RailSection } from "../components/viewer/RailSection";
@@ -27,7 +32,7 @@ import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
 import { isUsableBuild } from "../hooks/useDatasetReadiness";
 import { useModelTypes } from "../hooks/useExperiments";
 import { useRegionBuild, useRegionProfiles } from "../hooks/useRegionProfiles";
-import { useFreezeReferences } from "../hooks/useStudio";
+import { useFreezeReferences, useStudioPreview } from "../hooks/useStudio";
 import {
   Button,
   cn,
@@ -35,12 +40,21 @@ import {
   ErrorBox,
   focusRing,
   ReadoutStrip,
+  SegmentedControl,
   Select,
   Skeleton,
+  Switch,
   Tooltip,
   type StageView,
 } from "@vitavision/lab-ui";
 import { SampleTile } from "./dataset/SampleTile";
+
+const PRESENCES: ClassPresence[] = ["present", "absent", "unlabeled"];
+const RAIL_TITLE: Record<ClassPresence, string> = {
+  present: "Samples that show it",
+  absent: "Samples without it",
+  unlabeled: "Samples with no answer",
+};
 
 /** ADR-0040: one to ten references define a class. */
 export const MAX_REFERENCES = 10;
@@ -66,6 +80,13 @@ export function StudioRoute() {
   const [search, setSearch] = useSearchParams();
 
   const references = readIds(search.get("refs"));
+  // Which samples the left rail lists. References come from those that show the class; the
+  // other two are where a preview is most worth looking — a confirmed absence it should
+  // leave alone, and an unanswered image it could help label.
+  const show: ClassPresence = PRESENCES.includes(search.get("show") as ClassPresence)
+    ? (search.get("show") as ClassPresence)
+    : "present";
+  const [previewOn, setPreviewOn] = useState(true);
   const focus = Number(search.get("focus")) || references[0] || undefined;
   const [offset, setOffset] = useState(0);
   const [view, setView] = useState<StageView | null>(null);
@@ -75,7 +96,7 @@ export function StudioRoute() {
   const coverage = useClassCoverage(datasetId);
   const candidates = useSamples(datasetId, {
     classKey,
-    presence: "present",
+    presence: show,
     limit: PAGE,
     offset,
   });
@@ -135,6 +156,29 @@ export function StudioRoute() {
 
   const images = focused.data?.images ?? [];
   const shown = images[preferredImageIndex(images, dataset.data?.default_channel)];
+  const previewable =
+    references.length > 0 &&
+    references.length <= MAX_REFERENCES &&
+    method !== undefined &&
+    profileId !== undefined &&
+    isUsableBuild(build.data);
+  const preview = useStudioPreview(
+    {
+      datasetId,
+      classKey,
+      methodKey: method?.key,
+      profileId,
+      references,
+      imageId: shown?.id,
+    },
+    previewOn && previewable,
+  );
+  const layers = [
+    ...(previewOn && preview.data
+      ? [{ key: "preview", src: `${apiBaseUrl}${preview.data.map_url}` }]
+      : []),
+    ...(shown ? [{ key: "class", src: classMaskUrl(shown.id, classKey) }] : []),
+  ];
 
   return (
     <div data-layout="studio" className="flex min-h-0 flex-1 flex-col overflow-hidden bg-ground">
@@ -179,20 +223,36 @@ export function StudioRoute() {
           className="flex w-80 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line"
         >
           <RailSection
-            title="Samples that show it"
+            title={RAIL_TITLE[show]}
             hint={candidates.data ? `${candidates.data.total}` : undefined}
           >
+            <SegmentedControl
+              aria-label="Which samples"
+              value={show}
+              onValueChange={(value) => {
+                setOffset(0);
+                update({ show: value === "present" ? undefined : value });
+              }}
+              options={[
+                { value: "present", label: "show it" },
+                { value: "absent", label: "without it" },
+                { value: "unlabeled", label: "unanswered" },
+              ]}
+            />
             {candidates.error && <ErrorBox>{candidates.error.message}</ErrorBox>}
             {candidates.isPending && <Skeleton className="h-40 w-full" />}
-            {candidates.data?.total === 0 && (
-              <Empty>
-                No sample shows this class yet.{" "}
-                <Link className="text-signal underline" to={`/datasets/${datasetId}/annotate`}>
-                  Annotate some
-                </Link>
-                .
-              </Empty>
-            )}
+            {candidates.data?.total === 0 &&
+              (show === "present" ? (
+                <Empty>
+                  No sample shows this class yet.{" "}
+                  <Link className="text-signal underline" to={`/datasets/${datasetId}/annotate`}>
+                    Annotate some
+                  </Link>
+                  .
+                </Empty>
+              ) : (
+                <Empty>None.</Empty>
+              ))}
             <div className="grid grid-cols-2 gap-2">
               {(candidates.data?.items ?? []).map((sample: SampleSummary) => (
                 <SampleTile
@@ -202,6 +262,8 @@ export function StudioRoute() {
                   search=""
                   defaultChannel={dataset.data?.default_channel}
                   selected={references.includes(sample.id)}
+                  // Only a sample that shows the class can teach it.
+                  selectable={show === "present"}
                   active={sample.id === focus}
                   onSelect={() => toggle(sample.id)}
                   onOpen={() => update({ focus: String(sample.id) })}
@@ -248,7 +310,7 @@ export function StudioRoute() {
                 alt={`${focused.data?.group_key}/${focused.data?.external_id}`}
                 view={view}
                 onView={setView}
-                layers={[{ key: "class", src: classMaskUrl(shown.id, classKey) }]}
+                layers={layers}
                 label="Reference canvas"
               />
             </div>
@@ -280,6 +342,44 @@ export function StudioRoute() {
                 ))}
               </ul>
             )}
+          </RailSection>
+
+          <RailSection title="Preview">
+            <Switch
+              checked={previewOn}
+              onCheckedChange={setPreviewOn}
+              label="Segment the open image"
+            />
+            {!previewOn ? null : !previewable ? (
+              <p className="text-xs text-fg-muted">
+                Needs at least one reference, a method and a built region profile.
+              </p>
+            ) : preview.isFetching ? (
+              <p className="text-xs text-fg-muted">
+                Fitting on {references.length}{" "}
+                {references.length === 1 ? "reference" : "references"} and segmenting…
+              </p>
+            ) : preview.error ? (
+              <ErrorBox>{preview.error.message}</ErrorBox>
+            ) : preview.data ? (
+              <ReadoutStrip
+                items={[
+                  { label: "presence", value: preview.data.score.toFixed(3) },
+                  {
+                    label: "foreground",
+                    value: `${(preview.data.foreground_share * 100).toFixed(1)}%`,
+                  },
+                  {
+                    label: preview.data.warm ? "warm" : "fitted",
+                    value: `${Math.round(preview.data.elapsed_ms)} ms`,
+                  },
+                ]}
+              />
+            ) : null}
+            <p className="text-xs text-fg-subtle">
+              A look, not a result: nothing is stored or evaluated until the references are
+              frozen into a run.
+            </p>
           </RailSection>
 
           <RailSection title="Run">

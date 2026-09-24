@@ -224,8 +224,15 @@ class in the class manager and from the Splits tab's reference draw.
   (`hooks/useStudio.ts`), then lands on the run. Why it cannot freeze yet is said in words beside the
   button.
 
-The session is the URL (`refs`, `focus`, `method`, `profile`). The studio reads no results: the run page
-is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
+**The preview** segments the open image with the chosen method fitted on the current references, through
+the resident worker (`POST /api/datasets/{id}/studio/preview`, [jobs](jobs.md)). It draws the foreground
+probability under the class outline, and reads the presence score, the share of the image at 0.5 and
+whether the resident was warm. The left rail can also list the samples *without* the class, or with no
+answer for it, which is where a preview is most worth reading; only samples that show the class can be
+ticked as references.
+
+The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studio stores and evaluates
+nothing: the run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
 sample viewer.
 
 **Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an

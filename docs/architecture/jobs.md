@@ -138,11 +138,20 @@ it.
 An interactive request is a hundred milliseconds of work behind seconds of setup, and the queue is a single
 FIFO, so a job per click would mean a model load per click and a wait behind training. There is instead
 **one resident compute worker**, keyed by `(kind, target key, artifact generation)` (ADR-0026), holding
-either an experiment inspector or MobileSAM, never both.
+one of three things at a time: an experiment inspector, MobileSAM, or a few-shot preview.
 
-It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py` and
-`jobs/segmenter.py` are thin entrypoints; `experiments/diagnose.py` and `model_assets/mobile_sam.py` do the
-work — as `jobs/queue.py`, `jobs/worker.py` and a job handler do.
+It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py`,
+`jobs/segmenter.py` and `jobs/previewer.py` are thin entrypoints; `experiments/diagnose.py`,
+`model_assets/mobile_sam.py` and `experiments/preview.py` do the work — as `jobs/queue.py`,
+`jobs/worker.py` and a job handler do.
+
+- **A few-shot preview** (`few_shot_preview`, ADR-0040) is one method at its defaults, fitted on the
+  reference studio's current references through the same `PreparedClassTargets` a run uses. Its spec
+  (dataset, class, method, profile, references) is the resident's command line, never a request field. Its
+  generation fingerprints the spec, the pinned region build and every reference image's pinned truth, so
+  new references are a new resident. A request segments one image into `previews/<generation>/maps/`,
+  which `GET /api/studio/previews/{generation}/{image}.png` renders on the fixed range [0, 1]. A preview is
+  stored for nobody and evaluated by nothing.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no migration. A
   browse click is not a unit of work anyone needs to cancel or resume.
