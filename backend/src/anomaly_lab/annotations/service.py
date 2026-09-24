@@ -28,7 +28,12 @@ from uuid import uuid4
 import numpy as np
 from pydantic import BaseModel, Field
 
-from anomaly_lab.annotation_bitmap import AnnotationBitmapError, decode_shape, encode_png
+from anomaly_lab.annotation_bitmap import (
+    AnnotationBitmapError,
+    decode_shape,
+    encode_png,
+    tight_bitmap_shape,
+)
 from anomaly_lab.annotation_interchange import (
     AnnotationInterchangeError,
     CocoDocument,
@@ -38,7 +43,12 @@ from anomaly_lab.annotation_interchange import (
     shapes_from_labelme,
     shapes_from_png,
 )
-from anomaly_lab.annotation_render import AnnotationRenderError, RenderedTruth, render_truth
+from anomaly_lab.annotation_render import (
+    AnnotationRenderError,
+    RenderedTruth,
+    rasterize,
+    render_truth,
+)
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import Transaction, connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
@@ -1098,3 +1108,74 @@ def set_scope(settings: Settings, dataset_id: int, scope: AnnotationScope) -> An
                 raise ConflictError("; ".join(state.blockers))
             datasets_repo.set_annotation_scope(conn, dataset_id, scope)
         return _scope_state(conn, dataset_id)
+
+
+# --- One class's region, set from outside the editor (ADR-0040) -------------------------
+
+
+def class_region_document(
+    settings: Settings, image_id: int, class_key: str, region: np.ndarray | None
+) -> AnnotationDocument:
+    """The image's current truth with one class's region replaced — or removed, for `None`.
+
+    What the reference studio's accept and mark-absent write. Appended rather than rewritten:
+    a `subtract` over the class's old pixels, which hold that class alone, then an `add` of
+    the new region where no other class is. Every other class's shapes stay exactly as they
+    were, vectors and all, and the result is still an ordinary document the editor can open.
+
+    Refused while the image has an open draft: that is someone's unfinished work, and the
+    studio must not complete it behind their back.
+    """
+    seed, etag = IMAGE_DRAFTS.read(settings, image_id)
+    if etag is not None:
+        raise ConflictError(
+            "this image has an open annotation draft; finish or discard it in the editor first"
+        )
+    document = seed.document
+    with connection(settings.db_path) as conn:
+        dataset_id = _image_dataset_id(conn, image_id)
+        classes = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
+    if class_key not in classes:
+        raise InvalidInputError(f"dataset {dataset_id} has no annotation class {class_key!r}")
+
+    source = Path(seed.source_mask_path) if seed.source_mask_path else None
+    source_sha = seed.source_mask_sha256
+    if document.base == "source_mask" and source is not None and source_sha is None:
+        source_sha = sha256_of(source)
+    try:
+        canvas = rasterize(
+            document, classes, source_mask_path=source, source_mask_sha256=source_sha
+        )
+    except AnnotationRenderError as exc:
+        raise ConflictError(str(exc)) from exc
+    old = canvas == classes.index(class_key) + 1
+
+    shapes = list(document.shapes)
+    stamp = uuid4().hex[:12]
+    cleared = tight_bitmap_shape(
+        old, shape_id=f"studio-clear-{stamp}", label_key=class_key, operation="subtract"
+    )
+    if cleared is not None:
+        shapes.append(cleared)
+    if region is not None:
+        if region.shape != canvas.shape:
+            raise InvalidInputError(
+                f"a region of shape {region.shape} does not fit image {image_id} "
+                f"({canvas.shape[1]}x{canvas.shape[0]})"
+            )
+        added = tight_bitmap_shape(
+            region & ((canvas == 0) | old), shape_id=f"studio-{stamp}", label_key=class_key
+        )
+        if added is not None:
+            shapes.append(added)
+    return document.model_copy(update={"shapes": shapes})
+
+
+def write_class_region(
+    settings: Settings, image_id: int, document: AnnotationDocument, *, complete: bool
+) -> AnnotationDraft | AnnotationRevision:
+    """Open `document` as the image's draft, and complete it unless the reader will edit it."""
+    draft = IMAGE_DRAFTS.create(settings, image_id, document)
+    if not complete:
+        return draft
+    return IMAGE_DRAFTS.complete(settings, image_id, IMAGE_DRAFTS.etag(draft))

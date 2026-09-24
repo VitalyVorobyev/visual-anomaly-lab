@@ -32,9 +32,6 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
 - [ ] **Reference studio: an uncertainty queue** (M): score the queries with the current
       references and list them least certain first, so the reader looks where the references are
       weakest. It needs a bounded batch preview (N images per request, evenly spaced when capped).
-- [ ] **Reference studio: accept, fix, mark absent** (M): from a prediction, accept it as a completed
-      revision, open the editor seeded with it as a draft, promote the sample to a reference, or
-      confirm the class absent.
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
 

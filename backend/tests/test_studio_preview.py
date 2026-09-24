@@ -94,3 +94,95 @@ def test_a_preview_that_cannot_be_fitted_is_refused_by_name(
     assert unlabelled.status_code == 422
 
     assert client.get("/api/studio/previews/nothing/1.png").status_code == 404
+
+
+# ------------------------------------------------------------------ from preview to truth
+
+
+def _region(client: TestClient, image_id: int, **body: Any) -> Any:
+    return client.post(
+        f"/api/images/{image_id}/studio/region", json={"class_key": "defect", **body}
+    )
+
+
+def test_accepting_a_preview_makes_its_region_the_class_s_truth(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    from anomaly_lab.db.repositories import annotations as annotations_repo
+
+    profile = create_experiment(client, seeded)["region_profile_id"]
+    reference = _sample_of(settings, seeded.defect_image_ids[0])
+    query = seeded.defect_image_ids[1]
+    preview = _preview(client, seeded, profile_id=profile, references=[reference], image_id=query)
+    generation = preview.json()["generation"]
+
+    accepted = _region(client, query, action="accept", generation=generation)
+    assert accepted.status_code == 200, accepted.text
+    assert accepted.json()["completed"] is True
+    revision = client.get(f"/api/images/{query}/annotations/revisions").json()[-1]
+    table = {entry["key"]: entry["pixels"] for entry in revision["class_table"]}
+    assert table["defect"] > 0
+
+    # Confirming it absent removes the region and completes a revision that says so.
+    absent = _region(client, query, action="absent")
+    assert absent.status_code == 200, absent.text
+    with connection(settings.db_path) as conn:
+        found = annotations_repo.class_presence(conn, seeded.dataset_id, "defect")
+    assert found[_sample_of(settings, query)].value == "absent"
+
+
+def test_fixing_opens_a_draft_and_an_open_draft_is_never_completed_behind_it(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    profile = create_experiment(client, seeded)["region_profile_id"]
+    reference = _sample_of(settings, seeded.defect_image_ids[0])
+    query = seeded.defect_image_ids[2]
+    generation = _preview(
+        client, seeded, profile_id=profile, references=[reference], image_id=query
+    ).json()["generation"]
+
+    fixed = _region(client, query, action="fix", generation=generation)
+    assert fixed.status_code == 200, fixed.text
+    assert fixed.json()["completed"] is False
+    draft = client.get(f"/api/images/{query}/annotations/draft").json()
+    assert draft["persisted"] is True
+    assert any(shape["id"].startswith("studio-") for shape in draft["document"]["shapes"])
+
+    refused = _region(client, query, action="accept", generation=generation)
+    assert refused.status_code == 409
+    assert "open annotation draft" in refused.text
+    assert _region(client, query, action="accept").status_code == 422
+
+
+def test_other_classes_keep_their_shapes(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    client.post(
+        f"/api/datasets/{seeded.dataset_id}/annotation-labels",
+        json={"key": "scratch", "name": "Scratch", "color": "#00aa00", "position": 1},
+    )
+    image_id = seeded.normal_image_ids[0]
+    seed = client.get(f"/api/images/{image_id}/annotations/draft").json()["document"]
+    scratch = {
+        "id": "scratch-1",
+        "label_key": "scratch",
+        "kind": "polygon",
+        "operation": "add",
+        "points": [{"x": 1, "y": 1}, {"x": 6, "y": 1}, {"x": 6, "y": 6}],
+    }
+    created = client.post(
+        f"/api/images/{image_id}/annotations/draft",
+        json={**seed, "shapes": [scratch]},
+        headers={"If-None-Match": "*"},
+    )
+    client.post(
+        f"/api/images/{image_id}/annotations/complete",
+        headers={"If-Match": created.headers["etag"]},
+    )
+
+    absent = _region(client, image_id, action="absent")
+    assert absent.status_code == 200, absent.text
+    revision = client.get(f"/api/images/{image_id}/annotations/revisions").json()[-1]
+    assert revision["document"]["shapes"][0] == scratch
+    table = {entry["key"]: entry["pixels"] for entry in revision["class_table"]}
+    assert table["scratch"] > 0 and table["defect"] == 0

@@ -113,6 +113,20 @@ describe("the reference studio", () => {
     expect(screen.getByText("0.931")).toBeTruthy();
     expect(screen.getByText("12.5%")).toBeTruthy();
     expect(screen.getByText("84 ms")).toBeTruthy();
+    const accept = screen.getByRole("button", { name: "Accept the preview as truth" });
+    expect(accept.hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Mark Scratch absent" })).toBeTruthy();
+  });
+
+  it("cannot accept a preview it has not drawn", () => {
+    renderAt("?focus=1");
+    expect(
+      screen.getByRole("button", { name: "Accept the preview as truth" }).hasAttribute("disabled"),
+    ).toBe(true);
+    // Confirming absence needs no preview: it is a statement about the image.
+    expect(
+      screen.getByRole("button", { name: "Mark Scratch absent" }).hasAttribute("disabled"),
+    ).toBe(false);
   });
 
   it("lists samples without the class for looking, never for teaching", () => {

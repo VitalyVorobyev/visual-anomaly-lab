@@ -137,3 +137,39 @@ export function useStudioPreview(input: PreviewInput, enabled: boolean) {
     staleTime: Infinity,
   });
 }
+
+export type RegionAction = "accept" | "fix" | "absent";
+
+/**
+ * Turn what the studio shows into truth (ADR-0040): the preview's region accepted as a
+ * completed revision, opened as a draft for the editor, or the class confirmed absent. The
+ * region is read from the preview's own map on the server, never sent from here.
+ */
+export function useSetStudioRegion(datasetId: number) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: {
+      imageId: number;
+      classKey: string;
+      action: RegionAction;
+      generation?: string | undefined;
+    }) =>
+      unwrap(
+        await api.POST("/api/images/{image_id}/studio/region", {
+          params: { path: { image_id: input.imageId } },
+          body: {
+            class_key: input.classKey,
+            action: input.action,
+            generation: input.generation ?? null,
+          },
+        }),
+        "the studio's annotation",
+      ),
+    onSuccess: (_outcome, input) => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverageAll() });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.dataset(datasetId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(input.imageId) });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.annotationDraft(input.imageId) });
+    },
+  });
+}
