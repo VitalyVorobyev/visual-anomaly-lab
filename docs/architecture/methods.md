@@ -276,6 +276,30 @@ do with patch features do not also differ in how they got them.
   transition on the image's own edge and keeps the local mean in flat regions; it is not a threshold. numpy
   only.
 
+### Calibrating the foreground probability
+
+A few-shot method's map is a probability by construction — a softmax share, a posterior under equal
+priors, a ratio of two scores — and not by measurement, so the evaluator's fixed `>= 0.5` cut means
+something different on every class. `calibration.py` is the shared fix, a `calibration` field on
+`color_prototype`, `fss_dino` and `proto_seg`:
+
+- **`leave_one_out`** holds each reference out in turn, fits the method on the others, and scores the one
+  it left out. The held-out (probability, truth) pixel pairs are pooled, at most 262 144 of them, evenly
+  spaced within each reference and shared equally between them, and the cap is logged. A Platt scale —
+  logistic regression on the probability's logit, with Platt's smoothed targets so perfectly separated
+  pairs stay finite — is fitted to them, and the log says where 0.5 now falls on the unscaled map.
+- **The fitted model does not change.** The final bank is built first from the seed alone; each fold
+  draws its own stream from `[seed, fold]`. Only the scale differs from an uncalibrated run, and it is
+  saved with the model (a checkpoint without one loads as unscaled).
+- **Monotone by refusal.** A scale whose slope is not positive, or pairs of one class only, leave the
+  probability unscaled and say so. The scale is applied to the whole map and to the presence score after
+  that score is computed, so neither pixel ranking nor presence ranking can move.
+- **One reference cannot be left out**, and a fold whose other references show no pixel of one side — an
+  absent reference beside a single present one — is skipped and counted. With no fold scored, the
+  probability stays unscaled.
+- **The references' prior, not the queries'.** Every fold is fitted on references, which usually all show
+  the class; a query set that is mostly absent sees a scale fitted where the class is common.
+
 ## Shipped methods
 
 | key | family | trains | resume | channel-aware | ONNX | device |
@@ -450,6 +474,9 @@ writes no mask, so the evaluator cuts the map at its rule.
 - `max_pixels_per_class` (100 000), sampled with `evenly_spaced` across the references and logged when it
   bites. There is no RNG, so the same references always give the same models.
 - `smoothing_sigma`, `presence_percentile` (99.9).
+- `calibration` — `none` (default) or `leave_one_out`
+  ([calibrating](#calibrating-the-foreground-probability)); the colour models of each fold are
+  refitted from the other references' pixels.
 - It refuses to fit without targets, or when the references hold no pixel of the class or of the
   background.
 - It knows only colour. It proves the task's slice in the torch-free CI job, and a deep method that does
@@ -532,6 +559,9 @@ to the higher side. The arithmetic is `models/prototypes.py`, in numpy.
 
 - It writes that argmax as its own mask. Its map is the foreground's share of the two scores, floored at
   zero, so `>= 0.5` agrees with the argmax. Presence is a high percentile of the map; the paper has none.
+- `calibration` — `none` (default) or `leave_one_out`
+  ([calibrating](#calibrating-the-foreground-probability)). Calibrated, the mask is the scaled map at
+  0.5 rather than the argmax.
 - The default encoder is the ungated DINOv2 ViT-B/14. The paper's DINOv3 ViT-B/16 is one field away and
   licence-gated. The prepared size is the experiment's, not the paper's 512 px.
 - `max_features_per_class` (20 000) caps k-means and the Gram matrix, sampled evenly and logged. `seed`
@@ -558,6 +588,9 @@ field the gate can measure. It is the default few-shot method by the public gate
   with it.
 - **`refine`**: `guided` (default) or `bilinear`, from the patch grid to pixels.
 - **Presence**: the mean of the `presence_patches` (4) most confident patches.
+- **`calibration`**: `none` (default) or `leave_one_out`
+  ([calibrating](#calibrating-the-foreground-probability)); each fold rebuilds the bank, and the probe
+  under `linear_adapt`, from the other references' patches.
 - It writes no mask, so the evaluator cuts its map at 0.5. `max_features_per_class` (20 000) bounds the
   bank and the probe. The seed reaches k-means, the noise image and, without pretrained weights, the
   encoder.

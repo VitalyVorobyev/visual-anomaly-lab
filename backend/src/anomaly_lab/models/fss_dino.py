@@ -15,7 +15,9 @@ high percentile of the foreground probability.
 
 The method writes its argmax as its own mask (`InferContext.write_mask`). Its map is the
 foreground's share of the two combined scores, which is at least 0.5 exactly where the
-argmax picks the class, so the evaluator's rule reads it the same way.
+argmax picks the class, so the evaluator's rule reads it the same way. With `calibration`
+at `leave_one_out` the map is rescaled on the references (`calibration.py`) and the mask is
+the rescaled map at 0.5 — the argmax moved to where the references say the class begins.
 """
 
 from __future__ import annotations
@@ -42,6 +44,7 @@ from anomaly_lab.models.base import (
     evenly_spaced,
     module_available,
 )
+from anomaly_lab.models.calibration import IDENTITY, Calibration, PlattScale, leave_one_out
 from anomaly_lab.models.dino_backbone import (
     BACKBONES,
     DinoBackbone,
@@ -64,6 +67,9 @@ from anomaly_lab.schemas import API_MODEL_CONFIG
 
 STATE_FILENAME = "fss_dino.npz"
 META_FILENAME = "fss_dino.json"
+SIDES = ("foreground", "background")
+MASK_CUT = 0.5
+"""Where the calibrated map becomes the mask: the cut at which the unscaled map is the argmax."""
 
 
 class FssDinoConfig(BaseModel):
@@ -97,6 +103,15 @@ class FssDinoConfig(BaseModel):
         description=(
             "At most this many reference patches per side feed k-means and the Gram matrix, "
             "sampled evenly. Linear in references; the value is not."
+        ),
+    )
+    calibration: Calibration = Field(
+        default=Calibration.NONE,
+        description=(
+            "'leave_one_out' rescales the foreground probability on the references: each is "
+            "scored by prototypes of the others, and a Platt scale fitted to those pixels is "
+            "applied to every map, mask and presence score, so the 0.5 cut means the same on "
+            "every class. One reference cannot be left out and stays unscaled."
         ),
     )
     presence_percentile: float = Field(
@@ -136,6 +151,7 @@ class FssDinoModel(AnomalyModel):
         self.config = config
         self._prototypes: dict[str, np.ndarray] = {}
         self._grams: dict[str, np.ndarray] = {}
+        self._calibration: PlattScale = IDENTITY
         self._encoder = FrozenEncoder(
             config.backbone,
             pretrained=config.pretrained_backbone,
@@ -189,71 +205,145 @@ class FssDinoModel(AnomalyModel):
         validate_prepared_size(self.config.backbone, width, height)
         grid = patch_grid(self.config.backbone, width, height)
 
-        sides: dict[str, list[np.ndarray]] = {"foreground": [], "background": []}
+        # Kept per reference, whole, so a leave-one-out fold can pool every reference but one
+        # and score the one it left out.
+        encoded: list[np.ndarray] = []
+        sides: dict[str, list[np.ndarray]] = {side: [] for side in SIDES}
         for position, record in enumerate(train):
             ctx.raise_if_cancelled()
             features = self._features([record], ctx)[0]
             covered, background = split_patches(patch_coverage(targets.mask(record.image_id), grid))
+            encoded.append(features)
             sides["foreground"].append(features[covered])
             sides["background"].append(features[background])
             ctx.progress(0.8 * (position + 1) / len(train), f"encoded {position + 1}/{len(train)}")
 
-        rng = np.random.default_rng(self.config.seed)
-        for side, parts in sides.items():
+        self._prototypes, self._grams = self._build(
+            sides, targets.label_key, np.random.default_rng(self.config.seed), ctx
+        )
+        self._calibration = IDENTITY
+        if self.config.calibration is Calibration.LEAVE_ONE_OUT:
+            ctx.progress(0.9, "calibrating on the references")
+            self._calibration = leave_one_out(
+                len(train),
+                lambda fold: self._held_out(fold, train, encoded, sides, ctx),
+                ctx.log,
+                cancelled=ctx.raise_if_cancelled,
+            )
+            ctx.metric("calibration_slope", self._calibration.slope)
+            ctx.metric("calibration_bias", self._calibration.bias)
+        ctx.progress(1.0, "prototypes built")
+
+    def _build(
+        self,
+        sides: dict[str, list[np.ndarray]],
+        label_key: str,
+        rng: np.random.Generator,
+        ctx: TrainContext | None,
+    ) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray]]:
+        """Prototypes and Gram matrices per side; `ctx` is `None` in a quiet fold."""
+        prototypes: dict[str, np.ndarray] = {}
+        grams: dict[str, np.ndarray] = {}
+        for side in SIDES:
+            parts = sides[side]
             pooled = np.concatenate(parts) if parts else np.empty((0, 1), dtype=np.float32)
             if len(pooled) == 0:
                 msg = (
-                    f"the references hold no {side} patch for {targets.label_key!r}: a patch "
+                    f"the references hold no {side} patch for {label_key!r}: a patch "
                     "is the class when half of it, or the most of any patch, is covered"
                 )
                 raise RuntimeError(msg)
             chosen = evenly_spaced(len(pooled), self.config.max_features_per_class)
-            if len(chosen) < len(pooled):
-                ctx.log(
-                    f"{side}: {len(chosen)} of {len(pooled)} reference patches, sampled evenly "
-                    f"(max_features_per_class={self.config.max_features_per_class})"
-                )
-            else:
-                ctx.log(f"{side}: all {len(pooled)} reference patches")
+            if ctx is not None:
+                if len(chosen) < len(pooled):
+                    ctx.log(
+                        f"{side}: {len(chosen)} of {len(pooled)} reference patches, sampled "
+                        f"evenly (max_features_per_class={self.config.max_features_per_class})"
+                    )
+                else:
+                    ctx.log(f"{side}: all {len(pooled)} reference patches")
+                ctx.metric(f"{side}_patches", float(len(chosen)))
             sample = pooled[np.asarray(chosen, dtype=np.int64)]
-            self._prototypes[side] = spherical_kmeans(
+            prototypes[side] = spherical_kmeans(
                 sample,
                 self.config.prototypes_per_class,
                 iterations=self.config.kmeans_iterations,
                 rng=rng,
             )
             if self.config.gram:
-                self._grams[side] = gram_matrix(sample)
-            ctx.metric(f"{side}_patches", float(len(chosen)))
-        ctx.progress(1.0, "prototypes built")
+                grams[side] = gram_matrix(sample)
+        return prototypes, grams
+
+    def _held_out(
+        self,
+        fold: int,
+        train: Sequence[ImageRecord],
+        encoded: list[np.ndarray],
+        sides: dict[str, list[np.ndarray]],
+        ctx: TrainContext,
+    ) -> tuple[np.ndarray, np.ndarray] | None:
+        """Reference `fold`'s map from prototypes of the others, and its truth; `None`
+        when the others hold no patch of one side.
+
+        Each fold draws its own k-means stream from the seed, so the final prototypes — built
+        first, from the seed alone — are the same with calibration on or off.
+        """
+        targets = ctx.targets
+        if targets is None:
+            raise RuntimeError("fss_dino calibrates on references with masks")
+        others = {side: [p for i, p in enumerate(sides[side]) if i != fold] for side in SIDES}
+        if any(sum(len(part) for part in others[side]) == 0 for side in SIDES):
+            return None
+        prototypes, grams = self._build(
+            others, targets.label_key, np.random.default_rng([self.config.seed, fold + 1]), None
+        )
+        probability, _ = self._probability(encoded[fold], prototypes, grams, ctx)
+        return probability, targets.mask(train[fold].image_id)
 
     # ------------------------------------------------------------------ predict
+
+    def _probability(
+        self,
+        query: np.ndarray,
+        prototypes: dict[str, np.ndarray],
+        grams: dict[str, np.ndarray],
+        ctx: TrainContext | InferContext,
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """The unscaled foreground probability at pixels, and the argmax mask."""
+        width, height = ctx.preprocessing.width, ctx.preprocessing.height
+        grid = patch_grid(self.config.backbone, width, height)
+        scores = {
+            side: combined_score(
+                class_maps(query, prototypes[side], grams.get(side)), grid, (width, height)
+            )
+            for side in SIDES
+        }
+        probability = foreground_probability(scores["foreground"], scores["background"])
+        return probability, scores["foreground"] > scores["background"]
 
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
         if not self._prototypes:
             raise RuntimeError("fss_dino was asked to predict before it was fitted or loaded")
-        width, height = ctx.preprocessing.width, ctx.preprocessing.height
-        grid = patch_grid(self.config.backbone, width, height)
         predictions: list[Prediction] = []
         for index, record in enumerate(images):
             ctx.raise_if_cancelled()
             started = time.perf_counter()
             query = self._features([record], ctx)[0]
-            scores = {
-                side: combined_score(
-                    class_maps(query, self._prototypes[side], self._grams.get(side)),
-                    grid,
-                    (width, height),
-                )
-                for side in ("foreground", "background")
-            }
-            probability = foreground_probability(scores["foreground"], scores["background"])
+            probability, argmax = self._probability(query, self._prototypes, self._grams, ctx)
+            # The percentile of the unscaled map, then scaled: interpolating between two
+            # pixels does not commute with the scale, and this keeps the ranking exact.
+            presence = self._calibration.apply_score(
+                float(np.percentile(probability, self.config.presence_percentile))
+            )
+            if not self._calibration.is_identity:
+                probability = self._calibration.apply(probability)
+                argmax = probability >= MASK_CUT
             map_path = ctx.write_map(record.image_id, probability)
-            ctx.write_mask(record.image_id, scores["foreground"] > scores["background"])
+            ctx.write_mask(record.image_id, argmax)
             predictions.append(
                 Prediction(
                     image_id=record.image_id,
-                    score=float(np.percentile(probability, self.config.presence_percentile)),
+                    score=presence,
                     anomaly_map=map_path,
                     inference_ms=(time.perf_counter() - started) * 1000.0,
                 )
@@ -268,6 +358,7 @@ class FssDinoModel(AnomalyModel):
             raise RuntimeError("fss_dino has nothing to save; it was never fitted")
         arrays = {f"prototypes_{side}": value for side, value in self._prototypes.items()}
         arrays.update({f"gram_{side}": value for side, value in self._grams.items()})
+        arrays["calibration"] = self._calibration.to_array()
         # numpy's stub types the second positional as `allow_pickle`; this is the keyword form.
         np.savez_compressed(artifact_dir / STATE_FILENAME, **arrays)  # type: ignore[arg-type]
         meta = {"backbone": self.config.backbone.value, "fingerprint": self._encoder.fingerprint}
@@ -293,3 +384,6 @@ class FssDinoModel(AnomalyModel):
                 for key in stored.files
                 if key.startswith("gram_")
             }
+            self._calibration = PlattScale.from_array(
+                stored["calibration"] if "calibration" in stored.files else None
+            )

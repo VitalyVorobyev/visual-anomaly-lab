@@ -288,133 +288,47 @@ below 0.04, and the false-positive rate on absent images is near 1. The foregrou
 calibrated to the evaluator's fixed `>= 0.5` rule — on a small, subtle defect class most of an image
 clears it — so the primary measures the cut as much as the segmentation. The methods do rank *which*
 images hold the class. Mask ranking apart from the cut is `pixel_average_precision`, which the
-evaluator reports and this verdict predates; a calibrated foreground probability is open (backlog,
-Few-shot segmentation). VisA
+evaluator reports and this verdict predates; a calibrated foreground probability is the calibration leg
+below. VisA
 defects are also a hard target for a method built for objects, which is why a cross-domain few-shot
 dataset is the next gate.
 
+### Calibration leg — predeclared
 
-## Supervised segmentation — `dino_linear_seg` stays experimental under either pixel sampling; neither method draws a usable defect mask
+Predeclared before it ran. `scripts/few-shot-public-gate.py --leg calibration` asks whether a foreground
+probability fitted on the references makes the fixed `>= 0.5` cut mean something
+([methods](architecture/methods.md#calibrating-the-foreground-probability)).
 
-The first supervised segmentation gate (ADR-0039), in two legs, each predeclared before it ran. The legs
-share the protocol and the decision rule; they differ only in how `dino_linear_seg` samples its training
-pixels: `raster` in the first, `per_class` in the second. Neither leg promoted it, and `raster` remains
-its default because it measured higher on the primary.
+**Protocol.** The first leg's, unchanged: VisA `candle` and `pcb1`, identity prepared input at 448 × 448,
+target class `defect`, `few_shot` splits under seeds {0, 1, 2} — so the same reference draws — and every
+other sample a query. Each method runs twice on each split: at its shipped defaults, which is `calibration`
+`none`, and with `calibration` `leave_one_out`, every other field at its default. The fitted model is the
+same in both — bank, prototypes or colour models — so the pair differs only in the scale. Shot counts are
+k ∈ {5, 10}: the primary, and the most references a scale can be fitted on. At k = 1 the two variants are
+the same run, since one reference cannot be left out. 2 classes × 2 shot counts × 3 seeds × 3 methods × 2
+variants is 72 runs, one child process each; at the 102 s a run measured below, about 2 h. The `none` runs
+repeat the first leg's cells and are the check that nothing else moved.
 
-### Leg 1 — `raster` pixel sampling
+**Reported.** Per method, variant and shot count, the first leg's columns, pixel average precision and
+present-image recall (the share of images showing the class whose mask touches it), each a mean over the
+two classes and three seeds; and the fitted scales.
 
-`scripts/semantic-public-gate.py`, 12 runs in 12.5 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1,
-Pillow 12.3.0).
+**Decision rule, fixed before the run.** Per method, at 5 shots:
+- `leave_one_out` becomes the method's default if all three hold:
+  - the false-positive rate on absent images falls by at least 0.20 against `none`;
+  - foreground IoU falls by no more than 0.005, a tolerance well inside the first leg's seed spread;
+  - present-image recall keeps at least half of its `none` value.
+  Otherwise `none` stays its default and `leave_one_out` ships as an option.
+- Two checks of construction, not part of the rule. The scale is strictly increasing and is applied to the
+  presence score after the score is computed, so presence ROC-AUC must be identical between the variants.
+  It is applied to the whole map, so pixel average precision may move only by the evaluator's fixed
+  histogram bins; a change above 0.01 would be a defect in the implementation, not a result.
+- The leg does not re-decide the default few-shot method.
 
-**Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
-divide. The dataset is read as a semantic segmentation benchmark of one class, `defect`: VisA's pixel
-masks are the imported ground truth a supervised run reads through its label targets, and each normal
-sample answers with an empty map, exactly as the few-shot gate reads them. For each class, a
-`class_stratified` split at its shipped defaults (70 % train, stratified by class signature) is drawn
-under seeds {0, 1, 2} over all samples — 1 000 or 1 004 normals and 100 defects, so about 70 defects and
-700 normals train and 30 and 300 test. Two methods run at their shipped defaults on the same pixels, with
-the method seed equal to the split seed where the method has one: `color_classifier` (the floor; it
-draws nothing at random) and `dino_linear_seg` (DINOv2 ViT-B/14, last block). That is 12 runs, one child
-process each, scored on the test subset.
-
-**Reported.**
-- Per method and class, as a mean over seeds with the spread across seeds: mean IoU, the background's IoU,
-  pixel accuracy, mean class accuracy, frequency-weighted IoU, ms per image and seconds to fit.
-- Per-sample outcomes of the test subset (hit, low IoU, miss for defect samples; correct absence or false
-  presence for normal ones), pooled over seeds.
-
-**Decision rule, fixed before the run.** The primary number is test mean IoU as the evaluator defines it —
-over the annotation classes, background excluded, so here the IoU of `defect` — averaged over the three
-seeds, per class.
-- `dino_linear_seg` leaves experimental (`supported`) if it beats `color_classifier` by at least 0.05 on
-  the primary **on both classes**. Otherwise it stays experimental.
-- The margin is absolute, not relative, because the floor may sit near zero, where any ratio is large. It
-  is 0.05 rather than the few-shot gate's 0.02 because one class and 30 test defects make a seed's draw
-  move IoU by more; and it must hold on both classes because the few-shot gate's lead came from one class
-  alone.
-- `color_classifier` is the floor and stays experimental whatever the result.
-
-**Result.** Test subset, means over three seeds; the spread is across seeds. Outcomes are samples pooled
-over the three seeds (90 defect and 900 or 903 normal samples per class).
-
-| Class | Method | Mean IoU | ± seeds | Background IoU | Pixel accuracy | Mean class accuracy | ms/image | Fit s |
-|---|---|---|---|---|---|---|---|---|
-| `candle` | `color_classifier` | 0.0007 | 0.0002 | 0.647 | 0.647 | 0.942 | 32 | 8 |
-| | `dino_linear_seg` | 0.0829 | 0.0208 | 0.998 | 0.998 | 0.834 | 83 | 67 |
-| `pcb1` | `color_classifier` | 0.0038 | 0.0007 | 0.853 | 0.854 | 0.805 | 33 | 8 |
-| | `dino_linear_seg` | 0.0388 | 0.0097 | 0.984 | 0.984 | 0.876 | 88 | 59 |
-
-| Class | Method | Defects: hit / low IoU / miss | Normals: correct absence / false presence |
-|---|---|---|---|
-| `candle` | `color_classifier` | 0 / 88 / 2 | 0 / 900 |
-| | `dino_linear_seg` | 2 / 84 / 4 | 80 / 820 |
-| `pcb1` | `color_classifier` | 0 / 90 / 0 | 0 / 903 |
-| | `dino_linear_seg` | 6 / 78 / 6 | 0 / 903 |
-
-Peak RSS: 0.17 GB (`color_classifier`), 1.9–2.0 GB (`dino_linear_seg`).
-
-**Verdict, by the rule.** `dino_linear_seg` leads `color_classifier` by 0.082 mean IoU on `candle` and by
-0.035 on `pcb1`. The margin of 0.05 holds on one class, not both, so **`dino_linear_seg` stays
-experimental**.
-
-**What the gate says beyond its rule.** Neither method draws a usable mask of a VisA defect. The floor
-labels a third of `candle`'s pixels and a seventh of `pcb1`'s as defect; the deep head is far more
-precise but still marks some defect on nearly every normal image, and reaches an IoU of 0.5 on 2 of 90
-defect samples on `candle` and 6 of 90 on `pcb1`. The cause in the head's case is visible in its own training log: `plan_pixels`
-samples labelled pixels evenly in raster order, so a class covering a fraction of a percent of each frame
-gets almost nothing — 28–33 of 130 900 sampled pixels on `candle` and 93–109 on `pcb1` were defect — and
-`inverse_frequency` weighting then weighs each of those few pixels 1 200–4 500 times a background one, which buys recall
-(mean class accuracy 0.83–0.88) at the price of false presence everywhere. The floor, which samples each
-class separately, saw 30 000–100 000 defect pixels and still could not separate defect by colour. The gate
-therefore measures the sampling rule as much as the head.
-
-### Leg 2 — `per_class` pixel sampling
-
-Predeclared before it ran. `dino_linear_seg` split each training image's pixel budget equally among the
-classes present in it, evenly spaced within each class (`pixel_sampling` `per_class`, then its shipped
-default; [methods](architecture/methods.md#dino_linear_seg)).
-`scripts/semantic-public-gate.py`, 12 runs in 13.1 min on MPS, same packages as leg 1. Under the plan's defaults about 770 training
-images share 131 072 pixels, 170 each, so a defect image gives up to 85 defect pixels where raster
-sampling gave it none or one.
-
-**Protocol and decision rule: leg 1's, unchanged.** The same script, classes, prepared size, split
-strategy and seeds, so the same splits; both methods rerun at their shipped defaults, whose only change from leg 1 was
-`pixel_sampling` — `class_balancing` stays `inverse_frequency`, and every other field keeps leg 1's value.
-`color_classifier` draws nothing at random and is rerun rather than reused, as a check that nothing else
-moved. The primary is test mean IoU averaged over the three seeds, and `dino_linear_seg` leaves
-experimental only if it beats `color_classifier` by at least 0.05 on it **on both classes**.
-
-This is the one further leg the first leg's cause justified. Whatever it shows, the gate is not rerun
-under another sampling or weighting rule to reach the margin.
-
-**Result.** Test subset, means over three seeds, as in leg 1. `color_classifier` reproduced leg 1's quality
-metrics to the reported digit, so the splits and pixels were the same.
-
-| Class | Method | Mean IoU | ± seeds | Background IoU | Pixel accuracy | Mean class accuracy | ms/image | Fit s |
-|---|---|---|---|---|---|---|---|---|
-| `candle` | `color_classifier` | 0.0007 | 0.0002 | 0.647 | 0.647 | 0.942 | 33 | 8 |
-| | `dino_linear_seg` | 0.0079 | 0.0016 | 0.971 | 0.971 | 0.937 | 89 | 70 |
-| `pcb1` | `color_classifier` | 0.0038 | 0.0007 | 0.853 | 0.854 | 0.805 | 34 | 9 |
-| | `dino_linear_seg` | 0.0112 | 0.0022 | 0.944 | 0.944 | 0.900 | 91 | 62 |
-
-| Class | Method | Defects: hit / low IoU / miss | Normals: correct absence / false presence |
-|---|---|---|---|
-| `candle` | `color_classifier` | 0 / 88 / 2 | 0 / 900 |
-| | `dino_linear_seg` | 0 / 90 / 0 | 0 / 900 |
-| `pcb1` | `color_classifier` | 0 / 90 / 0 | 0 / 903 |
-| | `dino_linear_seg` | 0 / 90 / 0 | 0 / 903 |
-
-The head trained on 4 985–5 950 defect pixels per run, against 28–109 in leg 1. Peak RSS as in leg 1.
-
-**Verdict, by the rule.** `dino_linear_seg` leads `color_classifier` by 0.007 mean IoU on `candle` and by
-0.007 on `pcb1`, short of 0.05 on both, so **`dino_linear_seg` stays experimental**. Its lead is smaller
-than in leg 1 on both classes, so `raster` stays the default and `per_class` ships as an option.
-
-**What the leg says beyond its rule.** Sampling the defect fairly bought recall and cost precision. Mean
-class accuracy rose to 0.90–0.94, but the head now labels 3–6 % of every image defect — the background IoU
-fell from 0.98–1.00 to 0.94–0.97 — so every normal test image shows false presence and no defect sample
-reaches an IoU of 0.5. Under `inverse_frequency` both legs train the head as if defect and background
-were equally common; leg 1's few defect pixels happened to keep that boundary tight, and leg 2's
-thousands do not. The sample was not what held the head back: its argmax is not calibrated to a class
-that covers a fraction of a percent of the frame. Correcting that is a new question with its own gate,
-not a third leg of this one.
+**What preceded the rule.** One smoke cell — `candle`, 2 shots, seed 0, all three methods in both variants
+— ran before the rule was fixed, to prove the script. In it every calibrated map stayed below 0.5
+everywhere: absent-image FPR fell from 1.0 to 0 and foreground IoU to 0. `fss_dino` and `color_prototype`
+were already below the IoU tolerance, so an IoU condition alone would have adopted a scale that draws
+nothing; the recall condition was added for that reason, and the smoke cell is not part of the leg. The
+same cell moved `color_prototype`'s presence ROC-AUC by 0.0007, because the logit's clip merged nearly
+saturated scores into ties; the clip is now float64's own, so the construction check above holds.

@@ -21,6 +21,7 @@ from anomaly_lab.models.base import (
     NullReporter,
     TrainContext,
 )
+from anomaly_lab.models.calibration import Calibration
 from anomaly_lab.models.color_prototype import (
     ColorPrototypeConfig,
     ColorPrototypeModel,
@@ -133,6 +134,59 @@ def test_the_pixel_cap_samples_evenly_and_says_so(tmp_path: Path) -> None:
     train_ctx.reporter = Recorder()
     ColorPrototypeModel(ColorPrototypeConfig(max_pixels_per_class=100)).fit(references, train_ctx)
     assert any("100 of 231 reference pixels" in line for line in logged)
+
+
+def test_leave_one_out_rescales_the_same_models_and_survives_a_round_trip(
+    tmp_path: Path,
+) -> None:
+    references, masks = _records(tmp_path, [(2, 2), (8, 9), (4, 10)])
+    queries, _ = _records(tmp_path, [(10, 3), None], first_id=11)
+    logged: list[str] = []
+
+    class Recorder(NullReporter):
+        def log(self, message: str, level: str = "info") -> None:
+            logged.append(message)
+
+    plain_dir, calibrated_dir = tmp_path / "plain", tmp_path / "calibrated"
+    plain_dir.mkdir()
+    calibrated_dir.mkdir()
+    train_ctx, plain_ctx = _contexts(plain_dir, _Targets(masks))
+    _, calibrated_ctx = _contexts(calibrated_dir, _Targets(masks))
+    train_ctx.reporter = Recorder()
+
+    plain = ColorPrototypeModel(ColorPrototypeConfig())
+    plain.fit(references, train_ctx)
+    calibrated = ColorPrototypeModel(ColorPrototypeConfig(calibration=Calibration.LEAVE_ONE_OUT))
+    calibrated.fit(references, train_ctx)
+    assert any("leave-one-out over 3 references" in line for line in logged), logged
+
+    plain_scores = [p.score for p in plain.predict(queries, plain_ctx)]
+    calibrated_scores = [p.score for p in calibrated.predict(queries, calibrated_ctx)]
+    scale = calibrated._calibration
+    assert not scale.is_identity
+    # The same colour models, rescaled: the map is the scale of the unscaled map, so its
+    # ranking — and the presence ranking — cannot move.
+    np.testing.assert_allclose(
+        _map(calibrated_ctx, 11), scale.apply(_map(plain_ctx, 11)), rtol=1e-5, atol=1e-6
+    )
+    assert calibrated_scores == pytest.approx([scale.apply_score(s) for s in plain_scores])
+
+    calibrated.save(calibrated_dir)
+    loaded = ColorPrototypeModel(ColorPrototypeConfig(calibration=Calibration.LEAVE_ONE_OUT))
+    loaded.load(calibrated_dir)
+    assert [p.score for p in loaded.predict(queries, calibrated_ctx)] == calibrated_scores
+
+
+def test_one_reference_leaves_the_probability_unscaled(tmp_path: Path) -> None:
+    references, masks = _records(tmp_path, [(2, 2)])
+    queries, _ = _records(tmp_path, [(10, 3)], first_id=11)
+    train_ctx, infer_ctx = _contexts(tmp_path, _Targets(masks))
+    scores = []
+    for calibration in Calibration:
+        model = ColorPrototypeModel(ColorPrototypeConfig(calibration=calibration))
+        model.fit(references, train_ctx)
+        scores.append(model.predict(queries, infer_ctx)[0].score)
+    assert scores[0] == scores[1]
 
 
 def test_it_refuses_to_fit_without_masks_or_without_the_class(tmp_path: Path) -> None:
