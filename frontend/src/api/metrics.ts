@@ -256,6 +256,42 @@ export function segmentationRows(metrics: MetricValue): MetricRow[] {
   ];
 }
 
+/**
+ * A supervised segmentation subset (ADR-0039): the summary read off its confusion matrix,
+ * then one IoU per pinned class. A class nobody drew or predicted in the subset has no IoU
+ * and stays a dash.
+ */
+export function semanticRows(metrics: MetricValue): MetricRow[] {
+  const perClass = metrics.per_class_iou;
+  const classes = Array.isArray(metrics.classes) ? (metrics.classes as unknown[]) : [];
+  return [
+    {
+      key: "mean_iou",
+      label: "Mean IoU",
+      value: formatScore(metrics.mean_iou),
+      hint: "Over the annotation classes with an IoU; background is reported on its own.",
+    },
+    { key: "background_iou", label: "Background IoU", value: formatScore(metrics.background_iou) },
+    { key: "pixel_accuracy", label: "Pixel accuracy", value: formatScore(metrics.pixel_accuracy) },
+    {
+      key: "mean_class_accuracy",
+      label: "Mean class accuracy",
+      value: formatScore(metrics.mean_class_accuracy),
+    },
+    {
+      key: "frequency_weighted_iou",
+      label: "Frequency-weighted IoU",
+      value: formatScore(metrics.frequency_weighted_iou),
+      hint: "Each class's IoU weighted by its share of true pixels, background included.",
+    },
+    ...classes.map((name) => ({
+      key: `iou:${String(name)}`,
+      label: `IoU · ${String(name)}`,
+      value: formatScore(countIn(perClass, String(name))),
+    })),
+  ];
+}
+
 export function timingRows(metrics: MetricValue): MetricRow[] {
   const timing = metrics.timing;
   if (timing === null || typeof timing !== "object") return [];

@@ -28,8 +28,9 @@ class ImageRecord(BaseModel):
 
 class Prediction(BaseModel):
     image_id: int
-    score: float               # higher = more anomalous
+    score: float               # higher = more anomalous; for segmentation, the share given a class
     anomaly_map: Path | None   # float32 .npy
+    label_map: Path | None     # semantic segmentation: 8-bit class-index PNG (write_label_map)
     inference_ms: float
 
 class AnomalyModel(ABC):
@@ -97,17 +98,28 @@ untouched field is sent as unset.
   `anomaly`, so an anomaly method cannot see a defect mask by construction. For a targeted task it is a
   `TargetProvider`: `label_key`, and `mask(image_id)`, the class's region as a boolean array in the
   prepared frame (`experiments/targets.py`);
+- `TrainContext.label_targets` — its sibling for `semantic_segmentation`, `None` for every other task: a
+  `LabelTargetProvider` with the run's pinned `classes` and `labels(image_id)`, a `uint8` label map in the
+  prepared frame where `classes[i]` is `i + 1`, 0 is background and `IGNORE_INDEX` (255) is letterbox
+  padding or a class the run did not pin — fitted on by nobody;
 - `InferContext.write_map(image_id, array)` — projects a prepared-frame map to source coordinates,
   persists it as float32 and accumulates the run's finite display range;
 - `InferContext.write_mask(image_id, mask)` — a method's own foreground decision, projected nearest
   into the source frame and stored as a 0/255 PNG beside the map (`maps/<id>.mask.png`). For a
   targeted task the map is the foreground probability, and a run that writes no mask is read by
   thresholding it.
+- `InferContext.write_label_map(image_id, labels, classes=n)` — a supervised segmentation method's class
+  per pixel, checked to lie in `0..n`, projected **nearest** into the source frame (background outside
+  the crop) and stored as an 8-bit PNG (`maps/<id>.labels.png`). A class index is a name and is never
+  interpolated. The `score` beside it is the share of the prepared image given a class other than
+  background, so every segmentation method's score means the same thing and needs no calibrated
+  probability.
 
 **What `fit` is given is the task's** (`experiments/policy.py`). `anomaly` fits on the train subset's
 normals and calibrates on the val subset's. `few_shot_segmentation` fits on every train-subset image whose
-truth answers for the target class, present or absent (`annotations/class_truth.py`), and has no val. The
-handler logs how many images it left out and why.
+truth answers for the target class, present or absent (`annotations/class_truth.py`), and has no val.
+`semantic_segmentation` fits on every train-subset image whose truth answers for all of the run's pinned
+classes, and has no val. The handler logs how many images it left out and why.
 
 Models never touch SQLite, never read application settings, and never write outside `artifact_dir` and
 `cache_dir`, which is what makes a plugin testable with a `NullReporter` and no job system.
@@ -278,9 +290,10 @@ do with patch features do not also differ in how they got them.
 | `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
 | `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
 | `proto_seg` | few-shot: debiased prototype bank / probe | fit | no | no | no | mps |
+| `color_classifier` | segmentation: per-class colour Gaussians | fit | no | no | no | cpu |
 
-`color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone; every other method
-declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
+`color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone, `color_classifier`
+declares `semantic_segmentation` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -440,6 +453,23 @@ writes no mask, so the evaluator cuts the map at its rule.
   background.
 - It knows only colour. It proves the task's slice in the torch-free CI job, and a deep method that does
   not beat it has learned nothing about shape or texture.
+- ONNX: none.
+
+### `color_classifier`
+
+The supervised segmentation floor (ADR-0039): numpy + Pillow, no torch, sharing `color_prototype`'s
+colour model. Background and each pinned class get one Gaussian over the colour of their training
+pixels; a pixel's class is the highest posterior under equal priors, after each posterior is smoothed.
+It writes the label map, a map of the probability of anything but background, and the foreground-share
+score.
+
+- `color_space` — `lab` (default) or `rgb`.
+- `max_pixels_per_class` (100 000), sampled with `evenly_spaced` across the whole pool of each class's
+  training pixels and logged when it bites. Two passes — count, then read only the chosen pixels — keep
+  memory bounded by the cap rather than the training set. There is no RNG.
+- `smoothing_sigma` (1.0), applied to each class's posterior before the argmax.
+- A class with no training pixel is not modelled, never predicted, and named in a warning. It refuses to
+  fit without label targets, or when the training images hold no pixel of any class.
 - ONNX: none.
 
 ### `fss_dino`

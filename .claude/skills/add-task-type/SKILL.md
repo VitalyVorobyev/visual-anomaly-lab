@@ -26,7 +26,8 @@ has annotation, and whether it is ready for a task is a readiness check.
    Until it exists, `create_experiment` refuses the task — that is the guard, keep it. An evaluator
    reads stored predictions and ground truth and writes `MetricSet`s; it never imports a model. It
    names a `headline` metric and answers `current_digest`, so staleness is judged against its own
-   truth (`FewShotSegmentationEvaluator` and `eval/segmentation.py` are the second example).
+   truth (`FewShotSegmentationEvaluator` with `eval/segmentation.py`, and
+   `SemanticSegmentationEvaluator` with `eval/semantic.py`, are the other two examples).
    - **Bound memory.** Segmentation accumulates a per-class confusion matrix, never per-pixel arrays;
      detection keeps per-class lists of (confidence, matched) pairs. Linear in images is fine;
      linear in pixels is not.
@@ -37,21 +38,25 @@ has annotation, and whether it is ready for a task is a readiness check.
 3. **Ground truth.** Completion writes a class-index PNG and an instances JSON next to the binary
    mask, and the revision pins its class table and the instances file's path and digest
    (`annotation_render.py`); `annotations/class_truth.py` resolves and loads a class's region per
-   image. A document holds polygons, boxes and bitmaps, each with an optional `instance_id`; an
+   image (`resolve_class_truth`), or every pinned class at once as a label map
+   (`resolve_label_truth`) — an image is labelled for that only when it answers every class. A document holds polygons, boxes and bitmaps, each with an optional `instance_id`; an
    instance is `{instance_id, label_key, box, pixels}` over its final pixels. **The shape union grows
    without a schema version**: a new shape kind is additive, an unset optional field is left out of
    the canonical JSON so stored digests never move, and every kind branch names its kind
    (`assert_never` in Python, a `never` check in TypeScript) rather than falling through an `else`.
    The taxonomy is `AnnotationLabel`, managed on the Annotate tab (`routes/dataset/ClassManager.tsx`);
    the editor's class keys are `2`–`9`, because `0`/`1` are the view's.
-4. **Predictions.** A binary task writes its mask with `InferContext.write_mask`. *(planned)*
-   `Prediction` in `models/base.py` gains optional `label_map` and `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
+4. **Predictions.** A binary task writes its mask with `InferContext.write_mask`; a multi-class
+   one writes an 8-bit label map with `InferContext.write_label_map` (nearest, never interpolated)
+   and sets `Prediction.label_map`. *(planned)* `Prediction` gains optional `instances`. Every prediction keeps an image-level `score` (for detection, the top confidence) so
    ranking, the gallery and disagreement keep working.
-5. **Targets.** `TrainContext.targets: TargetProvider | None`. It is `None` for `anomaly`, which is
-   what makes an anomaly method unable to see a defect mask by construction — **never pass ground
-   truth to a plugin any other way.** The training-set policy is the task's, in
+5. **Targets.** `TrainContext.targets: TargetProvider | None` for one class, and its sibling
+   `TrainContext.label_targets: LabelTargetProvider | None` for a pinned class list. Both are `None`
+   for `anomaly`, which is what makes an anomaly method unable to see a defect mask by
+   construction — **never pass ground truth to a plugin any other way.** The training-set policy is the task's, in
    `experiments/policy.py`: `anomaly` trains on the train subset's normals, `few_shot_segmentation`
-   on its references; a new task adds its branch there. The `infer` log names the evaluator's
+   on its references, `semantic_segmentation` on the train subset's images labelled for every
+   pinned class; a new task adds its branch there. The `infer` log names the evaluator's
    `headline` metric.
 6. **The first plugin.** Follow the `add-method-plugin` skill; declare the task in
    `Capabilities.tasks`. It must still cost one module and one registry entry. If it needs a route,

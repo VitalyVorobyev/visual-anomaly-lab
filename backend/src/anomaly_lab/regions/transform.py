@@ -220,6 +220,50 @@ class SpatialTransform(BaseModel):
         )
         return source
 
+    def prepare_labels(self, labels: np.ndarray, *, fill: int) -> np.ndarray:
+        """Project a source-frame `uint8` label map into the prepared frame, nearest.
+
+        Letterbox padding is `fill`: those pixels were never in the source image, so a
+        caller says what they mean rather than inheriting background.
+        """
+        self._require_source_shape(labels.shape)
+        cropped = np.asarray(
+            labels[self.crop_top : self.crop_bottom, self.crop_left : self.crop_right],
+            dtype=np.uint8,
+        )
+        resized = Image.fromarray(cropped, mode="L").resize(
+            (self.resized_width, self.resized_height), Image.Resampling.NEAREST
+        )
+        prepared = np.full((self.prepared_height, self.prepared_width), fill, dtype=np.uint8)
+        prepared[
+            self.pad_top : self.pad_top + self.resized_height,
+            self.pad_left : self.pad_left + self.resized_width,
+        ] = np.asarray(resized)
+        return prepared
+
+    def project_labels(self, prepared_labels: np.ndarray, *, fill: int) -> np.ndarray:
+        """Project a prepared-frame `uint8` label map to source pixels, nearest.
+
+        A class index is a name, not a quantity, so it is never interpolated. Source pixels
+        outside the crop are `fill`.
+        """
+        self._require_prepared_shape(prepared_labels.shape)
+        unpadded = np.asarray(
+            prepared_labels[
+                self.pad_top : self.pad_top + self.resized_height,
+                self.pad_left : self.pad_left + self.resized_width,
+            ],
+            dtype=np.uint8,
+        )
+        restored = Image.fromarray(unpadded, mode="L").resize(
+            (self.crop_width, self.crop_height), Image.Resampling.NEAREST
+        )
+        source = np.full((self.source_height, self.source_width), fill, dtype=np.uint8)
+        source[self.crop_top : self.crop_bottom, self.crop_left : self.crop_right] = np.asarray(
+            restored
+        )
+        return source
+
     def project_map(self, prepared_map: np.ndarray) -> np.ndarray:
         """Project a float anomaly map to source pixels; uncovered pixels are NaN."""
         self._require_prepared_shape(prepared_map.shape)

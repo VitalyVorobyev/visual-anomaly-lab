@@ -220,7 +220,11 @@ and Benchmark. The outcome vocabularies are disjoint (`tp`/`fp`/`tn`/`fn`; `hit`
 Overview promotes IoU, Dice, presence ROC-AUC and the rate flagged on absent images, and tallies outcomes
 per sample. Its tables are `segmentationRows`, with present / absent / unlabelled image counts. Its
 Benchmark shows present samples by IoU band and absent samples by outcome. How overlap moves with the
-number of references is a question across runs, and is open.
+number of references is a question across runs, and is open. A `semantic_segmentation` run has no
+per-sample verdict: `useVerdicts` ranks the results page's rows under the neutral outcome `scored`, its
+strip is `all` alone, Overview promotes mean IoU, pixel accuracy, mean class accuracy and
+frequency-weighted IoU, and its tables are `semanticRows` — the summary, then one IoU per pinned class,
+with labelled / unlabelled image counts. Its split list is every strategy but `few_shot`.
 
 **Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
 where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each

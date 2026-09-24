@@ -77,7 +77,13 @@ application.
     mark absent, and freeze into a run.
 
   Still open: the public gate that decides between the methods.
-- **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.
+- **Supervised segmentation** (ADR-0039) runs end to end on the few-shot task's seams: a run pins its
+  dataset's classes at creation, fits on the annotated images of its train subset through
+  `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix
+  (mean IoU, per-class IoU and accuracy, pixel accuracy, frequency-weighted IoU). `color_classifier` is
+  the torch-free floor. Still open: a split strategy that draws annotated samples into `train`, result
+  screens beyond the metric tables, a deep method, and its public gate.
+- **Detection** (ADR-0039) follows, and reuses the same seams.
 
 ## Deliberately not built
 

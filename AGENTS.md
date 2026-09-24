@@ -104,7 +104,10 @@ comparing them under one evaluation protocol.
   (a reproduction of FSSDINO over a frozen DINO) and `proto_seg` (ours: debiased features, a
   hybrid prototype bank, optional linear adaptation):
   a split of references, a target class, masks into `fit` through `TrainContext.targets`, and an
-  evaluator for masks and presence. A grouped multi-view dataset is now *usable* and not merely
+  evaluator for masks and presence. The third, supervised semantic segmentation (ADR-0039), runs
+  its slice with `color_classifier` (numpy, the floor): classes pinned at creation, label maps into
+  `fit` through `TrainContext.label_targets` and out through `InferContext.write_label_map`, and a
+  per-class confusion-matrix evaluator. A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
   aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
   the registration the scan measured.

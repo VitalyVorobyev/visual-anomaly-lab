@@ -23,6 +23,7 @@ from typing import Any
 
 import numpy as np
 
+from anomaly_lab.annotations.class_truth import MAX_SEGMENTATION_CLASSES
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
@@ -271,6 +272,27 @@ def validate_target(
         )
 
 
+def pin_classes(conn: sqlite3.Connection, task: Task, dataset_id: int) -> list[str]:
+    """The class list a supervised segmentation run is frozen with; empty for any other task.
+
+    Every class of the dataset, in taxonomy order, at creation (ADR-0039). Class `i` of the
+    list is label index `i + 1` for the life of the run, so a class added or reordered later
+    cannot renumber a stored model's output. The class-index PNGs are 8-bit, and 255 marks a
+    pixel no pinned class answers for, which bounds the list at 254.
+    """
+    if task is not Task.SEMANTIC_SEGMENTATION:
+        return []
+    classes = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
+    if not classes:
+        raise InvalidInputError(f"dataset {dataset_id} has no annotation class to segment")
+    if len(classes) > MAX_SEGMENTATION_CLASSES:
+        raise InvalidInputError(
+            f"dataset {dataset_id} has {len(classes)} annotation classes; a segmentation run "
+            f"can segment at most {MAX_SEGMENTATION_CLASSES}"
+        )
+    return classes
+
+
 def create_experiment(
     settings: Settings,
     *,
@@ -323,6 +345,7 @@ def create_experiment(
         if split.dataset_id != dataset_id:
             raise InvalidInputError(f"split {split_id} belongs to dataset {split.dataset_id}")
         validate_target(conn, task, target_label, split)
+        classes = pin_classes(conn, task, dataset_id)
         profile = region_profiles_repo.get_profile(conn, region_profile_id)
         if profile is None:
             raise NotFoundError(f"no region profile with id {region_profile_id}")
@@ -362,6 +385,7 @@ def create_experiment(
             model_type=model_type,
             task=task.value,
             target_label=target_label,
+            classes=classes,
             model_config=frozen_config,
             preprocessing_config=frozen_preprocessing,
             eval_config=frozen_evaluation,

@@ -87,7 +87,7 @@ class CreateExperimentRequest(BaseModel):
         default=None,
         description=(
             "The annotation class a targeted task segments, by key. Required for "
-            "`few_shot_segmentation`, refused for `anomaly`."
+            "`few_shot_segmentation`, refused for every other task."
         ),
     )
     config: dict[str, Any] = Field(default_factory=dict)
@@ -126,6 +126,13 @@ class ExperimentSummary(BaseModel):
     model_type: str
     task: Task = Task.ANOMALY
     target_label: str | None = None
+    classes: list[str] = Field(
+        default_factory=list,
+        description=(
+            "The classes a supervised segmentation run segments, pinned at creation: "
+            "`classes[i]` is label index `i + 1`, 0 is background. Empty for other tasks."
+        ),
+    )
     channels: list[str] = Field(
         default_factory=list,
         description=(
@@ -453,6 +460,7 @@ def summary(conn: sqlite3.Connection, experiment: Experiment) -> ExperimentSumma
         model_type=experiment.model_type,
         task=experiment.task,
         target_label=experiment.target_label,
+        classes=experiment.classes,
         channels=experiment.channels,
         status=experiment.status,
         created_at=experiment.created_at,

@@ -59,19 +59,24 @@ export function useVerdicts(
   // few-shot run's segmentation outcomes (ADR-0040). Neither is asked until the task is known.
   const anomaly = task === "anomaly";
   const segmentation = task === "few_shot_segmentation";
+  // A supervised segmentation run has no per-sample verdict yet: its rows are ranked by score
+  // and carry the neutral outcome `scored`, never a threshold's tp/fp against anomaly labels.
+  const ranked = task === "semantic_segmentation";
 
   // The suggested threshold and its rationale, which is also where the score range comes
   // from. Requested even when a threshold is chosen: the rationale is worth showing beside
   // a choice that overrode it.
-  const results = useResults(experimentId, state.subset, anomaly);
+  const results = useResults(experimentId, state.subset, anomaly || ranked);
   const threshold = state.threshold ?? results.data?.suggested_threshold ?? 0;
   const report = useThreshold(experimentId, state.subset, threshold, anomaly);
   const outcomes = useSegmentationOutcomes(experimentId, state.subset, segmentation);
 
-  const all = useMemo<SampleVerdict[]>(
-    () => (segmentation ? outcomes.data?.samples : report.data?.samples) ?? [],
-    [segmentation, outcomes.data, report.data],
-  );
+  const all = useMemo<SampleVerdict[]>(() => {
+    if (ranked) {
+      return (results.data?.samples ?? []).map((sample) => ({ ...sample, outcome: "scored" }));
+    }
+    return (segmentation ? outcomes.data?.samples : report.data?.samples) ?? [];
+  }, [ranked, segmentation, results.data, outcomes.data, report.data]);
 
   // Filtering and ordering happen once, here, so the gallery's grid and the sample page's
   // prev/next cannot disagree about what "the next one" means.
@@ -92,12 +97,16 @@ export function useVerdicts(
     threshold,
     rationale: segmentation
       ? outcomes.data?.threshold_rule
-      : state.threshold === undefined
+      : state.threshold === undefined && !ranked
         ? results.data?.threshold_rationale
         : undefined,
     label: describeFilter(state, all.length),
-    isPending: segmentation ? outcomes.isPending : results.isPending || report.isPending,
-    error: segmentation ? outcomes.error : (results.error ?? report.error),
+    isPending: segmentation
+      ? outcomes.isPending
+      : ranked
+        ? results.isPending
+        : results.isPending || report.isPending,
+    error: segmentation ? outcomes.error : ranked ? results.error : (results.error ?? report.error),
   };
 }
 

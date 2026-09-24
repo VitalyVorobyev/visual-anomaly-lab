@@ -11,10 +11,11 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 It never imports a model module and never re-runs inference, so every method is evaluated by the same code.
 
 **The evaluator is chosen by task** (ADR-0039) from the table in `eval/evaluators.py`. Most of this page
-describes the `anomaly` evaluator, `eval/runner.py`; [few-shot segmentation](#few-shot-segmentation) has
-its own section. The `infer` job, re-evaluation and the staleness check all go through
+describes the `anomaly` evaluator, `eval/runner.py`; [few-shot segmentation](#few-shot-segmentation) and
+[semantic segmentation](#semantic-segmentation) have their own sections. The `infer` job, re-evaluation and the staleness check all go through
 `evaluator_for(experiment.task)`, and a task with no entry cannot be created. Each evaluator names a
-`headline` metric (`sample_roc_auc`, `foreground_iou`), which the `infer` log prints per subset.
+`headline` metric (`sample_roc_auc`, `foreground_iou`, `mean_iou`), which the `infer` log prints per
+subset.
 
 ## Channel selection
 
@@ -210,6 +211,9 @@ Splits are assigned at **sample** level, so a part's channels never straddle sub
 
 A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
 and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
+A semantic segmentation run fits on the annotated images of whatever `train` holds, so any strategy but
+`few_shot` serves it; the drawn ones put normals alone in `train`, which leaves `manual` the useful one
+until a strategy is drawn for supervised tasks.
 
 **A missing `val` subset is normal.** VisA's official protocol has train and test only, so every layer
 tolerates an empty subset:
@@ -255,6 +259,33 @@ facts: each image's presence `score`, its map or written mask, and the class tru
   threshold report, it is computed from the stored maps and never stored.
 - **The ground-truth digest** hashes the class and each image's pinned answer, so a completed revision,
   a relabelled sample or a new class table makes the stored metrics read as stale.
+
+## Semantic segmentation
+
+`eval/semantic.py` scores every class a run pinned, per pixel (ADR-0039). Its inputs are each image's label
+map as the method wrote it (`maps/<id>.labels.png`, source frame) and the label truth that
+`annotations/class_truth.py` resolves over the pinned classes.
+
+- **One confusion matrix per subset**, `(classes + 1)²` counts with background first, rows true and
+  columns predicted. Each image adds its counts and is dropped, so memory is constant in pixels. The
+  matrix is stored with the metrics under `confusion`.
+- **Per image.** As for few-shot, no sample-level rule for classes has been decided; the sample rows are
+  rebuilt from the image scores, so ranking and the gallery work.
+- **Labelled means answered for every pinned class** (see [annotations](annotations.md#raster-contract)).
+  Other images are excluded and counted in `images.unlabeled`; a scored image with no label map is
+  `images.without_prediction`. A pixel drawn in a class the run was not created with is `IGNORE_INDEX`
+  (255): counted in `ignored_pixels` and nowhere else.
+- **Nothing is thresholded.** A label map is the method's decision, read as written, so no cut needs a
+  per-run rule (ADR-0028).
+- **Metrics**, each `None` when its denominator is empty:
+  - `per_class_iou` and `per_class_accuracy`, by class key. A class absent from truth *and* prediction in a
+    subset has no IoU — never 0 — and one absent from truth has no accuracy;
+  - `mean_iou` (the headline) and `mean_class_accuracy`, averaged over the annotation classes that have a
+    value. Background is left out of both, because a background covering most of every frame would carry
+    the mean; its own `background_iou` sits beside them;
+  - `pixel_accuracy` and `frequency_weighted_iou`, which count background, as their definitions do;
+  - `timing`.
+- **The ground-truth digest** hashes the pinned class list and each image's pinned answer.
 
 ## Run audit
 

@@ -123,13 +123,20 @@ class ImageRecord(BaseModel):
 
 
 class Prediction(BaseModel):
-    """A model's verdict on one image. Higher `score` means more anomalous."""
+    """A model's verdict on one image. Higher `score` means more anomalous.
+
+    Every task keeps the image-level `score`, so ranking and the gallery work for all of
+    them (ADR-0039). A supervised segmentation method also writes a label map through
+    `InferContext.write_label_map` and returns its path here; its `score` is the share of
+    the image it assigned to a class other than background.
+    """
 
     model_config = API_MODEL_CONFIG
 
     image_id: int
     score: float
     anomaly_map: Path | None = None
+    label_map: Path | None = None
     inference_ms: float = 0.0
 
 
@@ -235,6 +242,32 @@ class TargetProvider(Protocol):
         ...
 
 
+IGNORE_INDEX = 255
+"""A label-map pixel no pinned class answers for — letterbox padding, or a class the run was
+not created with. Nothing fits on it and nothing counts it. Label maps are 8-bit and 0 is
+background, which leaves 254 classes."""
+
+
+class LabelTargetProvider(Protocol):
+    """The ground truth a supervised segmentation task fits on (ADR-0039).
+
+    A sibling of `TargetProvider` rather than a method on it: a targeted run is about one
+    class and answers with a boolean mask, a supervised run is about a pinned class list and
+    answers with a label map. Absent for every other task.
+    """
+
+    @property
+    def classes(self) -> tuple[str, ...]:
+        """The pinned classes: `classes[i]` is label index `i + 1`, and 0 is background."""
+        ...
+
+    def labels(self, image_id: int) -> np.ndarray:
+        """One training image's label map: `uint8`, in the prepared frame. `IGNORE_INDEX`
+        (255) marks a pixel no pinned class answers for — the letterbox padding, or a class
+        the run was not created with — and is fitted on by nobody."""
+        ...
+
+
 @dataclass
 class TrainContext(ModelContext):
     """`fit`'s view of the world.
@@ -245,11 +278,13 @@ class TrainContext(ModelContext):
     and a model that needs them must fall back visibly rather than silently.
 
     `targets` is `None` for `anomaly`. For a targeted task it answers for every record
-    `fit` is given.
+    `fit` is given. `label_targets` is the same for a supervised segmentation task, and
+    `None` for every other: these two fields are the only way ground truth reaches a plugin.
     """
 
     val: Sequence[ImageRecord] = ()
     targets: TargetProvider | None = None
+    label_targets: LabelTargetProvider | None = None
 
 
 @dataclass
@@ -278,6 +313,9 @@ class InferContext(ModelContext):
 
     mask_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
     """The same projection for a boolean mask, which is resampled nearest, never blended."""
+
+    label_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
+    """The same projection for a `uint8` label map: nearest, and background outside the crop."""
 
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
@@ -365,6 +403,47 @@ class InferContext(ModelContext):
         temporary = path.with_suffix(".tmp.png")
         try:
             PILImage.fromarray(values.astype(np.uint8) * 255, mode="L").save(temporary)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return path
+
+    def label_map_path(self, image_id: int) -> Path:
+        """Where one image's predicted label map is written, beside its map."""
+        return self.maps_dir / f"{image_id}.labels.png"
+
+    def write_label_map(self, image_id: int, labels: np.ndarray, *, classes: int) -> Path:
+        """Persist a supervised segmentation method's class per pixel, as an 8-bit PNG.
+
+        0 is background and `i + 1` is the run's `classes[i]`; `classes` is how many the run
+        pinned, and a value above it is a plugin bug, reported here rather than as a confusing
+        confusion matrix later. The map arrives in the prepared frame and is stored in the
+        source frame, resampled nearest: a class index is a name, never blended. Pixels a
+        region crop left uncovered are background.
+        """
+        values = np.squeeze(np.asarray(labels))
+        if values.ndim != 2:
+            msg = (
+                f"a label map must be 2-D; image {image_id} produced an array of shape "
+                f"{np.shape(labels)}"
+            )
+            raise ValueError(msg)
+        if not np.issubdtype(values.dtype, np.integer):
+            msg = f"a label map holds class indices; image {image_id} gave {values.dtype}"
+            raise ValueError(msg)
+        if values.size and (int(values.min()) < 0 or int(values.max()) > classes):
+            msg = (
+                f"image {image_id}'s label map holds indices {int(values.min())}.."
+                f"{int(values.max())}, outside 0..{classes}"
+            )
+            raise ValueError(msg)
+        values = values.astype(np.uint8)
+        if self.label_projector is not None:
+            values = np.asarray(self.label_projector(image_id, values), dtype=np.uint8)
+        path = self.label_map_path(image_id)
+        temporary = path.with_suffix(".tmp.png")
+        try:
+            PILImage.fromarray(values, mode="L").save(temporary)
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)

@@ -35,6 +35,13 @@ sample, whether a class is present, absent or unlabelled:
   labelled normal is absent. Every other class is unlabelled.
 - A sample shows the class when any of its images does, and is absent only when all of them are.
 
+**Every class at once**, for supervised segmentation (ADR-0039): an image is labelled for a run when the
+rule above answers *every* class the run pinned, and `class_truth.load_label_map` then reads it as one
+8-bit map in the run's numbering — `classes[i]` is `i + 1`, background 0. A revision's class mask is
+renumbered from its pinned table; a pixel drawn in a class the run did not pin is `IGNORE_INDEX` (255).
+An imported mask or a normal label answers for `defect` alone, so it labels an image only for a run whose
+classes are `defect` alone.
+
 `GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
 `GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
 outlines one class's region from its own truth (`annotations/class_truth.py`), in the source frame; an

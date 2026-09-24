@@ -9,6 +9,7 @@ import type { ExperimentSummary } from "./client";
 const SHORT: Record<string, string> = {
   sample_roc_auc: "AUROC",
   foreground_iou: "IoU",
+  mean_iou: "mIoU",
 };
 
 export function headlineLabel(metric: string): string {

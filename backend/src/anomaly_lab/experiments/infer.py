@@ -140,6 +140,9 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         mask_projector=lambda image_id, values: loaded.region_build.transform_for(
             image_id
         ).project_mask(values),
+        label_projector=lambda image_id, values: loaded.region_build.transform_for(
+            image_id
+        ).project_labels(values, fill=0),
     )
 
     started = time.perf_counter()
