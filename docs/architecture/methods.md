@@ -248,8 +248,10 @@ A method declaring `produces_diagnostics` pushes entries into a self-describing 
 | `glass_anomalib` | learned anomaly synthesis | yes | yes | no | yes | mps |
 | `dino_memory` | frozen DINO patch memory | fit | no | yes | no | mps |
 | `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
+| `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
 
-Gate verdicts for each are in [measurements](../measurements.md).
+Every method but `color_prototype` declares the `anomaly` task; `color_prototype` declares
+`few_shot_segmentation` alone. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -392,6 +394,23 @@ sweep run outside the application (ADR-0038) and its promotion gate is open.
 - One subspace per channel; an unfitted channel refuses by name. It needs pretrained weights — a random
   encoder gives it no meaningful variance directions — so plugin tests cover plumbing and accuracy is
   asserted in `test_subspace_ad_math.py`.
+- ONNX: none.
+
+### `color_prototype`
+
+The few-shot floor (ADR-0040): numpy + Pillow, no torch. The references' target masks split their pixels
+into the class and everything else, one Gaussian is fitted to the colour of each, and a query pixel's map
+value is the class's posterior under equal priors. The presence score is a high percentile of that map. It
+writes no mask, so the evaluator cuts the map at its rule.
+
+- `color_space` — `lab` (default) or `rgb`; a grey image is modelled on intensity either way.
+- `max_pixels_per_class` (100 000), sampled with `evenly_spaced` across the references and logged when it
+  bites. There is no RNG, so the same references always give the same models.
+- `smoothing_sigma`, `presence_percentile` (99.9).
+- It refuses to fit without targets, or when the references hold no pixel of the class or of the
+  background.
+- It knows only colour. It proves the task's slice in the torch-free CI job, and a deep method that does
+  not beat it has learned nothing about shape or texture.
 - ONNX: none.
 
 ### `classical_circular` (optional, not built)

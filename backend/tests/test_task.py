@@ -22,11 +22,22 @@ from anomaly_lab.eval.evaluators import (
 from anomaly_lab.models.base import Capabilities
 from anomaly_lab.models.registry import describe_all
 
+FEW_SHOT_METHODS = {"color_prototype"}
+
 
 def test_every_method_written_before_tasks_is_an_anomaly_method() -> None:
     assert Capabilities().tasks == [Task.ANOMALY]
     for description in describe_all():
-        assert Task.ANOMALY in description.capabilities.tasks, description.key
+        if description.key in FEW_SHOT_METHODS:
+            assert description.capabilities.tasks == [Task.FEW_SHOT_SEGMENTATION]
+        else:
+            assert Task.ANOMALY in description.capabilities.tasks, description.key
+
+
+def test_every_declared_task_has_an_evaluator() -> None:
+    for description in describe_all():
+        for task in description.capabilities.tasks:
+            assert has_evaluator(task), (description.key, task)
 
 
 def test_the_anomaly_evaluator_is_the_runner_unchanged(monkeypatch: pytest.MonkeyPatch) -> None:

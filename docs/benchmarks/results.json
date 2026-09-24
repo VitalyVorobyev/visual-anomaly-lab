@@ -28,6 +28,10 @@
   "subspace_ad": {
    "family": "frozen-backbone subspace",
    "maturity": "experimental"
+  },
+  "color_prototype": {
+   "family": "few-shot colour prototype",
+   "maturity": "experimental"
   }
  },
  "quality_protocols": [

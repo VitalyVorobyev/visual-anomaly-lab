@@ -102,6 +102,8 @@ export interface CreateExperimentInput {
   model_type: string;
   /** What the run is asked to do (ADR-0039); the method must list it. */
   task: Task;
+  /** The class a targeted task segments (ADR-0040); null for `anomaly`. */
+  target_label: string | null;
   config: Record<string, unknown>;
   preprocessing: Record<string, unknown>;
   evaluation: Record<string, unknown>;

@@ -37,6 +37,7 @@ import {
 } from "../api/experimentState";
 import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
+import { useAnnotationLabels } from "../hooks/useAnnotations";
 import { TabScroll } from "./dataset/TabScroll";
 import {
   useCreateExperiment,
@@ -480,6 +481,7 @@ function CreateExperiment({
   );
   const [methodKey, setMethodKey] = useState<string | undefined>(draft?.methodKey);
   const [task, setTask] = useState<Task>("anomaly");
+  const [targetLabel, setTargetLabel] = useState<string>("");
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
@@ -494,6 +496,12 @@ function CreateExperiment({
   const datasetChannels = dataset.data?.channels ?? [];
   const regionProfiles = useRegionProfiles(datasetId);
   const regionBuild = useRegionBuild(regionProfileId);
+  const labels = useAnnotationLabels(datasetId);
+  // A targeted task segments one class (ADR-0040); a `few_shot` split was drawn for one, so
+  // it names the class unless the reader has chosen.
+  const targeted = task === "few_shot_segmentation";
+  const splitClass = splits.data?.find((entry) => entry.id === splitId)?.params.label_key ?? "";
+  const effectiveTarget = targetLabel || splitClass;
   // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker
   // appears only when there are two — the same rule the channel chips follow.
   const tasks = TASK_ORDER.filter((entry) =>
@@ -627,6 +635,7 @@ function CreateExperiment({
     missing.push("a built region profile");
     fieldError.profile = "This revision has no complete build yet.";
   }
+  if (targeted && effectiveTarget === "") missing.push("a target class");
   if (method && !method.availability.available) missing.push("a method you can run");
 
   const ready =
@@ -651,6 +660,7 @@ function CreateExperiment({
         region_profile_id: regionProfileId,
         model_type: methodKey,
         task,
+        target_label: targeted ? effectiveTarget : null,
         config: toOptions(configFields, configValues),
         preprocessing: toOptions(preprocessingFields, preprocessingValues),
         evaluation: toOptions(evaluationFields, evaluationValues),
@@ -833,6 +843,23 @@ function CreateExperiment({
                 options={tasks.map((entry) => ({ value: entry, label: TASK_LABEL[entry] }))}
                 onValueChange={(value) => setTask(value as Task)}
               />
+            </div>
+          )}
+          {targeted && (
+            <div className="mb-3 max-w-xs">
+              <Field label="Target class">
+                <Select
+                  aria-label="Target class"
+                  value={effectiveTarget}
+                  placeholder="Choose a class"
+                  options={(labels.data ?? []).map((label) => ({
+                    value: label.key,
+                    label: label.name,
+                    note: label.key,
+                  }))}
+                  onValueChange={setTargetLabel}
+                />
+              </Field>
             </div>
           )}
           <div className="grid gap-3 sm:grid-cols-2">

@@ -25,7 +25,7 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible.
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
-- **Train and score** through one plugin interface. Seven methods ship: `pixel_reference`
+- **Train and score** through one plugin interface. Seven anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
   `dinomaly_custom`, `glass_anomalib`, `dino_memory` and `subspace_ad`. `dino_memory` is a frozen
   DINOv2/DINOv3 patch memory that is a coreset bank, a per-position bank or a per-position
@@ -68,9 +68,10 @@ application.
   and frozen DINOv3 feature matching segments it in new images, with absence as a first-class
   answer. Built so far: the task value, the target class on the experiment, the `manual` and `few_shot`
   reference splits, per-class coverage, class-index masks with a pinned class table, references reaching
-  `fit` as targets, predicted masks, and an evaluator for masks and presence. No method declares the task
-  yet, so a run of it is refused. Still open:
-  - a torch-free floor and two DINO methods;
+  `fit` as targets, predicted masks, an evaluator for masks and presence, and `color_prototype`, the
+  torch-free floor that runs the slice end to end. The create screen asks for the target class. Still
+  open:
+  - two DINO methods;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
 
   The order is in [backlog.md](backlog.md).
