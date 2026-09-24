@@ -69,8 +69,9 @@ application.
   answer. Built so far: the task value, the target class on the experiment, the `manual` and `few_shot`
   reference splits, per-class coverage, class-index masks with a pinned class table, references reaching
   `fit` as targets, predicted masks, an evaluator for masks and presence, and `color_prototype`, the
-  torch-free floor that runs the slice end to end. The create screen asks for the target class. Still
-  open:
+  torch-free floor that runs the slice end to end, and the shared frozen-DINO blocks the next methods
+  build on (one encoding path, INSID3's positional debiasing, guided refinement). The create screen asks
+  for the target class. Still open:
   - two DINO methods;
   - a workflow regrouped around Data · Truth · Runs, and an interactive reference studio.
 

@@ -96,18 +96,13 @@ from anomaly_lab.models.dino_backbone import (
     DinoBackbone,
     FeatureLayers,
     backbone_fingerprint,
-    extract_patch_features,
+    image_patch_features,
     load_backbone,
     patch_grid,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import (
-    IMAGENET_MEAN,
-    IMAGENET_STD,
     PreprocessingConfig,
-    expand_planes,
-    load_array,
-    to_chw,
 )
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -746,58 +741,6 @@ def channel_order(records: Sequence[ImageRecord]) -> tuple[str, ...]:
 # ------------------------------------------------------------------ feature extraction
 
 
-def _normalized_batch(
-    records: Sequence[ImageRecord],
-    preprocessing: PreprocessingConfig,
-    device: str,
-) -> Any:
-    """Load a batch through the shared bridge, then standardize it for the encoder.
-
-    Two separate acts. `load_array` is the experiment's decision and is identical for every
-    method; the plane count and the ImageNet statistics belong to *this* backbone, which is
-    why they live on this side of the seam (`preprocessing.py`).
-    """
-    import torch
-
-    stacked = np.stack(
-        [expand_planes(to_chw(load_array(record.path, preprocessing)), 3) for record in records]
-    )
-    batch = torch.from_numpy(stacked).to(device)
-    mean = torch.tensor(IMAGENET_MEAN, device=device).view(1, 3, 1, 1)
-    std = torch.tensor(IMAGENET_STD, device=device).view(1, 3, 1, 1)
-    return (batch - mean) / std
-
-
-def _image_features(
-    model: Any,
-    records: Sequence[ImageRecord],
-    preprocessing: PreprocessingConfig,
-    indices: tuple[int, ...],
-    device: str,
-) -> Any:
-    """`(N, P, D)` float32 patch features on the **CPU**, one row per patch.
-
-    The encoder forward happens on `device` — measured at about 2x on MPS — and the result
-    comes straight back, because every bank this method builds is CPU-resident and every
-    kernel that consumes one was measured to belong there.
-
-    The final normalization is over the channel dimension of the whole concatenated feature,
-    *after* `extract_patch_features` has already normalized each layer on its own. Both are
-    load-bearing and they are not the same act: the per-layer step makes each block an equal
-    vote, and this one makes every stored vector a unit vector — which is what lets every
-    distance kernel below drop the norm terms and read `d^2 = 2 - 2 cos`.
-    """
-    import torch
-
-    with torch.no_grad():
-        batch = _normalized_batch(records, preprocessing, device)
-        features = extract_patch_features(model, batch, indices)
-        features = torch.nn.functional.normalize(features, p=2.0, dim=1)
-        width = int(features.shape[1])
-        flat = features.permute(0, 2, 3, 1).reshape(len(records), -1, width)
-        return flat.float().cpu().contiguous()
-
-
 def _fuse(block: Any) -> Any:
     """`(C, P, D)` per-channel features to one `(P, C*D)` unit vector per position.
 
@@ -1034,7 +977,7 @@ class DinoMemoryModel(AnomalyModel):
                 images.extend(groups[cursor])
                 cursor += 1
 
-            features = _image_features(encoder, images, preprocessing, indices, device)
+            features = image_patch_features(encoder, images, preprocessing, indices, device)
             offset = 0
             first = cursor - len(batch)
             for step, group in enumerate(batch):
@@ -1655,7 +1598,7 @@ class DinoMemoryModel(AnomalyModel):
                 ctx.raise_if_cancelled()
                 started = time.perf_counter()
 
-                block = _image_features(
+                block = image_patch_features(
                     encoder, group, ctx.preprocessing, indices, ctx.device.value
                 )
                 fused = _fuse(block)

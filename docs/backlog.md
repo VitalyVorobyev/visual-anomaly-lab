@@ -25,10 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Shared DINO encoding, debiasing and refinement** (M):
-      - One encoding path in `dino_backbone.py`, taken out of `dino_memory`.
-      - A positional-debias transform (INSID3), available to every frozen-DINO method.
-      - `models/refine.py`: bilinear, guided and CRF (behind availability).
 - [ ] **`fss_dino`** (M): a reproduction of FSSDINO, with a DINOv3 last-layer prototype and Gram
       refinement.
 - [ ] **`proto_seg`** (L): our method. It uses debiased features and a hybrid fg/bg prototype bank
@@ -57,7 +53,7 @@ Later, each behind the gate above:
 - A cross-domain public few-shot dataset.
 - INSID3 upstream and FSS-SAM3 as quality references.
 - SAM-assisted pseudo-labelling at scale.
-- A learned boundary refiner.
+- A learned boundary refiner, or a dense CRF (which needs a maintained package chosen first).
 - ONNX export with a mask output contract.
 
 ## Supervised tasks

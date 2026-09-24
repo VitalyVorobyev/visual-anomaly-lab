@@ -29,8 +29,10 @@ from anomaly_lab.models.dino_backbone import (  # noqa: E402
     backbone_fingerprint,
     extract_patch_features,
     load_backbone,
+    noise_patch_features,
     patch_grid,
 )
+from anomaly_lab.models.preprocessing import PreprocessingConfig  # noqa: E402
 
 SIZE = 112
 """One prepared size divisible by both patch sizes — 14x8 and 16x7 — so the two families are
@@ -243,3 +245,13 @@ def test_a_gated_backbone_says_how_to_get_access_and_what_the_ungated_ones_are(
     assert "huggingface.co/facebook/dinov3-vits16-pretrain-lvd1689m" in message
     assert "HF_TOKEN" in message
     assert "dinov2_vit_s14" in message
+
+
+def test_the_noise_pass_is_one_row_per_patch_and_one_answer_per_seed(tmp_path: Path) -> None:
+    model = _load(DinoBackbone.DINOV3_VIT_S16, tmp_path)
+    preprocessing = PreprocessingConfig(width=SIZE, height=SIZE)
+    first = noise_patch_features(model, preprocessing, (11,), "cpu", seed=3)
+    rows, cols = patch_grid(DinoBackbone.DINOV3_VIT_S16, SIZE, SIZE)
+    assert first.shape == (rows * cols, 384)
+    assert (first == noise_patch_features(model, preprocessing, (11,), "cpu", seed=3)).all()
+    assert not (first == noise_patch_features(model, preprocessing, (11,), "cpu", seed=4)).all()
