@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 
+from anomaly_lab.db.connection import transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.domain.entities import AnnotationScope, Channel, Dataset, Label
 
@@ -132,13 +133,8 @@ def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> bool:
     if get_dataset(conn, dataset_id) is None:
         return False
 
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         delete_dataset_rows(conn, dataset_id)
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return True
 
 

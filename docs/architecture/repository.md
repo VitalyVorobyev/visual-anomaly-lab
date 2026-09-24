@@ -20,9 +20,12 @@ visual-anomaly-lab/
 │   ├── pyproject.toml
 │   ├── uv.lock
 │   ├── src/anomaly_lab/
-│   │   ├── api/                    # FastAPI app factory, routers, websockets, schemas
+│   │   ├── api/                    # FastAPI app factory, routers, websockets; errors.py maps refusals to statuses
+│   │   ├── annotations/service.py  # draft lifecycle (one implementation, two units), revisions, scope
+│   │   ├── experiments/            # service.py (create, preconditions, deletion), train/infer/diagnose work
+│   │   ├── errors.py               # domain refusals: NotFound, Conflict, StaleVersion, InvalidInput, …
 │   │   ├── domain/                 # pydantic entities, enums — no I/O
-│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection, repositories
+│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection + transaction(), repositories
 │   │   ├── datasets/               # import adapters, manifest model, scan/verify
 │   │   ├── media/                  # BMP decode, thumbnail/preview cache, map rendering
 │   │   ├── models/                 # base.py (interface), classical/, anomalib_adapters/, registry
@@ -74,6 +77,15 @@ constructs a path from `__file__` or the current working directory.
 anomaly maps, thumbnails, checkpoints — always lives on the filesystem, referenced by path. This keeps the
 database small enough to be trivially inspectable with `sqlite3`, keeps large binaries out of transactions,
 and lets artifacts be deleted or archived by directory (ADR-0004).
+
+**Transactions have one spelling.** Connections are opened in autocommit mode, and every multi-statement
+write goes through `db.connection.transaction(conn, immediate=...)`: it commits when the block finishes,
+rolls back on any exception, and then runs the rollback callbacks registered on it. `immediate=True` takes the
+write lock up front, which is what a read-check-write needs — a draft's version check, a deletion's blocker
+check. The callbacks exist because the filesystem cannot join a transaction: a file written while one is open
+(a completed annotation's mask, an accepted manifest) is registered with `tx.remove_on_rollback(path)` and
+taken back with the rows that would have referenced it. Nothing else issues `BEGIN`, `COMMIT` or `ROLLBACK`;
+the migration runner is the one exception, because `executescript` has to carry its own transaction.
 
 **Model assets are executable inputs, not casual downloads.** `model_assets/catalog.py` pins every accepted
 asset to an immutable upstream revision, exact byte count, SHA-256 and licence. Acquisition streams to a

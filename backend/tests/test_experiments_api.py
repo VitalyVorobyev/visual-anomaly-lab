@@ -1366,11 +1366,12 @@ def test_an_experiment_whose_method_was_removed_stays_readable(
     """Retiring a method (e.g. `efficientad_anomalib`, ADR-0029) must not orphan its rows.
 
     `model_type` carries no foreign key, so an experiment created under a key that used to
-    be registered stays in the database after the key is retired. This is what the five
-    `except UnknownModelError` sites in `api/routers/experiments.py` are for: capabilities
-    degrade to nothing rather than the request failing.
+    be registered stays in the database after the key is retired. This is what the
+    `except UnknownModelError` in `api/routers/experiments/views.py` (`detail`) is for:
+    capabilities degrade to nothing rather than the request failing. The two in
+    `experiments/service.py` refuse instead, by name.
 
-    Creation-time refusal (`create_experiment`, ~line 577) is exercised by
+    Creation-time refusal (`service.create_experiment`) is exercised by
     `test_an_unknown_method_is_refused_by_name` instead — a *new* experiment cannot be
     created under an unregistered key at all, so that site is unreachable for a row that
     already exists, which is the case this test is about.
@@ -1379,7 +1380,7 @@ def test_an_experiment_whose_method_was_removed_stays_readable(
     enqueues a job unconditionally and only reads `model_type` inside the worker process,
     not synchronously in the router — a retired method fails the *job*, not the request.
     Only the resume path (`additional_steps` set) is checked synchronously, in
-    `_refuse_impossible_resume`.
+    `service.refuse_impossible_resume`.
     """
     retired = "a_retired_method"
     with connection(settings.db_path) as conn:

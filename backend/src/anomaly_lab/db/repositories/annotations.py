@@ -15,11 +15,17 @@ from anomaly_lab.domain.annotations import (
     AnnotationSampleDraft,
 )
 from anomaly_lab.domain.entities import AnnotationState
+from anomaly_lab.errors import ConflictError
 from anomaly_lab.media.decode import sha256_of
 
 
-class GroundTruthDriftError(RuntimeError):
-    """Pinned truth bytes no longer match their recorded identity."""
+class GroundTruthDriftError(ConflictError, RuntimeError):
+    """Pinned truth bytes no longer match their recorded identity.
+
+    A conflict with the stored state, so a route that reads truth needs no translation: the
+    API maps it to 409 with this message (`api/errors.py`). Still a `RuntimeError` for the
+    job worker, which reports it by type.
+    """
 
 
 # "This image has ground truth", spelled as SQL over an in-scope `image` row. It is exactly

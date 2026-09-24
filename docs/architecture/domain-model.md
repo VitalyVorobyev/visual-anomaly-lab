@@ -193,11 +193,18 @@ The pinned region profile must belong to the dataset and its manifest must be a 
 directories whose database row no longer exists; this also reclaims payloads deliberately orphaned by a
 breaking schema migration without ever traversing a dataset source path.
 
-**`Job`** — `id`, `kind ∈ {import, reference_import, verify, prewarm, train, infer, distill,
-model_asset_download, region_prepare}`, `experiment_id` (nullable — only
-train and infer jobs have one),
+**`Job`** — `id`, `kind` (a `JobKind`: import, reference_import, verify, prewarm, train, infer,
+distill, model_asset_download, region_prepare, export), `experiment_id` (nullable — only
+experiment-bound kinds have one),
 `status ∈ {queued, running, succeeded, failed, cancelled}`, `progress` (0–1), `message`, `log_path`,
 `params` (JSON), `started_at`, `finished_at`, `error`.
+
+**An extensible vocabulary is validated in Python; a shape is checked by the schema.** `job.kind` and
+`sample_result.aggregation` are plain text columns whose values `JobKind` and `Aggregation` define —
+`create_job` coerces through the enum and `SampleResult` is a pydantic model — because SQLite cannot alter
+a CHECK, and a list kept in both places cost a table rebuild each time it grew (five for `kind`, until
+migration 020 dropped both). What describes shape rather than a growing list stays a CHECK: a job's
+`status` lifecycle, `progress` in [0, 1], a label or subset, the three-valued `localized` flags.
 The async execution record ([the job system](jobs.md)). On backend startup, any job still marked `running` is a leftover from a crash
 or a hard kill and is transitioned to `failed` with an explanatory error — the process that owned it is
 provably gone, so the UI never shows a phantom running job.

@@ -12,6 +12,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 
+from anomaly_lab.db.connection import transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.domain.entities import Label, LabelSource, Sample, Subset
 
@@ -221,8 +222,7 @@ def set_labels(
         return 0
 
     updated = 0
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         for start in range(0, len(sample_ids), _MAX_IDS_PER_STATEMENT):
             chunk = sample_ids[start : start + _MAX_IDS_PER_STATEMENT]
             placeholders = ", ".join("?" * len(chunk))
@@ -235,10 +235,6 @@ def set_labels(
                 [label.value, LabelSource.MANUAL.value, dataset_id, *chunk],
             )
             updated += cursor.rowcount
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
     return updated
 
 

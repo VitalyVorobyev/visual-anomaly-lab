@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from anomaly_lab import __version__
+from anomaly_lab.api.errors import install_error_handlers
 from anomaly_lab.api.routers import annotations as annotation_routes
 from anomaly_lab.api.routers import (
     compare,
@@ -121,6 +122,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # resident and a job worker unable to coexist (ADR-0026).
     app.state.resident = ResidentWorker(settings)
     app.state.job_queue = JobQueue(settings, before_spawn=app.state.resident.evict)
+    install_error_handlers(app)
 
     if settings.dev_cors:
         app.add_middleware(

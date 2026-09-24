@@ -14,7 +14,7 @@ from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
-from anomaly_lab.db.connection import connection
+from anomaly_lab.db.connection import connection, transaction
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
@@ -129,32 +129,26 @@ def create_region_profile(
 
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
-        conn.execute("BEGIN IMMEDIATE")
         try:
-            if datasets_repo.get_dataset(conn, dataset_id) is None:
-                raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
-            created = profiles_repo.create_revision(
-                conn,
-                dataset_id=dataset_id,
-                name=body.name,
-                extractor_type=body.extractor_type,
-                extractor_config=validated.model_dump(mode="json"),
-                prepared_width=body.prepared_width,
-                prepared_height=body.prepared_height,
-                padding_fraction=body.padding_fraction,
-                resample=body.resample,
-                seed=body.seed,
-            )
-            conn.execute("COMMIT")
+            with transaction(conn, immediate=True):
+                if datasets_repo.get_dataset(conn, dataset_id) is None:
+                    raise HTTPException(status_code=404, detail=f"no dataset with id {dataset_id}")
+                created = profiles_repo.create_revision(
+                    conn,
+                    dataset_id=dataset_id,
+                    name=body.name,
+                    extractor_type=body.extractor_type,
+                    extractor_config=validated.model_dump(mode="json"),
+                    prepared_width=body.prepared_width,
+                    prepared_height=body.prepared_height,
+                    padding_fraction=body.padding_fraction,
+                    resample=body.resample,
+                    seed=body.seed,
+                )
         except sqlite3.IntegrityError as exc:
-            conn.execute("ROLLBACK")
             raise HTTPException(
                 status_code=409, detail="region profile revision conflicts"
             ) from exc
-        except BaseException:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            raise
     return created
 
 
@@ -314,35 +308,28 @@ async def delete_region_profile(request: Request, profile_id: int) -> RegionProf
         # Stable now: no worker can write into the directory while it is measured and
         # removed, so the result reports what was actually reclaimed.
         usage = await asyncio.to_thread(path_usage, owned)
-        with connection(settings.db_path) as conn:
-            conn.execute("BEGIN IMMEDIATE")
-            try:
-                # Inside the write transaction, so a preparation job cannot be enqueued
-                # between naming the consequences and committing the delete.
-                pinning = profiles_repo.experiments_pinning(conn, profile_id)
-                if pinning:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            f"{len(pinning)} experiment(s) still use region profile "
-                            f"{profile_id}; delete them first"
-                        ),
-                    )
-                active = jobs_repo.active_jobs_for_region_profile(conn, profile_id)
-                if active:
-                    raise HTTPException(
-                        status_code=409,
-                        detail=(
-                            "cancel or wait for the active preparation job before deleting "
-                            f"region profile {profile_id}"
-                        ),
-                    )
-                deleted = profiles_repo.delete_revision(conn, profile_id)
-                conn.execute("COMMIT")
-            except BaseException:
-                if conn.in_transaction:
-                    conn.execute("ROLLBACK")
-                raise
+        with connection(settings.db_path) as conn, transaction(conn, immediate=True):
+            # Inside the write transaction, so a preparation job cannot be enqueued
+            # between naming the consequences and committing the delete.
+            pinning = profiles_repo.experiments_pinning(conn, profile_id)
+            if pinning:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"{len(pinning)} experiment(s) still use region profile "
+                        f"{profile_id}; delete them first"
+                    ),
+                )
+            active = jobs_repo.active_jobs_for_region_profile(conn, profile_id)
+            if active:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "cancel or wait for the active preparation job before deleting "
+                        f"region profile {profile_id}"
+                    ),
+                )
+            deleted = profiles_repo.delete_revision(conn, profile_id)
 
         removed = True
         prepared_error: str | None = None

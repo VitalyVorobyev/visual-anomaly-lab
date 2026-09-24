@@ -12,6 +12,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from anomaly_lab.db.connection import transaction
 from anomaly_lab.domain.entities import Label, Split, Subset
 
 
@@ -58,8 +59,7 @@ def create_split(
     A split with only some of its assignments written would be silently wrong rather than
     visibly broken, so the two writes are atomic.
     """
-    conn.execute("BEGIN")
-    try:
+    with transaction(conn):
         cursor = conn.execute(
             """
             INSERT INTO split (dataset_id, name, strategy, seed, params)
@@ -72,10 +72,6 @@ def create_split(
             "INSERT INTO split_assignment (split_id, sample_id, subset) VALUES (?, ?, ?)",
             [(split_id, sample_id, subset.value) for sample_id, subset in assignments.items()],
         )
-    except Exception:
-        conn.execute("ROLLBACK")
-        raise
-    conn.execute("COMMIT")
 
     created = get_split(conn, split_id)
     if created is None:  # pragma: no cover - the insert above just committed
