@@ -40,9 +40,9 @@ column.
   evaluator is the existing one, unchanged. A task with no evaluator cannot be created.
 - **ADR-0028 applies unchanged.** A confidence is not comparable across runs, so any cut on it is
   resolved per run by one shared rule, and comparison shows only threshold-free metrics side by side.
-- **A supervised segmentation run pins its class list at creation**: every class of the dataset, in
-  taxonomy order, stored on the experiment. Class `i` is label index `i + 1` in its targets, its
-  label maps and its confusion matrix; 0 is background. Deriving the list from the taxonomy at train
+- **A supervised run — segmentation or detection — pins its class list at creation**: every class of
+  the dataset, in taxonomy order, stored on the experiment. Class `i` is label index `i + 1` in its
+  targets, its label maps and its confusion matrix; 0 is background. Deriving the list from the taxonomy at train
   time was the alternative, and it fails quietly: a class added or reordered between training and
   evaluation renumbers the labels under a stored model.
 - **An image is labelled for a supervised run only when its truth answers every pinned class**, by the
@@ -66,6 +66,24 @@ column.
   background.** A mean maximum probability was the alternative; it needs a calibrated probability
   that a Gaussian classifier and a linear head do not share, while the share is defined by the label
   map alone and means the same thing for every method.
+- **A detection prediction's `score` is its highest confidence**, 0 when it found nothing. The count
+  of boxes was the alternative; it ranks a busy image above a clearly defective one, while the top
+  confidence ranks by the one finding a reviewer would open the image for.
+- **Detection truth is a revision's object instances**, one box per instance over the pixels it
+  finally owns. An imported binary mask has no instances, so **each 8-connected component of it is
+  one**, of the default class; so is each component of a `source_mask` base that no drawn instance
+  owns. Treating mask-only images as unlabelled for detection was the alternative, and it would make
+  every public benchmark whose truth is a mask unusable for the task until each image was redrawn.
+  Components merge two touching objects and split one broken object, and the handbook says so.
+- **Detection is read by COCO's protocol**: per class, detections ranked by confidence are matched
+  greedily to the unmatched truth box of highest IoU at each of ten IoU thresholds from 0.50 to 0.95;
+  AP is the 101-point interpolated area under the precision envelope, averaged over the thresholds
+  and then over the classes that have truth. The headline is that average, AP@[.5:.95], with AP50
+  beside it. Pascal VOC's AP at 0.5 alone was the alternative; it is what small defect benchmarks
+  often report, but it cannot tell a box that grazes a defect from one that fits it. At most 100
+  detections per image count, COCO's cap, and the write seam refuses more rather than dropping them.
+  Nothing here cuts a confidence, so ADR-0028 holds by construction; a per-sample verdict will need
+  one and resolves it per run.
 - **The annotation document grows, it is not replaced** (ADR-0032): boxes and instance ids join the
   versioned document, completion keeps writing the binary mask the anomaly task reads, and a revision
   pins the class-to-index table it used so a renamed or reordered class cannot relabel old truth.
