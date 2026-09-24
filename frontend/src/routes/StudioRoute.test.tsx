@@ -32,7 +32,11 @@ const METHOD = {
   availability: { available: true, reason: null },
 };
 
-function renderAt(search: string, built = true) {
+function renderAt(
+  search: string,
+  built = true,
+  extra: [readonly unknown[], unknown][] = [],
+) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={[`/datasets/7/studio/scratch${search}`]}>
@@ -56,6 +60,11 @@ function renderAt(search: string, built = true) {
         [queryKeys.modelTypes(), { methods: [METHOD] }],
         [queryKeys.regionProfiles(7), [{ id: 11, name: "full frame", revision_no: 1, prepared_width: 448, prepared_height: 448 }]],
         [queryKeys.regionBuild(11), built ? { failed: 0, succeeded: 12, total: 12 } : { failed: 3, succeeded: 9, total: 12 }],
+        [
+          queryKeys.samples(7, { classKey: "scratch", presence: "absent", limit: 48, offset: 0 }),
+          { total: 1, limit: 48, offset: 0, items: [sample(3)] },
+        ],
+        ...extra,
       ],
     ),
   );
@@ -84,5 +93,32 @@ describe("the reference studio", () => {
   it("will not freeze onto a profile whose build failed images", () => {
     renderAt("?refs=1", false);
     expect(screen.getByText("The region profile is not built.")).toBeTruthy();
+  });
+
+  it("reads the preview of the open image beside the stage", () => {
+    renderAt("?refs=1&focus=1", true, [
+      [
+        ["studio-preview", 7, "scratch", "fss_dino", 11, [1], 101],
+        {
+          image_id: 101,
+          score: 0.9312,
+          foreground_share: 0.125,
+          generation: "abc",
+          map_url: "/api/studio/previews/abc/101.png",
+          warm: true,
+          elapsed_ms: 84,
+        },
+      ],
+    ]);
+    expect(screen.getByText("0.931")).toBeTruthy();
+    expect(screen.getByText("12.5%")).toBeTruthy();
+    expect(screen.getByText("84 ms")).toBeTruthy();
+  });
+
+  it("lists samples without the class for looking, never for teaching", () => {
+    renderAt("?show=absent");
+    expect(screen.getByRole("heading", { name: "Samples without it" })).toBeTruthy();
+    expect(screen.getByTitle("candle/003")).toBeTruthy();
+    expect(screen.queryByRole("checkbox", { name: /as a reference/ })).toBeNull();
   });
 });

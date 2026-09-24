@@ -43,6 +43,7 @@ export function SampleTile({
   onOpen,
   active = false,
   selectLabel,
+  selectable = true,
 }: {
   datasetId: number;
   sample: SampleSummary;
@@ -62,6 +63,8 @@ export function SampleTile({
   active?: boolean | undefined;
   /** What the checkbox does, for its accessible name; "Select …" by default. */
   selectLabel?: string | undefined;
+  /** Off where the tile cannot be selected at all, which then shows no checkbox. */
+  selectable?: boolean | undefined;
 }) {
   // Filtering by channel means "samples having an image in this channel", so the grid keeps
   // showing whole samples — but it must show *that* channel. Previewing the first image
@@ -143,6 +146,7 @@ export function SampleTile({
 
       {/* The discoverable path to selection; the modifier keys are the fast one. Both end
           up in the same place. */}
+      {selectable && (
       <span className="absolute top-1 left-1 z-10">
         <Checkbox
           checked={selected}
@@ -151,6 +155,7 @@ export function SampleTile({
           onClick={onSelect}
         />
       </span>
+      )}
     </div>
   );
 }

@@ -1692,6 +1692,43 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/studio/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Segment one image with a few-shot method fitted on the studio's references */
+        post: operations["preview_api_datasets__dataset_id__studio_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/studio/previews/{generation}/{image_id}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A preview's foreground probability as an overlay
+         * @description The map one preview wrote, coloured on the fixed probability range [0, 1].
+         */
+        get: operations["preview_map_api_studio_previews__generation___image_id__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -4008,6 +4045,57 @@ export interface components {
          * @enum {string}
          */
         PortableFormat: "onnx";
+        /** PreviewRequest */
+        PreviewRequest: {
+            /** Class Key */
+            class_key: string;
+            /**
+             * Method
+             * @description A method that declares `few_shot_segmentation`.
+             */
+            method: string;
+            /**
+             * Profile Id
+             * @description The built region profile the method reads.
+             */
+            profile_id: number;
+            /**
+             * References
+             * @description Reference sample ids.
+             */
+            references: number[];
+            /**
+             * Image Id
+             * @description The image to segment.
+             */
+            image_id: number;
+        };
+        /** PreviewResult */
+        PreviewResult: {
+            /** Image Id */
+            image_id: number;
+            /**
+             * Score
+             * @description Presence confidence, in this preview's own units.
+             */
+            score: number;
+            /**
+             * Foreground Share
+             * @description Share of the image at or above 0.5 foreground probability.
+             */
+            foreground_share: number;
+            /**
+             * Generation
+             * @description Identifies the fitted preview; part of the map's URL.
+             */
+            generation: string;
+            /** Map Url */
+            map_url: string;
+            /** Warm */
+            warm: boolean;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+        };
         /** PrewarmRequest */
         PrewarmRequest: {
             /** Dataset Id */
@@ -8040,6 +8128,73 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SplitDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_api_datasets__dataset_id__studio_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PreviewResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_map_api_studio_previews__generation___image_id__png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                generation: string;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
                 };
             };
             /** @description Validation Error */

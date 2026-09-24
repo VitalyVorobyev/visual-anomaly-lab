@@ -31,6 +31,7 @@ from anomaly_lab.api.routers import (
     region_profiles,
     segment_assist,
     splits,
+    studio,
     ws,
 )
 from anomaly_lab.config import Settings, get_settings
@@ -150,5 +151,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(region_profiles.router)
     app.include_router(segment_assist.router)
     app.include_router(splits.router)
+    app.include_router(studio.router)
     app.include_router(ws.router)
     return app

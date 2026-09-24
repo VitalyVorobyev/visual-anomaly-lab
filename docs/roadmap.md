@@ -78,8 +78,8 @@ application.
   overlap, per-sample outcomes (hit, low IoU, miss, false presence), and a labelled headline — and Compare
   reads runs of one class across reference draws. Still open:
   - the public gate that decides between the methods;
-  - the reference studio's live preview and its accept / fix / mark-absent loop (choosing references
-    by eye and freezing them into a run is built);
+  - the reference studio's uncertainty queue and its accept / fix / mark-absent loop (choosing
+    references by eye, a live preview of any image, and freezing into a run are built);
 
   The order is in [backlog.md](backlog.md).
 - **Supervised segmentation and detection** (ADR-0039) follow it, and reuse its seams.

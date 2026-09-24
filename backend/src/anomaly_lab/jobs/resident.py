@@ -262,6 +262,36 @@ class ResidentWorker:
             self._arm_idle_timer()
             return result, warm
 
+    async def preview(
+        self, *, spec_json: str, generation: str, image_id: int
+    ) -> tuple[dict[str, object], bool]:
+        """Segment one image with a few-shot method fitted on the studio's references.
+
+        Keyed by the spec's generation (`experiments/preview.py`), which fingerprints the
+        references' pinned truth: new references are a new resident, never a stale one.
+        """
+        async with self._lock:
+            warm = self._matches("few_shot_preview", generation, generation)
+            try:
+                if not warm:
+                    await self._kill()
+                    await self._spawn(
+                        kind="few_shot_preview",
+                        key=generation,
+                        generation=generation,
+                        module="anomaly_lab.jobs.previewer",
+                        args=(spec_json,),
+                        experiment_id=None,
+                    )
+                result = await self._exchange({"image_id": image_id})
+            except ResidentError:
+                await self._kill()
+                raise
+
+            self._requests += 1
+            self._arm_idle_timer()
+            return result, warm
+
     # -- process management ------------------------------------------------------
 
     def _matches(self, kind: str, key: str, generation: str) -> bool:
