@@ -491,6 +491,21 @@ export function traceMask(
     });
 }
 
+/**
+ * An image's mask as one byte per pixel, through the same luminance rule as everything else
+ * here. The editor's pixel readout reads it; it never feeds back into a document.
+ */
+export function imageMask(image: CanvasImageSource, width: number, height: number): Uint8Array {
+  const context = context2d(width, height);
+  context.drawImage(image, 0, 0, width, height);
+  return maskFromPixels(context.getImageData(0, 0, width, height).data, width * height);
+}
+
+/** A bitmap region's crop as one byte per pixel. */
+export async function decodeShapeMask(shape: BitmapShape): Promise<Uint8Array> {
+  return imageMask(await loadBitmap(shape.png_base64), shape.width, shape.height);
+}
+
 function loadBitmap(pngBase64: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new globalThis.Image();
