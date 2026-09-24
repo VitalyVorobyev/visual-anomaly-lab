@@ -48,6 +48,7 @@ PRIMARY_SHOTS = 5
 MARGIN = 0.02
 REPORTED = {
     "foreground_iou": "foreground_iou",
+    "pixel_average_precision": "pixel_average_precision",
     "boundary_f1": "boundary_f1",
     "presence_roc_auc": "image_presence_roc_auc",
     "absent_false_positive_rate": "image_absent_false_positive_rate",

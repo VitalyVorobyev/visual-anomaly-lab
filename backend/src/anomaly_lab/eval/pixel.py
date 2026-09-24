@@ -9,7 +9,8 @@ compute a curve**, and a comparison view over several experiments would multiply
 So nothing is accumulated. Each image is folded into fixed-bin histograms and discarded,
 and every curve is read back out of those histograms:
 
-  * pixel ROC-AUC comes from a positive and a negative score histogram;
+  * pixel ROC-AUC and average precision come from a positive and a negative score
+    histogram;
   * AU-PRO comes from one further accumulator holding, per bin, the sum over ground-truth
     regions of that region's *fraction* of pixels in the bin. Dividing by the region size
     before accumulating is what collapses "one histogram per region" into one array, and
@@ -182,6 +183,22 @@ class PixelAccumulator:
             return None
         fpr, tpr = self._rates()
         return float(np.trapezoid(tpr, fpr))
+
+    def average_precision(self) -> float | None:
+        """Pixel-level average precision, or `None` when a class is absent from every mask.
+
+        The same sum `metrics.average_precision` takes over distinct scores, taken over
+        bins: each bin holding positives adds its share of recall times the precision of
+        the cut at that bin. Pixels sharing a bin are ties, cut together.
+        """
+        if not self.has_both_classes:
+            return None
+        true_positives = np.cumsum(self.positive[::-1])
+        predicted = true_positives + np.cumsum(self.negative[::-1])
+        gained = self.positive[::-1]
+        holds = gained > 0
+        precision = true_positives[holds] / predicted[holds]
+        return float(np.sum(gained[holds] * precision) / true_positives[-1])
 
     def au_pro(self, max_fpr: float = PRO_MAX_FPR) -> float | None:
         """Area under the per-region-overlap curve, normalized over `[0, max_fpr]`.

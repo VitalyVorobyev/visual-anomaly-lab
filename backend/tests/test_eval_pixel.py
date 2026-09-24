@@ -191,3 +191,19 @@ def test_uncovered_source_pixels_stay_in_the_denominator_at_the_score_floor() ->
     assert summary["uncovered_defect_pixels"] == 4
     assert summary["uncovered_normal_pixels"] == 44
     assert accumulator.region_count == 1
+
+
+def test_histogram_average_precision_matches_the_exact_one() -> None:
+    """With every score in its own bin, the binned sum is the per-score sum exactly."""
+    from anomaly_lab.eval.metrics import average_precision
+
+    rng = np.random.default_rng(3)
+    values = rng.integers(0, 50, size=(12, 12)) / 49.0  # ties, and far apart in bins
+    mask = rng.random((12, 12)) < values
+    accumulator = PixelAccumulator(vmin=0.0, vmax=1.0)
+    accumulator.add(values.astype(np.float32), mask)
+
+    assert accumulator.average_precision() == pytest.approx(
+        average_precision(mask.ravel(), values.ravel())
+    )
+    assert PixelAccumulator(vmin=0.0, vmax=1.0).average_precision() is None

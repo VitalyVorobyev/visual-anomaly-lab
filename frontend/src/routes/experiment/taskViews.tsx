@@ -125,6 +125,7 @@ const SEGMENTATION_OUTCOMES: Outcome[] = [
 const SEGMENTATION_HEADLINE = [
   { key: "foreground_iou", label: "foreground IoU" },
   { key: "foreground_dice", label: "Dice" },
+  { key: "pixel_average_precision", label: "pixel AP" },
   { key: "image_presence_roc_auc", label: "presence ROC-AUC" },
   { key: "image_absent_false_positive_rate", label: "flagged when absent" },
 ];

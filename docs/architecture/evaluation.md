@@ -244,6 +244,12 @@ facts: each image's presence `score`, its map or written mask, and the class tru
   - `foreground_iou` and `foreground_dice` over every answered image, so a false positive on an absent
     image counts;
   - `boundary_f1`: boundary pixels matched within `boundary_tolerance_px` (2) either way.
+- **The map's ranking, threshold-free.** Where the method stored a map, its foreground probability is
+  folded into the anomaly evaluator's fixed-bin histograms (`eval/pixel.py`, over `[0, 1]`) against the
+  class truth, over present and absent images alike. `pixel_average_precision` and `pixel_roc_auc` are
+  read from them, so the map is measured apart from the cut; `pixel_map_images` counts the images that
+  contributed. A written mask adds nothing here, and both are `None` when the subset has no map or no
+  foreground pixel.
 - **Image metrics**:
   - `image_present_recall`: a present image whose predicted region touches the truth;
   - `image_absent_false_positive_rate`: an absent image with any predicted pixel;

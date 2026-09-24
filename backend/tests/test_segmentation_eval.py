@@ -70,6 +70,44 @@ def test_what_cannot_be_computed_is_none_not_zero() -> None:
     assert empty["boundary_f1"] is None
 
 
+def test_pixel_average_precision_ranks_the_map_over_present_and_absent_images() -> None:
+    accumulator = SegmentationAccumulator()
+    # Present: truth [T T / F F], probabilities [0.9 0.5 / 0.7 0.1].
+    truth = np.array([[True, True], [False, False]])
+    present = np.array([[0.9, 0.5], [0.7, 0.1]], dtype=np.float32)
+    accumulator.add(truth, present >= 0.5, score=0.9, inference_ms=1.0, probability=present)
+    # Absent: one confident background pixel at 0.8, which outranks the 0.5 foreground.
+    absent = np.array([[0.8, 0.1], [0.1, 0.1]], dtype=np.float32)
+    accumulator.add(
+        np.zeros((2, 2), dtype=bool),
+        absent >= 0.5,
+        score=0.1,
+        inference_ms=1.0,
+        probability=absent,
+    )
+    metrics = accumulator.metrics()
+    # Ranked: 0.9 (fg), 0.8 (bg), 0.7 (bg), 0.5 (fg) -> AP = 1/2 * 1 + 1/2 * 2/4.
+    assert metrics["pixel_average_precision"] == pytest.approx(0.75)
+    # 0.9 outranks all six background pixels, 0.5 the four at 0.1: 10 of 12 pairs.
+    assert metrics["pixel_roc_auc"] == pytest.approx(10 / 12)
+    assert metrics["pixel_map_images"] == 2
+
+
+def test_pixel_average_precision_is_none_without_maps_or_foreground() -> None:
+    written_only = SegmentationAccumulator()
+    written_only.add(_square(2, 2, 4), _square(2, 2, 4), score=0.5, inference_ms=1.0)
+    assert written_only.metrics()["pixel_average_precision"] is None
+    assert written_only.metrics()["pixel_map_images"] == 0
+
+    absent_only = SegmentationAccumulator()
+    empty = _square(0, 0, 0)
+    absent_only.add(
+        empty, empty, score=0.1, inference_ms=1.0, probability=np.zeros((8, 8), np.float32)
+    )
+    assert absent_only.metrics()["pixel_average_precision"] is None
+    assert absent_only.metrics()["pixel_roc_auc"] is None
+
+
 def test_a_boundary_is_the_ring_and_a_near_miss_still_matches() -> None:
     ring = boundary(_square(2, 2, 4))
     assert ring.sum() == 12 and not ring[3:5, 3:5].any()
