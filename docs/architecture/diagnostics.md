@@ -98,7 +98,9 @@ The `graph` kind carries a whole network, filled by the **shared, method-agnosti
 
 A run's per-image diagnostics are a budgeted **sample**. The resident worker answers for any image on demand
 ([jobs](jobs.md), ADR-0026), so the index has two producers on different schedules, and every merge rule is
-scoped by origin:
+scoped by origin. A request hands the model what `infer` would: the image alone, or — for a
+`channel_aware` method, which may fuse a sample's channels — the image with the rest of its sample, whose
+siblings' entries are recorded too.
 
 - **`DiagnosticOrigin ∈ {run, on_demand}` on every entry**; an entry without one reads as `run`.
 - **Identity is `(key, image_id, origin)`.** Wholesale supersession applies only within `origin=run` and only

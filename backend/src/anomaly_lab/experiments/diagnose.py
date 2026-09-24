@@ -20,6 +20,7 @@ from pathlib import Path
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import images as images_repo
+from anomaly_lab.db.repositories.images import SplitImage
 from anomaly_lab.domain.entities import ExperimentStatus, Subset
 from anomaly_lab.experiments.context import LoadedExperiment, load_experiment, to_records
 from anomaly_lab.experiments.train import MODEL_SUBDIR
@@ -67,10 +68,11 @@ def prepare(settings: Settings, experiment_id: int) -> LoadedExperiment:
 def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) -> list[str]:
     """Score one image for its diagnostics alone; return the keys that were recorded.
 
-    The record handed to the model is built by the same query a run uses, which does two
+    The records handed to the model are built by the same query a run uses, which does two
     things at once: the model sees exactly what it would have seen during inference —
-    including the channel name — and an image outside this experiment's split cannot be
-    asked about at all, because it is not in the answer.
+    including the channel name and, for a channel-aware model, the rest of the sample —
+    and an image outside this experiment's split cannot be asked about at all, because it
+    is not in the answer.
     """
     with connection(settings.db_path) as conn:
         selected = images_repo.list_images_for_split(
@@ -80,10 +82,9 @@ def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) 
             channels=loaded.experiment.channels,
         )
 
-    found = [image for image in selected if image.image_id == image_id]
-    if not found:
-        msg = f"image {image_id} is not in this experiment's split"
-        raise DiagnoseError(msg)
+    found = records_to_score(
+        selected, image_id, channel_aware=loaded.model_class.capabilities().channel_aware
+    )
 
     writer = DiagnosticWriter(
         loaded.artifact_dir / "diagnostics",
@@ -125,6 +126,26 @@ def diagnose_image(loaded: LoadedExperiment, settings: Settings, image_id: int) 
             if entry.image_id == image_id and entry.origin is DiagnosticOrigin.ON_DEMAND
         }
     )
+
+
+def records_to_score(
+    selected: list[SplitImage], image_id: int, *, channel_aware: bool
+) -> list[SplitImage]:
+    """The image asked about, with its sample's other channels when the model may fuse them.
+
+    A channel-aware model can score a sample rather than an image — `dino_memory`'s
+    `feature_concat` refuses a lone channel of a multi-channel sample, by name — so it gets
+    the sample's group exactly as `infer` hands it over. Its siblings' diagnostics are
+    recorded too, as the true diagnostics of those images under the same model; the answer
+    names only the image asked about.
+    """
+    found = next((image for image in selected if image.image_id == image_id), None)
+    if found is None:
+        msg = f"image {image_id} is not in this experiment's split"
+        raise DiagnoseError(msg)
+    if not channel_aware:
+        return [found]
+    return [image for image in selected if image.sample_id == found.sample_id]
 
 
 def _discard(path: Path) -> None:
