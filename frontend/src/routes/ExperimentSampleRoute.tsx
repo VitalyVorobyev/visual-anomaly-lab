@@ -79,7 +79,7 @@ export function ExperimentSampleRoute() {
   // The same query the gallery ran, rebuilt from the URL — a cache hit rather than a
   // second fetch, and the reason this page knows which sample comes next *under the
   // filter that is on screen* rather than in raw id order.
-  const verdicts = useVerdicts(experimentId, state);
+  const verdicts = useVerdicts(experimentId, state, experiment.data?.task);
 
   // `null` is not "no view": it is `ImageStage`'s own opening view — 1:1 where the picture
   // fits, fit otherwise — resolved once the viewport has been measured.

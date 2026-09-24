@@ -185,3 +185,22 @@ def test_the_whole_few_shot_slice_runs_without_torch(
     assert metrics["images"]["absent"] == 11
     assert metrics["foreground_iou"] > 0.5
     assert metrics["image_presence_roc_auc"] == 1.0
+
+    detail = client.get(f"/api/experiments/{created['id']}").json()
+    assert detail["headline_metric"] == "foreground_iou"
+    assert detail["headline_value"] == metrics["foreground_iou"]
+    outcomes = client.get(
+        f"/api/experiments/{created['id']}/segmentation-outcomes", params={"subset": "test"}
+    )
+    assert outcomes.status_code == 200, outcomes.text
+    tally = [verdict["outcome"] for verdict in outcomes.json()["samples"]]
+    assert len(tally) == 13 and "unlabeled" not in tally
+
+    anomaly_id = client.get("/api/experiments").json()[-1]["id"]
+    refused = client.get(f"/api/experiments/{anomaly_id}/segmentation-outcomes")
+    assert refused.status_code == 409
+
+    # Compare reads anomaly runs at thresholds; a few-shot run is refused by name.
+    compared = client.get("/api/compare", params={"ids": [anomaly_id, created["id"]]})
+    assert compared.status_code == 422
+    assert "Compare reads anomaly runs only" in compared.text

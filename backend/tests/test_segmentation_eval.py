@@ -22,6 +22,7 @@ from anomaly_lab.eval.segmentation import (
     THRESHOLD_RULE,
     SegmentationAccumulator,
     boundary,
+    sample_outcomes,
 )
 from anomaly_lab.models.preprocessing import load_mask
 
@@ -180,6 +181,18 @@ def test_the_evaluator_reads_stored_predictions_against_class_truth(
     assert metrics["image_absent_false_positive_rate"] == 0.5
     assert metrics["image_presence_roc_auc"] == 1.0
     assert stored[0].ground_truth_digest == fresh
+
+    with connection(settings.db_path) as conn:
+        outcomes = {
+            verdict.sample_id: verdict
+            for verdict in sample_outcomes(conn, experiment, Subset.TEST).samples
+        }
+    for image_id in queries:
+        found = outcomes[_sample_of(settings, image_id)]
+        assert (found.outcome, found.iou) == ("hit", 1.0)
+    assert outcomes[_sample_of(settings, normals[0])].outcome == "correct_absence"
+    assert outcomes[_sample_of(settings, normals[1])].outcome == "false_presence"
+    assert outcomes[_sample_of(settings, normals[2])].outcome == "unlabeled"
 
     # Relabelling the query normal gives it an answer, and the stored metrics go stale.
     with connection(settings.db_path) as conn:

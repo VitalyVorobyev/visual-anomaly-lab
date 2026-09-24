@@ -27,10 +27,12 @@ from anomaly_lab.api.routers.experiments.views import (
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import results as results_repo
-from anomaly_lab.domain.entities import Label, Subset
+from anomaly_lab.domain.entities import Label, Subset, Task
+from anomaly_lab.errors import ConflictError
 from anomaly_lab.eval.localization import tolerance_px
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig
+from anomaly_lab.eval.segmentation import SegmentationOutcomes, sample_outcomes
 from anomaly_lab.eval.threshold import ThresholdReport, classify, report, suggest_threshold
 from anomaly_lab.models.base import evenly_spaced
 
@@ -62,6 +64,31 @@ def get_results(
         score_max=max(scores) if scores else 0.0,
         samples=classify(samples, threshold),
     )
+
+
+@router.get(
+    "/{experiment_id}/segmentation-outcomes",
+    summary="Each sample's few-shot segmentation outcome, ranked by presence",
+)
+def get_segmentation_outcomes(
+    request: Request,
+    experiment_id: int,
+    subset: Subset | None = Query(default=None),
+) -> SegmentationOutcomes:
+    """What a segmentation run did to each sample, for the gallery and the sample page.
+
+    The few-shot counterpart of the threshold report, computed per request from the stored
+    maps and masks under the evaluator's rule (ADR-0040). An anomaly run is refused: its
+    outcomes are the threshold report's.
+    """
+    experiment, settings = load(request, experiment_id)
+    if experiment.task is not Task.FEW_SHOT_SEGMENTATION:
+        raise ConflictError(
+            f"experiment {experiment.id} is a {experiment.task.value} run; its outcomes are "
+            "the threshold report's"
+        )
+    with connection(settings.db_path) as conn:
+        return sample_outcomes(conn, experiment, subset)
 
 
 @router.get("/{experiment_id}/threshold", summary="Confusion matrix at one threshold")

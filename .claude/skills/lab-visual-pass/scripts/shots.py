@@ -63,6 +63,17 @@ def screens(ids: dict) -> dict[str, str]:
         "16-compare": f"/compare?ids={a},{b}",
         "17-compare-sample": f"/compare/samples/{s}?ids={a},{b}",
         "18-experiments": "/experiments",
+        # A few-shot segmentation run (ADR-0040), when the seed made one.
+        **(
+            {
+                "19-fs-overview": f"/experiments/{f}?tab=overview",
+                "20-fs-samples": f"/experiments/{f}?tab=samples",
+                "21-fs-benchmark": f"/experiments/{f}?tab=benchmark",
+                "22-fs-sample": f"/experiments/{f}/samples/{s}",
+            }
+            if (f := ids.get("few_shot_run")) is not None
+            else {}
+        ),
     }
 
 

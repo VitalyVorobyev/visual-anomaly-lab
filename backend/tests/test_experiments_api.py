@@ -272,7 +272,8 @@ def test_metrics_are_computed_and_stored_per_subset(
     }
     assert test["aggregation"] == "max"
     assert test["timing"]["mean_ms"] > 0
-    assert detail["headline_roc_auc"] == pytest.approx(1.0)
+    assert detail["headline_metric"] == "sample_roc_auc"
+    assert detail["headline_value"] == pytest.approx(1.0)
     assert detail["metrics"][0]["ground_truth_digest"]
     assert detail["metrics"][0]["ground_truth_stale"] is False
 
@@ -977,7 +978,7 @@ def test_the_experiment_list_shows_the_headline_number(
 ) -> None:
     listed = client.get("/api/experiments").json()
     entry = next(item for item in listed if item["id"] == scored["id"])
-    assert entry["headline_roc_auc"] == pytest.approx(1.0)
+    assert entry["headline_value"] == pytest.approx(1.0)
 
 
 def test_the_experiment_catalog_combines_search_method_status_and_sort(

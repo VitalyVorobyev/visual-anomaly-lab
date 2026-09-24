@@ -25,11 +25,6 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Task-specific result bodies** (M):
-      - A `taskViews` registry keyed by task supplies the bodies of Overview, Samples, Benchmark
-        and Compare.
-      - Segmentation gets an IoU / absence table, gallery outcomes of miss / false presence /
-        low IoU, and a shots-versus-IoU chart.
 - [ ] **Reference studio** (L, split before starting):
       - The studio has a reference strip, a query on `SampleStage` with the foreground probability,
         and a queue sorted by uncertainty.
@@ -39,6 +34,9 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
         session.
 - [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
       × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
+- [ ] **Compare for few-shot runs** (M): runs of one class and one reference-split family side by
+      side, the overlap against the number of references across draws (shots × seeds), and the
+      samples they disagree on. Compare refuses few-shot runs until then.
 
 Later, each behind the gate above:
 - A cross-domain public few-shot dataset.

@@ -24,6 +24,11 @@ export const OUTCOME_TONE: Record<string, Tone> = {
   tn: "normal",
   fp: "warning",
   fn: "defect",
+  hit: "normal",
+  correct_absence: "normal",
+  low_iou: "warning",
+  false_presence: "warning",
+  miss: "defect",
   unlabeled: "unlabeled",
 };
 
@@ -32,6 +37,11 @@ export const OUTCOME_LABEL: Record<string, string> = {
   tn: "true negative",
   fp: "false positive",
   fn: "false negative",
+  hit: "hit",
+  low_iou: "low IoU",
+  miss: "miss",
+  false_presence: "false presence",
+  correct_absence: "correct absence",
   unlabeled: "unlabeled",
 };
 

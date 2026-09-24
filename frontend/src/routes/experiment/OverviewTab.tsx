@@ -43,9 +43,12 @@ const HEADLINE: { key: string; label: string }[] = [
 export function Headline({
   metrics,
   subset,
+  keys = HEADLINE,
 }: {
   metrics: MetricSummary[];
   subset: Subset | undefined;
+  /** Which values to promote; a task's own (`taskViews.tsx`), the anomaly four by default. */
+  keys?: { key: string; label: string }[];
 }) {
   const entry = metrics.find((row) => row.subset === subset) ?? metrics[metrics.length - 1];
   if (!entry) return null;
@@ -53,7 +56,7 @@ export function Headline({
 
   return (
     <div className="flex flex-wrap gap-x-10 gap-y-4 rounded-lg border border-line bg-surface px-4 py-3">
-      {HEADLINE.map(({ key, label }) => {
+      {keys.map(({ key, label }) => {
         const value = values[key];
         return (
           <div key={key} className="flex flex-col gap-0.5">
@@ -152,11 +155,17 @@ function ConfigBlock({ title, values }: { title: string; values: Record<string, 
 export function Metrics({
   experimentId,
   metrics,
-  aggregation,
+  aggregation = "max",
+  note,
+  body,
 }: {
   experimentId: number;
   metrics: MetricSummary[];
-  aggregation: string;
+  aggregation?: string;
+  /** What the numbers are; the anomaly sentence about aggregation by default. */
+  note?: React.ReactNode;
+  /** One subset's tables; the anomaly tables by default (`taskViews.tsx`). */
+  body?: (subset: Subset, metrics: MetricValue) => React.ReactNode;
 }) {
   const reevaluate = useReevaluate(experimentId);
   const stale = metrics.some((entry) => entry.ground_truth_stale);
@@ -177,15 +186,23 @@ export function Metrics({
         </Callout>
       )}
       <p className="mb-3 text-xs text-fg-muted">
-        Threshold-independent, computed from stored scores. Channels aggregate to a part by{" "}
-        <span className="font-mono">{aggregation}</span>; recomputing re-reads without
-        re-running inference.
+        {note ?? (
+          <>
+            Threshold-independent, computed from stored scores. Channels aggregate to a part by{" "}
+            <span className="font-mono">{aggregation}</span>; recomputing re-reads without
+            re-running inference.
+          </>
+        )}
       </p>
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-        {metrics.map((entry) => (
-          <SubsetMetrics key={entry.subset} subset={entry.subset} metrics={entry.metrics} />
-        ))}
+        {metrics.map((entry) =>
+          body ? (
+            <div key={entry.subset}>{body(entry.subset, entry.metrics)}</div>
+          ) : (
+            <SubsetMetrics key={entry.subset} subset={entry.subset} metrics={entry.metrics} />
+          ),
+        )}
       </div>
     </Panel>
   );

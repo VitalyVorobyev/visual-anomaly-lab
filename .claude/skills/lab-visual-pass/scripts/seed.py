@@ -25,6 +25,11 @@ def main() -> None:
     parser.add_argument("--api", default="http://127.0.0.1:8010")
     parser.add_argument("--visa-root", required=True, type=Path)
     parser.add_argument("--category", default="candle")
+    parser.add_argument(
+        "--few-shot",
+        action="store_true",
+        help="Also draw 5 `defect` references and score a `color_prototype` run (ADR-0040).",
+    )
     args = parser.parse_args()
     api: str = args.api.rstrip("/")
 
@@ -122,6 +127,40 @@ def main() -> None:
             wait(req("POST", f"/api/experiments/{run['id']}/infer"))
         run_ids.append(run["id"])
 
+    few_shot_run = None
+    if args.few_shot:
+        splits = req("GET", f"/api/splits?dataset_id={dataset_id}")
+        references = next((s for s in splits if s["name"] == "five shots"), None) or req(
+            "POST",
+            "/api/splits",
+            {
+                "dataset_id": dataset_id,
+                "name": "five shots",
+                "seed": 0,
+                "params": {"strategy": "few_shot", "label_key": "defect", "shots": 5},
+            },
+        )
+        run = next((e for e in experiments if e["name"] == "colour floor"), None)
+        if run is None:
+            run = req(
+                "POST",
+                "/api/experiments",
+                {
+                    "name": "colour floor",
+                    "dataset_id": dataset_id,
+                    "split_id": references["id"],
+                    "region_profile_id": profile["id"],
+                    "model_type": "color_prototype",
+                    "task": "few_shot_segmentation",
+                    "target_label": "defect",
+                },
+            )
+        if run["status"] != "trained":
+            wait(req("POST", f"/api/experiments/{run['id']}/train"))
+        if not req("GET", f"/api/experiments/{run['id']}").get("scored_subsets"):
+            wait(req("POST", f"/api/experiments/{run['id']}/infer"))
+        few_shot_run = run["id"]
+
     results = req("GET", f"/api/experiments/{run_ids[0]}/results?subset=test")
     defect = next(s for s in results["samples"] if s["label"] == "defect")
     sample = req("GET", f"/api/datasets/{dataset_id}/samples/{defect['sample_id']}")
@@ -132,6 +171,7 @@ def main() -> None:
                 "experiment_ids": run_ids,
                 "defect_sample_id": defect["sample_id"],
                 "defect_image_id": sample["images"][0]["id"],
+                **({"few_shot_run": few_shot_run} if few_shot_run is not None else {}),
             }
         )
     )

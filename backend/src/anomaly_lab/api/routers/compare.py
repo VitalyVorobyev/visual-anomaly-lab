@@ -40,6 +40,7 @@ from anomaly_lab.domain.entities import (
     JobStatus,
     Label,
     Subset,
+    Task,
 )
 from anomaly_lab.eval.compare import (
     OperatingPoint,
@@ -271,6 +272,20 @@ def _selected(conn: sqlite3.Connection, ids: list[int]) -> list[Experiment]:
         if found is None:
             raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
         experiments.append(found)
+
+    for experiment in experiments:
+        # Every comparison here is read at thresholds against normal/defect labels. A
+        # few-shot segmentation run is measured against its class truth instead (ADR-0040),
+        # and a column of its scores beside an anomaly reading would look right and mean
+        # nothing, so it is refused by name until Compare reads that task.
+        if experiment.task is not Task.ANOMALY:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{experiment.name}' is a {experiment.task.value} run; Compare reads "
+                    "anomaly runs only"
+                ),
+            )
 
     first = experiments[0]
     for other in experiments[1:]:

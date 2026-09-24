@@ -49,6 +49,7 @@ import {
 import { refusalReason, toggleRun } from "../api/compareState";
 import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
+import { formatHeadline } from "../api/headline";
 import { isUsableBuild, splitServesTask } from "../hooks/useDatasetReadiness";
 import { experimentStatusTone } from "../api/statusTone";
 
@@ -162,17 +163,13 @@ export function ExperimentCatalog({ datasetId }: { datasetId?: number }) {
       cell: (row) => <Badge tone={experimentStatusTone(row.status)}>{row.status}</Badge>,
     },
     {
-      key: "auroc",
-      header: "AUROC",
+      key: "headline",
+      header: "Headline",
       numeric: true,
-      width: "6rem",
-      cell: (row) =>
-        // A metric that could not be computed is a dash, never a zero.
-        row.headline_roc_auc === null || row.headline_roc_auc === undefined ? (
-          <span className="text-fg-subtle">—</span>
-        ) : (
-          row.headline_roc_auc.toFixed(3)
-        ),
+      width: "7.5rem",
+      // The task's own metric, labelled, so an IoU never sits unmarked beside an AUROC. A
+      // metric that could not be computed is a dash, never a zero.
+      cell: (row) => formatHeadline(row) ?? <span className="text-fg-subtle">—</span>,
     },
     {
       key: "actions",
@@ -1033,7 +1030,12 @@ function MethodCard({
 
       <div className="flex flex-wrap gap-1.5">
         {capabilities.dataset_specific && <Badge tone="warning">dataset-specific</Badge>}
-        {capabilities.produces_anomaly_map && <Badge tone="info">anomaly maps</Badge>}
+        {/* A segmenter's map is a foreground probability, not an anomaly map. */}
+        {capabilities.produces_anomaly_map && (
+          <Badge tone="info">
+            {capabilities.tasks.includes("anomaly") ? "anomaly maps" : "probability maps"}
+          </Badge>
+        )}
         {capabilities.produces_diagnostics && <Badge tone="info">diagnostics</Badge>}
         {capabilities.channel_aware && <Badge tone="info">channel-aware</Badge>}
         {capabilities.portable_formats.map((format) => (

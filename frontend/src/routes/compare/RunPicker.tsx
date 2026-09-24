@@ -12,6 +12,7 @@
  * legible — a disabled row that says why beats a 422 after the fact.
  */
 
+import { formatHeadline } from "../../api/headline";
 import type { ExperimentSummary } from "../../api/client";
 import { MAX_RUNS, refusalReason } from "../../api/compareState";
 import { Badge, Checkbox, Empty, SkeletonRows, cn } from "@vitavision/lab-ui";
@@ -151,13 +152,9 @@ function RunRow({
       </span>
       <span className="text-xs text-fg-muted">{methodTitle}</span>
       {run.status !== "trained" && <Badge tone="unlabeled">{run.status}</Badge>}
-      <span className="w-14 text-right font-mono text-xs tabular-nums">
+      <span className="w-24 text-right font-mono text-xs tabular-nums">
         {/* A metric that could not be computed is a dash, never a zero. */}
-        {run.headline_roc_auc === null || run.headline_roc_auc === undefined ? (
-          <span className="text-fg-subtle">—</span>
-        ) : (
-          run.headline_roc_auc.toFixed(3)
-        )}
+        {formatHeadline(run) ?? <span className="text-fg-subtle">—</span>}
       </span>
     </div>
   );

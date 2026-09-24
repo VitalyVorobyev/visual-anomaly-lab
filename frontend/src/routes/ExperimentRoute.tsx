@@ -22,7 +22,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router";
 
-import type { MetricSummary, Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
 import type { TabId } from "../api/experimentTabs";
 import { parseTab } from "../api/experimentTabs";
@@ -32,15 +31,14 @@ import { Badge, Button, Callout, Empty, ErrorBox, PageHeader, ReadoutStrip, Skel
 import { experimentStatusTone } from "../api/statusTone";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment, useModelTypes } from "../hooks/useExperiments";
-import { BenchmarkTab } from "./experiment/BenchmarkTab";
 import { GalleryTab } from "./experiment/GalleryTab";
 import { JobsFilesTab } from "./experiment/JobsFilesTab";
 import { RunBar } from "./experiment/RunBar";
 import { useVerdicts } from "./experiment/useVerdicts";
 import { ArchitectureTab, InspectorTab, PICTURE_KINDS, STRUCTURE_KINDS } from "./experiment/DiagnosticsTabs";
-import { Configuration, Headline, Metrics } from "./experiment/OverviewTab";
-import { Results } from "./experiment/ResultsPanel";
+import { Configuration } from "./experiment/OverviewTab";
 import { TrainingTab } from "./experiment/TrainingTab";
+import { taskView, type ResultsBodyProps } from "./experiment/taskViews";
 
 /* A disabled tab used to give no reason at all, which reads as broken rather than as
    not-yet. Each says what would fill it. */
@@ -115,13 +113,25 @@ export function ExperimentRoute() {
   const updateResults = (next: Partial<ResultsState>) => {
     setParams(writeResultsState({ ...results, ...next }), { replace: true });
   };
-  const verdicts = useVerdicts(experimentId, results);
+  const verdicts = useVerdicts(experimentId, results, experiment.data?.task);
 
   if (experiment.isPending) return <SkeletonRows rows={5} />;
   if (experiment.error) return <ErrorBox>{experiment.error.message}</ErrorBox>;
   if (!experiment.data || experimentId === undefined) return <Empty>No such experiment.</Empty>;
 
   const detail = experiment.data;
+  // What the tabs' bodies say is the task's (`taskViews.tsx`); everything around them is shared.
+  const view = taskView(detail.task);
+  const body: ResultsBodyProps = {
+    experimentId,
+    subsets: detail.scored_subsets,
+    metrics: detail.metrics,
+    state: results,
+    onChange: updateResults,
+    verdicts,
+    aggregation: String(detail.evaluation.aggregation ?? "max"),
+    targetLabel: detail.target_label ?? null,
+  };
   const runScoped = modelScoped(diagnostics.data);
   const hasStructure = ofKinds(runScoped, STRUCTURE_KINDS).length > 0;
   const hasPictures = ofKinds(runScoped, PICTURE_KINDS).length > 0;
@@ -149,7 +159,8 @@ export function ExperimentRoute() {
           <div className="flex items-center gap-3">
             {/* Only once there is something to compare: the picker opens with this run
                 chosen and every other run of its split beside it. */}
-            {hasScores && (
+            {/* Compare reads anomaly runs only, so it is not offered where it would refuse. */}
+            {hasScores && detail.task === "anomaly" && (
               <Link
                 to={`/compare?ids=${detail.id}`}
                 className="rounded-sm text-xs font-medium text-fg-muted transition-colors hover:text-signal focus-visible:outline-2 focus-visible:outline-signal"
@@ -173,6 +184,10 @@ export function ExperimentRoute() {
                 value: detail.split_name,
                 to: `/datasets/${detail.dataset_id}/splits`,
               },
+              // A targeted run is about one class, and says which (ADR-0040).
+              ...(detail.target_label
+                ? [{ label: "class", value: detail.target_label }]
+                : []),
               {
                 label: "input",
                 value: detail.region_profile_name,
@@ -267,13 +282,7 @@ export function ExperimentRoute() {
             </Callout>
           )}
           {hasScores ? (
-            <OverviewResults
-              experimentId={experimentId}
-              subsets={detail.scored_subsets}
-              metrics={detail.metrics}
-              state={results}
-              onChange={updateResults}
-            />
+            view.Scored(body)
           ) : (
             <Empty>
               {detail.status === "trained"
@@ -282,13 +291,7 @@ export function ExperimentRoute() {
             </Empty>
           )}
 
-          {detail.metrics.length > 0 && (
-            <Metrics
-              experimentId={experimentId}
-              metrics={detail.metrics}
-              aggregation={String(detail.evaluation.aggregation ?? "max")}
-            />
-          )}
+          {detail.metrics.length > 0 && view.MetricTables(body)}
 
           <Configuration detail={detail} />
         </>
@@ -297,6 +300,8 @@ export function ExperimentRoute() {
       {tab === "samples" && (
         <GalleryTab
           experimentId={experimentId}
+          task={detail.task}
+          targetLabel={detail.target_label ?? null}
           state={results}
           onChange={updateResults}
           verdicts={verdicts}
@@ -319,15 +324,7 @@ export function ExperimentRoute() {
         />
       )}
 
-      {tab === "benchmark" && (
-        <BenchmarkTab
-          experimentId={experimentId}
-          subsets={detail.scored_subsets}
-          metrics={detail.metrics}
-          state={results}
-          onChange={updateResults}
-        />
-      )}
+      {tab === "benchmark" && view.Benchmark(body)}
 
       {tab === "architecture" && (
         <ArchitectureTab experimentId={experimentId} index={diagnostics.data} />
@@ -346,38 +343,5 @@ export function ExperimentRoute() {
         />
       )}
     </div>
-  );
-}
-
-/**
- * The headline numbers and the results panel, sharing one subset.
- *
- * They must: a headline reading `test` above a results table showing `val` is two answers
- * to one question. The distribution charts stay off — those are the Benchmark tab.
- */
-function OverviewResults({
-  experimentId,
-  subsets,
-  metrics,
-  state,
-  onChange,
-}: {
-  experimentId: number;
-  subsets: Subset[];
-  metrics: MetricSummary[];
-  state: ResultsState;
-  onChange: (next: Partial<ResultsState>) => void;
-}) {
-  return (
-    <>
-      <Headline metrics={metrics} subset={state.subset} />
-      <Results
-        experimentId={experimentId}
-        subsets={subsets}
-        state={state}
-        onChange={onChange}
-        metrics={metrics}
-      />
-    </>
   );
 }

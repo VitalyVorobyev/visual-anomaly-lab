@@ -158,7 +158,9 @@ beside the picker). Per-subset counts by label; immutable once created. `POST /a
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
 in the URL and are applied in SQLite. A checkbox column picks runs for Compare under the picker's own
-`refusalReason`. Deletion previews files, bytes, active-work blockers and resident eviction.
+`refusalReason`. The headline column is each run's own task metric, labelled (`api/headline.ts`: `0.912
+AUROC`, `0.643 IoU`), because the evaluator names it (`headline_metric`, `headline_value`). Deletion
+previews files, bytes, active-work blockers and resident eviction.
 `GET /api/experiments?dataset_id=&q=&model_type=&status=&sort=`,
 `GET /api/experiments/{id}/deletion-preview`, `DELETE /api/experiments/{id}`.
 
@@ -195,6 +197,19 @@ rows carrying a verdict. An optional `peak` layer draws the stored argmax and it
 `…/curves?subset=`, `GET /api/experiments/{id}/samples/{sid}/images`,
 `GET /api/images/{id}/anomaly-map?experiment_id=`, `GET /api/images/{id}/mask`.
 
+**Results by task** (`routes/experiment/taskViews.tsx`). The shell is shared — run bar, tab set,
+`ResultsState`, the gallery's grid, the sample page — and so is the data flow: `useVerdicts(experiment,
+state, task)` hands every screen the same classified rows, from the threshold report for `anomaly` or
+from `GET /api/experiments/{id}/segmentation-outcomes?subset=` for `few_shot_segmentation`, and asks
+neither until the task is known. What the registry holds per task is the gallery's outcome strip and rank
+words, the note saying what an outcome is measured against, and the bodies of Overview, the metric tables
+and Benchmark. The outcome vocabularies are disjoint (`tp`/`fp`/`tn`/`fn`; `hit`/`low_iou`/`miss`/
+`false_presence`/`correct_absence`), so one URL parameter and one "mistakes" set serve both. A few-shot
+Overview promotes IoU, Dice, presence ROC-AUC and the rate flagged on absent images, and tallies outcomes
+per sample. Its tables are `segmentationRows`, with present / absent / unlabelled image counts. Its
+Benchmark shows present samples by IoU band and absent samples by outcome. How overlap moves with the
+number of references is a question across runs, and is open.
+
 **Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
 beside the combined map on the sample page. Diagnostic panes are in the prepared frame
@@ -208,7 +223,9 @@ refusal on the row. Threshold-independent metrics compare directly; threshold-de
 config diff calling out preprocessing, a disagreement-filtered sample table, and a map view sharing one cut
 *fraction* and one `StageView` across panes. `StageView.scale` is absolute (CSS pixels per image pixel),
 which is correct because every pane draws the same image. Localization verdicts and `peak` layers are per
-pane. `GET /api/compare?ids=&subset=&at=`.
+pane. `GET /api/compare?ids=&subset=&at=`. Compare reads anomaly runs only: a few-shot run is refused by
+name on the picker's row and by the route, because a column of its scores beside an anomaly reading
+would look right and mean nothing.
 
 ## Cross-cutting rules
 

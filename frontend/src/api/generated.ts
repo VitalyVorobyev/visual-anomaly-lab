@@ -702,6 +702,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/{experiment_id}/segmentation-outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Each sample's few-shot segmentation outcome, ranked by presence
+         * @description What a segmentation run did to each sample, for the gallery and the sample page.
+         *
+         *     The few-shot counterpart of the threshold report, computed per request from the stored
+         *     maps and masks under the evaluator's rule (ADR-0040). An anomaly run is refused: its
+         *     outcomes are the threshold report's.
+         */
+        get: operations["get_segmentation_outcomes_api_experiments__experiment_id__segmentation_outcomes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments/{experiment_id}/threshold": {
         parameters: {
             query?: never;
@@ -2978,10 +3002,16 @@ export interface components {
             /** Notes */
             notes: string | null;
             /**
-             * Headline Roc Auc
-             * @description Sample-level ROC-AUC on test, or on the best subset scored so far.
+             * Headline Metric
+             * @description The task's one-line metric (its evaluator's `headline`).
+             * @default sample_roc_auc
              */
-            headline_roc_auc: number | null;
+            headline_metric: string;
+            /**
+             * Headline Value
+             * @description That metric on test, or on the best subset scored so far.
+             */
+            headline_value: number | null;
             /** Config */
             config: {
                 [key: string]: unknown;
@@ -3070,10 +3100,16 @@ export interface components {
             /** Notes */
             notes: string | null;
             /**
-             * Headline Roc Auc
-             * @description Sample-level ROC-AUC on test, or on the best subset scored so far.
+             * Headline Metric
+             * @description The task's one-line metric (its evaluator's `headline`).
+             * @default sample_roc_auc
              */
-            headline_roc_auc: number | null;
+            headline_metric: string;
+            /**
+             * Headline Value
+             * @description That metric on test, or on the best subset scored so far.
+             */
+            headline_value: number | null;
         };
         /** ExportParams */
         ExportParams: {
@@ -4390,6 +4426,58 @@ export interface components {
              * @description Candidate area in source-image pixels.
              */
             area: number;
+        };
+        /**
+         * SegmentationOutcomes
+         * @description Every scored sample of a subset, classified by what its prediction did to its truth.
+         */
+        SegmentationOutcomes: {
+            /**
+             * Threshold Rule
+             * @default foreground probability >= 0.5
+             */
+            threshold_rule: string;
+            /**
+             * Low Iou Below
+             * @default 0.5
+             */
+            low_iou_below: number;
+            /** Samples */
+            samples: components["schemas"]["SegmentationVerdict"][];
+        };
+        /**
+         * SegmentationVerdict
+         * @description One sample as the few-shot gallery shows it: its outcome, and its overlap.
+         */
+        SegmentationVerdict: {
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            label: components["schemas"]["Label"];
+            /** Notes */
+            notes: string | null;
+            /** Score */
+            score: number;
+            /** Predicted Defect */
+            predicted_defect: boolean;
+            /**
+             * Outcome
+             * @description tp, fp, tn, fn — or 'unlabeled' for a ranked-only row.
+             */
+            outcome: string;
+            /**
+             * Localized
+             * @description Whether this part's anomaly map peaked inside its annotated defect region. **Threshold-free**: it is copied through unchanged as the slider moves, because it compares the map against ground truth and never against a cut. Orthogonal to `outcome` rather than a fifth value of it — a `tp` that is `false` here is still a true positive, and is one that got the right answer from the wrong pixels. `null` is not applicable: a normal part, or a defect with no mask.
+             */
+            localized: boolean | null;
+            /**
+             * Iou
+             * @description Intersection over union over the sample's answered images; null when absent.
+             */
+            iou: number | null;
         };
         /**
          * SpatialResample
@@ -6279,6 +6367,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ResultsPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_segmentation_outcomes_api_experiments__experiment_id__segmentation_outcomes_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SegmentationOutcomes"];
                 };
             };
             /** @description Validation Error */
