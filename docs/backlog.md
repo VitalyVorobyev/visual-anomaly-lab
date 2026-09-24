@@ -27,11 +27,19 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **Public gate** (M): predeclared in `measurements.md` before it runs. VisA at 1/2/5/10 shots
-      × 3 seeds, comparing `proto_seg` with `fss_dino` and `color_prototype`.
+- [ ] **A threshold-free pixel metric for few-shot masks** (S): the gate's IoU at the fixed
+      `>= 0.5` rule measured the cut as much as the segmentation ([measurements.md](measurements.md)).
+      Add pixel-level average precision of the foreground probability against truth, accumulated in
+      constant memory as a histogram like the anomaly pixel metrics, and report it beside IoU.
+- [ ] **Calibrate the foreground probability** (M): absent images score foreground almost everywhere
+      at 0.5. Fit the probability's scale on the references themselves (leave-one-out over the
+      support set), so the cut means the same thing on every class; re-run the gate's protocol and
+      compare with the recorded verdict.
+- [ ] **A cross-domain few-shot gate** (M): VisA defects are small and subtle, the hardest target for
+      a method built for objects. Choose a public few-shot segmentation dataset with object classes,
+      predeclare the protocol in `measurements.md`, and run the three methods on it.
 
-Later, each behind the gate above:
-- A cross-domain public few-shot dataset.
+Later, each behind a measured gate:
 - INSID3 upstream and FSS-SAM3 as quality references.
 - SAM-assisted pseudo-labelling at scale.
 - A learned boundary refiner, or a dense CRF (which needs a maintained package chosen first).
