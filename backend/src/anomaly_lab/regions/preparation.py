@@ -6,6 +6,7 @@ import hashlib
 import json
 import shutil
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -106,9 +107,29 @@ class PreparedRegionBuild:
         return entry.transform
 
 
-def preview_indices(total: int, limit: int = PREVIEW_LIMIT) -> list[int]:
-    """Spread a preview over the whole image list, never its first folder."""
-    return evenly_spaced(total, limit)
+def preview_indices(channels: Sequence[int | None], limit: int = PREVIEW_LIMIT) -> list[int]:
+    """Spread a preview over the whole image list, never its first folder — and every channel.
+
+    `channels` is each image's channel in list order. One stride over an interleaved
+    multi-channel list can resonate with the interleave and land on only some channels, so
+    the budget is shared between channels first and spread within each one.
+    """
+    groups: dict[int | None, list[int]] = {}
+    for index, channel in enumerate(channels):
+        groups.setdefault(channel, []).append(index)
+    if len(groups) <= 1 or len(channels) <= limit:
+        return evenly_spaced(len(channels), limit)
+    members = list(groups.values())
+    # Equal shares, and what a small channel cannot use goes to the others.
+    shares = [0] * len(members)
+    while sum(shares) < limit:
+        open_groups = [i for i, group in enumerate(members) if shares[i] < len(group)]
+        for index in open_groups[: limit - sum(shares)]:
+            shares[index] += 1
+    chosen: list[int] = []
+    for group, share in zip(members, shares, strict=True):
+        chosen.extend(group[position] for position in evenly_spaced(len(group), share))
+    return sorted(chosen)
 
 
 def read_build_summary(settings: Settings, profile_id: int) -> RegionBuildSummary | None:
@@ -201,7 +222,9 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
             raise ValueError("profile and job dataset do not match")
         images = images_repo.list_images_for_dataset(conn, dataset_id)
     selected = (
-        images if mode == "build" else [images[index] for index in preview_indices(len(images))]
+        images
+        if mode == "build"
+        else [images[index] for index in preview_indices([image.channel_id for image in images])]
     )
     assets = _resolve_assets(ctx.settings, profile)
     extractor = build_extractor(
@@ -272,7 +295,9 @@ def _build_all(
             storage_files=len(files) + 1,
             storage_bytes=sum(path.stat().st_size for path in files),
             elapsed_ms=(time.perf_counter() - started) * 1000.0,
-            preview_entries=[entries[index] for index in preview_indices(len(entries))],
+            preview_entries=[
+                entries[index] for index in preview_indices([image.channel_id for image in images])
+            ],
             failure_examples=[entry for entry in entries if entry.status == "failed"][:24],
         )
         summary_path = staging / SUMMARY_FILENAME

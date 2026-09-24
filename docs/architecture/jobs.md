@@ -39,7 +39,8 @@ parameters.
   byte count and SHA-256, so the sidecar cannot become an arbitrary downloader. The licence is accepted
   before enqueue. Bytes go to a job-specific partial file and reach the managed path only after size and
   digest verification; cancellation or failure removes the partial.
-- **`region_prepare`** — two modes. Preview selects at most 24 evenly spaced images and returns transforms
+- **`region_prepare`** — two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
+  each (one stride over an interleaved list can miss a channel), and returns transforms
   without writing pixels. Build visits the whole dataset, checks cancellation between images, writes into
   managed staging and publishes atomically once its manifest and summary are complete. Per-image failures
   are recorded and reduce coverage; they never fall back to identity. A malformed job, missing asset or

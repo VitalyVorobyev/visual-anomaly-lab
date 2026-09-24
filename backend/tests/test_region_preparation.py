@@ -62,13 +62,36 @@ def _context(
 
 
 def test_preview_indices_are_bounded_and_cover_both_ends() -> None:
-    chosen = preview_indices(103)
+    chosen = preview_indices([None] * 103)
 
     assert len(chosen) == PREVIEW_LIMIT
     assert chosen[0] == 0
     assert chosen[-1] == 102
     assert chosen == sorted(set(chosen))
-    assert preview_indices(3) == [0, 1, 2]
+    assert preview_indices([None] * 3) == [0, 1, 2]
+
+
+def test_preview_indices_reach_every_channel_of_an_interleaved_list() -> None:
+    # 3 channels interleaved: one stride of 99/23 lands on a single residue class often
+    # enough to skip a channel; the shared budget cannot.
+    channels: list[int | None] = [index % 3 for index in range(3 * 67)]
+    chosen = preview_indices(channels)
+
+    assert len(chosen) == PREVIEW_LIMIT
+    assert chosen == sorted(set(chosen))
+    counts = [sum(channels[index] == channel for index in chosen) for channel in range(3)]
+    assert counts == [8, 8, 8]
+
+
+def test_preview_indices_give_a_small_channel_its_share() -> None:
+    channels: list[int | None] = [*([1] * 200), *([2] * 5)]
+    chosen = preview_indices(channels)
+
+    assert len(chosen) == PREVIEW_LIMIT
+    assert [sum(channels[index] == channel for index in chosen) for channel in (1, 2)] == [
+        PREVIEW_LIMIT - 5,
+        5,
+    ]
 
 
 def test_preview_reports_transforms_without_writing_prepared_pixels(
