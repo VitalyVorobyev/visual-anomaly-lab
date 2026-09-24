@@ -151,6 +151,27 @@ def test_an_unknown_method_is_refused_by_name(client: TestClient, seeded: Fixtur
     assert "pixel_reference" in response.text
 
 
+def test_a_method_is_refused_for_a_task_it_does_not_declare(
+    client: TestClient, seeded: Fixture
+) -> None:
+    """ADR-0039: the task is chosen at creation and the method has to list it."""
+    body = {
+        "name": "boxes",
+        "dataset_id": seeded.dataset_id,
+        "split_id": seeded.split_id,
+        "region_profile_id": seeded.region_profile_id,
+        "model_type": "pixel_reference",
+    }
+    refused = client.post("/api/experiments", json={**body, "task": "object_detection"})
+    assert refused.status_code == 422
+    assert "does not support the task 'object_detection'" in refused.text
+
+    created = _create(client, seeded)
+    assert created["task"] == "anomaly"
+    listed = client.get("/api/experiments").json()
+    assert {row["task"] for row in listed} == {"anomaly"}
+
+
 def test_a_split_from_another_dataset_is_refused(client: TestClient, seeded: Fixture) -> None:
     other = client.post(
         "/api/experiments",

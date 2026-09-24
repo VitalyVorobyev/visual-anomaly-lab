@@ -207,8 +207,8 @@ comparing them under one evaluation protocol.
   other does not exist here.
 - **Repeatable procedures are project skills in `.claude/skills/`** (Codex reads the same files
   through the `.agents/skills` symlink): `safe-commit` before every commit or push,
-  `add-method-plugin` for any new or reworked method, `lab-visual-pass` after any change a person
-  would see. A procedure that has to be remembered twice belongs there, not in a message.
+  `add-method-plugin` for any new or reworked method, `add-task-type` for segmentation, detection or
+  any other task beside anomaly (ADR-0039), `lab-visual-pass` after any change a person would see. A procedure that has to be remembered twice belongs there, not in a message.
 - **The UI rules a grep can hold are a ratchet**, `frontend/src/uiRules.test.ts`: raw tables, hex
   colours, ramp steps, bare controls, bare `keydown` listeners, a `<Button>` inside a `<Link>`. Its
   `KNOWN` list is today's debt; lowering a count is part of the fix, and raising one is never it.

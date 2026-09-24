@@ -27,14 +27,8 @@ until its output has been reviewed.
 
 Segmentation and detection as tasks of the same app, in the order ADR-0039 needs them.
 
-- [ ] **The task column and capability** (M): a migration adding `experiments.task` (default
-      `anomaly`), `Capabilities.tasks` defaulting to `[anomaly]`, create refusing a method that does
-      not declare the task, and a task picker that filters the method cards.
-- [ ] **An evaluator registry** (M): today's `eval/runner.py` moved behind an `anomaly` evaluator
-      without changing a number — the existing evaluation tests are the gate.
-- [ ] **A class manager** (S): `AnnotationLabel` has create/update endpoints and no screen. Move the
-      editor's class keys off `0`/`1`, which the stage uses for fit and 1:1.
-- [ ] **Annotation schema v2** (M): `BoxShape`, `instance_id`, a box tool in the editor, and
+- [ ] **Annotation schema v2** (M): `BoxShape`, `instance_id`, a box tool in the editor, class
+      hotkeys that avoid `0`/`1` (the stage's fit and 1:1), and
       completion writing a class-index PNG and an instances file beside the binary mask, with the
       revision pinning its class-to-index table.
 - [ ] **`Prediction` and targets** (M): optional `label_map` and `instances`, and

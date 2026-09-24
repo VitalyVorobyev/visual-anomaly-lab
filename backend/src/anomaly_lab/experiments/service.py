@@ -32,7 +32,7 @@ from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.deployment.export import ExportParams
-from anomaly_lab.domain.entities import Experiment, ExperimentStatus, Job, Subset
+from anomaly_lab.domain.entities import Experiment, ExperimentStatus, Job, Subset, Task
 from anomaly_lab.errors import (
     ConflictError,
     GoneError,
@@ -41,7 +41,8 @@ from anomaly_lab.errors import (
     UnavailableError,
     UnsupportedRequestError,
 )
-from anomaly_lab.eval.runner import EvalConfig, evaluate_and_store
+from anomaly_lab.eval.evaluators import evaluator_for, has_evaluator
+from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.experiments.train import MODEL_SUBDIR, read_training_state
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
@@ -230,6 +231,7 @@ def create_experiment(
     model_type: str,
     config: dict[str, Any],
     preprocessing: dict[str, Any],
+    task: Task = Task.ANOMALY,
     evaluation: dict[str, Any],
     channels: Sequence[str],
     notes: str | None,
@@ -243,6 +245,15 @@ def create_experiment(
         model_class = get_model_class(model_type)
     except UnknownModelError as exc:
         raise InvalidInputError(str(exc)) from exc
+
+    supported = model_class.capabilities().tasks
+    if task not in supported:
+        listed = ", ".join(str(entry) for entry in supported)
+        raise InvalidInputError(
+            f"method {model_type!r} does not support the task {task.value!r}; it supports {listed}"
+        )
+    if not has_evaluator(task):
+        raise InvalidInputError(f"no evaluator is registered for the task {task.value!r} yet")
 
     try:
         frozen_config = model_class.config_model().model_validate(config).model_dump(mode="json")
@@ -290,6 +301,7 @@ def create_experiment(
             region_profile_id=profile.id,
             region_manifest_sha256=build_summary.manifest_sha256,
             model_type=model_type,
+            task=task.value,
             model_config=frozen_config,
             preprocessing_config=frozen_preprocessing,
             eval_config=frozen_evaluation,
@@ -408,7 +420,7 @@ def reevaluate(settings: Settings, experiment: Experiment) -> None:
     A drifted truth file raises `GroundTruthDriftError`, which is a `ConflictError`.
     """
     with connection(settings.db_path) as conn:
-        evaluate_and_store(conn, experiment)
+        evaluator_for(experiment.task).evaluate_and_store(conn, experiment)
 
 
 # --- Diagnostics ---------------------------------------------------------------------------

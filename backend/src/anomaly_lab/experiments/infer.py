@@ -21,7 +21,7 @@ from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import ExperimentStatus, ImageResult, Subset
-from anomaly_lab.eval.runner import evaluate_and_store
+from anomaly_lab.eval.evaluators import evaluator_for
 from anomaly_lab.experiments.context import (
     ExperimentJobError,
     diagnostics_writer,
@@ -196,7 +196,7 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
         # what the model produced and nothing else. That split is what makes `reevaluate`
         # able to apply a changed `eval_config` without re-running inference.
         ctx.progress(0.95, "computing metrics")
-        metrics = evaluate_and_store(conn, experiment)
+        metrics = evaluator_for(experiment.task).evaluate_and_store(conn, experiment)
         sample_count = len(results_repo.list_scored_samples(conn, experiment.id))
         experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINED)
 

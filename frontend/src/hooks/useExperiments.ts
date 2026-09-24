@@ -26,6 +26,7 @@ import type {
   MethodCatalog,
   MetricSummary,
   PruneResult,
+  Task,
   PruneScope,
   ResultsPage,
   SamplePreview,
@@ -99,6 +100,8 @@ export interface CreateExperimentInput {
   split_id: number;
   region_profile_id: number;
   model_type: string;
+  /** What the run is asked to do (ADR-0039); the method must list it. */
+  task: Task;
   config: Record<string, unknown>;
   preprocessing: Record<string, unknown>;
   evaluation: Record<string, unknown>;

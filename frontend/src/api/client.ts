@@ -111,6 +111,7 @@ export type SubsetComposition = Schemas["SubsetComposition"];
 export type ImageTier = Schemas["ImageTier"];
 
 export type ModelDescription = Schemas["ModelDescription"];
+export type Task = Schemas["Task"];
 export type Capabilities = Schemas["Capabilities"];
 export type PortableFormat = Schemas["PortableFormat"];
 export type MethodCatalog = Schemas["MethodCatalog"];

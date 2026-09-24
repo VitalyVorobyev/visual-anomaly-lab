@@ -286,6 +286,19 @@ class RegionProfileRevision(BaseModel):
         return _decode_json_object(value)
 
 
+class Task(StrEnum):
+    """What an experiment is asked to do, frozen at creation (ADR-0039).
+
+    It chooses the training set, the evaluator and the result screens. `anomaly` ranks images
+    by how unlike the training normals they are; the other two are supervised and read their
+    targets from the dataset's annotation.
+    """
+
+    ANOMALY = "anomaly"
+    SEMANTIC_SEGMENTATION = "semantic_segmentation"
+    OBJECT_DETECTION = "object_detection"
+
+
 class ExperimentStatus(StrEnum):
     DRAFT = "draft"
     TRAINING = "training"
@@ -342,6 +355,7 @@ class Experiment(BaseModel):
     region_profile_id: int
     region_manifest_sha256: str
     model_type: str
+    task: Task = Task.ANOMALY
     # `model_config` is taken by pydantic itself, so the field carries a trailing
     # underscore in Python and its database and wire name through the alias.
     model_config_: dict[str, Any] = Field(default_factory=dict, alias="model_config")
