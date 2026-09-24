@@ -19,6 +19,7 @@ from anomaly_lab.models.prototypes import (
     presence_score,
     probe_probability,
     spherical_kmeans,
+    split_patches,
 )
 
 
@@ -115,3 +116,23 @@ def test_presence_needs_a_region_not_one_patch() -> None:
     assert presence_score(lone, 4) == 0.25
     assert presence_score(region, 4) == pytest.approx(0.9)
     assert presence_score(np.array([0.3], dtype=np.float32), 4) == pytest.approx(0.3)
+
+
+def test_a_region_smaller_than_half_a_patch_still_teaches_the_class() -> None:
+    # A 3x3 defect in a 28 px image of 14 px patches: no patch is half covered.
+    mask = np.zeros((28, 28), dtype=bool)
+    mask[4:7, 4:7] = True
+    coverage = patch_coverage(mask, (2, 2))
+    assert coverage.max() < 0.5
+    foreground, background = split_patches(coverage)
+    assert foreground.tolist() == [True, False, False, False]
+    # The mixed patch is neither: it is left out of the background too.
+    assert background.tolist() == [False, True, True, True]
+
+
+def test_a_half_covered_patch_is_the_class_and_an_empty_mask_is_all_background() -> None:
+    foreground, background = split_patches(np.array([0.6, 0.3, 0.0], dtype=np.float32))
+    assert foreground.tolist() == [True, False, False]
+    assert background.tolist() == [False, False, True]
+    none, everything = split_patches(np.zeros(3, dtype=np.float32))
+    assert not none.any() and everything.all()
