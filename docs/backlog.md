@@ -37,6 +37,28 @@ until its output has been reviewed.
       per-tool modules in the canvas, static and live Konva layers, a brush-size cursor, a pixel
       readout, a shortcut sheet, and its first tests.
 
+## Tasks
+
+Segmentation and detection as tasks of the same app, in the order ADR-0039 needs them.
+
+- [ ] **The task column and capability** (M): a migration adding `experiments.task` (default
+      `anomaly`), `Capabilities.tasks` defaulting to `[anomaly]`, create refusing a method that does
+      not declare the task, and a task picker that filters the method cards.
+- [ ] **An evaluator registry** (M): today's `eval/runner.py` moved behind an `anomaly` evaluator
+      without changing a number — the existing evaluation tests are the gate.
+- [ ] **A class manager** (S): `AnnotationLabel` has create/update endpoints and no screen. Move the
+      editor's class keys off `0`/`1`, which the stage uses for fit and 1:1.
+- [ ] **Annotation schema v2** (M): `BoxShape`, `instance_id`, a box tool in the editor, and
+      completion writing a class-index PNG and an instances file beside the binary mask, with the
+      revision pinning its class-to-index table.
+- [ ] **`Prediction` and targets** (M): optional `label_map` and `instances`, and
+      `TrainContext.targets` as a `TargetProvider` that is `None` for `anomaly`.
+- [ ] **Segmentation evaluator and the first supervised plugin** (L, split before starting):
+      constant-memory confusion-matrix IoU/Dice, and one small segmentation method as the vertical
+      slice that proves the boundary.
+- [ ] **Detection evaluator and results view** (L, split before starting): COCO-style AP, and the
+      sample viewer's vector layer drawing predictions against truth, toned per box.
+
 ## Spatial input
 
 - [ ] **Revisit automatic mask selection without test leakage** (M): MobileSAM's largest credible
