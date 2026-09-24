@@ -22,10 +22,6 @@ until its output has been reviewed.
       `ButtonLink` there, release, and replace all five.
 - [ ] **Train, then score, as one action** (S): creating an experiment lands on a draft that needs
       Train, a wait, then Score & evaluate.
-- [ ] **Split the annotation editor** (L, split before starting): the route is ~1,900 lines. Hooks
-      per seam (draft session, queue, channel panes, document commands, segment assist, keymap),
-      per-tool modules in the canvas, static and live Konva layers, a brush-size cursor, a pixel
-      readout, a shortcut sheet, and its first tests.
 
 ## Tasks
 

@@ -272,7 +272,13 @@ The dataset-local queue opens a full-height controlled Konva scene for polygon/v
 editing, add/subtract, gesture-based pan/zoom, undo/redo and `ETag`-guarded save/completion. There is no
 separate pan mode: left-drag moves the scene while Select is active and right-drag moves it from every
 tool. Fit and source-pixel 1:1 are explicit views; a Select-mode double-click toggles Fit and the previous
-view. A brush gesture is cropped into a bitmap layer in source coordinates, and that layer can be traced
+view. The zoom ceiling is 32 screen pixels per *source* pixel — it was twelve times fit, which left a frame
+three times the pane's size short of four pixels per pixel, too coarse to place a one-pixel correction —
+and above 1:1 the photograph is drawn without smoothing, so a pixel is a square rather than a blur. A
+readout in each pane names the source pixel under the pointer and the mask value the document resolves to
+there, folded as the document is read (the base, then each shape in order, `add` setting and `subtract`
+clearing), with the number of the region on top. It is a readout, not truth: evaluation reads the backend's
+renderer. A brush gesture is cropped into a bitmap layer in source coordinates, and that layer can be traced
 deterministically into simplified, editable outer and hole polygons; this raster-to-vector operation does
 not claim the image-aware boundary refinement reserved for MobileSAM.
 Dirty drafts autosave after a short idle period; `412` keeps the local edit visible and offers an explicit
@@ -312,7 +318,7 @@ under-reports: the mark must never accuse somebody of leaving a defect undrawn w
 
 ## Direct manipulation
 
-Four rules, and each replaced something that only looked like it worked.
+Each rule below replaced something that only looked like it worked.
 
 **A stroke extends the selected region.** A brush or eraser gesture composites into the selected bitmap
 region and re-crops it to what is actually painted, so a defect is drawn in as many touches as it takes and
@@ -330,7 +336,18 @@ three pixels across, and the control would not go below a radius of 2 — four p
 "Brush size" in `px`. The rasteriser is now shared by all three paths, so the eraser removes exactly what
 the brush at that size would add, and the spine is what closes the gaps between `mousemove` samples that
 `lineTo` used to close. The in-progress preview draws at true source size with a one-*screen*-pixel floor,
-because a one-pixel stroke at fit zoom is otherwise invisible while it is being made.
+because a one-pixel stroke at fit zoom is otherwise invisible while it is being made. The cursor is the
+brush's own footprint — a disc of that diameter in source pixels, the disc the rasteriser stamps — so where
+a stroke will land and how wide it will be are visible before the button goes down.
+
+**Strokes land in the order they were made, each on the document the last one left.** Painting into a
+region awaits a PNG decode, and a stroke used to commit a document built from what its closure saw before
+the await: two strokes in flight at once — Space held on the focused canvas auto-repeats, and every repeat
+is a stroke — both painted from the same region and the last to finish won, and an undo pressed while a
+stroke decoded came straight back when it committed. Strokes are now queued, each reads the current document
+and selection when it starts, and one whose document moved during its decode is painted again rather than
+committed over the move. So a stroke made right after the one that started a region extends that region, as
+the first rule says, even before the screen has caught up.
 
 **The eraser never creates.** It takes paint off the selected region, or — with nothing selected — off
 every painted region the stroke passes over, in one commit so the gesture is one undo step. It briefly
