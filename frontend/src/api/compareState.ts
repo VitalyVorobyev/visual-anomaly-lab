@@ -151,11 +151,18 @@ export function toggleRun(ids: number[], id: number): number[] {
  * checked here — that one is legitimate, and the report warns about it loudly instead.
  */
 export function refusalReason(
-  candidate: { id: number; dataset_id: number; split_id: number },
+  candidate: { id: number; dataset_id: number; split_id: number; status?: string },
   anchor: { dataset_id: number; split_id: number } | undefined,
   selected: number[],
 ): string | null {
   if (selected.includes(candidate.id)) return null;
+  // First, because it is true whatever else is selected: a run with no fitted model has no
+  // scores, and a column of dashes is not a comparison.
+  if (candidate.status !== undefined && candidate.status !== "trained") {
+    return candidate.status === "failed"
+      ? "Its training failed, so it has no scores to compare."
+      : "Not trained yet, so it has no scores to compare.";
+  }
   if (selected.length >= MAX_RUNS) {
     return `At most ${MAX_RUNS} runs at once — a wider table stops being read.`;
   }

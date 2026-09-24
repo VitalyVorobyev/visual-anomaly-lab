@@ -20,7 +20,7 @@
  */
 
 import { useEffect, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 
 import type { MetricSummary, Subset } from "./../api/client";
 import { modelScoped, ofKinds } from "../api/diagnostics";
@@ -146,7 +146,19 @@ export function ExperimentRoute() {
         }}
         title={detail.name}
         actions={
-          <Badge tone={experimentStatusTone(detail.status)}>{detail.status}</Badge>
+          <div className="flex items-center gap-3">
+            {/* Only once there is something to compare: the picker opens with this run
+                chosen and every other run of its split beside it. */}
+            {hasScores && (
+              <Link
+                to={`/compare?ids=${detail.id}`}
+                className="rounded-sm text-xs font-medium text-fg-muted transition-colors hover:text-signal focus-visible:outline-2 focus-visible:outline-signal"
+              >
+                Compare with…
+              </Link>
+            )}
+            <Badge tone={experimentStatusTone(detail.status)}>{detail.status}</Badge>
+          </div>
         }
         meta={
           /* The readout: what this run is, in one line, in the same slot on every screen

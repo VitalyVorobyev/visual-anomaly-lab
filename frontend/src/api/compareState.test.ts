@@ -90,6 +90,16 @@ describe("choosing which runs to compare", () => {
     expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1 }, undefined, [])).toBeNull();
   });
 
+  it("refuses a run that has nothing to compare", () => {
+    expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1, status: "draft" }, undefined, [])).toContain(
+      "Not trained",
+    );
+    expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1, status: "failed" }, undefined, [])).toContain(
+      "training failed",
+    );
+    expect(refusalReason({ id: 1, dataset_id: 1, split_id: 1, status: "trained" }, undefined, [])).toBeNull();
+  });
+
   it("refuses a run on another dataset", () => {
     const reason = refusalReason(
       { id: 2, dataset_id: 9, split_id: 1 },

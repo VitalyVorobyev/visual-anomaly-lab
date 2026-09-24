@@ -79,3 +79,5 @@ deployment/runner/target/
 .env.*
 *.local
 .claude/settings.local.json
+# Agent worktrees: whole checkouts, created and removed by the tooling.
+.claude/worktrees/

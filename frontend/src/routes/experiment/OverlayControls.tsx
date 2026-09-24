@@ -98,9 +98,9 @@ export function OverlayControls({
           for an invisible effect. */}
       {state.region && (
         <div className="flex min-w-56 flex-1 items-center gap-2">
-          <span className="shrink-0 text-xs text-fg-muted">cut</span>
+          <span className="shrink-0 text-xs text-fg-muted">map cut</span>
           <Slider
-            aria-label="Segmentation cut, as a fraction of the run's map range"
+            aria-label="Map cut, as a fraction of the run's map range"
             min={0}
             max={1}
             step={0.01}

@@ -3,7 +3,9 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Eye, Play, Sparkles, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
-import { useParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
+
+import { readPrepareState, writePrepareState, type PrepareState } from "../api/prepareState";
 
 import { imageUrl, preparedImageUrl } from "../api/imageUrl";
 import { Badge, Button, Callout, ConfirmDialog, describeFields, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, NumberInput, outOfRange, Panel, ReadoutStrip, SchemaForm, SegmentedControl, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
@@ -60,18 +62,22 @@ export function RegionPreparationRoute() {
   const remove = useDeleteRegionProfile(datasetId);
   const queryClient = useQueryClient();
 
-  const [selectedId, setSelectedId] = useState<number>();
+  // Which revision is open and which job is being followed live in the URL, so a reload
+  // or a trip to another tab mid-build comes back to the same console instead of a fresh
+  // form with the job still running somewhere out of sight.
+  const [params, setParams] = useSearchParams();
+  const { profile: selectedId, job: jobId, jobProfile: jobProfileId, mode: jobMode } =
+    readPrepareState(params);
+  const updatePrep = (next: PrepareState) =>
+    setParams(writePrepareState(next), { replace: true });
   const [extractorKey, setExtractorKey] = useState("identity");
-  const [name, setName] = useState("model input");
+  const [name, setName] = useState("");
   const [width, setWidth] = useState("256");
   const [height, setHeight] = useState("256");
   const [padding, setPadding] = useState("0.05");
   const [resample, setResample] = useState<SpatialResample>("bilinear");
   const [seed, setSeed] = useState("17");
   const [configValues, setConfigValues] = useState<RawValues>({});
-  const [jobId, setJobId] = useState<number>();
-  const [jobProfileId, setJobProfileId] = useState<number>();
-  const [jobMode, setJobMode] = useState<"preview" | "build" | "asset">();
   const [view, setView] = useState("source");
   const [pendingDelete, setPendingDelete] = useState<RegionProfileRevision | null>(null);
   const deletionPreview = useRegionProfileDeletionPreview(pendingDelete?.id);
@@ -87,7 +93,8 @@ export function RegionPreparationRoute() {
 
   useEffect(() => {
     if (selectedId !== undefined || !profiles.data?.length) return;
-    setSelectedId(profiles.data[0]?.id);
+    updatePrep({ ...readPrepareState(params), profile: profiles.data[0]?.id });
+    // Keyed on the list arriving, not on `params`: once a revision is chosen this is done.
   }, [profiles.data, selectedId]);
 
   useEffect(() => {
@@ -137,9 +144,15 @@ export function RegionPreparationRoute() {
     setConfigValues(initialValues(fields));
   };
 
+  // A default that says what the profile *is*. It used to be "model input" — which is also
+  // what the experiment form called its colour options — so every dataset's first profile
+  // was named after a different thing.
+  const suggestedName = `${extractor?.title ?? extractorKey} ${width}×${height}`;
+  const effectiveName = name.trim() || suggestedName;
+
   const createRevision = async () => {
     const profile = await create.mutateAsync({
-      name: name.trim(),
+      name: effectiveName,
       extractor_type: extractorKey,
       extractor_config: toOptions(configFields, configValues),
       prepared_width: Number(width),
@@ -148,10 +161,7 @@ export function RegionPreparationRoute() {
       resample,
       seed: Number(seed),
     });
-    setSelectedId(profile.id);
-    setJobId(undefined);
-    setJobMode(undefined);
-    setJobProfileId(undefined);
+    updatePrep({ profile: profile.id });
   };
 
   const run = async (mode: "preview" | "build") => {
@@ -159,9 +169,7 @@ export function RegionPreparationRoute() {
     const summary = await (mode === "preview"
       ? preview.mutateAsync(selected.id)
       : build.mutateAsync(selected.id));
-    setJobMode(mode);
-    setJobProfileId(selected.id);
-    setJobId(summary.id);
+    updatePrep({ profile: selected.id, job: summary.id, jobProfile: selected.id, mode });
   };
 
   const revise = (profile: RegionProfileRevision) => {
@@ -190,9 +198,7 @@ export function RegionPreparationRoute() {
 
   const install = async (assetKey: string) => {
     const summary = await installAsset.mutateAsync(assetKey);
-    setJobMode("asset");
-    setJobProfileId(undefined);
-    setJobId(summary.id);
+    updatePrep({ profile: selectedId, job: summary.id, mode: "asset" });
   };
 
   /*
@@ -204,7 +210,7 @@ export function RegionPreparationRoute() {
    */
   const outOfBounds = outOfRange(configFields, configValues);
   const invalid =
-    name.trim() === "" ||
+    effectiveName === "" ||
     !extractor?.availability.available ||
     jsonErrors(configFields, configValues).length > 0 ||
     outOfBounds.length > 0 ||
@@ -238,10 +244,7 @@ export function RegionPreparationRoute() {
                   aria-label="Saved profile"
                   value={selectedId === undefined ? "" : String(selectedId)}
                   onValueChange={(value) => {
-                    setSelectedId(Number(value));
-                    setJobId(undefined);
-                    setJobMode(undefined);
-                    setJobProfileId(undefined);
+                    updatePrep({ profile: Number(value) });
                   }}
                   placeholder={profiles.isPending ? "Loading…" : "No revisions yet"}
                   options={(profiles.data ?? []).map((profile) => ({
@@ -275,7 +278,11 @@ export function RegionPreparationRoute() {
               <div className="h-px bg-line" />
 
               <Field label="Name">
-                <Input value={name} onChange={(event) => setName(event.target.value)} />
+                <Input
+                  value={name}
+                  placeholder={suggestedName}
+                  onChange={(event) => setName(event.target.value)}
+                />
               </Field>
               <Field label="Region extractor">
                 <Select
@@ -361,7 +368,7 @@ export function RegionPreparationRoute() {
               }
               bodyClassName="flex flex-col gap-4"
             >
-              {!selected && <Empty>Save a profile revision to inspect its crop and prepared input.</Empty>}
+              {!selected && <Empty>Save a profile revision to inspect its crop and prepared pixels.</Empty>}
               {selected && !jobId && !buildReport.data && (
                 <Callout>
                   Preview samples evenly across the dataset before building. A failure remains a failure; this workflow never substitutes the full frame silently.
@@ -467,10 +474,7 @@ export function RegionPreparationRoute() {
               // The selection and anything keyed to it — the job console, the build
               // report — described a revision that no longer exists.
               if (selectedId !== deletedId) return;
-              setSelectedId(undefined);
-              setJobId(undefined);
-              setJobMode(undefined);
-              setJobProfileId(undefined);
+              updatePrep({});
             },
             onSettled: () => setPendingDelete(null),
           });

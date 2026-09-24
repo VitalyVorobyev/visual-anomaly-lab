@@ -84,7 +84,7 @@ export function AgreementTable({
       {filtered.length === 0 ? (
         <Empty>
           {state.disagreeOnly
-            ? "Every sample got the same verdict from every run, at each one's own operating point."
+            ? "Every sample got the same verdict from every run, at each one's own threshold."
             : "No sample matches this filter."}
         </Empty>
       ) : (

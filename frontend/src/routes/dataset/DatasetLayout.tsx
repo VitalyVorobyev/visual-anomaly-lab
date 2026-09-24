@@ -47,6 +47,7 @@ import {
   Tooltip,
 } from "@vitavision/lab-ui";
 import { useDataset } from "../../hooks/useCatalog";
+import { DatasetReadiness } from "./DatasetReadiness";
 
 export function DatasetLayout() {
   const datasetId = Number(useParams()["datasetId"]);
@@ -104,11 +105,16 @@ export function DatasetLayout() {
               )}
             </div>
 
-            <Link className="shrink-0" to={`/datasets/${datasetId}/experiments/new`}>
-              <Button variant="primary" icon={<Plus />}>
-                New experiment
-              </Button>
-            </Link>
+            <div className="flex shrink-0 items-center gap-4">
+              <span className="hidden lg:block">
+                <DatasetReadiness datasetId={datasetId} />
+              </span>
+              <Link className="shrink-0" to={`/datasets/${datasetId}/experiments/new`}>
+                <Button variant="primary" icon={<Plus />}>
+                  New experiment
+                </Button>
+              </Link>
+            </div>
           </div>
 
           {/* No bottom padding: the strip's underline sits on this header's own border. The
