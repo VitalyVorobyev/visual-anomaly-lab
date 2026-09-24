@@ -109,11 +109,16 @@ export function ExperimentRoute() {
   // string so the gallery hands it to the sample page and gets it back on the way out.
   // The tab is part of that state now, so nothing here has to re-attach it by hand. The
   // subset is resolved here, once, so Overview, Benchmark and Samples all read the same one.
-  const results = resolveSubset(readResultsState(params), experiment.data?.scored_subsets ?? []);
+  // Its defaults are the task's, so the state is read and written under the run's task.
+  const task = experiment.data?.task;
+  const results = resolveSubset(
+    readResultsState(params, task),
+    experiment.data?.scored_subsets ?? [],
+  );
   const updateResults = (next: Partial<ResultsState>) => {
-    setParams(writeResultsState({ ...results, ...next }), { replace: true });
+    setParams(writeResultsState({ ...results, ...next }, task), { replace: true });
   };
-  const verdicts = useVerdicts(experimentId, results, experiment.data?.task);
+  const verdicts = useVerdicts(experimentId, results, task);
 
   if (experiment.isPending) return <SkeletonRows rows={5} />;
   if (experiment.error) return <ErrorBox>{experiment.error.message}</ErrorBox>;

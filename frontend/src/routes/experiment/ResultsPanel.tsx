@@ -386,6 +386,9 @@ export function Confusion({
  * own scrolling list inside the page's scroller, and links that dropped the threshold, so
  * prev/next on the sample page walked a different set from the one listed. The Samples
  * tab is that browser; this hands it the filter, at the threshold in force here.
+ *
+ * Its links are written under the anomaly defaults because this panel is the anomaly
+ * Overview's (`taskViews.tsx`); no other task renders it.
  */
 function OutcomeLinks({
   state,
@@ -422,7 +425,7 @@ function OutcomeLinks({
         ) : (
           <Link
             key={target.key}
-            to={{ search: writeResultsState({ ...state, ...target.next, tab: "samples" }).toString() }}
+            to={{ search: writeResultsState({ ...state, ...target.next, tab: "samples" }, "anomaly").toString() }}
             className="text-signal underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-signal"
           >
             {target.label} <span className="font-mono">{target.count}</span>

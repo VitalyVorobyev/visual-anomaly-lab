@@ -73,28 +73,33 @@ export function ExperimentSampleRoute() {
   const experiment = useExperiment(experimentId);
   // Resolved exactly as the experiment page resolves it, so a link that carried no subset
   // still pages through the subset the results tabs show — not every scored subset at once.
-  const state = resolveSubset(readResultsState(params), experiment.data?.scored_subsets ?? []);
+  // Read under the run's own task, so a segmentation run opens on its label map.
+  const task = experiment.data?.task;
+  const state = resolveSubset(
+    readResultsState(params, task),
+    experiment.data?.scored_subsets ?? [],
+  );
   const images = useSampleImages(experimentId, sampleId);
   const diagnostics = useDiagnostics(experimentId);
 
   // The same query the gallery ran, rebuilt from the URL — a cache hit rather than a
   // second fetch, and the reason this page knows which sample comes next *under the
   // filter that is on screen* rather than in raw id order.
-  const verdicts = useVerdicts(experimentId, state, experiment.data?.task);
+  const verdicts = useVerdicts(experimentId, state, task);
 
   // `null` is not "no view": it is `ImageStage`'s own opening view — 1:1 where the picture
   // fits, fit otherwise — resolved once the viewport has been measured.
   const [view, setView] = useState<StageView | null>(null);
 
   const update = (next: Partial<ResultsState>) =>
-    setParams(writeResultsState({ ...state, ...next }), { replace: true });
+    setParams(writeResultsState({ ...state, ...next }, task), { replace: true });
 
   const neighbours = stepThrough(verdicts.shown, sampleId);
   const goTo = (target: SampleVerdict | undefined) => {
     if (!target || experimentId === undefined) return;
     navigate({
       pathname: `/experiments/${experimentId}/samples/${target.sample_id}`,
-      search: writeResultsState(state).toString(),
+      search: writeResultsState(state, task).toString(),
     });
   };
 
@@ -149,7 +154,7 @@ export function ExperimentSampleRoute() {
         <Link
           to={{
             pathname: `/experiments/${experimentId}`,
-            search: writeResultsState(state).toString(),
+            search: writeResultsState(state, task).toString(),
           }}
           className="text-sm text-fg-muted hover:text-fg hover:underline"
         >

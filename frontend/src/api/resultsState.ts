@@ -19,11 +19,17 @@
  * state fixes all three at once, and any future link built the same way is correct by
  * construction rather than by remembering.
  *
+ * What counts as a default is the task's (`resultsDefaults`). An anomaly run opens on its
+ * heatmap; a supervised segmentation run's answer is its label map, and a heatmap over it hides
+ * the thing the run exists to show. Reading and writing both take the task, so an untouched
+ * view's URL stays clean under either set of defaults and a URL written under one reads back
+ * as the same state under the same task.
+ *
  * Every value is validated on the way in, so a hand-edited URL cannot put an outcome the
  * server never emits into a filter, or an out-of-range cut into a render request.
  */
 
-import type { Subset } from "./client";
+import type { Subset, Task } from "./client";
 import type { TabId } from "./experimentTabs";
 import { parseTab } from "./experimentTabs";
 
@@ -139,7 +145,37 @@ export const EMPTY_RESULTS: ResultsState = {
   cut: DEFAULT_CUT,
 };
 
-export function readResultsState(params: URLSearchParams): ResultsState {
+/** The layers a view opens with — the only part of the state whose default is the task's. */
+type OverlayDefaults = Pick<ResultsState, "heatmap" | "region" | "truth" | "peak">;
+
+const MAP_FIRST: OverlayDefaults = { heatmap: true, region: false, truth: true, peak: false };
+
+/**
+ * Which layers each task opens on.
+ *
+ * A map-producing task opens on its map: the anomaly heatmap, and a few-shot run's foreground
+ * probability, of which its prediction is only a cut. A supervised segmentation run opens on
+ * its label map with the truth beside it; its foreground map is a secondary question and,
+ * drawn first, covers the answer. Detection has no screens yet and takes the anomaly set.
+ */
+const OVERLAY_DEFAULTS: Record<Task, OverlayDefaults> = {
+  anomaly: MAP_FIRST,
+  few_shot_segmentation: MAP_FIRST,
+  semantic_segmentation: { heatmap: false, region: true, truth: true, peak: false },
+  object_detection: MAP_FIRST,
+};
+
+/**
+ * The untouched view of a run of this task. `undefined` — the experiment not loaded yet — is
+ * the anomaly one; the state is re-read from the URL once the task is known, so nothing
+ * written before then outlives it.
+ */
+export function resultsDefaults(task: Task | undefined): ResultsState {
+  return { ...EMPTY_RESULTS, ...OVERLAY_DEFAULTS[task ?? "anomaly"] };
+}
+
+export function readResultsState(params: URLSearchParams, task: Task | undefined): ResultsState {
+  const defaults = resultsDefaults(task);
   return {
     tab: parseTab(params.get("tab")),
     subset: readOneOf(params.get("subset"), SUBSETS),
@@ -147,27 +183,31 @@ export function readResultsState(params: URLSearchParams): ResultsState {
     mistakesOnly: params.get("outcome") === "mistakes",
     threshold: readFloat(params.get("t")),
     sort: params.get("sort") === "score-asc" ? "score-asc" : "score-desc",
-    heatmap: readFlag(params.get("map"), EMPTY_RESULTS.heatmap),
-    region: readFlag(params.get("seg"), EMPTY_RESULTS.region),
-    truth: readFlag(params.get("gt"), EMPTY_RESULTS.truth),
-    peak: readFlag(params.get("pk"), EMPTY_RESULTS.peak),
+    heatmap: readFlag(params.get("map"), defaults.heatmap),
+    region: readFlag(params.get("seg"), defaults.region),
+    truth: readFlag(params.get("gt"), defaults.truth),
+    peak: readFlag(params.get("pk"), defaults.peak),
     cut: readFraction(params.get("cut")) ?? DEFAULT_CUT,
   };
 }
 
-/** Only non-default values are written, so an untouched view has a clean URL. */
-export function writeResultsState(state: ResultsState): URLSearchParams {
+/**
+ * Only values that differ from the task's defaults are written, so an untouched view has a
+ * clean URL. Written and read back under the same task, a state comes back unchanged.
+ */
+export function writeResultsState(state: ResultsState, task: Task | undefined): URLSearchParams {
+  const defaults = resultsDefaults(task);
   const params = new URLSearchParams();
-  if (state.tab !== EMPTY_RESULTS.tab) params.set("tab", state.tab);
+  if (state.tab !== defaults.tab) params.set("tab", state.tab);
   if (state.subset !== undefined) params.set("subset", state.subset);
   if (state.mistakesOnly) params.set("outcome", "mistakes");
   else if (state.outcome !== undefined) params.set("outcome", state.outcome);
   if (state.threshold !== undefined) params.set("t", String(state.threshold));
-  if (state.sort !== EMPTY_RESULTS.sort) params.set("sort", state.sort);
-  if (state.heatmap !== EMPTY_RESULTS.heatmap) params.set("map", state.heatmap ? "1" : "0");
-  if (state.region !== EMPTY_RESULTS.region) params.set("seg", state.region ? "1" : "0");
-  if (state.truth !== EMPTY_RESULTS.truth) params.set("gt", state.truth ? "1" : "0");
-  if (state.peak !== EMPTY_RESULTS.peak) params.set("pk", state.peak ? "1" : "0");
+  if (state.sort !== defaults.sort) params.set("sort", state.sort);
+  if (state.heatmap !== defaults.heatmap) params.set("map", state.heatmap ? "1" : "0");
+  if (state.region !== defaults.region) params.set("seg", state.region ? "1" : "0");
+  if (state.truth !== defaults.truth) params.set("gt", state.truth ? "1" : "0");
+  if (state.peak !== defaults.peak) params.set("pk", state.peak ? "1" : "0");
   if (state.cut !== DEFAULT_CUT) params.set("cut", String(state.cut));
   return params;
 }

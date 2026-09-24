@@ -205,7 +205,12 @@ reported once is printed as a value. `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`,
 `POST /api/jobs/{id}/cancel`, `GET /api/jobs/{id}/metrics`.
 
 **Results** — Overview, Benchmark and Samples share one `ResultsState` in the URL (`t`, `subset`),
-resolved by `resolveSubset` to the last scored subset when none is named. Ranked per-sample scores, a
+resolved by `resolveSubset` to the last scored subset when none is named. Its overlay defaults are the
+task's (`resultsDefaults`): heatmap and truth on for `anomaly` and `few_shot_segmentation`, prediction
+and truth on with the foreground map off for `semantic_segmentation`. `readResultsState` and
+`writeResultsState` both take the task, so the URL carries only departures from that task's defaults
+and an untouched view's URL is clean; before the experiment loads the task is unknown and the anomaly
+defaults stand in. Ranked per-sample scores, a
 threshold slider recomputing the confusion matrix, TP/FP/TN/FN links into Samples at the cut in force.
 Benchmark draws ROC and PR at sample and image level, the score histogram with the threshold, confusion
 matrix, per-defect-type breakdown and timing; every curve integrates to a number in the metrics table.
