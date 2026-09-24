@@ -20,6 +20,7 @@ import contextlib
 import logging
 import os
 import signal
+import sqlite3
 import sys
 import threading
 import time
@@ -32,6 +33,7 @@ from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.protocol import (
+    FOLLOW_UP_KEY,
     DoneEvent,
     ErrorEvent,
     JobEvent,
@@ -501,9 +503,37 @@ class JobQueue:
                 message=state.message,
             )
 
+        if status is JobStatus.SUCCEEDED:
+            self._enqueue_follow_up(job, state.result.get(FOLLOW_UP_KEY))
+
         loop = self._loop
         if loop is not None:
             asyncio.run_coroutine_threadsafe(self.publish_end(job.id, status), loop)
+
+    def _enqueue_follow_up(self, job: Job, follow_up: object) -> None:
+        """Queue the job a succeeded one named, bound to the same experiment.
+
+        A malformed request is logged and dropped rather than failing a job that has already
+        succeeded: the work it did is real, and a missing follow-up is visible as a button
+        still waiting to be pressed.
+        """
+        if follow_up is None:
+            return
+        try:
+            if not isinstance(follow_up, Mapping):
+                raise TypeError("the follow-up is not an object")
+            kind = JobKind(follow_up["kind"])
+            params = follow_up.get("params", {})
+            if not isinstance(params, Mapping):
+                raise TypeError("the follow-up's params are not an object")
+        except (KeyError, TypeError, ValueError):
+            logger.exception("job %d named an unusable follow-up: %r", job.id, follow_up)
+            return
+        try:
+            self.enqueue(kind=kind, params=params, experiment_id=job.experiment_id)
+        except sqlite3.Error:
+            # The experiment was deleted between the job succeeding and this line.
+            logger.exception("job %d's follow-up could not be queued", job.id)
 
     # -- cancellation ------------------------------------------------------------
 

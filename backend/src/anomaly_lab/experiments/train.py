@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.domain.entities import ExperimentStatus, Label, Subset
+from anomaly_lab.domain.entities import ExperimentStatus, JobKind, Label, Subset
 from anomaly_lab.experiments.context import (
     ExperimentJobError,
     diagnostics_writer,
@@ -24,6 +24,7 @@ from anomaly_lab.experiments.context import (
     to_records,
 )
 from anomaly_lab.jobs.context import JobCancelledError, JobContext
+from anomaly_lab.jobs.protocol import FOLLOW_UP_KEY
 from anomaly_lab.models.base import ModelCancelledError, SupportsResume, TrainContext
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -52,6 +53,14 @@ class TrainParams(BaseModel):
         description=(
             "Continue the existing model for this many further steps instead of training "
             "from scratch. Only for a method that declares `supports_resume`."
+        ),
+    )
+    then_score: bool = Field(
+        # A factory for the reason `additional_steps` gives: optional in the generated client.
+        default_factory=lambda: False,
+        description=(
+            "Once training succeeds, queue scoring and evaluation of the default subsets. "
+            "Nothing is queued after a failed or cancelled run."
         ),
     )
 
@@ -210,7 +219,7 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
 
     state = read_training_state(model_dir)
     ctx.progress(1.0, "trained")
-    return {
+    result: dict[str, Any] = {
         "experiment_id": experiment.id,
         "model_type": experiment.model_type,
         "device": loaded.device.device.value,
@@ -222,6 +231,15 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
         "completed_steps": None if state is None else state.completed_steps,
         "resumed": resuming,
     }
+    if params.then_score:
+        # Named here, queued by the queue: only it knows the run succeeded rather than being
+        # cancelled after this line, and it enqueues whatever a job names without knowing
+        # what an `infer` is.
+        result[FOLLOW_UP_KEY] = {
+            "kind": JobKind.INFER.value,
+            "params": {"experiment_id": experiment.id},
+        }
+    return result
 
 
 def _check_resumable(model: Any, model_type: str, model_dir: Path) -> None:

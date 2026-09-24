@@ -54,6 +54,14 @@ export-specific branch; the kind cost one lazy handler and — then — one migr
 check. Migration 020 dropped that check, so a new kind now costs one `JobKind` member, one entry in
 `jobs/handlers.py` and its handler, and nothing in the schema ([domain model](domain-model.md)).
 
+**A job may name its successor.** A `done` result carrying `follow_up: {"kind", "params"}`
+(`jobs/protocol.FOLLOW_UP_KEY`) is queued by `JobQueue._finish` — only when the job `succeeded`, never after
+a failure or a cancel, bound to the same experiment. The handler decides whether (only it read its params);
+the queue decides when, without knowing what either kind is. `train` with `then_score` is the one user: it
+names an `infer` of the default subsets, which is what makes "Train & score" one press. A malformed
+follow-up is logged and dropped rather than failing a job whose work is done, and one whose experiment was
+deleted in the interval is dropped the same way.
+
 ## Worker → parent event protocol
 
 The worker communicates with its parent over **JSON-lines on stdout** — one JSON object per line, flushed:

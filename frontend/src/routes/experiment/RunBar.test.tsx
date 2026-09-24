@@ -69,7 +69,8 @@ describe("RunBar", () => {
     );
 
     expect(screen.getByRole("button", { name: "Retrain from scratch" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Train & score" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Train only" })).toBeNull();
     expect(
       screen.getByRole("button", { name: /Score & evaluate/ }).hasAttribute("disabled"),
     ).toBe(false);
@@ -86,7 +87,8 @@ describe("RunBar", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Train" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Train & score" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Train only" })).toBeTruthy();
     expect(
       screen.getByRole("button", { name: /Score & evaluate/ }).hasAttribute("disabled"),
     ).toBe(true);
@@ -212,7 +214,8 @@ describe("RunBar", () => {
       />,
     );
 
-    expect(screen.getByRole("button", { name: "Train" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Train & score" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByRole("button", { name: "Train only" }).hasAttribute("disabled")).toBe(true);
   });
 
   it("draws no progress bar when nothing is running", () => {
@@ -264,7 +267,8 @@ describe("RunBar", () => {
     );
 
     expect(screen.getByRole("button", { name: "Retrain from scratch" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Train" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Train & score" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Train only" })).toBeNull();
     expect(screen.getByRole("button", { name: "Continue" })).toBeTruthy();
     // Defaults to the per-run budget, so "another 4000" is one click.
     expect(screen.getByLabelText("Additional steps").getAttribute("value")).toBe("4000");

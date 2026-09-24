@@ -4552,6 +4552,11 @@ export interface components {
              * @description Continue the existing model for this many further steps instead of training from scratch. Only for a method that declares `supports_resume`.
              */
             additional_steps?: number | null;
+            /**
+             * Then Score
+             * @description Once training succeeds, queue scoring and evaluation of the default subsets. Nothing is queued after a failed or cancelled run.
+             */
+            then_score?: boolean;
         };
         /**
          * TrainingState

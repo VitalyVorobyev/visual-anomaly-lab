@@ -23,13 +23,20 @@ from anomaly_lab.db.migrate import apply_migrations
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.handlers import supported_kinds
-from anomaly_lab.jobs.protocol import DoneEvent, LogEvent, ProgressEvent, parse_line
+from anomaly_lab.jobs.protocol import (
+    FOLLOW_UP_KEY,
+    DoneEvent,
+    LogEvent,
+    ProgressEvent,
+    parse_line,
+)
 from anomaly_lab.jobs.queue import (
     MAX_EVENT_BYTES,
     MAX_LINE_BYTES,
     SUBSCRIBER_BUFFER,
     JobQueue,
     _iter_lines,
+    _JobRunState,
     split_output,
 )
 
@@ -350,3 +357,32 @@ def test_a_worker_that_floods_stderr_still_reaches_a_terminal_state(client: Test
 
     second = queue.enqueue(kind=JobKind.PREWARM, params={"dataset_id": 999_999})
     assert _await_terminal(client, second.id)["status"] in {"succeeded", "failed"}
+
+
+def _finished_with(settings: Settings, returncode: int, result: dict[str, Any]) -> list[Job]:
+    """Finish a job the way the runner does, and return what is queued afterwards."""
+    apply_migrations(settings.db_path)
+    queue = JobQueue(settings)
+    job = queue.enqueue(kind=JobKind.IMPORT)
+    state = _JobRunState()
+    state.result = result
+    queue._finish(job, returncode, state)
+    with connection(settings.db_path) as conn:
+        return jobs_repo.list_jobs(conn, status=JobStatus.QUEUED)
+
+
+def test_a_succeeded_job_queues_the_follow_up_it_names(settings: Settings) -> None:
+    queued = _finished_with(
+        settings, 0, {FOLLOW_UP_KEY: {"kind": "prewarm", "params": {"dataset_id": 3}}}
+    )
+    assert [(job.kind, job.params) for job in queued] == [(JobKind.PREWARM, {"dataset_id": 3})]
+
+
+def test_a_failed_job_queues_nothing_after_it(settings: Settings) -> None:
+    queued = _finished_with(settings, 1, {FOLLOW_UP_KEY: {"kind": "prewarm", "params": {}}})
+    assert queued == []
+
+
+def test_an_unusable_follow_up_is_dropped_not_fatal(settings: Settings) -> None:
+    assert _finished_with(settings, 0, {FOLLOW_UP_KEY: {"kind": "not_a_kind"}}) == []
+    assert _finished_with(settings, 0, {FOLLOW_UP_KEY: "infer"}) == []

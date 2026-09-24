@@ -133,11 +133,14 @@ export function useStartRun(experimentId: number) {
       kind,
       subsets,
       additionalSteps,
+      thenScore,
     }: {
       kind: "train" | "infer";
       subsets?: Subset[];
       /** Continue the stored model instead of retraining it (handbook jobs.md). */
       additionalSteps?: number;
+      /** Queue scoring once training succeeds — one press for the whole first run. */
+      thenScore?: boolean;
     }) => {
       const result =
         kind === "train"
@@ -149,6 +152,7 @@ export function useStartRun(experimentId: number) {
                 // Omitted entirely for a fresh run: an empty control means unset, and the
                 // default lives in Python alone.
                 ...(additionalSteps === undefined ? {} : { additional_steps: additionalSteps }),
+                ...(thenScore ? { then_score: true } : {}),
               },
             })
           : await api.POST("/api/experiments/{experiment_id}/infer", {
