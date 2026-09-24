@@ -202,8 +202,13 @@ Five cross-cutting UI rules follow from the design above:
    while the frame's aspect ratio matched the picture's: clamped by `max-w-full` with its height left full,
    a column narrower than the image drew every layer squashed. Identically squashed, and so invisible as a
    fault — the picture was simply not the shape of the part. `frontend/src/routes/ExperimentSampleRoute.test.tsx`
-   pins it. The dataset browser's single-sample viewer is the one screen still on `ZoomPanCanvas`; it uses
-   `object-contain` and is not distorted, and moving it is [backlog](../backlog.md).
+   pins it. All three sample viewers — the dataset browser's, the results viewer and the compare panes — are
+   one component, `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, the raster layers in
+   order, then `VectorLayer` (boxes and polygons with a label, in image pixels, with non-scaling strokes and
+   labels sized through the stage's scale, toned by lab-ui's `toneColor`), then whatever else a screen draws
+   in image pixels, such as the peak marker. Boxes are drawn client-side rather than rendered into a PNG
+   because a detection result is a few shapes whose colour is decided per shape. `ZoomPanCanvas` is no longer
+   used anywhere in the app.
 5. **A window shortcut goes through `useHotkeys`, never a bare `keydown` listener.** Every screen with
    shortcuts used to carry its own guard, and each missed a different case: the sample viewer relabelled on
    ⌘D, the experiment sample page paged away while its slider thumb (`span[role=slider]`, not an `<input>`)

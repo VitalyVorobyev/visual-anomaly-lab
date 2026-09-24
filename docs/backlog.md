@@ -14,13 +14,6 @@ until its output has been reviewed.
       `lab-visual-pass` skill seeds a scratch catalogue from VisA, shoots all eighteen screens in
       both viewports and themes, and audits nesting, naming and scrollers; what remains is reading
       the pictures and fixing what they show.
-- [ ] **Move `SampleRoute.tsx` off `ZoomPanCanvas`** (S): the two result viewers are on `ImageStage`
-      and the dataset browser's single-sample viewer is the last consumer of the deprecated
-      component, so the component cannot leave the app until it moves. It is not distorted today —
-      it uses `object-contain`, so its picture is letterboxed rather than stretched — which is why
-      it was left alone. What it does gain is the stage's `scale` in real units: `tierFor` can then
-      decide its full-versus-preview tier the same way both result viewers do, instead of from a
-      frame-relative zoom that means different things in different windows.
 - [ ] **Finish the large-catalogue experiment workflow** (M): id query, multi-select methods, date
       range, cursor pagination and sortable column headers.
 - [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`
@@ -29,9 +22,6 @@ until its output has been reviewed.
       `ButtonLink` there, release, and replace all five.
 - [ ] **Train, then score, as one action** (S): creating an experiment lands on a draft that needs
       Train, a wait, then Score & evaluate.
-- [ ] **Move the dataset sample viewer onto `ImageStage`** (M): the last `ZoomPanCanvas`. Give the
-      result viewers a vector layer beside the raster ones — boxes, labels and scores are what a
-      detection task will draw.
 - [ ] **Split the annotation editor** (L, split before starting): the route is ~1,900 lines. Hooks
       per seam (draft session, queue, channel panes, document commands, segment assist, keymap),
       per-tool modules in the canvas, static and live Konva layers, a brush-size cursor, a pixel

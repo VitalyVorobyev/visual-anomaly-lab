@@ -30,7 +30,9 @@ import { preferredImageIndex } from "../api/defaultChannel";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
-import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, FULL_TIER_ZOOM, RESET_VIEW, Skeleton, Switch, Tooltip, ZoomPanCanvas, type View } from "@vitavision/lab-ui";
+import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Switch, Tooltip, type StageView } from "@vitavision/lab-ui";
+
+import { SampleStage } from "../components/viewer/SampleStage";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
@@ -47,8 +49,8 @@ const KEY_FOR: Record<Label, string> = { normal: "n", defect: "d", unlabeled: "u
 
 const LABELS: Label[] = ["normal", "defect", "unlabeled"];
 
-/** Fit-to-window, which is what zoom 1 means in this frame. */
-const RESET = RESET_VIEW;
+/** `ImageStage`'s own opening view: 1:1 where the picture fits, fitted where it does not. */
+const RESET = null;
 
 export function SampleRoute() {
   const params = useParams();
@@ -79,7 +81,7 @@ export function SampleRoute() {
    */
   const [active, setActive] = useState<number | null>(null);
   const [sideBySide, setSideBySide] = useState(false);
-  const [view, setView] = useState<View>(RESET);
+  const [view, setView] = useState<StageView | null>(RESET);
   const [autoAdvance, setAutoAdvance] = useState(true);
   /**
    * Crossing a page boundary cannot be done in one move: the neighbouring page is not
@@ -286,7 +288,7 @@ export function SampleRoute() {
               }
             >
               {(sideBySide ? images : shown ? [shown] : []).map((image) => (
-                <ZoomPan key={image.id} image={image} view={view} onView={setView} />
+                <ChannelStage key={image.id} image={image} view={view} onView={setView} />
               ))}
             </div>
           )}
@@ -420,44 +422,35 @@ function SampleNotes({ sample }: { sample: SampleSummary }) {
 }
 
 /**
- * One image with shared zoom and pan.
+ * One channel, sharing its zoom and pan with the others.
  *
- * `preview` while zoomed out, `full` once the zoom would show real pixels — a lossless
- * PNG is what makes a defect judgeable, but fetching it for a thumbnail-sized view would
- * be several megabytes for nothing.
- *
- * This used to be a second, hand-written copy of `ZoomPanCanvas` with its own constants.
- * The two drifted exactly as far as you would expect: this one had a reset button and a
- * `0` key, that one had neither, and every fix to the gesture had to be written twice or
- * only landed on one screen. It is one component now, and the rail keeps its own reset
- * button — which is why `fitLabel` is off here.
+ * On the same `SampleStage` as both result viewers. It used to be the last screen on the
+ * deprecated `ZoomPanCanvas`, whose zoom was a multiple of *fit* — so "full tier above 2×"
+ * meant a different number of real pixels in every window, and the full-resolution image
+ * arrived at a different magnification depending on how wide the rail left the canvas. The
+ * stage's scale is CSS pixels per image pixel, and `tierFor` reads it the same way here as
+ * everywhere else.
  */
-function ZoomPan({
+function ChannelStage({
   image,
   view,
   onView,
 }: {
   image: ImageSummary;
-  view: View;
-  onView: (view: View) => void;
+  view: StageView | null;
+  onView: (view: StageView) => void;
 }) {
-  const tier = view.zoom > FULL_TIER_ZOOM ? "full" : "preview";
-
   return (
-    <ZoomPanCanvas
-      view={view}
-      onView={onView}
-      className="h-full min-h-0 border-0 bg-transparent"
-      nativeWidth={image.width}
-      fitLabel={null}
-      label={`${image.channel ?? "unassigned"} · ${view.zoom.toFixed(1)}×`}
-    >
-      <img
-        src={imageUrl(image.id, tier)}
+    <div className="relative h-full min-h-0 overflow-hidden">
+      <SampleStage
+        image={image}
         alt={image.channel ?? "unassigned channel"}
-        draggable={false}
-        className="h-full w-full object-contain"
+        view={view}
+        onView={onView}
+        // The arrows page through the filtered set, as on both result viewers.
+        panKeys={false}
+        label={`${image.channel ?? "unassigned"} canvas`}
       />
-    </ZoomPanCanvas>
+    </div>
   );
 }
