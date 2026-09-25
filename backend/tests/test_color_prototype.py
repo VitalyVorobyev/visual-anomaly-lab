@@ -14,6 +14,7 @@ from PIL import Image
 
 from anomaly_lab.config import Settings
 from anomaly_lab.domain.entities import JobKind
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import (
     Device,
     ImageRecord,
@@ -84,7 +85,7 @@ def _records(
 
 
 def _map(ctx: InferContext, image_id: int) -> np.ndarray:
-    return np.asarray(np.load(ctx.map_path(image_id)), dtype=np.float32)
+    return np.asarray(read_map(ctx.map_path(image_id)), dtype=np.float32)
 
 
 def test_it_finds_the_class_by_colour_and_scores_its_presence(tmp_path: Path) -> None:

@@ -113,12 +113,12 @@ def test_a_request_leaves_the_stored_map_and_the_scores_alone(
     """
     image_id = seeded.defect_image_ids[0]
     artifact_dir = settings.experiment_dir(scored["id"])
-    before = (artifact_dir / "maps" / f"{image_id}.npy").read_bytes()
+    before = (artifact_dir / "maps" / f"{image_id}.npz").read_bytes()
     results = client.get(f"/api/experiments/{scored['id']}/results", params={"subset": "test"})
 
     _diagnose(client, scored["id"], image_id)
 
-    assert (artifact_dir / "maps" / f"{image_id}.npy").read_bytes() == before
+    assert (artifact_dir / "maps" / f"{image_id}.npz").read_bytes() == before
     assert not (artifact_dir / "scratch-maps").exists()
     after = client.get(f"/api/experiments/{scored['id']}/results", params={"subset": "test"})
     assert after.json() == results.json()

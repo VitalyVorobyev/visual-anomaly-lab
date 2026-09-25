@@ -16,6 +16,7 @@ pytest.importorskip("timm")
 
 from PIL import Image
 
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import (
     IGNORE_INDEX,
     Device,
@@ -133,7 +134,7 @@ def test_labelled_images_in_a_label_map_that_finds_the_classes_out(
         assert accuracy > 0.8, accuracy
         assert prediction.label_map == infer_ctx.label_map_path(record.image_id)
         assert prediction.score == pytest.approx(float(np.mean(predicted > 0)))
-        foreground = np.load(infer_ctx.map_path(record.image_id))
+        foreground = read_map(infer_ctx.map_path(record.image_id))
         assert foreground.shape == (SIZE, SIZE)
         assert foreground.min() >= 0.0 and foreground.max() <= 1.0
 

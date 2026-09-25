@@ -5,8 +5,8 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 - `ImageResult.score` rows for an experiment,
 - `Sample.label`,
 - `SplitAssignment.subset`,
-- the resolved ground-truth mask for each image and the float32 map on disk, when pixel or localization
-  metrics are computed.
+- the resolved ground-truth mask for each image and the float32 map on disk, read through
+  `map_files.read_map`, when pixel or localization metrics are computed.
 
 It never imports a model module and never re-runs inference, so every method is evaluated by the same code.
 

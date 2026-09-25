@@ -29,6 +29,7 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("timm")
 
 from anomaly_lab.eval.metrics import roc_auc  # noqa: E402
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -238,7 +239,7 @@ def test_the_defect_lands_where_the_defect_is(
     """
     defect = fits[scoring].predictions[-1]
     assert defect.anomaly_map is not None
-    values = np.load(defect.anomaly_map)
+    values = read_map(defect.anomaly_map)
 
     row, col = np.unravel_index(int(np.argmax(values)), values.shape)
     assert STAMP.start <= row < STAMP.stop
@@ -330,7 +331,7 @@ def test_maps_are_two_dimensional_at_the_prepared_size(
 ) -> None:
     for prediction in fits[scoring].predictions:
         assert prediction.anomaly_map is not None
-        stored = np.load(prediction.anomaly_map)
+        stored = read_map(prediction.anomaly_map)
         assert stored.dtype == np.float32
         assert stored.shape == (SIZE, SIZE)
 
@@ -724,7 +725,7 @@ def test_feature_concat_scores_a_sample_once_and_writes_it_to_every_channel(
 
     assert len(predictions) == 3
     assert len({prediction.score for prediction in predictions}) == 1
-    maps = [np.load(prediction.anomaly_map) for prediction in predictions]  # type: ignore[arg-type]
+    maps = [read_map(prediction.anomaly_map) for prediction in predictions]  # type: ignore[arg-type]
     for other in maps[1:]:
         assert np.array_equal(maps[0], other)
 
@@ -978,7 +979,7 @@ def test_the_unblurred_map_is_sharper_than_the_stored_one(fits: dict[Scoring, Fi
     unblurred = np.load(root / entry.path)
     map_path = next(p.anomaly_map for p in fitted.predictions if p.image_id == defect_id)
     assert map_path is not None
-    stored = np.load(map_path)
+    stored = read_map(map_path)
 
     assert unblurred.shape == stored.shape == (SIZE, SIZE)
     assert float(unblurred.max()) >= float(stored.max())

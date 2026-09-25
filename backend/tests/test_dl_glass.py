@@ -19,6 +19,7 @@ from PIL import Image
 torch = pytest.importorskip("torch")
 pytest.importorskip("anomalib")
 
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -203,7 +204,7 @@ def test_fit_save_load_predict_and_continue_are_one_contract(tmp_path: Path) -> 
 
     assert after.score == pytest.approx(before.score, abs=1e-7)
     assert after.anomaly_map is not None
-    assert np.load(after.anomaly_map).shape == (SIZE, SIZE)
+    assert read_map(after.anomaly_map).shape == (SIZE, SIZE)
     assert restored.completed_steps() == 2
 
     restored.fit_more(_records(tmp_path / "run"), train_ctx, additional_steps=1)

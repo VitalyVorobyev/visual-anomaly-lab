@@ -16,7 +16,6 @@ import sqlite3
 from enum import StrEnum
 from pathlib import Path
 
-import numpy as np
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
@@ -37,6 +36,7 @@ from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.domain.entities import Image, JobKind
 from anomaly_lab.jobs.queue import JobQueue
+from anomaly_lab.map_files import read_map
 from anomaly_lab.media.cache import TIERS, ImageTier, ensure_cached, etag_for, render
 from anomaly_lab.media.decode import UnreadableImageError
 from anomaly_lab.media.overlay import (
@@ -202,7 +202,7 @@ def read_anomaly_map(
         )
 
     try:
-        array = np.load(stored.map_path, allow_pickle=False)
+        array = read_map(stored.map_path)
     except (OSError, ValueError) as exc:
         # The artifact directory is deletable by design, so a missing map is an expected
         # state rather than corruption — 410, the same answer a missing source file gets.
@@ -258,7 +258,7 @@ def read_anomaly_map_values(request: Request, image_id: int, experiment_id: int)
         )
 
     try:
-        array = np.load(stored.map_path, allow_pickle=False)
+        array = read_map(stored.map_path)
     except (OSError, ValueError) as exc:
         raise HTTPException(
             status_code=410,

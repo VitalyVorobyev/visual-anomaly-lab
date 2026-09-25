@@ -23,7 +23,7 @@ and blobs in the database.
 
 - **The database** holds every entity of the domain model (see ADR-0005). It stores scores and
   *paths*, never pixels.
-- **The filesystem** holds thumbnails, anomaly maps as **float32 `.npy`**, checkpoints, manifests
+- **The filesystem** holds thumbnails, anomaly maps as **raw float32 numpy files**, checkpoints, manifests
   and job logs, with artifacts namespaced per experiment. Source images are referenced in place,
   never copied (see ADR-0022).
 - **Migrations are plain, forward-only SQL files**, numbered and applied in order, tracked with
@@ -33,7 +33,7 @@ and blobs in the database.
   plain dataclasses or pydantic models.
 - **No ORM.**
 
-Being able to open the database in any SQLite browser, load an `.npy` directly, and delete the
+Being able to open the database in any SQLite browser, load a map with `numpy.load` directly, and delete the
 whole directory to reset is a feature of a research tool.
 
 ## Consequences

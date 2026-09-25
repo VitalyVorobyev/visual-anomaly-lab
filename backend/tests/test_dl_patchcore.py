@@ -29,6 +29,7 @@ torch = pytest.importorskip("torch")
 pytest.importorskip("anomalib")
 
 from anomaly_lab.eval.metrics import roc_auc  # noqa: E402
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -205,7 +206,7 @@ def test_the_defect_lands_where_the_defect_is(fitted: Fitted) -> None:
     """
     defect = fitted.predictions[-1]
     assert defect.anomaly_map is not None
-    values = np.load(defect.anomaly_map)
+    values = read_map(defect.anomaly_map)
 
     row, col = np.unravel_index(int(np.argmax(values)), values.shape)
     assert 24 <= row < 40
@@ -535,7 +536,7 @@ def test_the_unblurred_map_is_sharper_than_the_stored_one(fitted: Fitted) -> Non
     unblurred = np.load(fitted.infer_ctx.diagnostics.root / entry.path)
     map_path = next(p.anomaly_map for p in fitted.predictions if p.image_id == defect_id)
     assert map_path is not None
-    stored = np.load(map_path)
+    stored = read_map(map_path)
 
     assert unblurred.shape == stored.shape
     assert float(unblurred.max()) >= float(stored.max())

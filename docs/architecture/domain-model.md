@@ -228,8 +228,9 @@ three-valued `localized` flags.
 ### ImageResult
 
 `(experiment_id, image_id)`, `score`, `map_path` (nullable), `inference_ms`, `peak_x` / `peak_y` /
-`localized` (nullable). Per-image method output. `map_path` references a float32 `.npy` under the
-experiment's `maps/`, `NULL` when the method produces no map. `peak_x` / `peak_y` are the map's argmax in
+`localized` (nullable). Per-image method output. `map_path` references a stored map under the
+experiment's `maps/` — `.npz`, or a source-frame `.npy` in an older run ([methods](methods.md#anomaly-maps)) —
+`NULL` when the method produces no map. `peak_x` / `peak_y` are the map's argmax in
 source-frame pixels — a property of the map alone, unaffected by later annotation edits. `localized` is the
 threshold-free verdict on (map, ground truth): `1` the peak is inside the annotated region within tolerance,
 `0` outside, `NULL` **not applicable** (a normal image, a defect with no resolved mask, an unreadable map).

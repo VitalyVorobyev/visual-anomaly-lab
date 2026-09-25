@@ -120,7 +120,7 @@ Verdict: mean deltas **−0.300 pixel ROC-AUC**, **−0.478 AU-PRO** — rejecte
 is what the gate exists to catch: without inverse projection and uncovered-pixel accounting it reads as
 evidence *for* localisation while the crop omitted a quarter of the defect pixels. `foreground_threshold`
 stays available as an explicit, previewable choice. Source-frame float maps cost about 1.23 GB per 200-image
-run regardless of crop — a storage item in [backlog.md](backlog.md), not a reason to change the verdict.
+run regardless of crop — settled by [anomaly-map storage](#anomaly-map-storage), not a reason to change the verdict.
 
 ## MobileSAM mask selection — the border rule stays opt-in
 
@@ -735,8 +735,8 @@ are worth a box-regression head.
 
 ## Anomaly-map storage
 
-Whether a run's anomaly maps should be stored in a smaller form than the projected float32 `.npy` each
-image gets today. Predeclared before it ran; `scripts/map-storage-measure.py`.
+Whether a run's anomaly maps should be stored in a smaller form than a projected float32 `.npy` per
+image. Predeclared before it ran; `scripts/map-storage-measure.py`.
 
 **Protocol.** VisA `candle`, official split, the 200-image test subset, prepared at 256 × 256 under two
 region profiles: `identity` (deciding) and `foreground_threshold` (reported, so a real crop and the NaN it
@@ -746,7 +746,7 @@ train and infer jobs — numpy only, so the measurement needs no torch. While th
 else, projecting every copy through its pinned transform must reproduce the stored `.npy` bit for bit.
 Each candidate is then written from those arrays and read back:
 
-- **(a)** today: the source-frame map, float32 `.npy`;
+- **(a)** the source-frame map, float32 `.npy` — the format older runs hold;
 - **(b)** the same array in `np.savez_compressed`, as float32 and as float16;
 - **(c)** the prepared-frame map with its pinned `SpatialTransform` in one `.npz`, projected on read —
   stored plain and compressed.
@@ -757,8 +757,9 @@ ms, warm, decoding to the source-frame float32 array; overlay ms, decode plus `r
 source size (the heatmap route's work) on 20 evenly spaced images; the evaluator's wall time and
 `tracemalloc` peak over the whole run; how many decoded maps are bit-identical to (a); and whether the
 evaluator's metrics are identical to (a)'s. The evaluator runs on each format by repointing
-`image_result.map_path` at its files and routing `numpy.load` for them through the format's decoder —
-every map consumer reads through `np.load`, so that is the reader a change would install.
+`image_result.map_path` at its files, and every read goes through the decoder a consumer would use:
+`map_files.read_map`, which reads all five, or for the decisive run below, a `numpy.load` shim doing the
+same.
 
 **Why float16 is held to identity, not a tolerance.** Its 11-bit significand rounds a value by up to
 2⁻¹¹ ≈ 4.9 × 10⁻⁴ of itself. The pixel curves bin scores into 65 536 bins over the run's own range, and
@@ -793,7 +794,9 @@ cache), medians over three passes; the peak is `tracemalloc`'s over one evaluato
 | | (c) prepared + transform | 262 918 | 0.25 | 0.47 | 44.8 | 2.63 | 55.3 | 200 / 200 |
 | | (c) compressed | 229 521 | 6.84 | 0.95 | 45.3 | 2.82 | 55.3 | 200 / 200 |
 
-The projection every format pays at write time took 1.58 ms a map (median) under `identity`. Every
+Re-run with the shipped `read_map` as the reader, every ratio the rule reads stayed within 0.02 of these
+and the verdict was the same. The projection every format pays at write time took 1.58 ms a map (median)
+under `identity`. Every
 bit-identical format gave metrics identical to (a)'s on both legs. Float16 did not: its maps moved by up to
 0.062 (`identity`) and 0.125 (`threshold`), and `identity`'s pixel ROC-AUC went from 0.8892576 to
 0.8892575 and its AU-PRO from 0.8074951 to 0.8074991 — small, and exactly the movement the rule excludes.
@@ -804,7 +807,7 @@ helps under a crop only because the NaN outside it compresses.
 forms pass every check; the compressed one is the smaller, at **3.8 % of (a)'s bytes** — 46 MB instead of
 1.2 GB for the run — with the overlay at 1.06×, the evaluator at 1.34× and its peak unchanged, so
 **prepared-frame maps with their pinned transform, `np.savez_compressed`, are adopted**, and an existing
-`.npy` map still reads. One property moves with it: a stored map is now projected on every read, so the
+`.npy` map still reads ([methods](architecture/methods.md#anomaly-maps)). One property moves with it: a stored map is now projected on every read, so the
 source-frame array is Pillow's bilinear resize of the day rather than of the run, while the display range
 and each map's peak were taken at write time; a change to Pillow's resampler would separate them, and the
 bit-identity check above is the test that would show it.

@@ -32,6 +32,7 @@ from PIL import Image
 torch = pytest.importorskip("torch")
 pytest.importorskip("timm")
 
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -186,7 +187,7 @@ def test_every_image_gets_a_finite_score_and_a_map_in_the_prepared_frame(
         assert np.isfinite(entry.score)
         assert entry.score > 0.0
         assert entry.anomaly_map is not None
-        values = np.load(entry.anomaly_map)
+        values = read_map(entry.anomaly_map)
         assert values.shape == (SIZE, SIZE)
         assert np.isfinite(values).all()
 
@@ -199,7 +200,7 @@ def test_the_score_is_the_tail_of_the_patch_grid_and_not_of_the_map(fitted: Fitt
     """
     entry = fitted.predictions[-1]
     assert entry.anomaly_map is not None
-    from_pixels = tail_value_at_risk(np.load(entry.anomaly_map), [0.002])[0.002]
+    from_pixels = tail_value_at_risk(read_map(entry.anomaly_map), [0.002])[0.002]
     assert not np.isclose(from_pixels, entry.score)
 
 
@@ -232,10 +233,10 @@ def test_no_smoothing_is_a_setting_rather_than_a_crash(fitted: Fitted) -> None:
 
     entry = raw[-1]
     assert entry.anomaly_map is not None
-    sharp = np.load(entry.anomaly_map)
+    sharp = read_map(entry.anomaly_map)
     blurred_entry = fitted.predictions[-1]
     assert blurred_entry.anomaly_map is not None
-    blurred = np.load(blurred_entry.anomaly_map)
+    blurred = read_map(blurred_entry.anomaly_map)
     assert sharp.shape == blurred.shape == (SIZE, SIZE)
     # An unsmoothed map keeps the extremes a blur pulls in.
     assert sharp.max() > blurred.max()

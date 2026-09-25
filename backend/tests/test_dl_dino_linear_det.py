@@ -17,6 +17,7 @@ pytest.importorskip("timm")
 from PIL import Image
 
 from anomaly_lab.eval.detection import DetectionAccumulator, read_instances
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import (
     Device,
     ImageRecord,
@@ -131,7 +132,7 @@ def test_boxed_images_in_boxes_that_coco_reads_as_found_out(tmp_path: Path) -> N
         assert prediction.instances == infer_ctx.instances_path(record.image_id)
         assert prediction.score == (found[0].confidence if found else 0.0)
         assert all(0.0 < item.confidence <= 1.0 for item in found)
-        foreground = np.load(infer_ctx.map_path(record.image_id))
+        foreground = read_map(infer_ctx.map_path(record.image_id))
         assert foreground.shape == (SIZE, SIZE)
         assert foreground.min() >= 0.0 and foreground.max() <= 1.0
         accumulator.add(truth[record.image_id], found, inference_ms=prediction.inference_ms)

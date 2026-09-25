@@ -32,6 +32,7 @@ from PIL import Image
 torch = pytest.importorskip("torch")
 
 from anomaly_lab.eval.metrics import roc_auc  # noqa: E402
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -297,7 +298,7 @@ def test_the_student_actually_learned(trained: Trained) -> None:
 def test_every_prediction_has_a_two_dimensional_map(trained: Trained) -> None:
     for prediction in trained.predictions:
         assert prediction.anomaly_map is not None
-        stored = np.load(prediction.anomaly_map)
+        stored = read_map(prediction.anomaly_map)
         assert stored.ndim == 2
         assert stored.dtype == np.float32
 
