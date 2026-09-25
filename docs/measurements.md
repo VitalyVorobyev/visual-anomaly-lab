@@ -603,3 +603,48 @@ and conservatively on `pcb1` (0.09 against 0.11), so the constant generalises fr
 is usable, not good: most defect samples are still below an IoU of 0.5, a sixth are missed, and about
 a quarter of normal images show some false presence. The Bayes shift is the wrong decision for this
 measure: it is roughly twice the fitted constant and draws nothing.
+
+## Detection — predeclared, not yet run
+
+The first public detection gate (ADR-0039), predeclared below before it runs.
+`scripts/detection-public-gate.py`.
+
+**Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
+divide. The dataset is read as a detection benchmark of one class, `defect`: every 8-connected component
+of a VisA mask is one truth box, exactly as the application resolves an imported mask's boxes, and each
+normal sample has none. For each class, a `class_stratified` split at its shipped defaults is drawn under
+seeds {0, 1, 2} — the supervised segmentation gates' splits, so about 70 defects and 700 normals train
+and 30 and 300 test. Two methods run at their shipped defaults on the same pixels, with the method seed
+equal to the split seed where the method has one: `color_detector` (the floor; it draws nothing at
+random) and `dino_linear_det` (DINOv2 ViT-B/14, last block, with the segmentation head's shipped
+`per_class` sampling and `held_out_iou` constant). That is 12 runs, one child process each, through the
+application's own train and infer jobs and detection evaluator, scored on the test subset.
+
+**Reported.**
+- Per method and class, as a mean over seeds with the spread of the primary across seeds: AP@[.5:.95],
+  AP50, AP75, recall over the ten IoU thresholds and at IoU 0.5, the F1, precision and recall at each
+  run's own printed confidence cut, ms per image, seconds to fit and peak RSS.
+- Truth and predicted box counts, and per-sample outcomes of the test subset at the printed cut (hit,
+  miss, mixed for defect samples; correct absence or false presence for normal ones), pooled over seeds.
+
+**Decision rule, fixed before the run.** The primary number is test AP@[.5:.95] by COCO's protocol, of
+the one class `defect`, averaged over the three seeds, per class.
+- `dino_linear_det` leaves experimental (`supported`) if it beats `color_detector` by at least 0.05 on the
+  primary **on both classes**. Otherwise it stays experimental.
+- The margin and the both-classes condition are the supervised segmentation gate's, for its reasons: the
+  floor may sit near zero, where any ratio is large, so the margin is absolute; about 30 test defects a
+  seed make a draw move the number by more than a few hundredths; and a lead on one class alone is what
+  the first segmentation gate and the few-shot gate showed. AP is on the same 0–1 scale as IoU, and
+  demands more of a box than IoU does of a mask, so the margin is not loosened for it.
+- Checks of construction, not part of the rule: within a class and seed, both methods are read against
+  identical truth box counts and the same labelled test images.
+- `color_detector` is the floor and stays experimental whatever the result. The gate is not rerun under
+  other fields to reach the margin.
+
+**What preceded the rule.** One smoke cell ran on VisA `macaroni1`, seed 0 — outside the gate, so it
+looked at none of its cells — to prove the script and estimate its runtime: 2.8 min for both methods,
+so about 15 min for the gate. Both methods sat near zero there: AP@[.5:.95] 0.0000 for the floor and
+0.0006 for `dino_linear_det` (AP50 0.006), against 96 truth boxes on 30 defect samples. It did not change
+the rule. It did show how the printed cut reads when a run matches almost nothing: the F1-optimal
+confidence is then the highest one, so almost every detection is dropped and every normal sample reads
+as a correct absence. The per-sample outcomes are reported, not decided on.
