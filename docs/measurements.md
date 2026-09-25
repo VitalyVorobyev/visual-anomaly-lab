@@ -881,6 +881,89 @@ that draws one box around a cluster matches one of them at most. The same head t
 masks read as boxes as much as it measures the features; it does not say whether frozen DINO features
 are worth a box-regression head.
 
+## Detection on box-drawn truth (PCB) — predeclared, not yet run
+
+The gate the VisA verdict calls for: truth that annotators drew as boxes, so no box is a speck of a mask.
+Predeclared here before any run; `scripts/detection-public-gate.py --benchmark pcb`. Six runs, one child
+process each, estimated at 1–1.5 h on MPS (below).
+
+**Data.** [PKU-Market-PCB](https://robotics.pkusz.edu.cn/resources/datasetENG/) (Huang and Wei,
+arXiv:1901.08204): 693 images of printed circuit boards, each carrying one of six kinds of synthesised
+defect — `missing_hole`, `mouse_bite`, `open_circuit`, `short`, `spur`, `spurious_copper`, 115 or 116
+images each — and a Pascal VOC file of its boxes. The archive read is `PCB_DATASET.zip`, 2 011 970 644
+bytes, SHA-256 `7e398bb5828c7422e173e1ecd880adda5ce233f1fa4e2f79bcd21bebc9c13bc6`; no licence is published
+with it ([README](../README.md#public-reference-data)). Its `rotation/` copies and `PCB_USED/` templates
+are not part of the benchmark. Over the 693 files:
+- 2 953 boxes, 482–503 a class; 1–6 an image (median 5); no image shows two classes, and one pair of
+  boxes overlaps.
+- Boxes are 25–284 px wide (median 65 × 64) on boards of 2240 × 2016 to 3056 × 2464 px. The median box
+  covers 0.07 % of its image, and the largest 0.8 %.
+
+**Why 1120 × 896, and what it costs.** The prepared frame is an identity profile, the whole board
+contain-resized and edge-padded, which scales a board by 0.354–0.444. That puts the median box at about
+25 × 25 prepared pixels — 1.8 DINOv2 patches a side — and the smallest at 9. At the VisA gates' 448 × 448
+the median box would be 11 px, under one 14-px patch, and 2 657 of the 2 953 boxes would have a side
+under a patch; at 1120 × 896 that is 232. The frame is divisible by 14 and 16 and near the boards' median
+aspect, so it pads little. The cost: 80 × 64 = 5 120 patch tokens against 1 024 at 448², five times the
+MLP work and about twenty-five times the attention, so a `dino_linear_det` image is estimated at
+0.6–1 s where it was about 0.1 s. Tiling the board would keep the full resolution, but no region profile
+tiles, and a centre crop would drop truth outside it. A smaller frame than 1120 × 896 is not tried if this
+one fails on memory: the gate is then re-declared, not rerun.
+
+**Protocol.**
+- The dataset is registered as the reference pack registers it ([import](architecture/import.md#box-truth-a-pack-ships)):
+  every VOC box, 1-based and inclusive, becomes a pixel-edge box of its class in each image's first
+  revision. Classes pinned by a run are the taxonomy, `defect` then the six kinds; `defect` has no truth
+  and stays out of every mean, as the evaluator leaves a class without truth out.
+- `class_stratified` splits at their shipped defaults (train share 0.7) are drawn under seeds {0, 1, 2}.
+  Each image shows one kind, so the six signatures are the six kinds, and each split trains on 485 images
+  and tests on 208, about 81 and 35 of each kind.
+- Two methods at their shipped defaults on the same pixels, the method seed equal to the split seed where
+  the method has one: `color_detector` (the floor) and `dino_linear_det` (DINOv2 ViT-B/14, last block,
+  `per_class` sampling, `held_out_iou`). 3 seeds × 2 methods is 6 runs, through the application's own
+  train and infer jobs and detection evaluator, scored on the test subset.
+
+**Reported.** Everything the VisA detection gate reports, and per class the AP@[.5:.95] and AP50 of each
+method, as a mean over seeds.
+
+**Two metrics, two questions.** `dino_linear_det` boxes each connected region of the head's
+argmax over logits upsampled from a 14-px grid, so a box edge lands within about half a patch — 7 prepared
+pixels, a quarter of the median box — of where the logits change. That caps its IoU on a 25-px box well
+below 1 however good the features are, and a box-regression head is exactly the part that would lift it.
+So AP50, which asks whether a detection finds and names the defect, answers the backlog's question —
+are the frozen features worth a regression head — and AP@[.5:.95], the application's headline, which
+also asks how tightly, decides the method's maturity, as on VisA.
+
+**Decision rule, fixed before the run.** Each question passes by the same test on its own metric, test AP
+averaged over the six classes and then over the three seeds: `dino_linear_det` beats `color_detector` by
+at least 0.05, **and** its per-class AP (mean over seeds) is above the floor's on at least four of the six
+classes.
+- **On AP50:** if it passes, a box-regression head on the frozen DINO features is worth building, and
+  goes on the backlog. If not, the features do not find PCB defects enough better than colour to justify
+  one.
+- **On AP@[.5:.95]:** if it passes, `dino_linear_det` leaves experimental (`supported`). If not, it stays
+  experimental. The VisA gate's verdict does not count against it: that section itself found it measured
+  VisA's masks read as boxes.
+- The margin is the VisA detection gate's and the supervised segmentation gates', for their reasons:
+  absolute because the floor may sit near zero, and 0.05 because a draw moves the number by a few
+  hundredths. The four-of-six condition takes the place of VisA's both-classes one: one dataset here, and
+  a lead that is one class's alone should not carry the mean.
+- Checks of construction, not part of the rule: within a seed, both methods are read against identical
+  truth box counts and the same 208 test images.
+- `color_detector` is the floor and stays experimental whatever the result. The gate is not rerun under
+  other fields or another frame to reach the margin.
+
+**Not comparable with published PKU-Market-PCB numbers.** Published figures are commonly VOC mAP at IoU
+0.5, often from detectors trained on 600 × 600 crops of the full-resolution boards (TDD-Net's augmented
+set). Here the whole board is downscaled by 0.35–0.44, the split is this seeded one, and AP is COCO's.
+
+**What preceded the rule.** One smoke cell — `color_detector`, seed 0, on a scratch copy of two boards of
+each kind (12 images, six train and six test), torch-free — ran to prove the registration and the harness.
+It is not part of the gate. Its inference took about 1.9 s an image at 1120 × 896; from that and the VisA
+gate's timings, the six runs are estimated at 1–1.5 h.
+
+**Result.** Not yet run.
+
 ## Anomaly-map storage
 
 Whether a run's anomaly maps should be stored in a smaller form than a projected float32 `.npy` per
