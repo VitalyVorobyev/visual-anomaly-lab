@@ -335,10 +335,11 @@ on a small defect class the scaled map clears 0.5 on too few of the images that 
 | `color_classifier` | segmentation: per-class colour Gaussians | fit | no | no | no | cpu |
 | `dino_linear_seg` | segmentation: softmax head on frozen DINO | yes | no | no | no | mps |
 | `color_detector` | detection: colour components, boxed | fit | no | no | no | cpu |
+| `dino_linear_det` | detection: DINO linear head, components boxed | yes | no | no | no | mps |
 
 `color_prototype`, `fss_dino` and `proto_seg` declare `few_shot_segmentation` alone, `color_classifier`
-and `dino_linear_seg` declare `semantic_segmentation` alone, `color_detector` declares
-`object_detection` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
+and `dino_linear_seg` declare `semantic_segmentation` alone, `color_detector` and `dino_linear_det`
+declare `object_detection` alone, and every other method declares `anomaly`. Gate verdicts for each are in [measurements](../measurements.md).
 
 ### `pixel_reference`
 
@@ -535,7 +536,8 @@ score.
 - A box is not an outline, so each class's colour model also learns the background its boxes enclose.
   It knows only colour: touching objects of one class are one detection. What a deep detector has to
   beat, not a candidate.
-- Components use `eval/pixel.py`'s union-find, a Python loop over foreground pixels.
+- Components use `eval/pixel.py`'s union-find, a Python loop over foreground pixels, through
+  `component_boxes`, which `dino_linear_det` decodes with too.
 - It refuses to fit without box targets. ONNX: none.
 
 ### `dino_linear_seg`
@@ -604,6 +606,31 @@ foreground-share score, like `color_classifier`.
   the predeclared margin on both VisA classes, where neither pixel sampling alone had
   ([measurements](../measurements.md)). The mask it draws of a VisA defect is usable, not good. ONNX:
   none.
+
+### `dino_linear_det`
+
+The first deep detector (ADR-0039), and `dino_linear_seg` read as boxes the way `color_detector` is
+`color_classifier` read as boxes. Training paints box interiors exactly as the floor does
+(`PaintedBoxes`) and fits `dino_linear_seg`'s head on that — its pixel plan, logged before anything is
+encoded, its per-class sampling, its seeded CPU fit and its `held_out_iou` constant, all unchanged and
+all its fields. At inference the head's probabilities (`DinoLinearSegModel.probabilities`, the function
+the segmenter's label map is drawn from) are argmaxed, and `component_boxes` makes every 8-connected
+component of a class one detection with the mean probability of its class as confidence. It writes the
+boxes, the probability of anything but background as its map, and the top confidence as its score.
+
+- **Why components and not box regression.** It adds no trained part the workbench has not measured: the
+  head cleared its segmentation gate and the decoding is the floor's, so the detection gate reads one
+  difference — frozen DINO features against colour. It keeps the floor's weakness: touching objects of
+  one class are one detection, and a box is as tight as the component the upsampled logits draw. A
+  regression head with non-maximum suppression is the next step if the gate says the features are worth
+  it.
+- `held_out_iou` fits each class's constant for the IoU of painted box interiors — the pixel-level shadow
+  of a box's IoU. AP depends only on how detections rank, and a component's mean class probability puts
+  a confident, separated region above a faint one.
+- `min_area` (4 prepared pixels) and `max_detections` (100), as for the floor.
+- It refuses to fit without box targets. `save` writes the head's files and a class list, each whole or
+  not at all; the encoder is not saved and `load` refuses a different backbone or layer set.
+- **Experimental** until the public detection gate. ONNX: none.
 
 ### `fss_dino`
 

@@ -101,12 +101,13 @@ application.
   through `box_targets` on the boxes of its annotated training images — a revision's instances, or an
   imported mask's connected components — writes boxes per image, and is read by COCO's protocol
   (AP@[.5:.95] as the headline, AP50, AP75, recall, AP per class). `color_detector` is the floor, the
-  colour classifier's components boxed. It is offered segmentation's splits, `class_stratified` and
+  colour classifier's components boxed; `dino_linear_det` is the first deep detector, `dino_linear_seg`'s
+  head fitted on painted box interiors and decoded by the floor's components (`dl` extra). It is offered segmentation's splits, `class_stratified` and
   `manual`, and named in the dataset's readiness band. Its results read in its own terms: AP per class
   across subsets, a per-sample verdict and drawn boxes — truth dashed, predictions solid, toned by match,
   false positive or miss — at a confidence cut each subset resolves by one printed rule (the F1-optimal
-  confidence at IoU 0.5), and Compare on the AP family alone. There is no deep detector and no public
-  gate yet.
+  confidence at IoU 0.5), and Compare on the AP family alone. `dino_linear_det` is experimental: there
+  is no public detection gate yet.
 
 ## Deliberately not built
 
