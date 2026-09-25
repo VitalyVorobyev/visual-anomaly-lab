@@ -7,7 +7,12 @@ import pytest
 from pydantic import ValidationError
 
 from anomaly_lab.regions.base import RegionExtractionError
-from anomaly_lab.regions.mobile_sam import MobileSamRegionConfig, MobileSamRegionExtractor
+from anomaly_lab.regions.mobile_sam import (
+    MobileSamRegionConfig,
+    MobileSamRegionExtractor,
+    border_fraction,
+    select_region,
+)
 from anomaly_lab.regions.registry import (
     UnknownRegionExtractorError,
     build,
@@ -194,6 +199,107 @@ def test_a_low_area_ceiling_selects_the_part_over_its_background() -> None:
         "right": 70.0,
         "bottom": 70.0,
     }
+
+
+def _mask_record(mask: np.ndarray, score: float = 0.9) -> dict[str, object]:
+    """A generator record the way `output_mode="binary_mask"` returns one."""
+    ys, xs = np.nonzero(mask)
+    return {
+        "segmentation": mask,
+        "area": int(mask.sum()),
+        "bbox": [
+            int(xs.min()),
+            int(ys.min()),
+            int(xs.max() - xs.min() + 1),
+            int(ys.max() - ys.min() + 1),
+        ],
+        "predicted_iou": score,
+        "stability_score": score,
+    }
+
+
+def _background_and_two_parts() -> list[dict[str, object]]:
+    """Two pieces of one part on a background that wraps the frame.
+
+    The background is the largest mask inside the default area window, and its box is
+    the whole frame: the case where "largest credible" selects nothing at all.
+    """
+    left = np.zeros((100, 100), dtype=bool)
+    left[30:70, 10:40] = True
+    right = np.zeros((100, 100), dtype=bool)
+    right[35:65, 60:85] = True
+    background = ~(left | right)
+    return [_mask_record(background, 0.99), _mask_record(left, 0.9), _mask_record(right, 0.8)]
+
+
+def test_border_fraction_counts_each_frame_pixel_once() -> None:
+    interior = np.zeros((10, 10), dtype=bool)
+    interior[3:7, 3:7] = True
+    bottom = np.zeros((10, 10), dtype=bool)
+    bottom[5:, :] = True
+
+    assert border_fraction(interior) == 0.0
+    assert border_fraction(np.ones((10, 10), dtype=bool)) == 1.0
+    # Bottom row (10) plus the lower half of each side column (4 + 4) of a 36-pixel ring.
+    assert border_fraction(bottom) == pytest.approx(18 / 36)
+
+
+def test_the_default_selection_still_returns_the_background_frame() -> None:
+    """Disabled border test: the old behaviour stays reproducible, background included."""
+    result = select_region(_background_and_two_parts(), 100, 100, MobileSamRegionConfig())
+
+    assert result.bounds.model_dump() == {"left": 0.0, "top": 0.0, "right": 100.0, "bottom": 100.0}
+    assert result.metadata["border_fraction"] is None
+
+
+def test_a_border_limit_rejects_the_background_and_keeps_the_largest_part() -> None:
+    config = MobileSamRegionConfig(max_border_fraction=0.33)
+
+    result = select_region(_background_and_two_parts(), 100, 100, config)
+
+    assert result.bounds.model_dump() == {"left": 10.0, "top": 30.0, "right": 40.0, "bottom": 70.0}
+    assert result.confidence == 0.9
+    assert result.metadata["border_fraction"] == 0.0
+    assert result.metadata["mask_count"] == 1
+
+
+def test_union_selection_keeps_every_piece_of_the_part() -> None:
+    config = MobileSamRegionConfig(max_border_fraction=0.33, selection="union")
+
+    result = select_region(_background_and_two_parts(), 100, 100, config)
+
+    assert result.bounds.model_dump() == {"left": 10.0, "top": 30.0, "right": 85.0, "bottom": 70.0}
+    assert result.confidence == 0.8
+    assert result.metadata["mask_count"] == 2
+    assert result.metadata["coverage_fraction"] == pytest.approx((40 * 30 + 30 * 25) / 10_000)
+
+
+def test_an_object_that_touches_one_edge_survives_the_border_limit() -> None:
+    """A part cut by the frame is not a background: it covers a short run of the border."""
+    part = np.zeros((100, 100), dtype=bool)
+    part[40:60, 0:50] = True
+    config = MobileSamRegionConfig(max_border_fraction=0.33, selection="union")
+
+    result = select_region([_mask_record(part)], 100, 100, config)
+
+    assert result.bounds.model_dump() == {"left": 0.0, "top": 40.0, "right": 50.0, "bottom": 60.0}
+    assert 0.0 < result.metadata["border_fraction"] < 0.33
+
+
+def test_only_background_masks_is_an_explicit_failure_not_the_full_frame() -> None:
+    background = np.ones((100, 100), dtype=bool)
+    background[40:45, 40:45] = False
+    config = MobileSamRegionConfig(max_border_fraction=0.33)
+
+    with pytest.raises(RegionExtractionError, match="border limit"):
+        select_region([_mask_record(background)], 100, 100, config)
+
+
+def test_schema_bounds_the_border_limit_and_names_the_selections() -> None:
+    with pytest.raises(ValidationError):
+        build("mobile_sam", {"max_border_fraction": 1.5})
+    with pytest.raises(ValidationError):
+        build("mobile_sam", {"selection": "smallest"})
 
 
 def test_an_inside_out_area_window_is_rejected_where_it_is_typed() -> None:

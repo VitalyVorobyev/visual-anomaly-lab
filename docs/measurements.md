@@ -122,6 +122,30 @@ evidence *for* localisation while the crop omitted a quarter of the defect pixel
 stays available as an explicit, previewable choice. Source-frame float maps cost about 1.23 GB per 200-image
 run regardless of crop — a storage item in [backlog.md](backlog.md), not a reason to change the verdict.
 
+## MobileSAM mask selection — protocol predeclared
+
+`mobile_sam` keeps the largest mask inside its area window. **Design evidence** — MobileSAM's candidates on
+12 evenly spaced *training normals* of each of six VisA design classes (`candle`, `capsules`, `cashew`,
+`chewinggum`, `fryum`, `pcb1`; 72 images, `scripts/mask-selection-gate.py --design`): the default chose a
+background segment on 72 / 72, covering at least 66 % of the frame's one-pixel border with a box of at least
+99.6 % of the frame. Every candidate on those images covered either at most 3 % of the border or at least
+66 %; none fell between. On `candle` the largest mask away from the border held two of the four candles.
+
+**Rule, frozen from that evidence alone:** drop any mask covering more than **0.33** of the border (the gap's
+midpoint) and return the box around **every** surviving mask (`max_border_fraction = 0.33`,
+`selection = union`); nothing survives → an explicit extraction failure. Area window, grid and quality
+thresholds unchanged.
+
+**Validation, on classes the design never saw:** VisA `macaroni1`, `macaroni2`, `pcb2`, `pcb3`, `pcb4`,
+`pipe_fryum` and MVTec-AD's ten object classes decide; MVTec-AD's five textures are reported only, since a
+texture has no object to find. At most 24 evenly spaced anomalous test images per class, one MobileSAM pass
+per image, both rules applied to the same candidates. A selection is **correct** when its unpadded box keeps
+at least 99 % of the image's ground-truth defect pixels and covers at most 90 % of the frame; a failure is
+incorrect and keeps nothing. The rule becomes the `mobile_sam` default when, pooled over the deciding
+images, (1) its correct rate beats the current default's by at least 0.20, (2) it keeps at least 0.98 of all
+defect pixels, and (3) it fails on at most 5 % of images. The largest surviving mask alone is reported
+beside it and decides nothing.
+
 ## DINO patch memory — promoted
 
 Frozen DINO patch features are the model (ADR-0037); nothing is trained. The 15.4 MB checkpoint is a
