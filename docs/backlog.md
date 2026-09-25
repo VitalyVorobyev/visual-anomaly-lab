@@ -54,9 +54,9 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Methods
 
-- [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
-      1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver
-      memory. App-managed offline loading, plugin integration and the public quality gate remain.
+- [ ] **Run AnomalyVFM's public gate** (M): `anomalyvfm_anomalib` is integrated and ships
+      experimental. Predeclare its paired VisA gate at the 768 × 768 it was measured at, run it,
+      and record the verdict in [measurements.md](measurements.md).
 - [ ] **Sweep `dino_memory`'s layer selection for the DINOv3 backbone** (S): at the shared 448 px
       gate size DINOv3 ViT-S/16 cleared the floors but trailed DINOv2 ViT-S/14-reg4 on every
       metric with `last_two` ([measurements.md](measurements.md)). Before concluding the

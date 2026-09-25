@@ -12,8 +12,8 @@ comparing them under one evaluation protocol.
   showcase dataset is one reference dataset, not the scope.
 - **Only** a `classical_circular` plugin — not built, and optional — may assume anything about the
   showcase dataset's geometry. Domain model, import layer, DL methods (`efficientad_custom`,
-  `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad`),
-  evaluation layer, and UI must stay dataset-agnostic.
+  `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad`,
+  `anomalyvfm_anomalib`), evaluation layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
   secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits), GKN,
   FSS-1000 (a few-shot panel) and PKU-Market-PCB (boxes of six classes) are the current packs. `check-repo-safety.sh` fails if anything under
@@ -91,16 +91,18 @@ comparing them under one evaluation protocol.
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
   disagree on, open one of them with every method's map in its own pane, and export a fitted method
-  as a verified ONNX bundle. Seven anomaly methods ship: `pixel_reference` (numpy + Pillow, the floor),
+  as a verified ONNX bundle. Eight anomaly methods ship: `pixel_reference` (numpy + Pillow, the floor),
   `efficientad_custom` (MPS), `patchcore_anomalib` (a coreset memory
   bank; nothing is trained), `dinomaly_custom`
   (ours; the same method with the encoder and the decoder depth as fields, reached VisA parity
   with the anomalib wrapper it was measured against — the wrapper has since retired), `glass_anomalib`
   (learned anomaly synthesis), `dino_memory` (ours; a frozen DINOv2/DINOv3 patch memory that is a
   coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
-  cleared its paired VisA gate, `docs/measurements.md`) and `subspace_ad` (a PCA of normal
+  cleared its paired VisA gate, `docs/measurements.md`), `subspace_ad` (a PCA of normal
   patch appearance over the same frozen encoders; nothing is trained, and **its defaults are the
-  verdict of a sweep that ran outside the application**, ADR-0038). The second task, few-shot
+  verdict of a sweep that ran outside the application**, ADR-0038) and `anomalyvfm_anomalib`
+  (AnomalyVFM, zero-shot: a published checkpoint that reads no normal images, so
+  `requires_training` is false; verified by digest and built offline). The second task, few-shot
   segmentation (ADR-0040), runs end to end with `color_prototype` (numpy, the floor), `fss_dino`
   (a reproduction of FSSDINO over a frozen DINO) and `proto_seg` (ours: debiased features, a
   hybrid prototype bank, optional linear adaptation):

@@ -197,14 +197,17 @@ checkpoint chosen on test evidence): it uses 5 000 exposures, one generic synthe
 final checkpoint. A rerun may raise the budget but must not tune distribution, stopping point or checkpoint
 per category.
 
-## AnomalyVFM — gated, not integrated
+## AnomalyVFM — integrated, public gate not yet run
 
-A 1.421 GB, 355.36M-parameter adapted RADIO checkpoint: 591 ms/image at 768 px on MPS, 2.07 GiB driver
-memory. Verdict: Mac-credible when loaded on demand through the resident worker; 768 px kept for quality.
+Resource gate (`scripts/anomalyvfm-smoke-test.py`): a 1.421 GB, 355.36M-parameter adapted RADIO
+checkpoint, 591 ms/image at 768 px on MPS, 2.07 GiB driver memory. Verdict: Mac-credible when the
+weights are read once per job; 768 px kept for quality.
 
-Invariants any integration must honour: anomalib downloads inside its model constructor
-(`local_files_only=False`), so the wrapper must resolve, verify, then construct offline; and anomalib
-reports export as unsupported, so the portable-export contract must show it unavailable.
+It set two invariants, and `anomalyvfm_anomalib` honours both: anomalib downloads inside its model
+constructor (`local_files_only=False`), so the plugin resolves and verifies the pinned checkpoint and
+answers the constructor's download call with that file; and anomalib reports export as unsupported,
+so `portable_formats` is empty. Whether it is credible on quality is the public gate's question, which
+has not run; until it does the method ships experimental.
 
 ## Region profiles — identity stays the default
 

@@ -29,6 +29,10 @@
    "family": "frozen-backbone subspace",
    "maturity": "experimental"
   },
+  "anomalyvfm_anomalib": {
+   "family": "zero-shot adapted foundation model",
+   "maturity": "experimental"
+  },
   "color_prototype": {
    "family": "few-shot colour prototype",
    "maturity": "experimental"

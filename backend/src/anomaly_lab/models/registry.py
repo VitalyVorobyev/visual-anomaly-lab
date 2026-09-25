@@ -46,6 +46,12 @@ def _glass_anomalib() -> type[AnomalyModel]:
     return GlassAnomalibModel
 
 
+def _anomalyvfm_anomalib() -> type[AnomalyModel]:
+    from anomaly_lab.models.anomalyvfm_anomalib import AnomalyVfmAnomalibModel
+
+    return AnomalyVfmAnomalibModel
+
+
 def _dino_memory() -> type[AnomalyModel]:
     from anomaly_lab.models.dino_memory import DinoMemoryModel
 
@@ -142,6 +148,9 @@ def _subspace_ad() -> type[AnomalyModel]:
 # and writes boxes through `InferContext.write_instances` — one module and this one line.
 # `dino_linear_det` is its first deep method, `dino_linear_seg`'s head fitted on painted boxes
 # and decoded by the floor's components: it imports both and adds nothing beside them.
+# `anomalyvfm_anomalib` is the first method that fits nothing at all: `requires_training` is
+# false, so an experiment scores without a train job, and the published checkpoint is
+# resolved, verified and handed to anomalib's constructor offline. One module, this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -150,6 +159,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "glass_anomalib": _glass_anomalib,
     "dino_memory": _dino_memory,
     "subspace_ad": _subspace_ad,
+    "anomalyvfm_anomalib": _anomalyvfm_anomalib,
     "color_prototype": _color_prototype,
     "fss_dino": _fss_dino,
     "proto_seg": _proto_seg,

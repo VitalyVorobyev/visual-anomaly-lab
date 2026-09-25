@@ -93,11 +93,19 @@ defaults are the verdict of a parameter sweep rather than a paper's suggestion (
 ADR-0038), but no public **promotion gate** has been run against it, which is why it is marked
 experimental — read its scores only against its own run (ADR-0028).
 
-## Resource-gated candidates
+## Zero-shot reference
 
-AnomalyVFM is measured but not integrated. Its pinned 355M-parameter adapted RADIO asset runs on the target
-Mac, but at about 1.4 GB of weights and 591 ms/image at 768 px it belongs behind explicit asset and resource
-planning. “Runs once” is not the same as “fits the workbench contract.”
+`anomalyvfm_anomalib` is AnomalyVFM: a 355M-parameter RADIO encoder adapted once, by its authors, to find
+anomalies anywhere, and used here exactly as published. It reads no normal images — an experiment scores
+without a train job, and every dataset gets the same weights — so it answers a question no other method
+here can: **how much do my normal images buy?** A fitted method that does not beat it on the same pixels
+has learned little from them.
+
+It is the heaviest entry in the table: a 1.42 GB checkpoint, fetched once into the app cache and checked by
+size and SHA-256 on every run, and about 0.6 s per image at 768 × 768 on the target Mac, the frame it was
+measured at. Prepare that frame for it; the patch size is 16, so any other frame must be a multiple of 16.
+Its public promotion gate has not run yet, so it is experimental, and like every other method its scores
+are read only against its own run (ADR-0028).
 
 ## A practical matrix
 
@@ -110,6 +118,7 @@ planning. “Runs once” is not the same as “fits the workbench contract.”
 | Study learned synthetic anomalies | `glass_anomalib` | PatchCore and Dinomaly |
 | Position matters on registered capture | `dino_memory` (`local_knn`) | the same fit at `global_knn` |
 | Few normals, no training, answer today | `subspace_ad` | `dino_memory` (`global_knn`) on the same pixels |
+| No normals at all, or what normals buy | `anomalyvfm_anomalib` | any fitted method on the same pixels |
 
 Keep the comparison interpretable: same split, same prepared geometry, one hypothesis changed per run, and
 failure samples inspected before the next configuration sweep.
