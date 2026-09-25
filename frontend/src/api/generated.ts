@@ -407,6 +407,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/compare/detection": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Object detection runs of one split side by side
+         * @description Detection runs of one split and class list, on their threshold-free metrics alone.
+         *
+         *     A run's verdicts are read at its own confidence cut, and a confidence means nothing
+         *     outside its run (ADR-0028), so nothing cut crosses a column: each run's AP family,
+         *     recall and box counts are the stored ones, and the cut and what it achieves stay on
+         *     that run's own Overview.
+         */
+        get: operations["compare_detection_api_compare_detection_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/datasets": {
         parameters: {
             query?: never;
@@ -802,6 +827,83 @@ export interface paths {
          *     304 without being encoded.
          */
         get: operations["read_label_map_image_api_experiments__experiment_id__images__image_id__label_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/images/{image_id}/boxes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One image's detections and true boxes, matched at the subset's cut
+         * @description An object detection run's boxes for one image, for the sample page to draw.
+         *
+         *     Both lists are in the source frame, in pixel-edge coordinates. Each detection says
+         *     whether the subset's confidence cut keeps it and whether, kept, it matched a truth box of
+         *     its class at IoU 0.5; each truth box says whether it was found. The cut is the one the
+         *     evaluator stored for the image's subset, printed with its rule (ADR-0028), so the page
+         *     draws the same verdicts the gallery counts. Bounded by construction: at most
+         *     `MAX_INSTANCES_PER_IMAGE` detections are stored an image. A list is null when there is no
+         *     such answer — no detections written, or truth that does not answer for every class.
+         */
+        get: operations["read_image_boxes_api_experiments__experiment_id__images__image_id__boxes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/images/{image_id}/box-map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One image's kept detections and true boxes, drawn for a gallery tile
+         * @description The `boxes` above as a picture: kept detections solid, truth dashed, each in its tone.
+         *
+         *     A gallery tile cannot afford a request for box data and a drawing of its own per tile,
+         *     so this draws the same verdicts the sample page does into one SVG at the source's size.
+         *     Detections below the cut and truth of a class the run does not pin are left out. The
+         *     `ETag` is the drawing's digest, so an unchanged picture is a 304.
+         */
+        get: operations["read_box_map_image_api_experiments__experiment_id__images__image_id__box_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/experiments/{experiment_id}/detection-outcomes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Each sample's detection outcome at its subset's cut, ranked by score
+         * @description What a detection run did to each sample, for the gallery and the sample page.
+         *
+         *     The detection counterpart of the threshold report, computed per request from the stored
+         *     detections at the cut the evaluator resolved for each subset and printed beside it
+         *     (ADR-0028). Every other task is refused: its outcomes are another report's.
+         */
+        get: operations["get_detection_outcomes_api_experiments__experiment_id__detection_outcomes_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3115,6 +3217,126 @@ export interface components {
             default_channel?: string | null;
         };
         /**
+         * DetectionComparison
+         * @description N object detection runs of one split and one class list, threshold-free.
+         */
+        DetectionComparison: {
+            /** Dataset Id */
+            dataset_id: number;
+            /** Dataset Name */
+            dataset_name: string | null;
+            /** Split Id */
+            split_id: number;
+            /** Split Name */
+            split_name: string | null;
+            subset: components["schemas"]["Subset"] | null;
+            /** Subsets */
+            subsets: components["schemas"]["Subset"][];
+            /** Classes */
+            classes: string[];
+            /** Runs */
+            runs: components["schemas"]["DetectionRun"][];
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * DetectionOutcomes
+         * @description Every scored sample of a subset, classified by what its kept boxes did to its truth.
+         */
+        DetectionOutcomes: {
+            /** Threshold Rule */
+            threshold_rule: string;
+            /**
+             * Confidence Cut
+             * @description The subset's cut; null when none could be resolved, or over several subsets.
+             */
+            confidence_cut: number | null;
+            /**
+             * Iou Threshold
+             * @default 0.5
+             */
+            iou_threshold: number;
+            /** Samples */
+            samples: components["schemas"]["DetectionVerdict"][];
+        };
+        /**
+         * DetectionRun
+         * @description One object detection run as a column: its threshold-free metrics on one subset.
+         */
+        DetectionRun: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Model Type */
+            model_type: string;
+            status: components["schemas"]["ExperimentStatus"];
+            /**
+             * Scored
+             * @description Whether this run has results for the chosen subset.
+             */
+            scored: boolean;
+            /**
+             * Metrics
+             * @description The stored metric set, less everything read at the run's own confidence cut: only the AP family, recall and counts cross runs (ADR-0028).
+             */
+            metrics: {
+                [key: string]: unknown;
+            };
+            /**
+             * Ground Truth Stale
+             * @default false
+             */
+            ground_truth_stale: boolean;
+        };
+        /**
+         * DetectionVerdict
+         * @description One sample as the detection gallery shows it, at its subset's cut.
+         */
+        DetectionVerdict: {
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            label: components["schemas"]["Label"];
+            /** Notes */
+            notes: string | null;
+            /** Score */
+            score: number;
+            /** Predicted Defect */
+            predicted_defect: boolean;
+            /**
+             * Outcome
+             * @description tp, fp, tn, fn — or 'unlabeled' for a ranked-only row.
+             */
+            outcome: string;
+            /**
+             * Localized
+             * @description Whether this part's anomaly map peaked inside its annotated defect region. **Threshold-free**: it is copied through unchanged as the slider moves, because it compares the map against ground truth and never against a cut. Orthogonal to `outcome` rather than a fifth value of it — a `tp` that is `false` here is still a true positive, and is one that got the right answer from the wrong pixels. `null` is not applicable: a normal part, or a defect with no mask.
+             */
+            localized: boolean | null;
+            /**
+             * Matched
+             * @description Kept detections matched to truth, over its images.
+             * @default 0
+             */
+            matched: number;
+            /**
+             * Missed
+             * @description Truth boxes of a pinned class no kept detection found.
+             * @default 0
+             */
+            missed: number;
+            /**
+             * False Positives
+             * @description Kept detections that matched nothing.
+             * @default 0
+             */
+            false_positives: number;
+        };
+        /**
          * Device
          * @enum {string}
          */
@@ -3573,6 +3795,43 @@ export interface components {
             started_at: string;
             /** @description The resident compute worker, when one is live. */
             resident?: components["schemas"]["ResidentHealth"] | null;
+        };
+        /**
+         * ImageBoxes
+         * @description One image's stored detections and its true boxes, matched at the subset's cut.
+         */
+        ImageBoxes: {
+            /** Image Id */
+            image_id: number;
+            subset: components["schemas"]["Subset"] | null;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /** Classes */
+            classes: string[];
+            /**
+             * Iou Threshold
+             * @default 0.5
+             */
+            iou_threshold: number;
+            /**
+             * Confidence Cut
+             * @description The subset's cut, as the evaluator resolved it; null when none could be.
+             */
+            confidence_cut: number | null;
+            /** Threshold Rule */
+            threshold_rule: string;
+            /**
+             * Predictions
+             * @description At most 100, most confident first; null when the method wrote none for this image.
+             */
+            predictions: components["schemas"]["PredictedBox"][] | null;
+            /**
+             * Truth
+             * @description Null when the image's truth does not answer for every pinned class.
+             */
+            truth: components["schemas"]["TrueBox"][] | null;
         };
         /**
          * ImageScore
@@ -4328,6 +4587,36 @@ export interface components {
          * @enum {string}
          */
         PortableFormat: "onnx";
+        /**
+         * PredictedBox
+         * @description One stored detection, in the source frame, with what the cut made of it.
+         */
+        PredictedBox: {
+            /** Label Key */
+            label_key: string;
+            /**
+             * Class Index
+             * @description The class's position in the run's pinned classes.
+             */
+            class_index: number;
+            /**
+             * Box
+             * @description Pixel-edge `[x0, y0, x1, y1]`.
+             */
+            box: number[];
+            /** Confidence */
+            confidence: number;
+            /**
+             * Kept
+             * @description Whether the confidence reaches the subset's cut.
+             */
+            kept: boolean;
+            /**
+             * Matched
+             * @description Kept, and matched to a truth box of its class at IoU 0.5.
+             */
+            matched: boolean;
+        };
         /** PreviewRequest */
         PreviewRequest: {
             /** Class Key */
@@ -5343,6 +5632,29 @@ export interface components {
              */
             resumable: boolean;
         };
+        /**
+         * TrueBox
+         * @description One true object instance, in the source frame.
+         */
+        TrueBox: {
+            /** Label Key */
+            label_key: string;
+            /**
+             * Class Index
+             * @description The class's position in the run's pinned classes; null for one it doesn't pin.
+             */
+            class_index: number | null;
+            /**
+             * Box
+             * @description Pixel-edge `[x0, y0, x1, y1]`.
+             */
+            box: number[];
+            /**
+             * Found
+             * @description Matched by a kept detection of its class at IoU 0.5.
+             */
+            found: boolean;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -6320,6 +6632,40 @@ export interface operations {
             };
         };
     };
+    compare_detection_api_compare_detection_get: {
+        parameters: {
+            query: {
+                /** @description Experiment ids, in the order the columns should appear. */
+                ids: number[];
+                /** @description Omitted means the most test-like subset every selected run has scored. */
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetectionComparison"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_datasets_api_datasets_get: {
         parameters: {
             query?: never;
@@ -7076,6 +7422,117 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_image_boxes_api_experiments__experiment_id__images__image_id__boxes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageBoxes"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_box_map_image_api_experiments__experiment_id__images__image_id__box_map_get: {
+        parameters: {
+            query: {
+                /** @description Three hex colours: a match, a false positive and a missed truth box. The client's tokens, so no tone is kept on this side. */
+                colours: string;
+                /** @description Draw the kept detections. */
+                predictions?: boolean;
+                /** @description Draw the true boxes. */
+                truth?: boolean;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/svg+xml": unknown;
+                };
+            };
+            /** @description The client's copy is current. */
+            304: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_detection_outcomes_api_experiments__experiment_id__detection_outcomes_get: {
+        parameters: {
+            query?: {
+                subset?: components["schemas"]["Subset"] | null;
+            };
+            header?: never;
+            path: {
+                experiment_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DetectionOutcomes"];
+                };
             };
             /** @description Validation Error */
             422: {

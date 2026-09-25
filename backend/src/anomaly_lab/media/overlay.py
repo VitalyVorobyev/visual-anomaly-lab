@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import io
 import json
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -346,3 +347,30 @@ def render_label_map(
     buffer = io.BytesIO()
     Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", optimize=True)
     return buffer.getvalue()
+
+
+def render_box_map(
+    width: int,
+    height: int,
+    boxes: Sequence[tuple[Sequence[float], tuple[int, int, int], bool]],
+) -> bytes:
+    """Boxes as a transparent SVG in the source frame, for a gallery tile.
+
+    Each entry is a pixel-edge box, its colour and whether it is dashed (truth) or solid (a
+    prediction) — the sample page's `VectorLayer` convention. The picture is laid out at the
+    source's own size, so the tile stretches it exactly as it stretches the thumbnail; the
+    stroke does not scale with it, so a box reads at the same weight on every tile. No text
+    is written: a tile is too small for a class tag, and the sample page has them.
+    """
+    shapes: list[str] = []
+    for (x0, y0, x1, y1), (red, green, blue), dashed in boxes:
+        dash = ' stroke-dasharray="4 3"' if dashed else ""
+        shapes.append(
+            f'<rect x="{x0:g}" y="{y0:g}" width="{x1 - x0:g}" height="{y1 - y0:g}" '
+            f'fill="none" stroke="rgb({red},{green},{blue})" stroke-width="2"{dash} '
+            'vector-effect="non-scaling-stroke"/>'
+        )
+    return (
+        f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
+        f'viewBox="0 0 {width} {height}">{"".join(shapes)}</svg>'
+    ).encode()

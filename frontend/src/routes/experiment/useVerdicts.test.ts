@@ -56,7 +56,7 @@ describe("the outcome filter", () => {
      * "false negative" and "off target" mutually exclusive buckets, which they are not, and
      * would quietly change what the gallery's counts mean.
      */
-    // Two task vocabularies (anomaly, segmentation) and nothing else.
+    // The task vocabularies (anomaly, segmentation, detection's `mixed`) and nothing else.
     expect([...OUTCOMES]).toEqual([
       "tp",
       "fp",
@@ -67,6 +67,7 @@ describe("the outcome filter", () => {
       "miss",
       "false_class",
       "false_presence",
+      "mixed",
       "correct_absence",
       "unlabeled",
     ]);

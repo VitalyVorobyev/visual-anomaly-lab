@@ -14,7 +14,7 @@
 import type { MapScale } from "../../api/client";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue } from "../../api/resultsState";
-import { Slider, ToggleChip } from "@vitavision/lab-ui";
+import { Slider, ToggleChip, cn } from "@vitavision/lab-ui";
 
 import { classColour } from "../../components/viewer/labelPaint";
 
@@ -37,6 +37,7 @@ export function OverlayControls({
   hasMask,
   hasMap,
   classes,
+  boxes,
 }: {
   state: ResultsState;
   onChange: (next: Partial<ResultsState>) => void;
@@ -49,7 +50,16 @@ export function OverlayControls({
    * no cut, because the method's classes are its own decision.
    */
   classes?: readonly string[];
+  /**
+   * An object detection run's pinned classes and the sentence its cut was resolved by
+   * (ADR-0039, ADR-0028). Given, the prediction and the truth are boxes, toned by verdict,
+   * with the classes as a legend and the cut printed beside them.
+   */
+  boxes?: { classes: readonly string[]; rule: string | undefined };
 }) {
+  if (boxes !== undefined) {
+    return <BoxControls state={state} onChange={onChange} hasMap={hasMap} boxes={boxes} />;
+  }
   if (classes !== undefined) {
     return <LabelControls state={state} onChange={onChange} hasMap={hasMap} classes={classes} />;
   }
@@ -172,19 +182,91 @@ function LabelControls({
           foreground
         </ToggleChip>
       </div>
-      <ul aria-label="Classes" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
-        {classes.map((name, index) => (
-          <li key={name} className="flex items-center gap-1.5 text-fg-muted">
-            <span
-              aria-hidden
-              className="inline-block size-2.5 rounded-sm"
-              style={{ backgroundColor: classColour(index + 1) }}
-            />
-            {name}
-          </li>
-        ))}
-        <li className="text-fg-subtle">prediction solid · truth dashed</li>
-      </ul>
+      <ClassLegend classes={classes} note="prediction solid · truth dashed" />
+    </div>
+  );
+}
+
+function ClassLegend({ classes, note }: { classes: readonly string[]; note: string }) {
+  return (
+    <ul aria-label="Classes" className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+      {classes.map((name, index) => (
+        <li key={name} className="flex items-center gap-1.5 text-fg-muted">
+          <span
+            aria-hidden
+            className="inline-block size-2.5 rounded-sm"
+            style={{ backgroundColor: classColour(index + 1) }}
+          />
+          {name}
+        </li>
+      ))}
+      <li className="text-fg-subtle">{note}</li>
+    </ul>
+  );
+}
+
+/** What each box tone means, in the tokens `boxTones.ts` draws with. */
+const VERDICT_KEY = [
+  { label: "match", swatch: "bg-normal" },
+  { label: "false positive", swatch: "bg-defect" },
+  { label: "missed", swatch: "bg-warn" },
+];
+
+function BoxControls({
+  state,
+  onChange,
+  hasMap,
+  boxes,
+}: {
+  state: ResultsState;
+  onChange: (next: Partial<ResultsState>) => void;
+  hasMap: boolean;
+  boxes: { classes: readonly string[]; rule: string | undefined };
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex flex-wrap items-center gap-1.5">
+          <ToggleChip
+            checked={state.region}
+            onCheckedChange={(region) => onChange({ region })}
+            title="The detections the cut keeps, drawn solid and tagged with class and confidence"
+          >
+            prediction
+          </ToggleChip>
+          <ToggleChip
+            checked={state.truth}
+            onCheckedChange={(truth) => onChange({ truth })}
+            title="The true boxes over the run's classes, drawn dashed"
+          >
+            ground truth
+          </ToggleChip>
+          <ToggleChip
+            checked={state.heatmap}
+            disabled={!hasMap}
+            onCheckedChange={(heatmap) => onChange({ heatmap })}
+            swatch={HEATMAP_SWATCH}
+            title={hasMap ? "The method's own map, where it wrote one" : "This run recorded no map"}
+          >
+            map
+          </ToggleChip>
+        </div>
+        <ul aria-label="Box verdicts" className="flex flex-wrap items-center gap-x-3 text-xs">
+          {VERDICT_KEY.map((entry) => (
+            <li key={entry.label} className="flex items-center gap-1.5 text-fg-muted">
+              <span aria-hidden className={cn("inline-block h-0.5 w-3", entry.swatch)} />
+              {entry.label}
+            </li>
+          ))}
+        </ul>
+        <ClassLegend classes={boxes.classes} note="class on the tag · prediction solid · truth dashed" />
+      </div>
+      {boxes.rule !== undefined && (
+        <p className="text-xs text-fg-muted">
+          Matched at IoU 0.5 · kept by the run&apos;s cut:{" "}
+          <span className="font-mono text-fg">{boxes.rule}</span>
+        </p>
+      )}
     </div>
   );
 }

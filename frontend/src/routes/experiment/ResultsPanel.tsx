@@ -30,6 +30,7 @@ export const OUTCOME_TONE: Record<string, Tone> = {
   false_class: "warning",
   false_presence: "warning",
   miss: "defect",
+  mixed: "defect",
   unlabeled: "unlabeled",
 };
 
@@ -44,6 +45,7 @@ export const OUTCOME_LABEL: Record<string, string> = {
   false_class: "false class",
   false_presence: "false presence",
   correct_absence: "correct absence",
+  mixed: "mixed",
   unlabeled: "unlabeled",
 };
 

@@ -22,11 +22,16 @@ import type { Subset } from "../api/client";
 import type { CompareState, CompareView } from "../api/compareState";
 import { readCompareState, toggleRun, writeCompareState } from "../api/compareState";
 import { Callout, Disclosure, Empty, ErrorBox, NumberInput, PageHeader, Panel, ReadoutStrip, SegmentedControl, Select, SkeletonRows, Tabs } from "@vitavision/lab-ui";
-import { useComparison, useFewShotComparison } from "../hooks/useComparison";
+import {
+  useComparison,
+  useDetectionComparison,
+  useFewShotComparison,
+} from "../hooks/useComparison";
 import { useExperiments } from "../hooks/useExperiments";
 import { AgreementTable } from "./compare/AgreementTable";
 import { CompareCurves } from "./compare/CompareCurves";
 import { ConfigDiff } from "./compare/ConfigDiff";
+import { DetectionCompare } from "./compare/DetectionCompare";
 import { FewShotCompare } from "./compare/FewShotCompare";
 import { MetricTable, OperatingTable } from "./compare/MetricTable";
 import { RunPicker } from "./compare/RunPicker";
@@ -43,21 +48,25 @@ export function CompareRoute() {
   const experiments = useExperiments();
   const anchor = experiments.data?.items.find((run) => run.id === state.ids[0]);
   const fewShot = anchor?.task === "few_shot_segmentation";
+  // Detection runs of one split, on their threshold-free metrics alone (ADR-0039, ADR-0028).
+  const detection = anchor?.task === "object_detection";
   const comparison = useComparison({
     ids: state.ids,
     subset: state.subset,
     at: state.at,
     recallTarget: state.recallTarget,
-    enabled: anchor !== undefined && !fewShot,
+    enabled: anchor !== undefined && !fewShot && !detection,
   });
   const fewShotComparison = useFewShotComparison(state.ids, fewShot);
-  const report = fewShot ? undefined : comparison.data;
+  const detectionComparison = useDetectionComparison(state.ids, state.subset, detection);
+  const report = fewShot || detection ? undefined : comparison.data;
   const segmentation = fewShot ? fewShotComparison.data : undefined;
-  // Pending only while a read is actually under way: until the run list arrives neither
+  const boxes = detection ? detectionComparison.data : undefined;
+  const active = fewShot ? fewShotComparison : detection ? detectionComparison : comparison;
+  // Pending only while a read is actually under way: until the run list arrives no
   // comparison is asked, and a failed run list is an error, not a wait.
-  const pending =
-    experiments.isPending || (fewShot ? fewShotComparison.isFetching : comparison.isFetching);
-  const failure = experiments.error ?? (fewShot ? fewShotComparison.error : comparison.error);
+  const pending = experiments.isPending || active.isFetching;
+  const failure = experiments.error ?? active.error;
 
   return (
     <div className="flex flex-col gap-6">
@@ -70,6 +79,14 @@ export function CompareRoute() {
                 { label: "dataset", value: report.dataset_name },
                 { label: "split", value: report.split_name },
                 { label: "subset", value: report.subset },
+              ]}
+            />
+          ) : boxes ? (
+            <ReadoutStrip
+              items={[
+                { label: "dataset", value: boxes.dataset_name },
+                { label: "split", value: boxes.split_name },
+                { label: "subset", value: boxes.subset },
               ]}
             />
           ) : segmentation ? (
@@ -110,6 +127,8 @@ export function CompareRoute() {
       {failure && <ErrorBox>{failure.message}</ErrorBox>}
 
       {segmentation && <FewShotCompare report={segmentation} />}
+
+      {boxes && <DetectionCompare report={boxes} onSubset={(subset) => update({ subset })} />}
 
       {report && (
         <>

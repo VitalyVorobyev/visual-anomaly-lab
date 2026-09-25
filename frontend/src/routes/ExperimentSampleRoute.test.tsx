@@ -59,7 +59,13 @@ const DIAGNOSTICS = {
 };
 
 function renderSample(
-  over: { images?: unknown; diagnostics?: unknown; search?: string; experiment?: unknown } = {},
+  over: {
+    images?: unknown;
+    diagnostics?: unknown;
+    search?: string;
+    experiment?: unknown;
+    seed?: [readonly unknown[], unknown][];
+  } = {},
 ) {
   return render(
     withProviders(
@@ -75,6 +81,7 @@ function renderSample(
         [queryKeys.sampleImages(9, 12), over.images ?? [IMAGE]],
         [queryKeys.experiment(9), over.experiment ?? EXPERIMENT],
         [queryKeys.diagnostics(9), over.diagnostics ?? DIAGNOSTICS],
+        ...(over.seed ?? []),
       ],
     ),
   );
@@ -239,5 +246,70 @@ describe("a supervised segmentation run's sample page", () => {
     const { container } = renderSample({ experiment: SEMANTIC, search: "?map=1" });
 
     expect(stageLayers(container).some((node) => node.src.includes("/anomaly-map?"))).toBe(true);
+  });
+});
+
+describe("an object detection run's sample page", () => {
+  const DETECTION = { ...EXPERIMENT, task: "object_detection", classes: ["scratch", "dent"] };
+  const RULE =
+    "confidence ≥ 0.5000, the confidence that maximises F1 at IoU 0.5 over the subset, every class pooled";
+  const BOXES = {
+    image_id: 501,
+    subset: "test",
+    width: 1280,
+    height: 1024,
+    classes: ["scratch", "dent"],
+    iou_threshold: 0.5,
+    confidence_cut: 0.5,
+    threshold_rule: RULE,
+    predictions: [
+      { label_key: "scratch", class_index: 0, box: [10, 10, 50, 50], confidence: 0.91, kept: true, matched: true },
+      { label_key: "dent", class_index: 1, box: [300, 300, 340, 340], confidence: 0.7, kept: true, matched: false },
+      { label_key: "dent", class_index: 1, box: [600, 600, 640, 640], confidence: 0.2, kept: false, matched: false },
+    ],
+    truth: [
+      { label_key: "scratch", class_index: 0, box: [12, 12, 50, 50], found: true },
+      { label_key: "dent", class_index: 1, box: [900, 100, 960, 160], found: false },
+    ],
+  };
+  const OUTCOMES = { threshold_rule: RULE, confidence_cut: 0.5, iou_threshold: 0.5, samples: [] };
+  const seed: [readonly unknown[], unknown][] = [
+    [queryKeys.imageBoxes(9, 501), BOXES],
+    [queryKeys.detectionOutcomes(9, undefined), OUTCOMES],
+  ];
+
+  it("draws kept detections solid and truth dashed, toned by verdict, with the cut printed", () => {
+    const { container } = renderSample({ experiment: DETECTION, seed });
+
+    expect(screen.getByRole("switch", { name: "prediction" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: "ground truth" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("switch", { name: /map/ }).getAttribute("aria-checked")).toBe("false");
+    // No raster answer is stacked: the boxes are vectors over the photograph.
+    expect(stageLayers(container)).toHaveLength(1);
+
+    const rects = [...container.querySelectorAll('[data-shape="box"] > rect:first-child')];
+    // Two truth boxes and the two kept detections; the one below the cut is not drawn.
+    expect(rects).toHaveLength(4);
+    const [found, missed, match, falsePositive] = rects;
+    expect(found!.getAttribute("stroke-dasharray")).toBe("4 3");
+    expect(found!.getAttribute("stroke")).toBe("var(--normal)");
+    expect(missed!.getAttribute("stroke")).toBe("var(--warn)");
+    expect(match!.getAttribute("stroke-dasharray")).toBeNull();
+    expect(match!.getAttribute("stroke")).toBe("var(--normal)");
+    expect(falsePositive!.getAttribute("stroke")).toBe("var(--defect)");
+    expect(screen.getByText("scratch 0.91")).toBeTruthy();
+    expect(screen.queryByText("dent 0.20")).toBeNull();
+
+    expect(screen.getByText(RULE)).toBeTruthy();
+    expect(screen.getByRole("list", { name: "Classes" }).textContent).toContain("dent");
+    expect(screen.getByText("2 of 3 detections kept · 1 of 2 true boxes found")).toBeTruthy();
+  });
+
+  it("draws only the truth when the prediction layer is off", () => {
+    const { container } = renderSample({ experiment: DETECTION, seed, search: "?seg=0" });
+
+    const rects = [...container.querySelectorAll('[data-shape="box"] > rect:first-child')];
+    expect(rects).toHaveLength(2);
+    expect(rects.every((rect) => rect.getAttribute("stroke-dasharray") === "4 3")).toBe(true);
   });
 });

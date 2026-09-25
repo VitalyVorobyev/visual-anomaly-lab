@@ -330,8 +330,16 @@ confident first) and the box truth that `annotations/class_truth.py` resolves ov
   images are `images.unlabeled`; a scored image with no detection file is `images.without_prediction`.
   A truth box of a class the run was not created with is counted in `ignored_instances` and nowhere
   else; a detection of one is refused by name.
-- **No confidence is cut.** AP and recall read a run's detections in its own confidence order, so no
-  per-run rule is needed (ADR-0028). The IoU thresholds are the protocol's, the same for every run.
+- **No metric is cut.** AP and recall read a run's detections in its own confidence order, so they need
+  no per-run rule (ADR-0028). The IoU thresholds are the protocol's, the same for every run.
+- **One confidence cut per subset, for the verdicts.** A drawn box and a per-sample verdict need a cut,
+  so the evaluator resolves one by one rule — the confidence that maximises F1 at IoU 0.5 over the
+  subset, every class pooled (`CUT_RULE`) — and stores it beside the metrics: `confidence_cut`,
+  `cut_rule`, `cut_iou`, and `f1_at_cut`, `precision_at_cut`, `recall_at_cut`. Only a confidence some
+  detection has is a candidate, a cut keeps every detection at or above it (ties go together), and among
+  equal F1 the highest cut wins. Matching is greedy by confidence, so the detections above a cut match as
+  they would alone. A subset with no truth box or no detection has no cut (`null`), and its rule says
+  every detection counts. The cut is the run's own and never crosses to another run (`CUT_KEYS`).
 - **Metrics**, each `None` when it cannot be computed:
   - `per_class_ap` (AP@[.5:.95]), `per_class_ap50`, `per_class_ap75`, and `per_class_recall` (the share
     of truth boxes matched, averaged over the thresholds) with `per_class_recall50`. A class with no
@@ -340,8 +348,23 @@ confident first) and the box truth that `annotations/class_truth.py` resolves ov
   - `ap` (the headline), `ap50`, `ap75`, `recall` and `recall50`: each averaged over the classes that
     have a value;
   - `truth_instances` and `predicted_instances` per class, `iou_thresholds`, and `timing`.
-- **Nothing per sample yet.** There is no per-sample verdict and no box-drawing route; the
-  segmentation outcome and label routes answer 409 for a detection run.
+- **Per image, at the stored cut.** `GET /api/experiments/{id}/images/{iid}/boxes` serves one scored
+  image's detections (at most 100, most confident first, each with its class index, confidence, `kept`
+  and `matched`) and its true boxes (each `found`, and a class the run does not pin with no index),
+  source frame and pixel-edge, matched at IoU 0.5 and the cut stored for the image's subset, which it
+  returns with its rule. A list is `null` when there is no such answer; the route is 404 for an
+  unscored image or one with neither, 409 for another task. `…/box-map?colours=&predictions=&truth=`
+  draws the kept detections solid and the pinned truth dashed as an SVG for a gallery tile
+  ([media](media.md)).
+- **Per sample, at the stored cut.** `GET /api/experiments/{id}/detection-outcomes?subset=`
+  (`sample_outcomes`) pools each sample's labelled images into three counts — truth boxes missed, kept
+  detections matched, kept detections that matched nothing — never a box list: no truth is
+  `false_presence` if a kept detection is left and `correct_absence` otherwise; a miss and an unmatched
+  detection together are `mixed`; a miss alone `miss`; an unmatched detection alone `false_presence`;
+  neither `hit`; no labelled image `unlabeled`. It returns the cut and its rule, and answers 409 for
+  another task; the segmentation outcome and label routes answer 409 for a detection run.
+- **Compared on what needs no cut.** `GET /api/compare/detection?ids=&subset=` takes runs of one dataset,
+  split and class list and returns each one's stored metrics without `CUT_KEYS`.
 - **The ground-truth digest** hashes the pinned class list and each image's pinned answer — its
   instances file's digest, its document's source provenance, or its imported mask's.
 

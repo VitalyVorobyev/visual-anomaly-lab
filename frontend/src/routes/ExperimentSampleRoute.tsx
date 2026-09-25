@@ -43,18 +43,27 @@ import { ChevronLeft, ChevronRight, Microscope } from "lucide-react";
 import { imageScoped, isOnDemand, missingNote, ofKinds } from "../api/diagnostics";
 import { diagnosticPayloadUrl } from "../api/diagnostics";
 import { anomalyMapUrl, maskUrl, predictionUrl } from "../api/imageUrl";
-import type { DiagnosticEntry, ImageScore, MapScale, SampleVerdict } from "../api/client";
+import { ApiError } from "../api/client";
+import type {
+  DiagnosticEntry,
+  ImageBoxes,
+  ImageScore,
+  MapScale,
+  SampleVerdict,
+} from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
 import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, StageReadout, Tooltip, type StageView } from "@vitavision/lab-ui";
 import { SampleStage, type RasterLayer } from "../components/viewer/SampleStage";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { LabelLayer } from "../components/viewer/LabelLayer";
+import { boxShapes } from "../components/viewer/boxTones";
 import { useAnomalyValues, useLabelPlane, useSourceValues } from "../hooks/useMapValues";
 import {
   useDiagnoseImage,
   useDiagnostics,
   useExperiment,
+  useImageBoxes,
   useSampleImages,
 } from "../hooks/useExperiments";
 import { MapScaleReadout, OverlayControls } from "./experiment/OverlayControls";
@@ -139,6 +148,11 @@ export function ExperimentSampleRoute() {
   // A supervised segmentation run draws its label maps instead of a cut and a mask (ADR-0039).
   const classes =
     experiment.data?.task === "semantic_segmentation" ? experiment.data.classes : undefined;
+  // A detection run draws its boxes, matched at the cut its outcomes were read at (ADR-0028).
+  const boxes =
+    experiment.data?.task === "object_detection"
+      ? { classes: experiment.data.classes, rule: verdicts.rationale }
+      : undefined;
   const verdict = verdicts.shown.find((entry) => entry.sample_id === sampleId);
   // Beside the outcome rather than folded into it: "caught it, from the wrong pixels" is a
   // different finding from "caught it", and only this badge can say so.
@@ -237,6 +251,7 @@ export function ExperimentSampleRoute() {
         hasMask={anyMask}
         hasMap={anyMap}
         classes={classes}
+        boxes={boxes}
       />
 
       {/* Columns from the image count, never from a constant: a one-image sample is one
@@ -259,6 +274,7 @@ export function ExperimentSampleRoute() {
             onView={setView}
             single={images.data.length === 1}
             labelled={classes !== undefined}
+            boxed={boxes !== undefined}
           />
         ))}
       </div>
@@ -336,6 +352,7 @@ function ChannelView({
   onView,
   single,
   labelled,
+  boxed,
 }: {
   image: ImageScore;
   experimentId: number;
@@ -347,6 +364,8 @@ function ChannelView({
   single: boolean;
   /** A supervised segmentation run: prediction and truth are label maps, not a cut and a mask. */
   labelled: boolean;
+  /** An object detection run: prediction and truth are boxes (ADR-0039). */
+  boxed: boolean;
 }) {
   /*
    * Nothing is fetched until the pointer is actually over this canvas — `hovered` gates
@@ -371,6 +390,12 @@ function ChannelView({
     labelled && state.region,
   );
   const trueLabels = useLabelPlane(experimentId, image.image_id, true, labelled && state.truth);
+  // A detection run's boxes: one small bounded response for both layers.
+  const boxes = useImageBoxes(experimentId, image.image_id, boxed && (state.region || state.truth));
+  const shapes = boxes.data
+    ? boxShapes(boxes.data, { predictions: state.region, truth: state.truth })
+    : [];
+  const plain = !labelled && !boxed;
 
   const layers: RasterLayer[] = [];
   if (state.heatmap && image.has_map) {
@@ -383,10 +408,10 @@ function ChannelView({
       className: "opacity-80",
     });
   }
-  if (!labelled && state.region && image.has_map && cut !== null) {
+  if (plain && state.region && image.has_map && cut !== null) {
     layers.push({ key: "region", src: predictionUrl(image.image_id, experimentId, cut) });
   }
-  if (!labelled && state.truth && image.has_mask) {
+  if (plain && state.truth && image.has_mask) {
     layers.push({ key: "truth", src: maskUrl(image.image_id) });
   }
 
@@ -419,11 +444,12 @@ function ChannelView({
           // this image's pinned region transform, and the stage is laid out at exactly
           // those coordinates. Filling it is therefore exact.
           layers={layers}
+          shapes={shapes}
         >
           {/* A vector layer among the raster ones, and inside the same transform for the
               same reason: a marker that drifts from the heatmap it marks is worse than no
               marker. It draws itself in image coordinates. */}
-          {state.peak && !labelled && <PeakMarker image={image} />}
+          {state.peak && plain && <PeakMarker image={image} />}
           {labelled && state.region && predictedLabels.data && (
             <LabelLayer plane={predictedLabels.data} style="prediction" />
           )}
@@ -446,7 +472,9 @@ function ChannelView({
         />
         <div className="flex items-baseline justify-between gap-3">
           <MapScaleReadout scale={image.map_scale} range={range} />
-          {labelled ? (
+          {boxed ? (
+            <BoxNote boxes={boxes.data} error={boxes.error} layers={state} />
+          ) : labelled ? (
             <LabelNote
               predicted={state.region ? predictedLabels.error : null}
               truth={state.truth ? trueLabels.error : null}
@@ -472,6 +500,37 @@ function LabelNote({ predicted, truth }: { predicted: Error | null; truth: Error
     says(truth, "no truth for every class of this run"),
   ].filter((note): note is string => note !== null);
   if (notes.length === 0) return null;
+  return <span className="text-xs text-fg-subtle">{notes.join(" · ")}</span>;
+}
+
+/**
+ * What a detection image's boxes come to, and why a layer that is on draws nothing: a 404
+ * is a fact — nothing written and no truth — and anything else is a failure worth printing.
+ */
+function BoxNote({
+  boxes,
+  error,
+  layers,
+}: {
+  boxes: ImageBoxes | undefined;
+  error: Error | null;
+  layers: { region: boolean; truth: boolean };
+}) {
+  if (error) {
+    const absent = error instanceof ApiError && error.status === 404;
+    const text = absent ? "no detections and no truth" : error.message;
+    return <span className="text-xs text-fg-subtle">{text}</span>;
+  }
+  if (!boxes || (!layers.region && !layers.truth)) return null;
+  const kept = (boxes.predictions ?? []).filter((item) => item.kept);
+  const notes = [
+    boxes.predictions === null
+      ? "no detections written"
+      : `${kept.length} of ${boxes.predictions.length} detections kept`,
+    boxes.truth === null
+      ? "no truth for every class of this run"
+      : `${boxes.truth.filter((item) => item.found).length} of ${boxes.truth.length} true boxes found`,
+  ];
   return <span className="text-xs text-fg-subtle">{notes.join(" · ")}</span>;
 }
 

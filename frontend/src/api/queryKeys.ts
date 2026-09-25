@@ -98,6 +98,10 @@ export const queryKeys = {
     ["experiments", experimentId, "results", subset ?? null] as const,
   segmentationOutcomes: (experimentId: number, subset?: Subset) =>
     ["experiments", experimentId, "segmentation-outcomes", subset ?? null] as const,
+  detectionOutcomes: (experimentId: number, subset?: Subset) =>
+    ["experiments", experimentId, "detection-outcomes", subset ?? null] as const,
+  imageBoxes: (experimentId: number, imageId: number) =>
+    ["experiments", experimentId, "boxes", imageId] as const,
   threshold: (experimentId: number, subset: Subset | undefined, value: number) =>
     ["experiments", experimentId, "threshold", subset ?? null, value] as const,
   sampleImages: (experimentId: number, sampleId: number) =>
@@ -120,6 +124,8 @@ export const queryKeys = {
    * every confusion matrix in the response.
    */
   fewShotComparison: (ids: readonly number[]) => ["compare", "few-shot", [...ids]] as const,
+  detectionComparison: (ids: readonly number[], subset: Subset | undefined) =>
+    ["compare", "detection", [...ids], subset ?? null] as const,
   comparison: (
     ids: readonly number[],
     subset: Subset | undefined,

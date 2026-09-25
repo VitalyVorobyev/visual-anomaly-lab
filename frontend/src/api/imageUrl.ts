@@ -104,6 +104,25 @@ export function labelMapUrl(
 }
 
 /**
+ * One image's kept detections and true boxes, drawn by the server as an SVG in the source
+ * frame for a gallery tile: `colours` are the match, false-positive and missed tones as
+ * `#rrggbb`, so the tones stay the design system's (`boxTones.ts`).
+ */
+export function boxMapUrl(
+  imageId: number,
+  experimentId: number,
+  colours: readonly [string, string, string],
+  layers: { predictions: boolean; truth: boolean },
+): string {
+  const query = new URLSearchParams({
+    colours: colours.map((colour) => colour.replace(/^#/, "")).join(","),
+  });
+  if (!layers.predictions) query.set("predictions", "false");
+  if (!layers.truth) query.set("truth", "false");
+  return `${apiBaseUrl}/api/experiments/${experimentId}/images/${imageId}/box-map?${query.toString()}`;
+}
+
+/**
  * The ground-truth outline, transparent everywhere else, ready to stack on the source.
  *
  * `experimentId` asks for it in that experiment's **prepared** frame instead. That is not a

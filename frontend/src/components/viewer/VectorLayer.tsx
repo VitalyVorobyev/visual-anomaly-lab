@@ -22,6 +22,11 @@ interface ShapeBase {
   tone?: MeasureTone;
   /** Dashed for what is expected rather than found — ground truth under a prediction. */
   dashed?: boolean;
+  /**
+   * The label tag's fill, when it names something other than the outline's verdict — a
+   * detection's class colour on a box toned by whether it matched.
+   */
+  labelColour?: string;
 }
 
 export interface BoxShape extends ShapeBase {
@@ -91,7 +96,13 @@ export function VectorLayer({
               />
             )}
             {shape.label && anchor && (
-              <ShapeLabel text={shape.label} x={anchor.x} y={anchor.y} px={px} colour={colour} />
+              <ShapeLabel
+                text={shape.label}
+                x={anchor.x}
+                y={anchor.y}
+                px={px}
+                colour={shape.labelColour ?? colour}
+              />
             )}
           </g>
         );

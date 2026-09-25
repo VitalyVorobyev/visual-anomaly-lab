@@ -7,6 +7,7 @@ a filter over a few hundred floats and never a database write (ADR-0011).
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from pathlib import Path
 
 import numpy as np
@@ -25,18 +26,25 @@ from anomaly_lab.api.routers.experiments.views import (
     SamplePreview,
     load,
 )
+from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import results as results_repo
-from anomaly_lab.domain.entities import Label, Subset, Task
+from anomaly_lab.domain.entities import Experiment, Label, Subset, Task
 from anomaly_lab.errors import ConflictError
-from anomaly_lab.eval import semantic
+from anomaly_lab.eval import detection, semantic
+from anomaly_lab.eval.detection import DetectionOutcomes, ImageBoxes
 from anomaly_lab.eval.localization import tolerance_px
 from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.eval.segmentation import SegmentationOutcomes, sample_outcomes
 from anomaly_lab.eval.threshold import ThresholdReport, classify, report, suggest_threshold
-from anomaly_lab.media.overlay import fit_label_plane, parse_label_colours, render_label_map
+from anomaly_lab.media.overlay import (
+    fit_label_plane,
+    parse_label_colours,
+    render_box_map,
+    render_label_map,
+)
 from anomaly_lab.media.values import encode_plane
 from anomaly_lab.models.base import evenly_spaced
 
@@ -223,6 +231,127 @@ def read_label_map_image(
         media_type="image/png",
         headers=headers,
     )
+
+
+def _detection_run(request: Request, experiment_id: int) -> tuple[Experiment, Settings]:
+    experiment, settings = load(request, experiment_id)
+    if experiment.task is not Task.OBJECT_DETECTION:
+        raise ConflictError(
+            f"experiment {experiment.id} is a {experiment.task.value} run; it wrote no boxes"
+        )
+    return experiment, settings
+
+
+def _boxes_of(request: Request, experiment_id: int, image_id: int) -> ImageBoxes:
+    experiment, settings = _detection_run(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        image = next(
+            (
+                found
+                for found in results_repo.list_scored_images(conn, experiment.id)
+                if found.image_id == image_id
+            ),
+            None,
+        )
+        boxes = None if image is None else detection.image_boxes(conn, experiment, image)
+    if boxes is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(
+                f"image {image_id} has neither stored detections nor truth for every pinned "
+                f"class in experiment {experiment.id}"
+            ),
+        )
+    return boxes
+
+
+@router.get(
+    "/{experiment_id}/images/{image_id}/boxes",
+    summary="One image's detections and true boxes, matched at the subset's cut",
+)
+def read_image_boxes(request: Request, experiment_id: int, image_id: int) -> ImageBoxes:
+    """An object detection run's boxes for one image, for the sample page to draw.
+
+    Both lists are in the source frame, in pixel-edge coordinates. Each detection says
+    whether the subset's confidence cut keeps it and whether, kept, it matched a truth box of
+    its class at IoU 0.5; each truth box says whether it was found. The cut is the one the
+    evaluator stored for the image's subset, printed with its rule (ADR-0028), so the page
+    draws the same verdicts the gallery counts. Bounded by construction: at most
+    `MAX_INSTANCES_PER_IMAGE` detections are stored an image. A list is null when there is no
+    such answer — no detections written, or truth that does not answer for every class.
+    """
+    return _boxes_of(request, experiment_id, image_id)
+
+
+@router.get(
+    "/{experiment_id}/images/{image_id}/box-map",
+    summary="One image's kept detections and true boxes, drawn for a gallery tile",
+    response_class=Response,
+    responses={
+        200: {"content": {"image/svg+xml": {}}},
+        304: {"description": "The client's copy is current."},
+    },
+)
+def read_box_map_image(
+    request: Request,
+    experiment_id: int,
+    image_id: int,
+    colours: str = Query(
+        pattern=r"^#?[0-9a-fA-F]{6}(,#?[0-9a-fA-F]{6}){2}$",
+        description=(
+            "Three hex colours: a match, a false positive and a missed truth box. The "
+            "client's tokens, so no tone is kept on this side."
+        ),
+    ),
+    predictions: bool = Query(default=True, description="Draw the kept detections."),
+    truth: bool = Query(default=True, description="Draw the true boxes."),
+) -> Response:
+    """The `boxes` above as a picture: kept detections solid, truth dashed, each in its tone.
+
+    A gallery tile cannot afford a request for box data and a drawing of its own per tile,
+    so this draws the same verdicts the sample page does into one SVG at the source's size.
+    Detections below the cut and truth of a class the run does not pin are left out. The
+    `ETag` is the drawing's digest, so an unchanged picture is a 304.
+    """
+    match, false_positive, missed = parse_label_colours(colours)
+    boxes = _boxes_of(request, experiment_id, image_id)
+    drawn: list[tuple[Sequence[float], tuple[int, int, int], bool]] = [
+        (item.box, match if item.found else missed, True)
+        for item in boxes.truth or []
+        if truth and item.class_index is not None
+    ]
+    drawn += [
+        (item.box, match if item.matched else false_positive, False)
+        for item in boxes.predictions or []
+        if predictions and item.kept
+    ]
+    content = render_box_map(boxes.width, boxes.height, drawn)
+    digest = hashlib.sha256(content).hexdigest()[:16]
+    etag = f'W/"box-map-{experiment_id}-{image_id}-{digest}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=content, media_type="image/svg+xml", headers=headers)
+
+
+@router.get(
+    "/{experiment_id}/detection-outcomes",
+    summary="Each sample's detection outcome at its subset's cut, ranked by score",
+)
+def get_detection_outcomes(
+    request: Request,
+    experiment_id: int,
+    subset: Subset | None = Query(default=None),
+) -> DetectionOutcomes:
+    """What a detection run did to each sample, for the gallery and the sample page.
+
+    The detection counterpart of the threshold report, computed per request from the stored
+    detections at the cut the evaluator resolved for each subset and printed beside it
+    (ADR-0028). Every other task is refused: its outcomes are another report's.
+    """
+    experiment, settings = _detection_run(request, experiment_id)
+    with connection(settings.db_path) as conn:
+        return detection.sample_outcomes(conn, experiment, subset)
 
 
 @router.get("/{experiment_id}/threshold", summary="Confusion matrix at one threshold")

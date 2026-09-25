@@ -21,10 +21,18 @@ import { useMemo } from "react";
 import { Link } from "react-router";
 
 import type { MapScale, SamplePreview, SampleVerdict, Subset, Task } from "../../api/client";
-import { anomalyMapUrl, imageUrl, labelMapUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
+import {
+  anomalyMapUrl,
+  boxMapUrl,
+  imageUrl,
+  labelMapUrl,
+  maskUrl,
+  predictionUrl,
+} from "../../api/imageUrl";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue, writeResultsState } from "../../api/resultsState";
 import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
+import { boxToneColours } from "../../components/viewer/boxTones";
 import { useSamplePreviews } from "../../hooks/useExperiments";
 import { OverlayControls } from "./OverlayControls";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "./ResultsPanel";
@@ -44,8 +52,9 @@ export function GalleryTab({
 }: {
   experimentId: number;
   /**
-   * A supervised segmentation run's pinned classes. Given, the overlay row is the label-map
-   * set with its legend, and each tile draws the run's label maps instead of a cut.
+   * A supervised run's pinned classes. Given, the overlay row is the label-map set with its
+   * legend and each tile draws the run's label maps instead of a cut — or, for an object
+   * detection run, its boxes at the run's resolved cut, and the legend adds their tones.
    */
   classes?: readonly string[];
   /** Decides the outcome strip and its words (`taskViews.tsx`). */
@@ -91,6 +100,9 @@ export function GalleryTab({
   const anyMask = (previews.data ?? []).some((preview) => preview.has_mask);
   const anyMap = (previews.data ?? []).some((preview) => preview.has_map);
   const cut = cutValue(state, range);
+  const boxed = task === "object_detection" && classes !== undefined;
+  // Read once for the grid, not per tile: the tones the server draws every tile's boxes in.
+  const tones = boxed ? boxToneColours() : undefined;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3">
@@ -146,7 +158,8 @@ export function GalleryTab({
         range={range}
         hasMask={anyMask}
         hasMap={anyMap}
-        classes={classes}
+        classes={boxed ? undefined : classes}
+        boxes={boxed ? { classes, rule: verdicts.rationale } : undefined}
       />
 
       {verdicts.isPending || previews.isPending ? (
@@ -168,7 +181,8 @@ export function GalleryTab({
               state={state}
               task={task}
               cut={cut}
-              classes={classes}
+              classes={boxed ? undefined : classes}
+              tones={tones}
             />
           ))}
         </ul>
@@ -185,6 +199,7 @@ function Tile({
   task,
   cut,
   classes,
+  tones,
 }: {
   experimentId: number;
   verdict: SampleVerdict;
@@ -193,6 +208,8 @@ function Tile({
   task: Task | undefined;
   cut: number | null;
   classes: readonly string[] | undefined;
+  /** A detection run's box tones; given, the tile draws its boxes. */
+  tones: readonly [string, string, string] | undefined;
 }) {
   const search = writeResultsState(state, task).toString();
 
@@ -227,7 +244,24 @@ function Tile({
                   className="pointer-events-none absolute inset-0 h-full w-full object-cover opacity-80"
                 />
               )}
-              {classes !== undefined ? (
+              {tones !== undefined ? (
+                /* The boxes, drawn by the server as one SVG at the source's size and
+                   stretched as the thumbnail is — the sample page's `VectorLayer`, one
+                   picture per tile instead of a box list. */
+                (state.region || state.truth) && (
+                  <img
+                    src={boxMapUrl(preview.image_id, experimentId, tones, {
+                      predictions: state.region,
+                      truth: state.truth,
+                    })}
+                    alt=""
+                    aria-hidden
+                    loading="lazy"
+                    data-boxes
+                    className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+                  />
+                )
+              ) : classes !== undefined ? (
                 <>
                   {/* The label maps, drawn by the server at the thumbnail's size in the
                       colours `labelMapUrl` names — the sample page's `LabelLayer`, one image

@@ -16,12 +16,14 @@ import type { ExperimentListQuery } from "../api/experimentState";
 import type {
   ArtifactListing,
   CurveSet,
+  DetectionOutcomes,
   DiagnoseResponse,
   ExperimentDetail,
   ExperimentPage,
   ExperimentDeletionPreview,
   ExperimentDeletionResult,
   DiagnosticIndex,
+  ImageBoxes,
   ImageScore,
   MethodCatalog,
   MetricSummary,
@@ -378,6 +380,56 @@ export function useSegmentationOutcomes(
         "the segmentation outcomes",
       ),
     enabled: experimentId !== undefined && enabled,
+  });
+}
+
+/**
+ * Each sample's detection outcome at its subset's confidence cut (ADR-0039), classified on
+ * the server; the cut and the rule that resolved it come back with the rows (ADR-0028).
+ */
+export function useDetectionOutcomes(
+  experimentId: number | undefined,
+  subset: Subset | undefined,
+  enabled = true,
+) {
+  return useQuery<DetectionOutcomes>({
+    queryKey: queryKeys.detectionOutcomes(experimentId ?? -1, subset),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/detection-outcomes", {
+          params: {
+            path: { experiment_id: experimentId as number },
+            query: subset === undefined ? {} : { subset },
+          },
+        }),
+        "the detection outcomes",
+      ),
+    enabled: experimentId !== undefined && enabled,
+  });
+}
+
+/**
+ * One image's stored detections and true boxes, matched at its subset's cut. A 404 is an
+ * answer — nothing written and no truth — so it is not retried.
+ */
+export function useImageBoxes(
+  experimentId: number | undefined,
+  imageId: number | undefined,
+  enabled = true,
+) {
+  return useQuery<ImageBoxes>({
+    queryKey: queryKeys.imageBoxes(experimentId ?? -1, imageId ?? -1),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/experiments/{experiment_id}/images/{image_id}/boxes", {
+          params: {
+            path: { experiment_id: experimentId as number, image_id: imageId as number },
+          },
+        }),
+        "the image's boxes",
+      ),
+    enabled: experimentId !== undefined && imageId !== undefined && enabled,
+    retry: false,
   });
 }
 

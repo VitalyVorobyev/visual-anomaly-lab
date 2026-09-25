@@ -111,7 +111,62 @@ describe("the task views", () => {
     // A class with no truth box has no AP, and reads as a dash rather than a zero.
     expect(screen.getByText("AP · stain").nextElementSibling?.textContent).toBe("—");
     expect(screen.queryByText("Sample ROC-AUC")).toBeNull();
-    expect(view.filters.map((filter) => filter.id)).toEqual(["all"]);
+    expect(view.filters.find((filter) => filter.id === "mistakes")?.outcomes).toEqual([
+      "miss",
+      "false_presence",
+      "mixed",
+    ]);
+  });
+
+  it("reads a detection run's AP per class across subsets and prints its cut and rule", () => {
+    const view = taskView("object_detection");
+    const entry = (subset: "val" | "test", stain: number | null, cut: number | null) => ({
+      subset,
+      computed_at: "2026-09-25T00:00:00Z",
+      ground_truth_digest: null,
+      ground_truth_stale: false,
+      metrics: {
+        classes: ["scratch", "stain"],
+        ap: 0.4,
+        ap50: 0.6,
+        ap75: 0.3,
+        recall: 0.5,
+        per_class_ap: { scratch: 0.4, stain },
+        per_class_ap50: { scratch: 0.6, stain },
+        per_class_ap75: { scratch: 0.3, stain },
+        per_class_recall: { scratch: 0.5, stain },
+        confidence_cut: cut,
+        cut_rule: "the confidence that maximises F1 at IoU 0.5 over the subset, every class pooled",
+        f1_at_cut: cut === null ? null : 0.8,
+        precision_at_cut: cut === null ? null : 0.6667,
+        recall_at_cut: cut === null ? null : 1,
+        images: { labelled: 4, unlabeled: 0, without_prediction: 0 },
+      },
+    });
+    render(
+      withProviders(
+        <MemoryRouter>
+          {view.Scored({
+            ...props(),
+            subsets: ["val", "test"],
+            metrics: [entry("val", 0.25, 0.7), entry("test", null, null)],
+            state: { ...EMPTY_RESULTS, subset: "test" },
+          })}
+        </MemoryRouter>,
+      ),
+    );
+    const table = screen.getByRole("table", { name: "AP per class and subset" });
+    for (const header of ["AP · val", "AP50 · val", "AP75 · test", "recall · test"]) {
+      expect(table.textContent).toContain(header);
+    }
+    expect(table.textContent).toContain("0.250");
+    // stain has no truth on test: four dashes, never zeros.
+    expect(table.textContent?.match(/—/g)?.length).toBe(4);
+
+    const cut = screen.getByRole("table", { name: "Confidence cut per subset" });
+    expect(cut.textContent).toContain("0.7000");
+    expect(cut.textContent).toContain("0.800");
+    expect(screen.getByText(/maximises F1 at IoU 0.5/)).toBeTruthy();
   });
 
   it("reads a supervised segmentation run off its confusion matrix, per class", () => {
