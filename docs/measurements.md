@@ -732,3 +732,46 @@ that draws one box around a cluster matches one of them at most. The same head t
 `candle` mask (IoU 0.24, the logit-bias gate above) scores 0.004 AP here, so this gate measures VisA's
 masks read as boxes as much as it measures the features; it does not say whether frozen DINO features
 are worth a box-regression head.
+
+## Anomaly-map storage
+
+Whether a run's anomaly maps should be stored in a smaller form than the projected float32 `.npy` each
+image gets today. Predeclared before it ran; `scripts/map-storage-measure.py`.
+
+**Protocol.** VisA `candle`, official split, the 200-image test subset, prepared at 256 × 256 under two
+region profiles: `identity` (deciding) and `foreground_threshold` (reported, so a real crop and the NaN it
+leaves outside are exercised). `pixel_reference` at its defaults scores each through the application's own
+train and infer jobs — numpy only, so the measurement needs no torch. While the infer job runs,
+`InferContext.write_map` is wrapped to keep a copy of each map in the prepared frame; before anything
+else, projecting every copy through its pinned transform must reproduce the stored `.npy` bit for bit.
+Each candidate is then written from those arrays and read back:
+
+- **(a)** today: the source-frame map, float32 `.npy`;
+- **(b)** the same array in `np.savez_compressed`, as float32 and as float16;
+- **(c)** the prepared-frame map with its pinned `SpatialTransform` in one `.npz`, projected on read —
+  stored plain and compressed.
+
+**Reported, per format:** mean bytes on disk per map; write ms (encode and save — the projection every
+format still pays at write time, for the run's display range and each map's peak, is reported once); read
+ms, warm, decoding to the source-frame float32 array; overlay ms, decode plus `render_anomaly_map` at the
+source size (the heatmap route's work) on 20 evenly spaced images; the evaluator's wall time and
+`tracemalloc` peak over the whole run; how many decoded maps are bit-identical to (a); and whether the
+evaluator's metrics are identical to (a)'s. The evaluator runs on each format by repointing
+`image_result.map_path` at its files and routing `numpy.load` for them through the format's decoder —
+every map consumer reads through `np.load`, so that is the reader a change would install.
+
+**Why float16 is held to identity, not a tolerance.** Its 11-bit significand rounds a value by up to
+2⁻¹¹ ≈ 4.9 × 10⁻⁴ of itself. The pixel curves bin scores into 65 536 bins over the run's own range, and
+the overlay's threshold renderings compare against a user's cut; a value that close to a bin edge or a
+cut moves across it, so no tolerance can be proven to leave every bin, curve point and region unchanged.
+
+**Decision rule, fixed before the run.** A candidate is eligible only if, on the deciding leg:
+1. every decoded map is bit-identical to (a) and the evaluator's metrics are identical — on the reported
+   leg too;
+2. the overlay's median is at most **1.5×** (a)'s;
+3. the evaluator's wall time is at most **2×** (a)'s and its traced peak at most **1.5×**, so evaluation
+   stays constant-memory;
+4. its mean map is at most **half** of (a)'s bytes — a smaller saving does not pay for a second format.
+
+The eligible candidate with the fewest bytes per map is adopted, with backward-compatible reading of
+existing `.npy` maps. None eligible: storage stays as it is.
