@@ -197,7 +197,7 @@ checkpoint chosen on test evidence): it uses 5 000 exposures, one generic synthe
 final checkpoint. A rerun may raise the budget but must not tune distribution, stopping point or checkpoint
 per category.
 
-## AnomalyVFM — integrated, public gate not yet run
+## AnomalyVFM — integrated; public gate predeclared, not yet run
 
 Resource gate (`scripts/anomalyvfm-smoke-test.py`): a 1.421 GB, 355.36M-parameter adapted RADIO
 checkpoint, 591 ms/image at 768 px on MPS, 2.07 GiB driver memory. Verdict: Mac-credible when the
@@ -208,6 +208,28 @@ constructor (`local_files_only=False`), so the plugin resolves and verifies the 
 answers the constructor's download call with that file; and anomalib reports export as unsupported,
 so `portable_formats` is empty. Whether it is credible on quality is the public gate's question, which
 has not run; until it does the method ships experimental.
+
+**Public gate — predeclared.** `scripts/anomalyvfm-public-gate.py`. The paired public gate at the frame
+the resource gate kept: VisA `candle` and `pcb1`, official 1cls split, one identity prepared-input build
+per class at **768 × 768**, scored by `anomalyvfm_anomalib` (defaults) and by the standard PatchCore
+control, which is re-run on the same build rather than read from another size. AnomalyVFM's train job
+only verifies the checkpoint; it reads no image. Seed 20260812, which only the control consumes. One
+child process per leg.
+
+**Reported.** Per class and as the two-class mean: image ROC-AUC, pixel ROC-AUC, AU-PRO; for each leg,
+train seconds, ms/image over the 200-image test subset (the infer job's wall time, maps and the
+checkpoint's load included) and peak RSS of the child.
+
+**Decision rule, fixed before the run.** AnomalyVFM is promoted from experimental to the supported
+zero-shot reference if its two-class means clear the standard floors (0.80 image ROC-AUC, 0.85 pixel
+ROC-AUC, 0.60 AU-PRO). Beating PatchCore is **not** required: the control is fitted on each class's
+normals and AnomalyVFM sees none, so the difference is recorded as what those normals bought on these
+classes, not as a verdict. Missing any floor keeps it experimental. The network has no random stream, so
+one run per class is the whole measurement; a different frame is a separate, predeclared question,
+never a rerun of this gate.
+
+**Budget.** AnomalyVFM's scoring is about four minutes of the run at the measured 591 ms/image (400 test
+images); the two 768-pixel builds and the PatchCore control at 768 have not been timed.
 
 ## Region profiles — identity stays the default
 

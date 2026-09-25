@@ -54,9 +54,10 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Methods
 
-- [ ] **Run AnomalyVFM's public gate** (M): `anomalyvfm_anomalib` is integrated and ships
-      experimental. Predeclare its paired VisA gate at the 768 × 768 it was measured at, run it,
-      and record the verdict in [measurements.md](measurements.md).
+- [ ] **Run AnomalyVFM's public gate** (S): `anomalyvfm_anomalib` is integrated and ships
+      experimental; its paired VisA gate at 768 × 768 is predeclared
+      (`scripts/anomalyvfm-public-gate.py`, [measurements.md](measurements.md)). Run it and record
+      the verdict by the rule written there.
 - [ ] **Sweep `dino_memory`'s layer selection for the DINOv3 backbone** (S): at the shared 448 px
       gate size DINOv3 ViT-S/16 cleared the floors but trailed DINOv2 ViT-S/14-reg4 on every
       metric with `last_two` ([measurements.md](measurements.md)). Before concluding the
