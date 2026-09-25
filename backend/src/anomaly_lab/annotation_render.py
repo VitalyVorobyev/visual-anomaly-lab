@@ -30,6 +30,7 @@ from anomaly_lab.domain.annotations import (
     ClassTableEntry,
     PolygonShape,
 )
+from anomaly_lab.eval.pixel import connected_regions
 from anomaly_lab.media.decode import sha256_of
 
 # An imported binary mask speaks about this class; a `source_mask` base is drawn in it.
@@ -183,6 +184,57 @@ def rasterize(
         track_instances=False,
     )
     return canvas
+
+
+def document_instances(
+    document: AnnotationDocument,
+    classes: Sequence[str],
+    *,
+    source_mask_path: Path | None,
+    source_mask_sha256: str | None,
+) -> tuple[Instance, ...]:
+    """Every object instance of a document, in memory, for detection truth (ADR-0039).
+
+    The instances completion would write, followed by one instance per 8-connected component
+    of the `source_mask` base that no drawn instance owns — the imported mask has no
+    instances of its own, so its components stand for them, as they do for an image whose
+    truth is an imported mask alone. Those are keyed `source-mask-<n>`, in scan order.
+    """
+    canvas, owner, keys = _rasterize(
+        document,
+        classes,
+        source_mask_path=source_mask_path,
+        source_mask_sha256=source_mask_sha256,
+        track_instances=True,
+    )
+    index_of = {key: position + 1 for position, key in enumerate(classes)}
+    drawn = _instances(canvas, owner, keys, index_of) if owner is not None else ()
+    if document.base != "source_mask" or owner is None:
+        return drawn
+    unowned = (canvas == index_of[SOURCE_MASK_CLASS]) & (owner == 0)
+    return drawn + component_instances(unowned, SOURCE_MASK_CLASS, prefix="source-mask")
+
+
+def component_instances(mask: np.ndarray, label_key: str, *, prefix: str) -> tuple[Instance, ...]:
+    """One instance per 8-connected component of a boolean mask, ordered by its first pixel.
+
+    What an imported binary mask stands for when detection reads it: two touching objects
+    become one instance, and one object broken in two becomes two.
+    """
+    width = mask.shape[1]
+    regions = sorted(connected_regions(mask), key=lambda region: int(region.min()))
+    found: list[Instance] = []
+    for number, region in enumerate(regions, start=1):
+        ys, xs = np.divmod(region, width)
+        found.append(
+            Instance(
+                instance_id=f"{prefix}-{number}",
+                label_key=label_key,
+                box=(int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1),
+                pixels=int(region.size),
+            )
+        )
+    return tuple(found)
 
 
 def _rasterize(

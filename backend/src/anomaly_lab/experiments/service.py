@@ -272,23 +272,28 @@ def validate_target(
         )
 
 
+SUPERVISED_TASKS = frozenset({Task.SEMANTIC_SEGMENTATION, Task.OBJECT_DETECTION})
+"""The tasks that pin their dataset's class list at creation (ADR-0039)."""
+
+
 def pin_classes(conn: sqlite3.Connection, task: Task, dataset_id: int) -> list[str]:
-    """The class list a supervised segmentation run is frozen with; empty for any other task.
+    """The class list a supervised run is frozen with; empty for any other task.
 
     Every class of the dataset, in taxonomy order, at creation (ADR-0039). Class `i` of the
     list is label index `i + 1` for the life of the run, so a class added or reordered later
     cannot renumber a stored model's output. The class-index PNGs are 8-bit, and 255 marks a
-    pixel no pinned class answers for, which bounds the list at 254.
+    pixel no pinned class answers for, which bounds the list at 254 — for detection too, so
+    one class list means the same thing to every supervised task.
     """
-    if task is not Task.SEMANTIC_SEGMENTATION:
+    if task not in SUPERVISED_TASKS:
         return []
     classes = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
     if not classes:
-        raise InvalidInputError(f"dataset {dataset_id} has no annotation class to segment")
+        raise InvalidInputError(f"dataset {dataset_id} has no annotation class to learn")
     if len(classes) > MAX_SEGMENTATION_CLASSES:
         raise InvalidInputError(
-            f"dataset {dataset_id} has {len(classes)} annotation classes; a segmentation run "
-            f"can segment at most {MAX_SEGMENTATION_CLASSES}"
+            f"dataset {dataset_id} has {len(classes)} annotation classes; a supervised run "
+            f"can learn at most {MAX_SEGMENTATION_CLASSES}"
         )
     return classes
 

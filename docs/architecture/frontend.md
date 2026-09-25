@@ -254,6 +254,10 @@ toggles are prediction / truth / foreground with the class legend, and each tile
 drawing `labelPaint`'s rule at the thumbnail's size, because a tile cannot afford a value plane each.
 The colours travel in the URL, one per pinned class, from `classColour` (`labelMapUrl`), so lab-ui stays
 the palette's only home. An anomaly or few-shot tile draws the cut and the outline.
+An `object_detection` run has its own view with less in it: Overview promotes AP@[.5:.95], AP50, AP75
+and recall, and its tables are `objectDetectionRows` — those, then one AP per pinned class, with labelled
+/ unlabelled image counts. `useVerdicts` asks neither report for it, so its gallery strip is `all` alone
+and it has no per-sample verdict; Benchmark says its boxes are not drawn.
 
 **Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
 where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each

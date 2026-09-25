@@ -176,32 +176,50 @@ class ColorClassifierModel(AnomalyModel):
             ctx.metric(f"pixels_{names[index]}", len(chosen[index]))
         ctx.progress(1.0, "fitted")
 
+    @property
+    def label_indices(self) -> list[int]:
+        """The label index each plane of `classify`'s posterior stands for, background (0)
+        included when it had training pixels."""
+        return list(self._indices)
+
+    def classify(self, array: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        """One prepared image's label map, its smoothed posterior and its foreground
+        probability.
+
+        The posterior is `(len(label_indices), H, W)`; the label map is its argmax as label
+        indices; the foreground is the probability of anything but background.
+        """
+        if not self._models:
+            raise RuntimeError("color_classifier was asked to predict before it was fitted")
+        pixels = self._features(array)
+        log_likelihood = np.stack([model.log_likelihood(pixels) for model in self._models])
+        log_likelihood -= log_likelihood.max(axis=0, keepdims=True)
+        posterior = np.exp(log_likelihood)
+        posterior /= posterior.sum(axis=0, keepdims=True)
+        posterior = posterior.reshape(len(self._models), *array.shape[:2])
+        if self.config.smoothing_sigma > 0:
+            posterior = np.stack(
+                [gaussian_blur(plane, self.config.smoothing_sigma) for plane in posterior]
+            )
+        indices = np.asarray(self._indices, dtype=np.uint8)
+        labels = indices[np.argmax(posterior, axis=0)]
+        background = self._indices.index(0) if 0 in self._indices else None
+        foreground = (
+            1.0 - posterior[background]
+            if background is not None
+            else np.ones(array.shape[:2], dtype=np.float64)
+        )
+        return labels, posterior, foreground
+
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
         if not self._models:
             raise RuntimeError("color_classifier was asked to predict before it was fitted")
-        indices = np.asarray(self._indices, dtype=np.uint8)
-        background = self._indices.index(0) if 0 in self._indices else None
         predictions: list[Prediction] = []
         for position, record in enumerate(images):
             ctx.raise_if_cancelled()
             started = time.perf_counter()
             array = load_array(record.path, ctx.preprocessing)
-            pixels = self._features(array)
-            log_likelihood = np.stack([model.log_likelihood(pixels) for model in self._models])
-            log_likelihood -= log_likelihood.max(axis=0, keepdims=True)
-            posterior = np.exp(log_likelihood)
-            posterior /= posterior.sum(axis=0, keepdims=True)
-            posterior = posterior.reshape(len(self._models), *array.shape[:2])
-            if self.config.smoothing_sigma > 0:
-                posterior = np.stack(
-                    [gaussian_blur(plane, self.config.smoothing_sigma) for plane in posterior]
-                )
-            labels = indices[np.argmax(posterior, axis=0)]
-            foreground = (
-                1.0 - posterior[background]
-                if background is not None
-                else np.ones(array.shape[:2], dtype=np.float64)
-            )
+            labels, _, foreground = self.classify(array)
             map_path = ctx.write_map(record.image_id, foreground)
             label_path = ctx.write_label_map(record.image_id, labels, classes=self._classes)
             predictions.append(

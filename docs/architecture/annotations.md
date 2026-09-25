@@ -42,6 +42,26 @@ renumbered from its pinned table; a pixel drawn in a class the run did not pin i
 An imported mask or a normal label answers for `defect` alone, so it labels an image only for a run whose
 classes are `defect` alone.
 
+### Detection truth
+
+**Every class at once, as boxes**, for object detection (ADR-0039): the images the rule above labels for
+a run, read by `class_truth.load_boxes` as the image's object instances in the source frame. Which
+source answers is `resolve_box_truth`'s:
+
+- a revision's instances file, when it has one and its document starts from an empty base;
+- its document, re-rasterised in memory (`annotation_render.document_instances`), when it has no
+  instances file or starts from the source mask. The instances completion would write come first, then
+  one instance per 8-connected component of the `source_mask` base that no drawn instance owns, keyed
+  `source-mask-<n>`;
+- an imported mask's 8-connected components, each one instance of `defect`;
+- nothing, for an image of a sample labelled normal: a confirmed absence.
+
+A component stands for an object because a binary mask records no instances: two touching defects are
+one box and one broken defect is two. An instance's box is the tight box of the pixels it owns, and a
+drawn box's outline is rasterised inclusively, so a box shape of width 3 owns 4 columns. A reader keeps
+the classes its run pinned; `load_boxes` returns every instance and verifies each source against its
+digest.
+
 `GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
 `GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
 outlines one class's region from its own truth (`annotations/class_truth.py`), in the source frame; an
@@ -161,7 +181,7 @@ Completion rasterises the base and the ordered polygon, box and bitmap operation
   exactly `index > 0`;
 - `revision-<n>.classes.png`, the 8-bit class-index mask, with 0 as background;
 - `revision-<n>.instances.json`, the object instances detection and instance segmentation read:
-  `{"instances": [{instance_id, label_key, box, pixels}]}`.
+  `{"instances": [{instance_id, label_key, box, pixels}]}` ([detection truth](#detection-truth)).
 
 An instance is keyed by `instance_id`, else by the shape's id, over `add` shapes in draw order. It owns
 the pixels its shapes set that still carry its class in the final class mask: a later cut or a later

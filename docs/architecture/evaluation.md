@@ -11,11 +11,12 @@ The evaluation layer is **model-independent by construction** (ADR-0011). Its on
 It never imports a model module and never re-runs inference, so every method is evaluated by the same code.
 
 **The evaluator is chosen by task** (ADR-0039) from the table in `eval/evaluators.py`. Most of this page
-describes the `anomaly` evaluator, `eval/runner.py`; [few-shot segmentation](#few-shot-segmentation) and
-[semantic segmentation](#semantic-segmentation) have their own sections. The `infer` job, re-evaluation and the staleness check all go through
+describes the `anomaly` evaluator, `eval/runner.py`; [few-shot segmentation](#few-shot-segmentation),
+[semantic segmentation](#semantic-segmentation) and [object detection](#object-detection) have their own
+sections. The `infer` job, re-evaluation and the staleness check all go through
 `evaluator_for(experiment.task)`, and a task with no entry cannot be created. Each evaluator names a
-`headline` metric (`sample_roc_auc`, `foreground_iou`, `mean_iou`), which the `infer` log prints per
-subset.
+`headline` metric (`sample_roc_auc`, `foreground_iou`, `mean_iou`, `ap`), which the `infer` log prints
+per subset.
 
 ## Channel selection
 
@@ -307,6 +308,42 @@ map as the method wrote it (`maps/<id>.labels.png`, source frame) and the label 
   interface's. `…/label-map?colours=&truth=` draws the same map as a PNG for a gallery tile
   ([media](media.md)).
 - **The ground-truth digest** hashes the pinned class list and each image's pinned answer.
+
+## Object detection
+
+`eval/detection.py` scores every class a run pinned, as boxes, by COCO's protocol (ADR-0039). Its inputs
+are each image's detections as the method wrote them (`maps/<id>.instances.json`, source frame, most
+confident first) and the box truth that `annotations/class_truth.py` resolves over the pinned classes
+(see [annotations](annotations.md#detection-truth)).
+
+- **Matching.** Per image and class, detections most confident first each take the unmatched truth box
+  they overlap most, if that IoU reaches the threshold — greedy by confidence, not an assignment — at
+  each of ten IoU thresholds, 0.50 to 0.95. Boxes are pixel-edge, so a box's area is
+  `(x1 - x0) · (y1 - y0)`.
+- **AP** is COCO's 101-point interpolated area under the precision envelope, per class and threshold,
+  from the class's detections pooled over the subset and ranked by confidence (ties in stored order).
+- **Bounded memory.** Each class keeps one confidence and one row of ten matched flags per detection,
+  and a truth count — linear in detections, which the write seam caps at 100 an image, never in pixels.
+- **Per image**, as for the segmentation tasks; the sample rows are rebuilt from the image scores (the
+  top confidence), so ranking and the gallery's order work.
+- **Labelled means answered for every pinned class**, the rule semantic segmentation labels by. Other
+  images are `images.unlabeled`; a scored image with no detection file is `images.without_prediction`.
+  A truth box of a class the run was not created with is counted in `ignored_instances` and nowhere
+  else; a detection of one is refused by name.
+- **No confidence is cut.** AP and recall read a run's detections in its own confidence order, so no
+  per-run rule is needed (ADR-0028). The IoU thresholds are the protocol's, the same for every run.
+- **Metrics**, each `None` when it cannot be computed:
+  - `per_class_ap` (AP@[.5:.95]), `per_class_ap50`, `per_class_ap75`, and `per_class_recall` (the share
+    of truth boxes matched, averaged over the thresholds) with `per_class_recall50`. A class with no
+    truth box in the subset has none of them — its detections are false positives no recall can be
+    measured against. A class with truth and no detection has AP 0, measured;
+  - `ap` (the headline), `ap50`, `ap75`, `recall` and `recall50`: each averaged over the classes that
+    have a value;
+  - `truth_instances` and `predicted_instances` per class, `iou_thresholds`, and `timing`.
+- **Nothing per sample yet.** There is no per-sample verdict and no box-drawing route; the
+  segmentation outcome and label routes answer 409 for a detection run.
+- **The ground-truth digest** hashes the pinned class list and each image's pinned answer — its
+  instances file's digest, its document's source provenance, or its imported mask's.
 
 ## Run audit
 

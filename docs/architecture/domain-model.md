@@ -193,10 +193,10 @@ experiment, so every result row is attributable to one immutable configuration.
 - `target_label` is the annotation class a targeted task segments, and is null for `anomaly`
   (ADR-0040). Creation refuses a class the dataset does not have, a `few_shot` split drawn for another
   class, and a reference in `train` that does not show the class.
-- `classes` is the JSON list of annotation class keys a `semantic_segmentation` run segments, pinned at
-  creation as every class of the dataset in taxonomy order (ADR-0039, migration 026). `classes[i]` is
-  label index `i + 1` in the run's targets, label maps and confusion matrices; 0 is background. `[]` for
-  every other task. At most 254, because label maps are 8-bit and 255 means "no pinned class answers".
+- `classes` is the JSON list of annotation class keys a `semantic_segmentation` or `object_detection` run
+  learns, pinned at creation as every class of the dataset in taxonomy order (ADR-0039, migration 026).
+  `classes[i]` is label index `i + 1` in the run's targets, label maps and confusion matrices; 0 is
+  background. `[]` for every other task. At most 254, because label maps are 8-bit and 255 means "no pinned class answers".
 - `channels` is a JSON array of channel **names** this run reads; `[]` means every channel. Names, because a
   frozen record must stay readable in a job log (`["bright"]` says what `[17]` does not), and
   `ImageRecord.channel` at the plugin boundary is a name too. An unknown name is refused at creation (422),

@@ -304,6 +304,37 @@ export function semanticRows(metrics: MetricValue): MetricRow[] {
   ];
 }
 
+/**
+ * An object detection subset (ADR-0039): COCO's AP and recall, then one AP per pinned class. A
+ * class with no truth box in the subset has no AP and stays a dash.
+ */
+export function objectDetectionRows(metrics: MetricValue): MetricRow[] {
+  const perClass = metrics.per_class_ap;
+  const classes = Array.isArray(metrics.classes) ? (metrics.classes as unknown[]) : [];
+  return [
+    {
+      key: "ap",
+      label: "AP@[.5:.95]",
+      value: formatScore(metrics.ap),
+      hint: "COCO's AP, averaged over IoU thresholds 0.50 to 0.95 and the classes with truth.",
+    },
+    { key: "ap50", label: "AP50", value: formatScore(metrics.ap50) },
+    { key: "ap75", label: "AP75", value: formatScore(metrics.ap75) },
+    {
+      key: "recall",
+      label: "Recall",
+      value: formatScore(metrics.recall),
+      hint: "The share of truth boxes found, averaged over the same thresholds and classes.",
+    },
+    { key: "recall50", label: "Recall at IoU 0.5", value: formatScore(metrics.recall50) },
+    ...classes.map((name) => ({
+      key: `ap:${String(name)}`,
+      label: `AP · ${String(name)}`,
+      value: formatScore(countIn(perClass, String(name))),
+    })),
+  ];
+}
+
 export function timingRows(metrics: MetricValue): MetricRow[] {
   const timing = metrics.timing;
   if (timing === null || typeof timing !== "object") return [];

@@ -70,6 +70,12 @@ def _color_classifier() -> type[AnomalyModel]:
     return ColorClassifierModel
 
 
+def _color_detector() -> type[AnomalyModel]:
+    from anomaly_lab.models.color_detector import ColorDetectorModel
+
+    return ColorDetectorModel
+
+
 def _fss_dino() -> type[AnomalyModel]:
     from anomaly_lab.models.fss_dino import FssDinoModel
 
@@ -126,6 +132,8 @@ def _subspace_ad() -> type[AnomalyModel]:
 # `InferContext.write_label_map`, and still cost one module and this one line.
 # `dino_linear_seg` is its first deep method, a softmax head on the shared frozen-DINO blocks
 # trained at sampled pixels, and it needed nothing the floor had not already put in place.
+# `color_detector` is the first method of detection: it fits through `TrainContext.box_targets`
+# and writes boxes through `InferContext.write_instances` — one module and this one line.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -139,6 +147,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "proto_seg": _proto_seg,
     "color_classifier": _color_classifier,
     "dino_linear_seg": _dino_linear_seg,
+    "color_detector": _color_detector,
 }
 
 

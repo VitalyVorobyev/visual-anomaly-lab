@@ -24,6 +24,7 @@ cheats, and the evaluation layer reads masks from the catalog anyway.
 from __future__ import annotations
 
 import importlib.util
+import json
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -128,7 +129,9 @@ class Prediction(BaseModel):
     Every task keeps the image-level `score`, so ranking and the gallery work for all of
     them (ADR-0039). A supervised segmentation method also writes a label map through
     `InferContext.write_label_map` and returns its path here; its `score` is the share of
-    the image it assigned to a class other than background.
+    the image it assigned to a class other than background. A detection method writes its
+    boxes through `InferContext.write_instances`; its `score` is its highest confidence, 0
+    when it found nothing.
     """
 
     model_config = API_MODEL_CONFIG
@@ -137,6 +140,8 @@ class Prediction(BaseModel):
     score: float
     anomaly_map: Path | None = None
     label_map: Path | None = None
+    instances: Path | None = None
+    """A detection method's boxes, written through `InferContext.write_instances`."""
     inference_ms: float = 0.0
 
 
@@ -268,6 +273,53 @@ class LabelTargetProvider(Protocol):
         ...
 
 
+Box = tuple[float, float, float, float]
+"""`(x0, y0, x1, y1)` in pixel-edge coordinates: `x0 <= x < x1`, so a box covering exactly the
+pixel at column 3 is `(3, y0, 4, y1)` — the convention of an instances file and of a crop."""
+
+MAX_INSTANCES_PER_IMAGE = 100
+"""At most this many detections of one image are stored and counted — COCO's cap. A method
+keeps its most confident ones; the write seam refuses more rather than choosing for it."""
+
+
+@dataclass(frozen=True)
+class TargetBox:
+    """One true object instance: its class and its box."""
+
+    label_key: str
+    box: Box
+
+
+@dataclass(frozen=True)
+class PredictedInstance:
+    """One detection: its class, its box and how confident the method is in it.
+
+    A confidence ranks detections within one run and means nothing across runs (ADR-0028).
+    """
+
+    label_key: str
+    box: Box
+    confidence: float
+
+
+class BoxTargetProvider(Protocol):
+    """The ground truth a detection task fits on (ADR-0039).
+
+    The third sibling: a detection run is about a pinned class list, like segmentation, and
+    answers with boxes. Absent for every other task.
+    """
+
+    @property
+    def classes(self) -> tuple[str, ...]:
+        """The pinned classes, in the run's order."""
+        ...
+
+    def boxes(self, image_id: int) -> list[TargetBox]:
+        """One training image's object instances of the pinned classes, in the prepared
+        frame. An empty list is a confirmed absence of every one of them."""
+        ...
+
+
 @dataclass
 class TrainContext(ModelContext):
     """`fit`'s view of the world.
@@ -278,13 +330,15 @@ class TrainContext(ModelContext):
     and a model that needs them must fall back visibly rather than silently.
 
     `targets` is `None` for `anomaly`. For a targeted task it answers for every record
-    `fit` is given. `label_targets` is the same for a supervised segmentation task, and
-    `None` for every other: these two fields are the only way ground truth reaches a plugin.
+    `fit` is given. `label_targets` is the same for a supervised segmentation task and
+    `box_targets` for a detection task, each `None` for every other: these three fields are
+    the only way ground truth reaches a plugin.
     """
 
     val: Sequence[ImageRecord] = ()
     targets: TargetProvider | None = None
     label_targets: LabelTargetProvider | None = None
+    box_targets: BoxTargetProvider | None = None
 
 
 @dataclass
@@ -316,6 +370,9 @@ class InferContext(ModelContext):
 
     label_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
     """The same projection for a `uint8` label map: nearest, and background outside the crop."""
+
+    box_projector: Callable[[int, Box], Box | None] | None = None
+    """The same projection for a box: clipped to the crop, `None` when nothing of it is left."""
 
     _map_extremes: list[tuple[float, float]] = field(default_factory=list)
 
@@ -444,6 +501,66 @@ class InferContext(ModelContext):
         temporary = path.with_suffix(".tmp.png")
         try:
             PILImage.fromarray(values, mode="L").save(temporary)
+            temporary.replace(path)
+        finally:
+            temporary.unlink(missing_ok=True)
+        return path
+
+    def instances_path(self, image_id: int) -> Path:
+        """Where one image's detections are written, beside its map."""
+        return self.maps_dir / f"{image_id}.instances.json"
+
+    def write_instances(
+        self, image_id: int, instances: Sequence[PredictedInstance], *, classes: Sequence[str]
+    ) -> Path:
+        """Persist a detection method's boxes for one image, as JSON, most confident first.
+
+        `classes` is the run's pinned list; a class outside it, a box with no area, a
+        confidence that is not finite, or more than `MAX_INSTANCES_PER_IMAGE` detections is
+        a plugin bug, reported here rather than as a confusing AP later. Boxes arrive in the
+        prepared frame and are stored in the source frame; one that falls wholly outside the
+        region crop is dropped, because no source pixel is under it. An empty list is written
+        too: it says the method looked and found nothing.
+        """
+        if len(instances) > MAX_INSTANCES_PER_IMAGE:
+            msg = (
+                f"image {image_id} has {len(instances)} detections; at most "
+                f"{MAX_INSTANCES_PER_IMAGE} are stored, so keep the most confident"
+            )
+            raise ValueError(msg)
+        known = set(classes)
+        kept: list[PredictedInstance] = []
+        for instance in instances:
+            if instance.label_key not in known:
+                msg = (
+                    f"image {image_id} has a detection of {instance.label_key!r}, which the run "
+                    f"does not pin ({', '.join(classes)})"
+                )
+                raise ValueError(msg)
+            if not np.isfinite(instance.confidence):
+                msg = f"image {image_id} has a detection with confidence {instance.confidence}"
+                raise ValueError(msg)
+            x0, y0, x1, y1 = (float(value) for value in instance.box)
+            if not np.all(np.isfinite((x0, y0, x1, y1))) or x1 <= x0 or y1 <= y0:
+                raise ValueError(f"image {image_id} has a box with no area: {instance.box}")
+            box: Box | None = (x0, y0, x1, y1)
+            if self.box_projector is not None:
+                box = self.box_projector(image_id, (x0, y0, x1, y1))
+            if box is not None:
+                kept.append(PredictedInstance(instance.label_key, box, float(instance.confidence)))
+        kept.sort(key=lambda instance: -instance.confidence)
+        stored = [
+            {
+                "label_key": instance.label_key,
+                "box": [float(value) for value in instance.box],
+                "confidence": instance.confidence,
+            }
+            for instance in kept
+        ]
+        path = self.instances_path(image_id)
+        temporary = path.with_suffix(".tmp.json")
+        try:
+            temporary.write_text(json.dumps({"instances": stored}), encoding="utf-8")
             temporary.replace(path)
         finally:
             temporary.unlink(missing_ok=True)

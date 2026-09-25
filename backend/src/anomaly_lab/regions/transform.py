@@ -264,6 +264,48 @@ class SpatialTransform(BaseModel):
         )
         return source
 
+    def prepare_box(
+        self, box: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float] | None:
+        """Project a source-frame box, in pixel-edge coordinates, into the prepared frame.
+
+        Clipped to the crop first: the part of an object outside it was never in the prepared
+        image. `None` when nothing of the box is inside the crop.
+        """
+        x0 = max(float(box[0]), float(self.crop_left))
+        y0 = max(float(box[1]), float(self.crop_top))
+        x1 = min(float(box[2]), float(self.crop_right))
+        y1 = min(float(box[3]), float(self.crop_bottom))
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return (
+            (x0 - self.crop_left) * self.scale_x + self.pad_left,
+            (y0 - self.crop_top) * self.scale_y + self.pad_top,
+            (x1 - self.crop_left) * self.scale_x + self.pad_left,
+            (y1 - self.crop_top) * self.scale_y + self.pad_top,
+        )
+
+    def project_box(
+        self, box: tuple[float, float, float, float]
+    ) -> tuple[float, float, float, float] | None:
+        """Project a prepared-frame box, in pixel-edge coordinates, back to the source frame.
+
+        Clipped to the resized image first, because letterbox padding was never source
+        pixels. `None` when the box lies wholly in the padding.
+        """
+        x0 = max(float(box[0]), float(self.pad_left))
+        y0 = max(float(box[1]), float(self.pad_top))
+        x1 = min(float(box[2]), float(self.pad_left + self.resized_width))
+        y1 = min(float(box[3]), float(self.pad_top + self.resized_height))
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return (
+            (x0 - self.pad_left) / self.scale_x + self.crop_left,
+            (y0 - self.pad_top) / self.scale_y + self.crop_top,
+            (x1 - self.pad_left) / self.scale_x + self.crop_left,
+            (y1 - self.pad_top) / self.scale_y + self.crop_top,
+        )
+
     def project_map(self, prepared_map: np.ndarray) -> np.ndarray:
         """Project a float anomaly map to source pixels; uncovered pixels are NaN."""
         self._require_prepared_shape(prepared_map.shape)
