@@ -1032,7 +1032,7 @@ that draws one box around a cluster matches one of them at most. The same head t
 masks read as boxes as much as it measures the features; it does not say whether frozen DINO features
 are worth a box-regression head.
 
-## Detection on box-drawn truth (PCB) — predeclared, not yet run
+## Detection on box-drawn truth (PCB) — the features find defects; the boxes are loose
 
 The gate the VisA verdict calls for: truth that annotators drew as boxes, so no box is a speck of a mask.
 Predeclared here before any run; `scripts/detection-public-gate.py --benchmark pcb`. Six runs, one child
@@ -1113,7 +1113,39 @@ each kind (12 images, six train and six test), torch-free — ran to prove the r
 It is not part of the gate. Its inference took about 1.9 s an image at 1120 × 896; from that and the VisA
 gate's timings, the six runs are estimated at 1–1.5 h.
 
-**Result.** Not yet run.
+**Result.** 6 runs in 48 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0). Every seed read
+both methods against identical truth (2 678 test boxes over the three seeds) and the same test images.
+
+| Method | AP@[.5:.95] | AP50 | AP75 | Recall | F1 at the cut | ms/image | Peak RSS GiB |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| `color_detector` | 0.0000 | 0.0001 | 0.0000 | 0.019 | 0.003 | 2 334 | 0.65 |
+| `dino_linear_det` | 0.0272 | 0.1052 | 0.0046 | 0.079 | 0.135 | 852 | 2.55 |
+
+Per class, mean over seeds:
+
+| Class | `dino_linear_det` AP50 | AP@[.5:.95] |
+|---|---:|---:|
+| `missing_hole` | 0.318 | 0.086 |
+| `open_circuit` | 0.128 | 0.031 |
+| `spurious_copper` | 0.105 | 0.029 |
+| `mouse_bite` | 0.035 | 0.009 |
+| `short` | 0.031 | 0.005 |
+| `spur` | 0.014 | 0.003 |
+
+The floor's AP50 is 0.0004 on `missing_hole` and zero on every other class. The seed spread of
+`dino_linear_det`'s AP@[.5:.95] is 0.003.
+
+**Verdict, by the rule.**
+- **AP50: passes.** `dino_linear_det` leads the floor by 0.105, at least 0.05, and on all six classes, so
+  **a box-regression head on the frozen DINO features is worth building**, and it goes on the backlog.
+- **AP@[.5:.95]: does not pass.** It leads on all six classes, but by 0.027 on the mean, below 0.05, so
+  **`dino_linear_det` stays experimental**.
+
+**What the gate says beyond its rule.** The drop from AP50 (0.105) to AP75 (0.005) is the one the protocol
+predicted for a detector that boxes connected regions of a 14-px grid: it finds and names the defect,
+then misplaces the box edge by a fraction of a small box. The lead is also uneven: `missing_hole`, the
+one kind that is a clear round shape, carries half of the AP50 mean, and the three thin kinds
+(`mouse_bite`, `short`, `spur`) sit near 0.03 or below at this downscale.
 
 ## Anomaly-map storage
 

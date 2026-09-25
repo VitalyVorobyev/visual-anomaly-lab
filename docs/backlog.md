@@ -46,13 +46,13 @@ maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_li
 the `class_stratified` split, its result screens and its public gates (`measurements.md`). Detection
 runs end to end torch-free — box truth, box targets, stored boxes, COCO's AP, the `color_detector`
 floor, the `class_stratified` split and its result screens — and the `dino_linear_det` deep detector
-runs on the frozen-DINO path and has had its public gate on VisA. What remains:
+runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market-PCB. What remains:
 
-- [ ] **A detection gate on truth drawn as boxes** (M): the VisA gate (`measurements.md`) cannot
-      say whether frozen DINO features are worth a box-regression head, because many boxes of a
-      VisA mask's components are specks of a few pixels. The PKU-Market-PCB protocol is predeclared
-      in `measurements.md`; run it (`scripts/detection-public-gate.py --benchmark pcb`) and record
-      its verdict.
+- [ ] **A box-regression head on the frozen DINO features** (M): on PKU-Market-PCB `dino_linear_det`
+      finds defects (AP50 0.105, against the floor's 0.0001) but boxes connected regions of a 14-px
+      grid, so its AP75 is 0.005 ([measurements.md](measurements.md)). Add a head that regresses box
+      edges from the patch features, as a field of the detector, and predeclare a rerun of the PCB
+      protocol against the recorded verdict.
 
 ## Methods
 
