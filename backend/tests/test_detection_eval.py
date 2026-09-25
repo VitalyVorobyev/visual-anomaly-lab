@@ -5,6 +5,7 @@ boxes, and boxes that cross the region transform in both directions."""
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -314,18 +315,41 @@ def test_every_kind_of_truth_reads_as_boxes(
         over_source: "document",
     }
 
-    # An instance's box is the tight box of the pixels it owns, and a drawn box's outline
-    # is rasterised inclusively, so a 3-pixel box at x = 1 owns columns 1 to 4.
+    # An instance's box is the tight box of the pixels it owns, and a drawn box owns the
+    # pixels it covers, so two 3-pixel boxes at x = 1 and x = 4 box as columns 1 to 6.
     assert load_boxes(both[drawn]) == [
-        TargetBox("defect", (1.0, 1.0, 8.0, 5.0)),
-        TargetBox("stain", (10.0, 10.0, 15.0, 15.0)),
+        TargetBox("defect", (1.0, 1.0, 7.0, 4.0)),
+        TargetBox("stain", (10.0, 10.0, 14.0, 14.0)),
     ]
     assert load_boxes(defect_only[normal]) == []
     assert load_boxes(defect_only[source]) == [TargetBox("defect", (5.0, 5.0, 10.0, 10.0))]
     assert load_boxes(both[over_source]) == [
-        TargetBox("stain", (12.0, 12.0, 16.0, 16.0)),
+        TargetBox("stain", (12.0, 12.0, 15.0, 15.0)),
         TargetBox("defect", (5.0, 5.0, 10.0, 10.0)),
     ]
+
+
+def test_a_revision_keeps_the_boxes_it_wrote(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    # A revision completed while a box's outline was rasterised inclusively pinned an
+    # instances file one pixel larger than drawn. Completed revisions are immutable: it is read
+    # as written, against its own digest, and only a new completion uses the pixel-edge rule.
+    image_id = seeded.normal_image_ids[0]
+    seed = client.get(f"/api/images/{image_id}/annotations/draft").json()["document"]
+    _complete(client, image_id, {**seed, "shapes": [_box("a", "defect", 1, 1, 3)]})
+    with connection(settings.db_path) as conn:
+        truth = resolve_box_truth(conn, seeded.dataset_id, [image_id], ("defect",))[image_id]
+        assert truth.kind == "instances"
+        assert load_boxes(truth) == [TargetBox("defect", (1.0, 1.0, 4.0, 4.0))]
+
+    # What that earlier completion pinned instead. A revision row is immutable, so the old
+    # file stands beside this one with its own digest, as an earlier revision's would.
+    earlier = Path(truth.path or "").with_name("revision-0.instances.json")
+    old = {"instance_id": "a", "label_key": "defect", "box": [1, 1, 5, 5], "pixels": 16}
+    earlier.write_text(json.dumps({"instances": [old]}))
+    pinned = replace(truth, path=str(earlier), sha256=sha256_of(earlier))
+    assert load_boxes(pinned) == [TargetBox("defect", (1.0, 1.0, 5.0, 5.0))]
 
 
 def test_an_instances_file_that_changed_is_refused(tmp_path: Path) -> None:

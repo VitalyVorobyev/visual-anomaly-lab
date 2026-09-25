@@ -4,14 +4,14 @@
  *
  * The value is folded the way the document is read — the base, then each shape in order, an
  * `add` setting the pixel and a `subtract` clearing it. A polygon or a box is tested at the pixel's
- * centre, which is what a rasteriser samples; a bitmap is looked up in its decoded crop. A
+ * centre, which is what a rasteriser samples — a box half-open, `x <= centre < x + width`, the
+ * pixels it covers and no more; a bitmap is looked up in its decoded crop. A
  * bitmap whose crop has not been decoded yet is left out rather than guessed.
  *
  * A readout, never truth: the backend's renderer is what evaluation reads, and this exists so
  * that "is that pixel in or out" can be answered by pointing at it.
  */
 
-import { shapeOutline } from "../../api/annotationState";
 import type { AnnotationDocument, AnnotationPoint, PolygonShape } from "../../api/client";
 
 export interface PixelReading {
@@ -50,8 +50,10 @@ export function readPixel(
     const covered =
       shape.kind === "bitmap"
         ? insideBitmap(shape, pixel.x, pixel.y, masks.get(shape.png_base64))
-        : // A box is read as the polygon of its corners, which is what the backend draws.
-          insidePolygon({ points: shapeOutline(shape) }, pixel.x + 0.5, pixel.y + 0.5);
+        : shape.kind === "box"
+          ? // Exactly the pixels the box covers, which is what completion owns.
+            insideBox(shape, pixel.x + 0.5, pixel.y + 0.5)
+          : insidePolygon(shape, pixel.x + 0.5, pixel.y + 0.5);
     if (!covered) return;
     region = index + 1;
     value = shape.operation === "add" ? 1 : 0;
@@ -70,6 +72,15 @@ function insideBitmap(
   const row = y - shape.y;
   if (column < 0 || row < 0 || column >= shape.width || row >= shape.height) return false;
   return mask[row * shape.width + column] === 1;
+}
+
+/** Half-open, as completion rasterises a box: `x <= px < x + width`, likewise in y. */
+function insideBox(
+  shape: { x: number; y: number; width: number; height: number },
+  x: number,
+  y: number,
+): boolean {
+  return x >= shape.x && x < shape.x + shape.width && y >= shape.y && y < shape.y + shape.height;
 }
 
 /** Even-odd ray casting. */

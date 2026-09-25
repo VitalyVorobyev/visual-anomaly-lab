@@ -53,14 +53,17 @@ floor and the `class_stratified` split. What remains, in dependency order, one P
 - [ ] **A deep detector** (M): on the frozen-DINO path, fitted through `box_targets` and writing
       instances; `dl`-gated tests, seed reproducibility in both directions, and one module plus one
       registry entry.
-- [ ] **A drawn box owns exactly the pixels it covers** (S): completion rasterises a box shape's
-      outline inclusively, so a box of width 3 owns 4 columns and its instance box — detection truth —
-      is one pixel larger than drawn ([annotations.md](architecture/annotations.md)). Decide the edge
-      convention once (pixel edges, as `prepare_box` uses), change what completion writes, and pin it
-      with a test before the gate measures against it.
 - [ ] **Public detection gate** (M): predeclared in `measurements.md` before it runs — VisA's masks
       boxed by their connected components on a `class_stratified` split, the deep detector against
       the floor, with AP@[.5:.95] as the decision and AP50 and recall reported.
+
+- [ ] **A polygon owns the pixels whose centres it contains** (S): boxes follow the half-open
+      pixel-centre rule, but completion still fills a polygon including its outline (Pillow), so a
+      box and the polygon of its four corners own different pixels and the editor's readout, which
+      tests polygons at pixel centres, can disagree on an edge pixel
+      ([annotations.md](architecture/annotations.md)). Changing it changes segmentation truth for
+      new completions: decide it before the next public segmentation gate, and say on the record
+      that earlier revisions keep what they wrote.
 
 ## Spatial input
 
