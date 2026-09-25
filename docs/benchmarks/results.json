@@ -31,7 +31,7 @@
   },
   "anomalyvfm_anomalib": {
    "family": "zero-shot adapted foundation model",
-   "maturity": "experimental"
+   "maturity": "supported"
   },
   "color_prototype": {
    "family": "few-shot colour prototype",

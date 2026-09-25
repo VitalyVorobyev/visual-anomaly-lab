@@ -197,7 +197,7 @@ checkpoint chosen on test evidence): it uses 5 000 exposures, one generic synthe
 final checkpoint. A rerun may raise the budget but must not tune distribution, stopping point or checkpoint
 per category.
 
-## AnomalyVFM — integrated; public gate predeclared, not yet run
+## AnomalyVFM — the zero-shot reference: it clears the floors on normals it never saw
 
 Resource gate (`scripts/anomalyvfm-smoke-test.py`): a 1.421 GB, 355.36M-parameter adapted RADIO
 checkpoint, 591 ms/image at 768 px on MPS, 2.07 GiB driver memory. Verdict: Mac-credible when the
@@ -207,9 +207,9 @@ It set two invariants, and `anomalyvfm_anomalib` honours both: anomalib download
 constructor (`local_files_only=False`), so the plugin resolves and verifies the pinned checkpoint and
 answers the constructor's download call with that file; and anomalib reports export as unsupported,
 so `portable_formats` is empty. Whether it is credible on quality is the public gate's question, which
-has not run; until it does the method ships experimental.
+is answered below.
 
-**Public gate — predeclared.** `scripts/anomalyvfm-public-gate.py`. The paired public gate at the frame
+**Public gate.** `scripts/anomalyvfm-public-gate.py`, predeclared before it ran. The paired public gate at the frame
 the resource gate kept: VisA `candle` and `pcb1`, official 1cls split, one identity prepared-input build
 per class at **768 × 768**, scored by `anomalyvfm_anomalib` (defaults) and by the standard PatchCore
 control, which is re-run on the same build rather than read from another size. AnomalyVFM's train job
@@ -230,6 +230,30 @@ never a rerun of this gate.
 
 **Budget.** AnomalyVFM's scoring is about four minutes of the run at the measured 591 ms/image (400 test
 images); the two 768-pixel builds and the PatchCore control at 768 have not been timed.
+
+**Result.** 4 legs on MPS (torch 2.13.0, timm 1.0.28, anomalib 2.6.0, numpy 2.5.1, Pillow 12.3.0).
+
+| Class | Method | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | Peak localised | Fit s | ms/image | Peak RSS GiB |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `candle` | `anomalyvfm_anomalib` | 0.9832 | 0.9920 | 0.9511 | 75 / 100 | 42 | 533 | 3.73 |
+| | PatchCore control | 0.7114 | 0.9205 | 0.7556 | 37 / 100 | 65 | 201 | 1.71 |
+| `pcb1` | `anomalyvfm_anomalib` | 0.8113 | 0.9187 | 0.9130 | 59 / 100 | 1 | 533 | 3.22 |
+| | PatchCore control | 0.5422 | 0.9184 | 0.5636 | 14 / 100 | 25 | 198 | 1.66 |
+| **mean** | `anomalyvfm_anomalib` | **0.8973** | **0.9553** | **0.9321** | | | | |
+| | PatchCore control | 0.6268 | 0.9195 | 0.6596 | | | | |
+
+The fit is the checkpoint's digest check: 42 s on `candle` includes reading the 1.4 GB file cold, and 1 s
+on `pcb1` reads it warm.
+
+**Verdict, by the rule.** All three means clear the floors (0.80 / 0.85 / 0.60), so **`anomalyvfm_anomalib`
+is the supported zero-shot reference**.
+
+**The control is not what PatchCore does at its best.** At 768 × 768 the shipped
+`max_candidate_vectors = 50 000` keeps 195 of each image's 9 216 patches (about 2 %, on a regular grid),
+so the control's bank saw a sparse lattice of each normal image. Its gap to AnomalyVFM is therefore not
+what the normals bought; it is what the normals bought through a cap sized for smaller frames. Read
+AnomalyVFM against the floors, as the rule does, and read PatchCore at 768 as a finding about the cap
+(backlog: PatchCore's tuning).
 
 ## Region profiles — identity stays the default
 

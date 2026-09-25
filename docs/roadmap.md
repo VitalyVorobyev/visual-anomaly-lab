@@ -40,7 +40,8 @@ application.
   over the same frozen encoders, with no training step at all — and is the first method whose
   defaults were chosen by a measured sweep rather than picked (ADR-0038).
   `anomalyvfm_anomalib` is the zero-shot reference: AnomalyVFM's published checkpoint, verified by
-  digest and built offline, scores a run with no train job and reads no normal image.
+  digest and built offline, scores a run with no train job and reads no normal image. It cleared its
+  public gate's floors on VisA at 768 px ([measurements.md](measurements.md)).
   `dinomaly_custom` is the in-house Dinomaly, with the encoder and the decoder depth as
   fields the anomalib wrapper it was measured against could not offer; that wrapper reached
   VisA parity and retired ([measurements.md](measurements.md)). Jobs run as subprocesses with
@@ -61,10 +62,6 @@ application.
   controls (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen
   says what went wrong. What is left: five buttons nest inside links, waiting on a `ButtonLink`, and two
   disabled tabs explain themselves only in a tooltip, waiting on `Tabs` (see [backlog.md](backlog.md)).
-- **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
-  passed and it is integrated; its predeclared public quality gate has not run). SuperADD is no longer on this
-  list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
-  (ADR-0037).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
 - **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it, and a
   run segments that class in every other sample, with absence as a first-class answer. What stands:

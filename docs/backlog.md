@@ -56,10 +56,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Methods
 
-- [ ] **Run AnomalyVFM's public gate** (S): `anomalyvfm_anomalib` is integrated and ships
-      experimental; its paired VisA gate at 768 × 768 is predeclared
-      (`scripts/anomalyvfm-public-gate.py`, [measurements.md](measurements.md)). Run it and record
-      the verdict by the rule written there.
 - [ ] **Run the sweep of `dino_memory`'s layers on DINOv3** (S): its protocol and decision rule are
       predeclared in [measurements.md](measurements.md#dino_memorys-layers-on-dinov3--predeclared-not-yet-run),
       and `scripts/dino-memory-layer-sweep.py` runs it — every `layers` value on DINOv3 ViT-S/16
@@ -75,6 +71,9 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
       defaults against a tuned run, so the 0.047 sample ROC-AUC gap says nothing about the methods.
       `backbone`, `layer_set`, `coreset_ratio` and `max_candidate_vectors` are all fields, so each is
       an ablation the comparison screen can already show.
+      At 768 × 768 the shipped `max_candidate_vectors` keeps about 2 % of each image's patches, and the
+      AnomalyVFM gate's control scored 0.63 image ROC-AUC there ([measurements.md](measurements.md)): a
+      frame-aware cap belongs in the same ablation.
 - [ ] **Run both on the official one-class split** (`official-1cls`, split 2) (S): every number so
       far is on a generated split, and nothing is compared to a published figure until the official
       protocol runs.
