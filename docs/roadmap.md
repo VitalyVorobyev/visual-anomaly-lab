@@ -106,8 +106,10 @@ application.
   `manual`, and named in the dataset's readiness band. Its results read in its own terms: AP per class
   across subsets, a per-sample verdict and drawn boxes — truth dashed, predictions solid, toned by match,
   false positive or miss — at a confidence cut each subset resolves by one printed rule (the F1-optimal
-  confidence at IoU 0.5), and Compare on the AP family alone. `dino_linear_det` is experimental: there
-  is no public detection gate yet.
+  confidence at IoU 0.5), and Compare on the AP family alone. `dino_linear_det` is experimental: on the
+  public detection gate neither it nor the floor boxes a VisA defect — AP@[.5:.95] below 0.01 on both
+  classes, where many of the boxes VisA's masks give are specks of a few pixels
+  ([measurements.md](measurements.md)).
 
 ## Deliberately not built
 

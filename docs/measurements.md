@@ -604,10 +604,10 @@ is usable, not good: most defect samples are still below an IoU of 0.5, a sixth 
 a quarter of normal images show some false presence. The Bayes shift is the wrong decision for this
 measure: it is roughly twice the fitted constant and draws nothing.
 
-## Detection — predeclared, not yet run
+## Detection — `dino_linear_det` stays experimental; neither method boxes a VisA defect
 
-The first public detection gate (ADR-0039), predeclared below before it runs.
-`scripts/detection-public-gate.py`.
+The first public detection gate (ADR-0039), predeclared before it ran. `scripts/detection-public-gate.py`,
+12 runs in 17.0 min on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0).
 
 **Protocol.** VisA `candle` and `pcb1`, identity prepared input at 448 × 448, which both DINO patch sizes
 divide. The dataset is read as a detection benchmark of one class, `defect`: every 8-connected component
@@ -648,3 +648,44 @@ so about 15 min for the gate. Both methods sat near zero there: AP@[.5:.95] 0.00
 the rule. It did show how the printed cut reads when a run matches almost nothing: the F1-optimal
 confidence is then the highest one, so almost every detection is dropped and every normal sample reads
 as a correct absence. The per-sample outcomes are reported, not decided on.
+
+**Result.** Test subset, means over three seeds; the spread of AP@[.5:.95] is across seeds. Recall is
+averaged over the ten IoU thresholds; F1 is at each run's own printed cut. Truth and predicted boxes, and
+outcomes, are pooled over the three seeds (90 defect and 900 or 903 normal samples per class).
+
+| Class | Method | AP@[.5:.95] | ± seeds | AP50 | AP75 | Recall | Recall at 0.5 | F1 at cut | ms/image | Fit s |
+|---|---|---|---|---|---|---|---|---|---|---|
+| `candle` | `color_detector` | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 177 | 9 |
+| | `dino_linear_det` | 0.0036 | 0.0020 | 0.0165 | 0.0008 | 0.009 | 0.029 | 0.048 | 86 | 71 |
+| `pcb1` | `color_detector` | 0.0000 | 0.0000 | 0.0000 | 0.0000 | 0.000 | 0.000 | 0.000 | 124 | 13 |
+| | `dino_linear_det` | 0.0001 | 0.0001 | 0.0001 | 0.0000 | 0.004 | 0.009 | 0.006 | 110 | 65 |
+
+| Class | Method | Truth / predicted boxes | Defects: hit / miss / mixed / extra box | Normals: correct absence / false presence |
+|---|---|---|---|---|
+| `candle` | `color_detector` | 673 / 4 550 | 0 / 90 / 0 / 0 | 897 / 3 |
+| | `dino_linear_det` | 673 / 896 | 10 / 37 / 40 / 3 | 855 / 45 |
+| `pcb1` | `color_detector` | 241 / 23 360 | 0 / 87 / 3 / 0 | 903 / 0 |
+| | `dino_linear_det` | 241 / 3 927 | 0 / 36 / 54 / 0 | 574 / 329 |
+
+Per seed, `dino_linear_det`'s AP@[.5:.95] was 0.0064, 0.0019, 0.0025 on `candle` and 0.0001, 0.0000,
+0.0000 on `pcb1`. Its fitted constants on `defect` were −3.21, −3.42, −3.46 on `candle` (held-out IoU of
+the painted box interiors 0.319, 0.294, 0.303) and −4.28, −1.75, −1.35 on `pcb1` (0.085, 0.091, 0.086).
+Peak RSS 0.16–0.19 GB (`color_detector`), 2.7 GB (`dino_linear_det`). Both construction checks hold: in
+every class and seed the two methods were read against the same truth box count and the same 330 or 331
+labelled test images.
+
+**Verdict, by the rule.** `dino_linear_det` leads `color_detector` by 0.004 AP@[.5:.95] on `candle` and by
+0.0001 on `pcb1`, short of 0.05 on both, so **`dino_linear_det` stays experimental**.
+
+**What the gate says beyond its rule.** Neither method boxes a VisA defect. The floor matched no truth box
+at IoU 0.5 in any run, while drawing about 5 boxes an image on `candle` and 24 on `pcb1`. The deep head
+finds something on `candle` — 10 of 90 defect samples are hits at the cut — and almost nothing on `pcb1`,
+where its extra boxes reach a third of the normal images. The truth is part of the reason. Over all 100
+defect samples of each class, a VisA mask boxed by its components gives 7.1 boxes a defect image on
+`candle` (median 1, at most 95) and 3.0 on `pcb1` (median 2, at most 25), and 78 % of `candle`'s boxes and
+31 % of `pcb1`'s cover less than 0.01 % of the frame — about 20 pixels at 448 × 448, five times
+`min_area`. Every such speck is a box a detector must find at IoU 0.5 or more, and a component detector
+that draws one box around a cluster matches one of them at most. The same head that draws a usable
+`candle` mask (IoU 0.24, the logit-bias gate above) scores 0.004 AP here, so this gate measures VisA's
+masks read as boxes as much as it measures the features; it does not say whether frozen DINO features
+are worth a box-regression head.
