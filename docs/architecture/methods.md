@@ -179,8 +179,12 @@ failure; its pydantic schema drives the client as model schemas do.
 - `foreground_threshold` — border-estimated background, absolute-contrast threshold on a bounded grid,
   largest connected component;
 - `mobile_sam` — the verified TinyViT checkpoint with a bounded automatic prompt grid, largest mask
-  within area/quality limits. It tries MPS and falls back to CPU after an MPS runtime failure, reporting
-  the chosen device as extractor metadata.
+  within area/quality limits. `max_border_fraction` drops masks that cover more than that share of the
+  frame's one-pixel border — a background wraps the frame, an object does not — and `selection = union`
+  returns the box around every surviving mask instead of the largest one; nothing surviving is an
+  extraction failure. `select_region` is the pure selection step, so a gate can apply several rules to one
+  MobileSAM pass. It tries MPS and falls back to CPU after an MPS runtime failure, reporting the chosen
+  device as extractor metadata.
 
 Extractor confidence is method-specific and not comparable between entries. Preview samples at most 24
 images evenly and writes no pixels. A full build is one cancellable `region_prepare` job that writes to a

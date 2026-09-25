@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib
 import importlib.util
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 from pydantic import BaseModel, Field, model_validator
@@ -65,6 +65,24 @@ class MobileSamRegionConfig(BaseModel):
             "Ignore candidate masks larger than this fraction of the image. "
             "The largest surviving mask is chosen, so lower this to reject a "
             "near-full-frame background mask and select the part instead."
+        ),
+    )
+
+    max_border_fraction: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Ignore candidate masks that cover more than this fraction of the image's "
+            "one-pixel border. A background segment wraps the frame; an object does not. "
+            "1.0 disables the test."
+        ),
+    )
+    selection: Literal["largest", "union"] = Field(
+        default="largest",
+        description=(
+            "How surviving masks become one region: the largest mask, or the box around "
+            "every surviving mask, so a part made of several pieces is kept whole."
         ),
     )
 
@@ -128,32 +146,9 @@ class MobileSamRegionExtractor(RegionExtractor):
             records = generator.generate(image)
         height, width = image.shape[:2]
         config = MobileSamRegionConfig.model_validate(self.config)
-        candidates: list[tuple[float, dict[str, Any]]] = []
-        for record in records:
-            fraction = float(record["area"]) / (height * width)
-            if config.min_area_fraction <= fraction <= config.max_area_fraction:
-                candidates.append((fraction, record))
-        if not candidates:
-            raise RegionExtractionError("MobileSAM found no mask within the configured area range")
-        area_fraction, chosen = max(
-            candidates,
-            key=lambda item: (
-                item[0],
-                float(item[1]["predicted_iou"]),
-                float(item[1]["stability_score"]),
-            ),
-        )
-        x, y, box_width, box_height = (float(value) for value in chosen["bbox"])
-        return RegionExtraction(
-            bounds=PixelBounds(left=x, top=y, right=x + box_width, bottom=y + box_height),
-            confidence=float(chosen["predicted_iou"]),
-            metadata={
-                "area_pixels": int(chosen["area"]),
-                "coverage_fraction": area_fraction,
-                "stability_score": float(chosen["stability_score"]),
-                "device": self._device,
-            },
-        )
+        extraction = select_region(records, height, width, config)
+        extraction.metadata["device"] = self._device
+        return extraction
 
     def _load_generator(self, *, force_cpu: bool = False) -> Any:
         if self._generator is not None:
@@ -180,6 +175,82 @@ class MobileSamRegionExtractor(RegionExtractor):
         )
         self._device = device
         return self._generator
+
+
+def border_fraction(segmentation: np.ndarray) -> float:
+    """The fraction of the image's one-pixel border ring that a mask covers."""
+    mask = np.asarray(segmentation, dtype=bool)
+    if mask.shape[0] < 3 or mask.shape[1] < 3:
+        return float(mask.mean())
+    ring = np.concatenate([mask[0, :], mask[-1, :], mask[1:-1, 0], mask[1:-1, -1]])
+    return float(ring.mean())
+
+
+def select_region(
+    records: list[dict[str, Any]], height: int, width: int, config: MobileSamRegionConfig
+) -> RegionExtraction:
+    """Turn MobileSAM's candidate masks into one source-frame region, or fail explicitly.
+
+    A candidate survives when its area lies in the configured window and, unless
+    `max_border_fraction` is 1.0, when it covers no more than that fraction of the frame's
+    border. `largest` returns the biggest survivor; `union` returns the box around all of
+    them. The border test needs each record's binary `segmentation`.
+    """
+    frame = height * width
+    survivors: list[tuple[float, float, dict[str, Any]]] = []
+    for record in records:
+        fraction = float(record["area"]) / frame
+        if not config.min_area_fraction <= fraction <= config.max_area_fraction:
+            continue
+        border = 0.0
+        if config.max_border_fraction < 1.0:
+            border = border_fraction(record["segmentation"])
+            if border > config.max_border_fraction:
+                continue
+        survivors.append((fraction, border, record))
+    if not survivors:
+        raise RegionExtractionError(
+            "MobileSAM found no mask within the configured area range and border limit"
+        )
+    largest = max(
+        survivors,
+        key=lambda item: (
+            item[0],
+            float(item[2]["predicted_iou"]),
+            float(item[2]["stability_score"]),
+        ),
+    )
+    chosen_items = survivors if config.selection == "union" else [largest]
+    fraction = largest[0]
+    members = [item[2] for item in chosen_items]
+    boxes = [tuple(float(value) for value in member["bbox"]) for member in members]
+    bounds = PixelBounds(
+        left=min(box[0] for box in boxes),
+        top=min(box[1] for box in boxes),
+        right=max(box[0] + box[2] for box in boxes),
+        bottom=max(box[1] + box[3] for box in boxes),
+    )
+    if len(members) > 1:
+        union = np.zeros((height, width), dtype=bool)
+        for member in members:
+            union |= np.asarray(member["segmentation"], dtype=bool)
+        fraction = float(union.sum()) / frame
+    return RegionExtraction(
+        bounds=bounds,
+        # A union is only as credible as its least credible member.
+        confidence=min(float(member["predicted_iou"]) for member in members),
+        metadata={
+            "selection": config.selection,
+            "mask_count": len(members),
+            "area_pixels": round(fraction * frame),
+            "coverage_fraction": fraction,
+            # Unmeasured, not zero, when the border test is disabled.
+            "border_fraction": (
+                max(item[1] for item in chosen_items) if config.max_border_fraction < 1.0 else None
+            ),
+            "stability_score": min(float(member["stability_score"]) for member in members),
+        },
+    )
 
 
 def _can_retry_on_cpu(exc: RuntimeError | TypeError) -> bool:
