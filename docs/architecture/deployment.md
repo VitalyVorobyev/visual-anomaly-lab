@@ -45,6 +45,17 @@ branched on a method's own configuration would be the leak ADR-0007 forbids.
 Cancellation or any exception removes staging. A parity failure publishes no bundle. Export is therefore a
 claim about numerical behaviour, not merely about whether an ONNX parser accepts the graph.
 
+## Parity
+
+One rule, in `deployment/parity.py` and numpy-only: both sides are handed the same prepared tensor, the map
+must be `allclose` at the graph's declared `atol` and `rtol`, and the score — resolved from the graph's
+outputs through the manifest's score contract, exactly as a host resolves it — must lie within the `atol`
+alone. The export job applies it to its fixture, which proves the graph runs the method's arithmetic.
+`scripts/export-parity-gate.py` applies it on real pixels after a real fit — any candidate, through the
+ordinary train, infer and export jobs on VisA, every test image compared
+([measurements](../measurements.md#export-parity-on-real-pixels)) — which proves the graph does so on the
+activations a trained network produces.
+
 ## Runtime boundary
 
 The runtime receives **prepared pixels**. Source cropping, contain-resize, padding and inverse map projection
