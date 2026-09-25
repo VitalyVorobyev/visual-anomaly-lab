@@ -17,25 +17,21 @@ from pydantic import BaseModel
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.results import ScoredSample
+from anomaly_lab.deployment.parity import compare_outputs, portable_score
 from anomaly_lab.deployment.protocol import SupportsOnnxExport
 from anomaly_lab.deployment.schema import (
     CoordinateFrame,
     DeploymentManifest,
     FileDigest,
     MapOutputContract,
-    MaxReducer,
     OperatingPointContract,
     ParityFixture,
-    PercentileReducer,
     PixelInputContract,
     RegionContract,
-    ScoreContract,
     SourceExperiment,
     TensorDtype,
     TensorLayout,
-    TensorScore,
     TensorSpec,
-    TopKMeanReducer,
 )
 from anomaly_lab.domain.entities import ExperimentStatus, Subset
 from anomaly_lab.eval.threshold import suggest_threshold
@@ -120,20 +116,23 @@ def run_export_job(ctx: JobContext) -> dict[str, Any]:
             raise ExperimentJobError(
                 f"exported anomaly map has invalid shape {np.shape(outputs[graph.output_name])}"
             )
-        actual_score = _score(outputs, actual_map, graph.score)
+        try:
+            actual_score = portable_score(outputs, actual_map, graph.score)
+            reading = compare_outputs(
+                expected_map,
+                expected_score,
+                actual_map,
+                actual_score,
+                absolute_tolerance=graph.absolute_tolerance,
+                relative_tolerance=graph.relative_tolerance,
+            )
+        except ValueError as exc:
+            raise ExperimentJobError(str(exc)) from exc
         absolute_tolerance = graph.absolute_tolerance
         relative_tolerance = graph.relative_tolerance
-        max_absolute_error = float(np.max(np.abs(actual_map - expected_map)))
-        score_absolute_error = abs(actual_score - expected_score)
-        if (
-            not np.allclose(
-                actual_map,
-                expected_map,
-                atol=absolute_tolerance,
-                rtol=relative_tolerance,
-            )
-            or score_absolute_error > absolute_tolerance
-        ):
+        max_absolute_error = reading.map_max_absolute_error
+        score_absolute_error = reading.score_absolute_error
+        if not reading.passed:
             raise ExperimentJobError(
                 "ONNX parity failed: "
                 f"map max abs error {max_absolute_error:.8g}, "
@@ -254,28 +253,6 @@ def _run_onnx(graph: Path, input_name: str, fixture: np.ndarray) -> dict[str, np
         output.name: np.asarray(value, dtype=np.float32)
         for output, value in zip(session.get_outputs(), values, strict=True)
     }
-
-
-def _score(outputs: dict[str, np.ndarray], anomaly_map: np.ndarray, score: ScoreContract) -> float:
-    if isinstance(score, PercentileReducer):
-        return float(np.percentile(anomaly_map, score.percentile))
-    if isinstance(score, MaxReducer):
-        return float(np.max(anomaly_map))
-    if isinstance(score, TopKMeanReducer):
-        flat = anomaly_map.ravel()
-        count = min(score.top_k, flat.size)
-        return float(np.partition(flat, flat.size - count)[-count:].mean())
-    if isinstance(score, TensorScore):
-        try:
-            value = np.asarray(outputs[score.tensor.name], dtype=np.float32).squeeze()
-        except KeyError as exc:
-            raise ExperimentJobError(
-                f"exported graph has no declared score output {score.tensor.name!r}"
-            ) from exc
-        if value.ndim != 0:
-            raise ExperimentJobError(f"exported score tensor has invalid shape {value.shape}")
-        return float(value)
-    raise AssertionError(f"unhandled score contract {type(score).__name__}")
 
 
 def _digest(root: Path, relative: str) -> FileDigest:

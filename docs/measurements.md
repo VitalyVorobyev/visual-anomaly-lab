@@ -77,6 +77,32 @@ the gate measures only the divergence training order and RNG streams accumulate 
 Verdict: parity to the third decimal; ≈ 570 s per training leg (wrapper ≈ 610 s), 50 ms inference, 0.98 GB
 peak RSS. `dinomaly_custom` is the carried implementation.
 
+## Export parity on real pixels
+
+Whether a method's ONNX bundle computes what the method computes on the activations a *trained* network
+sees on real parts — the export job's own check uses a dataset-free ramp. A method lists a portable format
+only after passing this. Predeclared before it ran; `scripts/export-parity-gate.py`, method-agnostic.
+
+**Protocol.** VisA `candle` and `pcb1`, official 1cls split, the 200-image test subset of each, identity
+profile at the candidate's gate size, the candidate's recorded gate configuration and seed 20260812 at its
+full step budget. The application's own train and infer jobs fit and score on the preferred device; the
+ordinary export job writes and fixture-checks the bundle. Every test image's prepared tensor then goes to
+both the method's `portable_reference` (torch, CPU) and the bundle's graph (ONNX Runtime 1.28.0, CPU),
+with the score read through the manifest's contract as a host would (`deployment/parity.py`, the rule the
+export job applies).
+
+**Tolerance, fixed before the run: `atol = rtol = 1e-4`** on every map (`allclose`) and `atol = 1e-4` on
+every score. It is the bound PatchCore's bundle already declares for a deep frozen backbone: both sides run
+the same float32 operations through different kernels and summation orders, across a twelve-block encoder
+and a decoder stack, so a disagreement of order 10⁻⁶–10⁻⁵ is rounding. The bound sits an order above that,
+and two orders below the gap between a normal and a defective part's score; a larger disagreement means the
+graph computes a different operation.
+
+**Decision rule.** Pass only if, on both classes: the export job publishes a bundle; every test image is
+within tolerance on map and score; and image ROC-AUC over the portable scores is within **0.001** of that
+over the Python scores. Reported, not gated: the portable outputs against the workbench's stored results,
+which also carry the accelerator's own rounding.
+
 ## GLASS — available, not recommended
 
 Frozen ImageNet backbone, trainable projection and discriminator: 28.80M parameters, 3.94M trainable,
