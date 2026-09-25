@@ -28,8 +28,8 @@ until its output has been reviewed.
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
 - [ ] **A cross-domain few-shot gate** (M): VisA defects are small and subtle, the hardest target for
-      a method built for objects. Choose a public few-shot segmentation dataset with object classes,
-      predeclare the protocol in `measurements.md`, and run the three methods on it.
+      a method built for objects. The FSS-1000 protocol is predeclared in `measurements.md`; run it
+      (`scripts/few-shot-public-gate.py --benchmark fss1000`) and record its verdict.
 
 Later, each behind a measured gate:
 - INSID3 upstream and FSS-SAM3 as quality references.
