@@ -182,7 +182,9 @@ failure; its pydantic schema drives the client as model schemas do.
   within area/quality limits. `max_border_fraction` drops masks that cover more than that share of the
   frame's one-pixel border — a background wraps the frame, an object does not — and `selection = union`
   returns the box around every surviving mask instead of the largest one; nothing surviving is an
-  extraction failure. `select_region` is the pure selection step, so a gate can apply several rules to one
+  extraction failure. Both are opt-in: the default keeps the largest mask in the area window, which on
+  most public classes is a background whose box is the whole frame, because the border rule drops
+  defect pixels on held-out classes ([measurements](../measurements.md)). `select_region` is the pure selection step, so a gate can apply several rules to one
   MobileSAM pass. It tries MPS and falls back to CPU after an MPS runtime failure, reporting the chosen
   device as extractor metadata.
 

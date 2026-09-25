@@ -33,7 +33,10 @@ defect pixels.
 - **Classical threshold:** deterministic foreground extraction for contrast-separated objects; inexpensive,
   but sensitive to illumination and background.
 - **MobileSAM:** promptable segmentation used as a general deep proposal. The asset is local and pinned; a
-  model response is converted into reviewed, versioned region geometry.
+  model response is converted into reviewed, versioned region geometry. By default it keeps the largest
+  mask, which is often the background; setting a border limit and `union` selection finds the part
+  instead, at the cost of sometimes cutting defects off — preview the crops against annotated defects
+  before building.
 
 Dataset-specific geometry belongs only in a dataset-specific plugin. Hough circles or fixed aspect-ratio
 rules must not leak into shared preparation merely because they help one showcase.

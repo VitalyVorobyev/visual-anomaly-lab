@@ -53,10 +53,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Spatial input
 
-- [ ] **Revisit automatic mask selection without test leakage** (M): MobileSAM's largest credible
-      mask can be a background segment whose mask covers 63 % but whose bounding box is the full
-      frame. Design the boundary/objectness rule on training normals, freeze it, then validate on
-      different public classes.
 - [ ] **Measure compact source-map persistence** (M): projected float32 maps consume about 1.23 GB
       for a 200-image VisA test set. Compare compressed source maps against prepared-frame map plus
       pinned-transform projection, preserving constant-memory evaluation and exact overlay semantics.
