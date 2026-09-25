@@ -48,8 +48,9 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 - [ ] **A detection gate on truth drawn as boxes** (M): the VisA gate (`measurements.md`) cannot
       say whether frozen DINO features are worth a box-regression head, because many boxes of a
-      VisA mask's components are specks of a few pixels. Choose a public dataset whose objects are
-      annotated as boxes, predeclare the protocol, and run `dino_linear_det` against the floor on it.
+      VisA mask's components are specks of a few pixels. The PKU-Market-PCB protocol is predeclared
+      in `measurements.md`; run it (`scripts/detection-public-gate.py --benchmark pcb`) and record
+      its verdict.
 
 ## Methods
 

@@ -287,20 +287,24 @@ def _identity_profile(
     prepared_size: int,
     job_id: int,
     log: Any,
+    prepared_height: int | None = None,
 ) -> PreparedRegionBuild:
+    """`prepared_size` square, or `prepared_size` wide by `prepared_height` high."""
+    height = prepared_size if prepared_height is None else prepared_height
+    frame = f"{prepared_size}" if height == prepared_size else f"{prepared_size}x{height}"
     with connection(settings.db_path) as conn:
         profile = profiles_repo.create_revision(
             conn,
             dataset_id=dataset_id,
-            name=f"M11 identity {prepared_size}",
+            name=f"M11 identity {frame}",
             extractor_type="identity",
             extractor_config={},
             prepared_width=prepared_size,
-            prepared_height=prepared_size,
+            prepared_height=height,
             padding_fraction=0.0,
             seed=SEED,
         )
-    print(f"Preparing {category} at {prepared_size}px...", file=sys.stderr)
+    print(f"Preparing {category} at {frame}px...", file=sys.stderr)
     with contextlib.redirect_stdout(log):
         run_region_prepare_job(
             JobContext(

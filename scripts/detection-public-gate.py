@@ -1,14 +1,22 @@
 #!/usr/bin/env -S uv run --project backend --extra dl python
-"""Run the public detection gate (ADR-0039; protocol in docs/measurements.md).
+"""Run a public detection gate (ADR-0039; protocols in docs/measurements.md).
 
-VisA `candle` and `pcb1` at 448 x 448, read as a detection benchmark of one class, `defect`:
-each 8-connected component of a VisA mask is one truth box, exactly as the application
-resolves an imported mask's boxes. For every class and seed, a `class_stratified` split draws
-the samples into train and test; `color_detector` and `dino_linear_det` then fit on the train
-subset at their shipped defaults and detect on the test subset, each in its own child process
-on the same immutable prepared pixels.
+For every dataset and seed, a `class_stratified` split draws the samples into train and test;
+`color_detector` and `dino_linear_det` then fit on the train subset at their shipped defaults
+and detect on the test subset, each in its own child process on the same immutable prepared
+pixels.
 
     ./scripts/detection-public-gate.py --data-dir /tmp/detection-gate
+    ./scripts/detection-public-gate.py --benchmark pcb --data-dir /tmp/detection-pcb
+
+`--benchmark visa` (the default) is VisA `candle` and `pcb1` at 448 x 448, read as a detection
+benchmark of one class, `defect`: each 8-connected component of a VisA mask is one truth box,
+exactly as the application resolves an imported mask's boxes.
+
+`--benchmark pcb` is PKU-Market-PCB at 1120 x 896, registered as the reference pack registers
+it: six defect classes, every truth box drawn by the dataset's annotators and entered as each
+image's first revision. `--datasets-dir` may point at a smaller copy of the same layout for a
+smoke run; the gate itself reads the whole dataset.
 
 The destination must be absent or empty; source images stay read-only under `--datasets-dir`
 (the repository's `/datasets` by default). It holds the isolated database, prepared pixels,
@@ -32,6 +40,8 @@ from typing import Any
 import m11_public_gate as harness
 
 from anomaly_lab.config import Settings
+from anomaly_lab.datasets.commit import commit_manifest
+from anomaly_lab.datasets.reference_packs import pack_specs, register_box_truth, scan_spec
 from anomaly_lab.datasets.splitting import (
     SplitParams,
     SplitStrategy,
@@ -57,6 +67,12 @@ CANDIDATE = "dino_linear_det"
 METHODS = (FLOOR, CANDIDATE)
 PREPARED_SIZE = 448
 MARGIN = 0.05
+# PKU-Market-PCB is one dataset, prepared at 1120 x 896: divisible by both DINO patch sizes, and
+# near the boards' median aspect, so the contain-resize pads little. Its rule also asks for a
+# lead on at least `PCB_CLASS_LEADS` of the six classes, so one class cannot carry the mean.
+BENCHMARK_CATEGORIES: dict[str, tuple[str, ...]] = {"visa": CATEGORIES, "pcb": ("pcb",)}
+BENCHMARK_FRAME = {"visa": (PREPARED_SIZE, PREPARED_SIZE), "pcb": (1120, 896)}
+PCB_CLASS_LEADS = 4
 REPORTED = (
     "ap",
     "ap50",
@@ -67,6 +83,43 @@ REPORTED = (
     "precision_at_cut",
     "recall_at_cut",
 )
+
+
+def _pcb_dataset(settings: Settings, log: Any) -> int:
+    """PKU-Market-PCB, registered as the reference pack registers it, box truth and all."""
+    pack = next(pack for pack in pack_specs(settings) if pack.key == "pku_pcb")
+    missing = [path for path in pack.required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"PKU-Market-PCB is incomplete; missing {missing[0]}")
+    spec = pack.datasets[0]
+    print("Scanning PKU-Market-PCB...", file=sys.stderr)
+    started = time.perf_counter()
+    manifest = scan_spec(spec, lambda _fraction, _message: None)
+    with connection(settings.db_path) as conn:
+        committed = commit_manifest(conn, settings, manifest)
+    print("Entering its box truth...", file=sys.stderr)
+    entered = register_box_truth(settings, spec, committed.dataset_id)
+    log.write(
+        json.dumps(
+            {
+                "event": "import",
+                "category": "pcb",
+                "dataset_id": committed.dataset_id,
+                "samples": len(manifest.samples),
+                "box_truth": {
+                    "images": entered.images,
+                    "boxes": entered.boxes,
+                    "clipped": entered.clipped,
+                    "reshaped": entered.reshaped,
+                    "without_file": entered.without_file,
+                },
+                "elapsed_seconds": time.perf_counter() - started,
+            }
+        )
+        + "\n"
+    )
+    log.flush()
+    return committed.dataset_id
 
 
 def _split(conn: Any, dataset_id: int, seed: int) -> int:
@@ -106,7 +159,9 @@ def _experiment(
     # The method's seed follows the split's, where it has one; `color_detector` draws nothing.
     overrides: dict[str, Any] = {"seed": seed} if "seed" in config_model.model_fields else {}
     config = config_model.model_validate(overrides).model_dump(mode="json")
-    preprocessing = PreprocessingConfig(width=PREPARED_SIZE, height=PREPARED_SIZE)
+    preprocessing = PreprocessingConfig(
+        width=build.profile.prepared_width, height=build.profile.prepared_height
+    )
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(
             conn,
@@ -148,7 +203,14 @@ def _outcomes(settings: Settings, experiment_id: int) -> dict[str, dict[str, int
 def _row(report: dict[str, Any]) -> dict[str, Any]:
     metrics = report["infer"]["metrics"]["test"]
     row: dict[str, Any] = {name: metrics.get(name) for name in REPORTED}
-    for name in ("confidence_cut", "cut_rule", "truth_instances", "predicted_instances"):
+    for name in (
+        "confidence_cut",
+        "cut_rule",
+        "truth_instances",
+        "predicted_instances",
+        "per_class_ap",
+        "per_class_ap50",
+    ):
         row[name] = metrics.get(name)
     row["images"] = metrics.get("images")
     row["ms_per_image"] = metrics.get("timing", {}).get("mean_ms")
@@ -181,6 +243,15 @@ def _summary(runs: list[dict[str, Any]]) -> dict[str, Any]:
                 for label, counts in leg["outcomes"].items():
                     outcomes.setdefault(label, Counter()).update(counts)
             cell["outcomes"] = {label: dict(sorted(c.items())) for label, c in outcomes.items()}
+            # Per class, the mean over seeds of its AP; a class with no truth is `None` in
+            # every run and stays out, as the evaluator leaves it out of the mean.
+            for name in ("per_class_ap", "per_class_ap50"):
+                per_class: dict[str, list[float]] = {}
+                for leg in legs:
+                    for key, value in (leg.get(name) or {}).items():
+                        if value is not None:
+                            per_class.setdefault(key, []).append(float(value))
+                cell[name] = {key: mean(values) for key, values in per_class.items()}
             table.setdefault(method, {})[category] = cell
     return table
 
@@ -202,7 +273,53 @@ def _checks(runs: list[dict[str, Any]]) -> dict[str, Any]:
     return checks
 
 
-def _decision(table: dict[str, Any]) -> dict[str, Any]:
+def _pcb_decision(table: dict[str, Any]) -> dict[str, Any]:
+    """The PKU-Market-PCB rule, fixed before it ran (docs/measurements.md).
+
+    Two questions, each by the same test on its own metric: does `dino_linear_det` beat the
+    floor by `MARGIN` on the mean over the six classes, and lead it on at least
+    `PCB_CLASS_LEADS` of them? On AP50 the answer says whether the frozen features find and
+    classify the defects, which is what a box-regression head would build on; on
+    AP@[.5:.95] it decides the method's maturity.
+    """
+
+    def cell(method: str) -> dict[str, Any]:
+        return dict(table.get(method, {}).get("pcb", {}))
+
+    def verdict(metric: str) -> dict[str, Any]:
+        candidate, floor = cell(CANDIDATE), cell(FLOOR)
+        lead = (
+            None
+            if candidate.get(metric) is None or floor.get(metric) is None
+            else float(candidate[metric]) - float(floor[metric])
+        )
+        per_class_name = "per_class_ap" if metric == "ap" else "per_class_ap50"
+        ours, theirs = candidate.get(per_class_name, {}), floor.get(per_class_name, {})
+        class_leads = {key: float(ours[key]) - float(theirs[key]) for key in ours if key in theirs}
+        led = sum(value > 0 for value in class_leads.values())
+        return {
+            "lead": lead,
+            "class_leads": class_leads,
+            "classes_led": led,
+            "passed": lead is not None and lead >= MARGIN and led >= PCB_CLASS_LEADS,
+        }
+
+    features, maturity = verdict("ap50"), verdict("ap")
+    return {
+        "candidate": CANDIDATE,
+        "margin": MARGIN,
+        "classes_led_required": PCB_CLASS_LEADS,
+        "features_find_defects": {"metric": "test AP50, mean over seeds", **features},
+        "maturity_rule": {"metric": "test AP@[.5:.95], mean over seeds", **maturity},
+        "regression_head_worth_building": features["passed"],
+        "maturity": "supported" if maturity["passed"] else "experimental",
+    }
+
+
+def _decision(table: dict[str, Any], benchmark: str = "visa") -> dict[str, Any]:
+    if benchmark == "pcb":
+        return _pcb_decision(table)
+
     def ap(method: str, category: str) -> float | None:
         value = table.get(method, {}).get(category, {}).get("ap")
         return None if value is None else float(value)
@@ -229,16 +346,37 @@ def main() -> int:
         "--datasets-dir",
         type=Path,
         default=harness.REPOSITORY / "datasets",
-        help="Where the public packs live (VisA_20220922 inside it); read only.",
+        help="Where the public packs live (VisA_20220922, PKU-PCB inside it); read only.",
     )
-    parser.add_argument("--categories", nargs="+", default=list(CATEGORIES))
+    parser.add_argument("--benchmark", choices=sorted(BENCHMARK_CATEGORIES), default="visa")
+    parser.add_argument("--categories", nargs="+", help="A smoke subset of VisA's classes.")
     parser.add_argument("--seeds", nargs="+", type=int, help="A smoke subset of the gate's seeds.")
     parser.add_argument(
         "--methods", nargs="+", choices=METHODS, help="A smoke subset of the gate's methods."
     )
     args = parser.parse_args()
+    benchmark: str = args.benchmark
+    categories: list[str] = list(args.categories or BENCHMARK_CATEGORIES[benchmark])
+    unknown = sorted(set(categories) - set(BENCHMARK_CATEGORIES[benchmark]))
+    if unknown:
+        parser.error(f"not a {benchmark} category: {', '.join(unknown)}")
+    width, height = BENCHMARK_FRAME[benchmark]
     seeds: tuple[int, ...] = tuple(args.seeds or SEEDS)
     methods: tuple[str, ...] = tuple(args.methods or METHODS)
+    protocol: dict[str, Any] = {
+        "benchmark": benchmark,
+        "categories": categories,
+        "seeds": seeds,
+        "methods": methods,
+        "prepared_frame": [width, height],
+        "split": "class_stratified, shipped defaults",
+    }
+    if benchmark == "pcb":
+        protocol["classes"] = "the dataset's taxonomy: defect (no truth) and the six defect kinds"
+        protocol["truth"] = "the dataset's Pascal VOC boxes, entered as each image's first revision"
+    else:
+        protocol["classes"] = ["defect"]
+        protocol["truth"] = "each 8-connected component of a VisA mask"
 
     data_dir: Path = args.data_dir.resolve()
     harness._empty_destination(data_dir)
@@ -253,13 +391,17 @@ def main() -> int:
     result_path = data_dir / "result.json"
 
     with (data_dir / "gate.log").open("a", encoding="utf-8") as log:
-        for index, category in enumerate(args.categories):
-            dataset_id, _official = harness._official_dataset(settings, category, log)
+        for index, category in enumerate(categories):
+            if benchmark == "pcb":
+                dataset_id = _pcb_dataset(settings, log)
+            else:
+                dataset_id, _official = harness._official_dataset(settings, category, log)
             build = harness._identity_profile(
                 settings,
                 category=category,
                 dataset_id=dataset_id,
-                prepared_size=PREPARED_SIZE,
+                prepared_size=width,
+                prepared_height=height,
                 job_id=50_000 + index,
                 log=log,
             )
@@ -295,28 +437,20 @@ def main() -> int:
                     result_path.write_text(
                         json.dumps(
                             {
-                                "protocol": {
-                                    "categories": args.categories,
-                                    "seeds": seeds,
-                                    "methods": methods,
-                                    "prepared_size": PREPARED_SIZE,
-                                    "classes": ["defect"],
-                                    "truth": "each 8-connected component of a VisA mask",
-                                    "split": "class_stratified, shipped defaults",
-                                },
+                                "protocol": protocol,
                                 "packages": harness._packages(),
                                 "elapsed_seconds": time.perf_counter() - started,
                                 "runs": runs,
                                 "summary": table,
                                 "checks": _checks(runs),
-                                "decision": _decision(table),
+                                "decision": _decision(table, benchmark),
                             },
                             indent=2,
                         ),
                         encoding="utf-8",
                     )
 
-    print(json.dumps(_decision(_summary(runs)), indent=2))
+    print(json.dumps(_decision(_summary(runs), benchmark), indent=2))
     return 0
 
 
