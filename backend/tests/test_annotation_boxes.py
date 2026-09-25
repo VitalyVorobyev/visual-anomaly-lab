@@ -113,24 +113,33 @@ def test_a_stored_v1_document_reads_unchanged_and_keeps_its_digest() -> None:
     assert "instance_id" not in document.model_dump(mode="json")["shapes"][0]
 
 
-def test_a_box_covers_exactly_the_pixels_of_its_four_corner_polygon(tmp_path: Path) -> None:
+def test_a_drawn_box_owns_exactly_the_pixels_it_covers(tmp_path: Path) -> None:
+    # Pixel-edge coordinates, as the editor draws them: a box at x = 1 of width 3 covers
+    # columns 1, 2 and 3, and owns those and no fourth.
+    classes, rendered = _render(tmp_path, "whole", _document(_box("b", "scratch", (1, 2, 3, 4))))
+    expected = np.zeros((16, 16), dtype=bool)
+    expected[2:6, 1:4] = True
+    assert np.array_equal(classes == 2, expected)
+    # Its instance box is the box that was drawn, `[x, y, x + width, y + height]`.
+    assert [instance.box for instance in rendered.instances] == [(1, 2, 4, 6)]
+    assert rendered.instances[0].pixels == 12
+
+
+def test_a_fractional_box_owns_the_pixels_whose_centres_it_covers(tmp_path: Path) -> None:
     rect = (1.5, 2.25, 9.5, 6.1)
     x, y, width, height = rect
-    polygon = {
-        "id": "p",
-        "label_key": "scratch",
-        "kind": "polygon",
-        "points": [
-            {"x": x, "y": y},
-            {"x": x + width, "y": y},
-            {"x": x + width, "y": y + height},
-            {"x": x, "y": y + height},
-        ],
-    }
-    as_box, _ = _render(tmp_path, "box", _document(_box("b", "scratch", rect)))
-    as_polygon, _ = _render(tmp_path, "polygon", _document(polygon))
-    assert as_box.any()
-    assert np.array_equal(as_box, as_polygon)
+    classes, _ = _render(tmp_path, "box", _document(_box("b", "scratch", rect)))
+    centres_x = np.arange(16) + 0.5
+    centres_y = np.arange(16) + 0.5
+    inside_x = (centres_x >= x) & (centres_x < x + width)
+    inside_y = (centres_y >= y) & (centres_y < y + height)
+    assert np.array_equal(classes == 2, inside_y[:, None] & inside_x[None, :])
+    # Columns 1..10 (the centre 1.5 is on the left edge, so it is in) and rows 2..7.
+    assert (classes == 2).sum() == 10 * 6
+    # A box narrower than a pixel that covers no centre owns nothing, and is no instance.
+    thin, rendered = _render(tmp_path, "thin", _document(_box("t", "scratch", (3.6, 3, 0.8, 4))))
+    assert not thin.any()
+    assert rendered.instances == ()
 
 
 def test_a_box_must_lie_inside_the_frame() -> None:
@@ -150,11 +159,11 @@ def test_one_instance_cannot_hold_two_classes() -> None:
 
 
 def test_instances_are_grouped_cut_overdrawn_and_dropped_when_empty(tmp_path: Path) -> None:
-    """A box `(x, y, w, h)` fills columns x..x+w and rows y..y+h inclusive, as its polygon does.
+    """A box `(x, y, w, h)` owns columns x..x+w-1 and rows y..y+h-1.
 
-    - `a` and `b` are one instance, `obj`: 16 + 16 pixels.
-    - `c` (scratch, its own instance) overdraws `obj` on columns and rows 2..3: 4 pixels
-      move from `obj` to `c`, and `obj`'s box still reaches (0, 0) and (11, 3).
+    - `a` and `b` are one instance, `obj`: 9 + 9 pixels.
+    - `c` (scratch, its own instance) overdraws `obj` at (2, 2): 1 pixel moves from `obj` to
+      `c`, and `obj`'s box still reaches (0, 0) and (10, 2).
     - `d` is cut away entirely by `e`, and is therefore not an instance at all.
     """
     document = _document(
@@ -170,8 +179,8 @@ def test_instances_are_grouped_cut_overdrawn_and_dropped_when_empty(tmp_path: Pa
     assert rendered.instances_sha256 == sha256_of(path)
     assert json.loads(path.read_text()) == {
         "instances": [
-            {"instance_id": "obj", "label_key": "defect", "box": [0, 0, 12, 4], "pixels": 28},
-            {"instance_id": "c", "label_key": "scratch", "box": [2, 2, 6, 6], "pixels": 16},
+            {"instance_id": "obj", "label_key": "defect", "box": [0, 0, 11, 3], "pixels": 17},
+            {"instance_id": "c", "label_key": "scratch", "box": [2, 2, 5, 5], "pixels": 9},
         ]
     }
 
@@ -191,7 +200,7 @@ def test_instances_of_polygons_and_bitmaps_count_their_final_pixels(tmp_path: Pa
     by_id = {instance.instance_id: instance for instance in rendered.instances}
     assert by_id["tri"].pixels == int((classes == 1).sum())
     assert by_id["sq"].pixels == int((classes == 2).sum())
-    assert by_id["sq"].box == (9, 9, 14, 14)
+    assert by_id["sq"].box == (9, 9, 13, 13)
 
 
 def _complete_image(client: TestClient, image_id: int, shapes: list[Any]) -> dict[str, Any]:
@@ -220,11 +229,11 @@ def test_an_image_completion_writes_and_pins_its_instances(
     assert path.name == "revision-1.instances.json"
     assert sha256_of(path) == revision["instances_sha256"]
     assert json.loads(path.read_text())["instances"] == [
-        {"instance_id": "a", "label_key": "defect", "box": [1, 1, 5, 5], "pixels": 16}
+        {"instance_id": "a", "label_key": "defect", "box": [1, 1, 4, 4], "pixels": 9}
     ]
     # The document round-trips with its box, and the box is truth like any other region.
     assert revision["document"]["shapes"][0]["kind"] == "box"
-    assert revision["class_table"][0]["pixels"] == 16
+    assert revision["class_table"][0]["pixels"] == 9
 
 
 def test_a_sample_completion_fans_out_the_instances_file(

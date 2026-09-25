@@ -14,6 +14,7 @@ from anomaly_lab.annotation_bitmap import (
     decode_png_base64,
     tight_bitmap_shape,
 )
+from anomaly_lab.annotation_render import box_rectangle
 from anomaly_lab.domain.annotations import (
     AnnotationDocument,
     AnnotationPoint,
@@ -393,7 +394,9 @@ def render_shapes(shapes: list[AnnotationShape], *, size: tuple[int, int]) -> np
                 fill=255 if shape.operation == "add" else 0,
             )
         elif isinstance(shape, BoxShape):
-            draw.polygon(shape.corners(), fill=255 if shape.operation == "add" else 0)
+            covered = box_rectangle(shape)
+            if covered is not None:
+                draw.rectangle(covered, fill=255 if shape.operation == "add" else 0)
         else:  # pragma: no cover - the discriminated union is closed
             assert_never(shape)
     return np.asarray(canvas) > 0

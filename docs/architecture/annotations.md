@@ -57,8 +57,8 @@ source answers is `resolve_box_truth`'s:
 - nothing, for an image of a sample labelled normal: a confirmed absence.
 
 A component stands for an object because a binary mask records no instances: two touching defects are
-one box and one broken defect is two. An instance's box is the tight box of the pixels it owns, and a
-drawn box's outline is rasterised inclusively, so a box shape of width 3 owns 4 columns. A reader keeps
+one box and one broken defect is two. An instance's box is the tight box of the pixels it owns, so a drawn box with
+integer corners is its own instance box. A reader keeps
 the classes its run pinned; `load_boxes` returns every instance and verifies each source against its
 digest.
 
@@ -83,8 +83,16 @@ An annotation document is JSON schema version 1 in **source-image pixel coordina
 
 - a polygon — stable id, taxonomy key, `add` / `subtract` operation, three or more points;
 - a box — the same identity, taxonomy and operation fields and a float `x`, `y`, `width`, `height`
-  rectangle with positive area. It rasterises as the polygon of its four corners, through the same
-  call, so a box and that polygon cover exactly the same pixels;
+  rectangle with positive area, in **pixel-edge coordinates**: pixel `i` spans `[i, i + 1)`, as it does
+  on the editor's canvas, where a drag's corners land wherever the pointer is, and in
+  `SpatialTransform.prepare_box`. A box owns the pixels whose centres it covers, half-open
+  (`x <= i + 0.5 < x + width`, `BoxShape.owned_pixels`), so a box at `x = 1` of width 3 owns columns 1
+  to 3 and its instance box runs from `x0 = 1` to `x1 = 4` — exactly what was drawn. A polygon is filled
+  by Pillow, outline included, so a box and the polygon of its four corners do not cover the same
+  pixels. Completed revisions are immutable: one whose files hold a box rasterised outline-inclusive,
+  one pixel larger on its far edges, keeps them, and they verify against their own digests. A
+  completion, and a document re-rasterised in memory (one drawn over an imported mask, read for
+  detection), follows this rule;
 - a bitmap — the same identity, taxonomy and operation fields, a cropped binary PNG and its integer
   source-frame rectangle.
 
@@ -311,7 +319,8 @@ carrying truth, so the mark never accuses somebody of leaving a drawn defect und
   began from; a drag with no area draws nothing. Under Select a box moves like any region and its four
   corners are vertex handles: dragging one resizes the box against the opposite corner, and dragging past
   it flips the box rather than inverting it. `shapeOutline` is the one place a box becomes points, for
-  the scene, the pixel readout and the resize.
+  the scene and the resize. The pixel readout tests a box half-open at the pixel's centre, the rule
+  completion owns its pixels by.
 - **Class keys.** `2`–`9` pick the class for new regions, in the order the class picker lists them, which
   prints each class's key beside its name; `0` and `1` stay Fit and 1:1. They are one entry in
   `EDITOR_BINDINGS`, so the shortcut sheet lists them.

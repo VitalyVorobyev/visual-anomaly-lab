@@ -305,19 +305,30 @@ def _rasterize(
             if owner is not None:
                 owner = _paste_bitmap(owner, shape, bitmap, owned, "I", np.int32)
                 owner_draw = ImageDraw.Draw(owner)
-        elif isinstance(shape, PolygonShape | BoxShape):
-            outline = (
-                [(point.x, point.y) for point in shape.points]
-                if isinstance(shape, PolygonShape)
-                else shape.corners()
-            )
+        elif isinstance(shape, PolygonShape):
+            outline = [(point.x, point.y) for point in shape.points]
             draw.polygon(outline, fill=fill)
             if owner_draw is not None:
                 owner_draw.polygon(outline, fill=owned)
+        elif isinstance(shape, BoxShape):
+            # Exactly the pixels the box covers, not its outline drawn inclusively.
+            covered = box_rectangle(shape)
+            if covered is not None:
+                draw.rectangle(covered, fill=fill)
+                if owner_draw is not None:
+                    owner_draw.rectangle(covered, fill=owned)
         else:  # pragma: no cover - the discriminated union is closed
             assert_never(shape)
     owned_pixels = np.asarray(owner, dtype=np.int32) if owner is not None else None
     return np.asarray(canvas, dtype=np.uint8), owned_pixels, keys
+
+
+def box_rectangle(shape: BoxShape) -> tuple[int, int, int, int] | None:
+    """The inclusive pixel rectangle Pillow fills for a box, or `None` when it owns none."""
+    x0, y0, x1, y1 = shape.owned_pixels()
+    if x1 <= x0 or y1 <= y0:
+        return None
+    return x0, y0, x1 - 1, y1 - 1
 
 
 def _paste_bitmap(

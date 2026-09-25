@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from typing import Annotated, Literal, assert_never
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -46,7 +47,12 @@ class PolygonShape(BaseModel):
 
 
 class BoxShape(BaseModel):
-    """An axis-aligned rectangle in the source frame; it rasterises as its four corners."""
+    """An axis-aligned rectangle in the source frame, in pixel-edge coordinates.
+
+    Pixel `(i, j)` covers `[i, i + 1) x [j, j + 1)`, as it does on the editor's canvas and in
+    `SpatialTransform.prepare_box`. A box owns the pixels whose centres it covers, half-open,
+    so a box at `x = 1` of width 3 owns columns 1, 2 and 3 — exactly what was drawn.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -60,10 +66,18 @@ class BoxShape(BaseModel):
     width: float = Field(gt=0)
     height: float = Field(gt=0)
 
-    def corners(self) -> list[tuple[float, float]]:
-        """The polygon a box is: a box and this polygon cover exactly the same pixels."""
-        x1, y1 = self.x + self.width, self.y + self.height
-        return [(self.x, self.y), (x1, self.y), (x1, y1), (self.x, y1)]
+    def owned_pixels(self) -> tuple[int, int, int, int]:
+        """`[x0, y0, x1, y1)`, the pixels whose centres lie inside the box, x1/y1 exclusive.
+
+        Pixel `i` is owned when `x <= i + 0.5 < x + width`. For integer coordinates that is
+        columns `x` to `x + width - 1`; a box narrower than a pixel may own none, and then
+        `x1 == x0`.
+        """
+        x0 = math.ceil(self.x - 0.5)
+        y0 = math.ceil(self.y - 0.5)
+        x1 = max(x0, math.ceil(self.x + self.width - 0.5))
+        y1 = max(y0, math.ceil(self.y + self.height - 0.5))
+        return x0, y0, x1, y1
 
 
 class BitmapShape(BaseModel):

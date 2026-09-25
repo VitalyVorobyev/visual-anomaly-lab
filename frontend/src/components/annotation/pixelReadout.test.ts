@@ -91,7 +91,7 @@ describe("readPixel over a box", () => {
     height: 2,
   };
 
-  it("reads a box as the polygon of its corners, tested at the pixel's centre", () => {
+  it("reads a box as exactly the pixels it covers, tested at the pixel's centre", () => {
     const withBox = document({ shapes: [box] });
     expect(readPixel(withBox, { x: 1.2, y: 1.9 }, masks, null)).toEqual({
       x: 1,
@@ -106,5 +106,9 @@ describe("readPixel over a box", () => {
       value: 0,
       region: null,
     });
+    // A centre on the far edge is outside, as it is for the backend's rasteriser.
+    const halfway = document({ shapes: [{ ...box, x: 0.5, width: 3 }] });
+    expect(readPixel(halfway, { x: 0.2, y: 1.5 }, masks, null)?.value).toBe(1);
+    expect(readPixel(halfway, { x: 3.2, y: 1.5 }, masks, null)?.value).toBe(0);
   });
 });

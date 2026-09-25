@@ -2328,7 +2328,11 @@ export interface components {
         };
         /**
          * BoxShape
-         * @description An axis-aligned rectangle in the source frame; it rasterises as its four corners.
+         * @description An axis-aligned rectangle in the source frame, in pixel-edge coordinates.
+         *
+         *     Pixel `(i, j)` covers `[i, i + 1) x [j, j + 1)`, as it does on the editor's canvas and in
+         *     `SpatialTransform.prepare_box`. A box owns the pixels whose centres it covers, half-open,
+         *     so a box at `x = 1` of width 3 owns columns 1, 2 and 3 — exactly what was drawn.
          */
         "BoxShape-Input": {
             /** Id */
@@ -2362,7 +2366,11 @@ export interface components {
         };
         /**
          * BoxShape
-         * @description An axis-aligned rectangle in the source frame; it rasterises as its four corners.
+         * @description An axis-aligned rectangle in the source frame, in pixel-edge coordinates.
+         *
+         *     Pixel `(i, j)` covers `[i, i + 1) x [j, j + 1)`, as it does on the editor's canvas and in
+         *     `SpatialTransform.prepare_box`. A box owns the pixels whose centres it covers, half-open,
+         *     so a box at `x = 1` of width 3 owns columns 1, 2 and 3 — exactly what was drawn.
          */
         "BoxShape-Output": {
             /** Id */
