@@ -88,6 +88,7 @@ export function VectorLayer({
               <polygon
                 points={shape.points.map(([x, y]) => `${x},${y}`).join(" ")}
                 fill={colour}
+                fillRule="evenodd"
                 fillOpacity={0.12}
                 stroke={colour}
                 strokeWidth={STROKE_PX}

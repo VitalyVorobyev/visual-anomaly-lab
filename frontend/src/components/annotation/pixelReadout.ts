@@ -4,8 +4,9 @@
  *
  * The value is folded the way the document is read — the base, then each shape in order, an
  * `add` setting the pixel and a `subtract` clearing it. A polygon or a box is tested at the pixel's
- * centre, which is what a rasteriser samples — a box half-open, `x <= centre < x + width`, the
- * pixels it covers and no more; a bitmap is looked up in its decoded crop. A
+ * centre, which is what completion rasterises — a box half-open, `x <= centre < x + width`, the
+ * pixels it covers and no more, and a polygon by the even-odd rule with the same half-open edges,
+ * so the polygon of a box's corners reads as the box; a bitmap is looked up in its decoded crop. A
  * bitmap whose crop has not been decoded yet is left out rather than guessed.
  *
  * A readout, never truth: the backend's renderer is what evaluation reads, and this exists so
@@ -83,7 +84,11 @@ function insideBox(
   return x >= shape.x && x < shape.x + shape.width && y >= shape.y && y < shape.y + shape.height;
 }
 
-/** Even-odd ray casting. */
+/**
+ * Even-odd ray casting, which completion evaluates at every pixel centre
+ * (`annotation_render.polygon_coverage`): a centre on a left or top edge is inside, one on a right or
+ * bottom edge is outside. `polygonCentres.fixture.json` pins the two against each other.
+ */
 export function insidePolygon(shape: Pick<PolygonShape, "points">, x: number, y: number): boolean {
   const { points } = shape;
   let inside = false;

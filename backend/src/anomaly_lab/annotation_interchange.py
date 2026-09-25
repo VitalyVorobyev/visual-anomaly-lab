@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, Literal, assert_never
 
 import numpy as np
-from PIL import Image, ImageDraw
 from pydantic import BaseModel, ConfigDict, Field
 
 from anomaly_lab.annotation_bitmap import (
@@ -14,7 +13,7 @@ from anomaly_lab.annotation_bitmap import (
     decode_png_base64,
     tight_bitmap_shape,
 )
-from anomaly_lab.annotation_render import box_rectangle
+from anomaly_lab.annotation_render import paint, shape_coverage
 from anomaly_lab.domain.annotations import (
     AnnotationDocument,
     AnnotationPoint,
@@ -375,28 +374,23 @@ def shapes_from_coco(
 
 
 def render_shapes(shapes: list[AnnotationShape], *, size: tuple[int, int]) -> np.ndarray:
-    """Test/interchange helper: rasterise additive imported shapes without a base."""
-    canvas = Image.new("L", size, 0)
-    draw = ImageDraw.Draw(canvas)
+    """Test/interchange helper: rasterise additive imported shapes without a base.
+
+    Vector shapes own the pixels whose centres they contain, as completion rasterises them.
+    """
+    width, height = size
+    canvas = np.zeros((height, width), dtype=bool)
     for shape in shapes:
+        value = shape.operation == "add"
         if isinstance(shape, BitmapShape):
             bitmap = decode_png_base64(shape.png_base64, expected_size=(shape.width, shape.height))
-            region = np.asarray(canvas)[
-                shape.y : shape.y + shape.height,
-                shape.x : shape.x + shape.width,
-            ].copy()
-            region[bitmap] = 255 if shape.operation == "add" else 0
-            canvas.paste(Image.fromarray(region.astype(np.uint8), mode="L"), (shape.x, shape.y))
-            draw = ImageDraw.Draw(canvas)
-        elif isinstance(shape, PolygonShape):
-            draw.polygon(
-                [(point.x, point.y) for point in shape.points],
-                fill=255 if shape.operation == "add" else 0,
+            canvas[shape.y : shape.y + shape.height, shape.x : shape.x + shape.width][bitmap] = (
+                value
             )
-        elif isinstance(shape, BoxShape):
-            covered = box_rectangle(shape)
-            if covered is not None:
-                draw.rectangle(covered, fill=255 if shape.operation == "add" else 0)
+        elif isinstance(shape, PolygonShape | BoxShape):
+            coverage = shape_coverage(shape, size)
+            if coverage is not None:
+                paint(canvas, coverage, value)
         else:  # pragma: no cover - the discriminated union is closed
             assert_never(shape)
-    return np.asarray(canvas) > 0
+    return canvas

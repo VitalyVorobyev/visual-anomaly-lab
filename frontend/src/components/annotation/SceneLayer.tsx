@@ -202,6 +202,8 @@ export const SceneLayer = memo(function SceneLayer({
                 <Line
                   points={points.flatMap((point) => [point.x, point.y])}
                   closed
+                  // Even-odd, as completion fills a polygon: a ring's hole stays open.
+                  fillRule="evenodd"
                   fill={withAlpha(shape.operation === "add" ? color : palette.cut, maskOpacity)}
                   stroke={shape.operation === "add" ? color : palette.cut}
                   strokeWidth={(selected ? 2.5 : 1.5) / scale}

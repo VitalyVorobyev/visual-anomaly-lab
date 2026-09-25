@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import assert_never
 
 import numpy as np
-from PIL import Image, ImageDraw
+from PIL import Image
 
 from anomaly_lab.annotation_bitmap import AnnotationBitmapError, decode_shape
 from anomaly_lab.domain.annotations import (
@@ -275,12 +275,15 @@ def _rasterize(
     else:
         canvas = Image.new("L", size, 0)
 
-    owner = Image.new("I", size, 0) if track_instances else None
+    canvas_pixels = np.array(canvas, dtype=np.uint8)
+    owner = (
+        np.zeros((document.image_height, document.image_width), dtype=np.int32)
+        if track_instances
+        else None
+    )
     number_of: dict[str, int] = {}
     keys: list[tuple[str, str]] = []
 
-    draw = ImageDraw.Draw(canvas)
-    owner_draw = ImageDraw.Draw(owner) if owner is not None else None
     for shape in document.shapes:
         if shape.operation == "subtract":
             fill = 0
@@ -300,52 +303,122 @@ def _rasterize(
                 bitmap = decode_shape(shape)
             except AnnotationBitmapError as exc:
                 raise AnnotationRenderError(str(exc)) from exc
-            canvas = _paste_bitmap(canvas, shape, bitmap, fill, "L", np.uint8)
-            draw = ImageDraw.Draw(canvas)
+            _paint_bitmap(canvas_pixels, shape, bitmap, fill)
             if owner is not None:
-                owner = _paste_bitmap(owner, shape, bitmap, owned, "I", np.int32)
-                owner_draw = ImageDraw.Draw(owner)
-        elif isinstance(shape, PolygonShape):
-            outline = [(point.x, point.y) for point in shape.points]
-            draw.polygon(outline, fill=fill)
-            if owner_draw is not None:
-                owner_draw.polygon(outline, fill=owned)
-        elif isinstance(shape, BoxShape):
-            # Exactly the pixels the box covers, not its outline drawn inclusively.
-            covered = box_rectangle(shape)
-            if covered is not None:
-                draw.rectangle(covered, fill=fill)
-                if owner_draw is not None:
-                    owner_draw.rectangle(covered, fill=owned)
-        else:  # pragma: no cover - the discriminated union is closed
-            assert_never(shape)
-    owned_pixels = np.asarray(owner, dtype=np.int32) if owner is not None else None
-    return np.asarray(canvas, dtype=np.uint8), owned_pixels, keys
+                _paint_bitmap(owner, shape, bitmap, owned)
+        else:
+            # Polygons and boxes both own the pixels whose centres they contain, so the two
+            # rasters are painted from one coverage and cannot disagree about it.
+            coverage = shape_coverage(shape, (document.image_width, document.image_height))
+            if coverage is not None:
+                paint(canvas_pixels, coverage, fill)
+                if owner is not None:
+                    paint(owner, coverage, owned)
+    return canvas_pixels, owner, keys
 
 
-def box_rectangle(shape: BoxShape) -> tuple[int, int, int, int] | None:
-    """The inclusive pixel rectangle Pillow fills for a box, or `None` when it owns none."""
-    x0, y0, x1, y1 = shape.owned_pixels()
-    if x1 <= x0 or y1 <= y0:
+@dataclass(frozen=True)
+class Coverage:
+    """The source pixels a vector shape owns: `mask` placed with its top-left at `(x, y)`."""
+
+    x: int
+    y: int
+    mask: np.ndarray
+
+
+def shape_coverage(shape: PolygonShape | BoxShape, size: tuple[int, int]) -> Coverage | None:
+    """The pixels of a `(width, height)` frame whose centres a polygon or a box contains.
+
+    `None` when it owns none — a degenerate or sub-pixel shape, or one outside the frame.
+    """
+    width, height = size
+    if isinstance(shape, BoxShape):
+        x0, y0, x1, y1 = shape.owned_pixels()
+        x0, x1 = min(max(x0, 0), width), min(max(x1, 0), width)
+        y0, y1 = min(max(y0, 0), height), min(max(y1, 0), height)
+        if x1 <= x0 or y1 <= y0:
+            return None
+        return Coverage(x0, y0, np.ones((y1 - y0, x1 - x0), dtype=bool))
+    if isinstance(shape, PolygonShape):
+        return polygon_coverage([(point.x, point.y) for point in shape.points], size)
+    assert_never(shape)  # pragma: no cover - the vector shapes are closed
+
+
+def polygon_coverage(
+    points: Sequence[tuple[float, float]], size: tuple[int, int]
+) -> Coverage | None:
+    """The pixels whose centres lie inside a polygon, by the even-odd rule.
+
+    Pixel `(i, j)` covers `[i, i + 1) x [j, j + 1)`, and it is owned when its centre
+    `(i + 0.5, j + 0.5)` is inside, which is `BoxShape.owned_pixels`' half-open rule: a
+    centre on a left or top edge is in, one on a right or bottom edge is out, so the
+    polygon of a box's four corners owns exactly the box's pixels. The test is the editor's
+    readout (`pixelReadout.insidePolygon`) evaluated at every centre at once — an edge
+    crosses row `j` when exactly one of its ends lies strictly below the centre line, at
+    the x the readout computes by the same float operations, and a pixel is inside when
+    an odd number of crossings lie strictly right of its centre. Holes and
+    self-intersections follow the even-odd rule, as the readout and the canvas fill do;
+    a polygon with no area owns nothing, and anything outside the frame is clipped.
+
+    The cost is one entry per (edge, row it spans) plus the polygon's bounding box, never
+    the frame.
+    """
+    width, height = size
+    if len(points) < 3 or width <= 0 or height <= 0:
         return None
-    return x0, y0, x1 - 1, y1 - 1
+    coordinates = np.asarray(points, dtype=np.float64)
+    if not np.isfinite(coordinates).all():
+        raise AnnotationRenderError("a polygon point is not finite")
+    # Edge k runs from vertex k (`a`) back to vertex k - 1 (`b`), as the readout walks it.
+    ax, ay = coordinates[:, 0], coordinates[:, 1]
+    bx, by = np.roll(ax, 1), np.roll(ay, 1)
+    low = np.clip(np.minimum(ay, by), -1.0, height + 1.0)
+    high = np.clip(np.maximum(ay, by), -1.0, height + 1.0)
+    # A generous row range per edge, narrowed below by the exact comparison.
+    first = np.clip(np.floor(low - 0.5).astype(np.int64), 0, height)
+    stop = np.clip(np.ceil(high - 0.5).astype(np.int64) + 1, 0, height)
+    spans = np.maximum(stop - first, 0)
+    total = int(spans.sum())
+    if total == 0:
+        return None
+    edge = np.repeat(np.arange(len(coordinates)), spans)
+    offsets = np.arange(total) - np.repeat(np.cumsum(spans) - spans, spans)
+    rows = np.repeat(first, spans) + offsets
+    centre = rows + 0.5
+    crosses = (ay[edge] > centre) != (by[edge] > centre)
+    if not crosses.any():
+        return None
+    edge, rows, centre = edge[crosses], rows[crosses], centre[crosses]
+    a_x, a_y, b_x, b_y = ax[edge], ay[edge], bx[edge], by[edge]
+    crossing = ((b_x - a_x) * (centre - a_y)) / (b_y - a_y) + a_x
+    # How many column centres lie strictly left of each crossing: exact, never rounded.
+    cut = np.searchsorted(np.arange(width) + 0.5, crossing, side="left")
+    top, bottom = int(rows.min()), int(rows.max()) + 1
+    left, right = int(cut.min()), int(cut.max())
+    if right <= left:
+        return None
+    span = right - left + 1
+    tally = np.bincount(
+        (rows - top) * span + (cut - left), minlength=(bottom - top) * span
+    ).reshape(bottom - top, span)
+    # Crossings strictly right of column i's centre are those whose cut exceeds i.
+    right_of = tally.sum(axis=1, keepdims=True) - np.cumsum(tally, axis=1)
+    mask = (right_of[:, :-1] % 2).astype(bool)
+    if not mask.any():
+        return None
+    return Coverage(left, top, mask)
 
 
-def _paste_bitmap(
-    target: Image.Image,
-    shape: BitmapShape,
-    bitmap: np.ndarray,
-    fill: int,
-    mode: str,
-    dtype: type[np.generic],
-) -> Image.Image:
-    region = np.asarray(target)[
-        shape.y : shape.y + shape.height,
-        shape.x : shape.x + shape.width,
-    ].copy()
-    region[bitmap] = fill
-    target.paste(Image.fromarray(region.astype(dtype), mode=mode), (shape.x, shape.y))
-    return target
+def paint(target: np.ndarray, coverage: Coverage, value: int) -> None:
+    """Set the covered pixels of a `(height, width)` raster to `value`, in place."""
+    height, width = coverage.mask.shape
+    region = target[coverage.y : coverage.y + height, coverage.x : coverage.x + width]
+    region[coverage.mask] = value
+
+
+def _paint_bitmap(target: np.ndarray, shape: BitmapShape, bitmap: np.ndarray, value: int) -> None:
+    region = target[shape.y : shape.y + shape.height, shape.x : shape.x + shape.width]
+    region[bitmap] = value
 
 
 def _write_json(payload: object, destination: Path) -> str:

@@ -11,8 +11,8 @@ region of their class from. Each answer is loaded from what pinned it, and verif
 against its digest before it is used:
 
 - a revision with a class table reads its class-index mask at the class's index;
-- an older revision re-rasterises its document in memory, which is what its class mask
-  would have held;
+- an older revision re-rasterises its document in memory by today's shape rules, which is
+  what its class mask would hold if it were completed now;
 - an imported ground-truth mask is the default class;
 - an image of a sample labelled normal is an empty mask of the default class.
 """
@@ -70,7 +70,23 @@ class ClassTruth:
     def identity(self) -> str:
         """What pins this answer, for a ground-truth digest."""
         pinned = self.sha256 or self.source_mask_sha256 or "-"
-        return f"{self.kind}:{self.presence.value}:{self.index or 0}:{pinned}"
+        return (
+            f"{self.kind}:{self.presence.value}:{self.index or 0}:{pinned}"
+            f"{_raster_rule(self.document)}"
+        )
+
+
+def _raster_rule(document: str | None) -> str:
+    """The polygon rule a document read in memory is rasterised by, when it holds a polygon.
+
+    A document is re-rasterised on every read, so its answer follows the renderer rather
+    than a stored file. Naming the rule in the identity makes a change of rule read as a
+    stale ground-truth digest rather than as a silent change of truth.
+    """
+    if document is None:
+        return ""
+    shapes = json.loads(document).get("shapes", [])
+    return ":polygon-centres" if any(shape.get("kind") == "polygon" for shape in shapes) else ""
 
 
 def resolve_class_truth(
@@ -198,7 +214,7 @@ class LabelTruth:
     def identity(self) -> str:
         """What pins this answer, for a ground-truth digest."""
         pinned = self.sha256 or self.source_mask_sha256 or "-"
-        return f"{self.kind}:{self.revision_id or 0}:{pinned}"
+        return f"{self.kind}:{self.revision_id or 0}:{pinned}{_raster_rule(self.document)}"
 
 
 def resolve_label_truth(
@@ -333,7 +349,7 @@ class BoxTruth:
     def identity(self) -> str:
         """What pins this answer, for a ground-truth digest."""
         pinned = self.sha256 or self.source_mask_sha256 or "-"
-        return f"{self.kind}:{self.revision_id or 0}:{pinned}"
+        return f"{self.kind}:{self.revision_id or 0}:{pinned}{_raster_rule(self.document)}"
 
 
 def resolve_box_truth(

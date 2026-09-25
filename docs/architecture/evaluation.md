@@ -267,7 +267,9 @@ facts: each image's presence `score`, its map or written mask, and the class tru
   `false_presence`, `correct_absence`, or `unlabeled`. The IoU travels with each row. Like the anomaly
   threshold report, it is computed from the stored maps and never stored.
 - **The ground-truth digest** hashes the class and each image's pinned answer, so a completed revision,
-  a relabelled sample or a new class table makes the stored metrics read as stale.
+  a relabelled sample or a new class table makes the stored metrics read as stale. An answer read from a
+  document in memory also names the polygon rule it was rasterised by when the document holds a polygon
+  ([annotations](annotations.md#completion-and-storage)).
 
 ## Semantic segmentation
 
@@ -307,7 +309,8 @@ map as the method wrote it (`maps/<id>.labels.png`, source frame) and the label 
   `semantic_segmentation` run (409 otherwise) and a scored image (404 otherwise); colour is the
   interface's. `…/label-map?colours=&truth=` draws the same map as a PNG for a gallery tile
   ([media](media.md)).
-- **The ground-truth digest** hashes the pinned class list and each image's pinned answer.
+- **The ground-truth digest** hashes the pinned class list and each image's pinned answer, and, for one
+  read from a document in memory, the polygon rule it was rasterised by.
 
 ## Object detection
 
@@ -366,7 +369,7 @@ confident first) and the box truth that `annotations/class_truth.py` resolves ov
 - **Compared on what needs no cut.** `GET /api/compare/detection?ids=&subset=` takes runs of one dataset,
   split and class list and returns each one's stored metrics without `CUT_KEYS`.
 - **The ground-truth digest** hashes the pinned class list and each image's pinned answer — its
-  instances file's digest, its document's source provenance, or its imported mask's.
+  instances file's digest, its document's source provenance and polygon rule, or its imported mask's.
 
 ## Run audit
 

@@ -52,7 +52,8 @@ source answers is `resolve_box_truth`'s:
 - its document, re-rasterised in memory (`annotation_render.document_instances`), when it has no
   instances file or starts from the source mask. The instances completion would write come first, then
   one instance per 8-connected component of the `source_mask` base that no drawn instance owns, keyed
-  `source-mask-<n>`;
+  `source-mask-<n>`. A document read this way is rasterised by today's shape rules, not those its
+  revision was completed under ([what a revision wrote, it keeps](#completion-and-storage));
 - an imported mask's 8-connected components, each one instance of `defect`;
 - nothing, for an image of a sample labelled normal: a confirmed absence.
 
@@ -81,18 +82,22 @@ split draws references from, and what a run on the class can test on.
 An annotation document is JSON schema version 1 in **source-image pixel coordinates**. It pins
 `image_width`, `image_height`, a base (`empty` or `source_mask`) and an ordered list of shapes:
 
-- a polygon — stable id, taxonomy key, `add` / `subtract` operation, three or more points;
+- a polygon — stable id, taxonomy key, `add` / `subtract` operation, three or more points, in the
+  same pixel-edge coordinates as a box. It owns the pixels whose centres it contains by the **even-odd
+  rule** (`annotation_render.polygon_coverage`): a centre on a left or top edge is in, one on a right or
+  bottom edge is out, a ring traced inside another is a hole, a self-intersection's doubly wound region
+  is outside, and a polygon that contains no centre — sub-pixel, or with no area — owns nothing. It is
+  a scanline at pixel centres in numpy, one crossing per edge and row, bounded by the polygon's own
+  extent, and it is the editor's pixel readout (`pixelReadout.insidePolygon`) evaluated everywhere at
+  once; `polygonCentres.fixture.json` pins the two against each other. The editor's canvas and the
+  gallery's vector layer fill a polygon even-odd too;
 - a box — the same identity, taxonomy and operation fields and a float `x`, `y`, `width`, `height`
   rectangle with positive area, in **pixel-edge coordinates**: pixel `i` spans `[i, i + 1)`, as it does
   on the editor's canvas, where a drag's corners land wherever the pointer is, and in
   `SpatialTransform.prepare_box`. A box owns the pixels whose centres it covers, half-open
   (`x <= i + 0.5 < x + width`, `BoxShape.owned_pixels`), so a box at `x = 1` of width 3 owns columns 1
-  to 3 and its instance box runs from `x0 = 1` to `x1 = 4` — exactly what was drawn. A polygon is filled
-  by Pillow, outline included, so a box and the polygon of its four corners do not cover the same
-  pixels. Completed revisions are immutable: one whose files hold a box rasterised outline-inclusive,
-  one pixel larger on its far edges, keeps them, and they verify against their own digests. A
-  completion, and a document re-rasterised in memory (one drawn over an imported mask, read for
-  detection), follows this rule;
+  to 3 and its instance box runs from `x0 = 1` to `x1 = 4` — exactly what was drawn. It is the polygon
+  rule on a rectangle, so a box and the polygon of its four corners own the same pixels;
 - a bitmap — the same identity, taxonomy and operation fields, a cropped binary PNG and its integer
   source-frame rectangle.
 
@@ -195,8 +200,18 @@ An instance is keyed by `instance_id`, else by the shape's id, over `add` shapes
 the pixels its shapes set that still carry its class in the final class mask: a later cut or a later
 shape drawn over them takes them away. `box` is the tight `[x0, y0, x1, y1]` of those pixels, `x1`/`y1`
 exclusive, and `pixels` their count. An instance left with no pixels is dropped, and the `source_mask`
-base belongs to no instance. The pass keeps one `int32` owner raster beside the class canvas, drawn by
-the same calls, so memory is bounded by the image, not by the number of shapes.
+base belongs to no instance. The pass keeps one `int32` owner raster beside the class canvas, painted
+from the same coverage, so memory is bounded by the image, not by the number of shapes.
+
+**What a revision wrote, it keeps.** Completed revisions are immutable, and their files verify against
+their own digests, so a revision completed while a polygon or a box was filled outline-inclusive (one
+pixel wider on its far edges) is read that way wherever a file answers: the binary mask for every
+anomaly consumer and for export, the class mask for class and label truth, the instances file for
+detection. What reads a document **in memory** follows the rule in [the document
+contract](#document-contract) instead: the class and label truth of a revision older than class tables, the detection truth of one older than
+instances files or drawn over the source mask, the reference studio's current region, and interchange's
+`render_shapes`. Such an answer names the polygon rule in its identity when its document holds a
+polygon, so a run scored against it reads its ground truth as stale rather than silently changed.
 
 The revision pins `class_table`: every class the dataset had at completion, in taxonomy order, with its
 index (from 1) and pixel count, and `instances_path` / `instances_sha256` (migration 024; null on a
@@ -319,8 +334,8 @@ carrying truth, so the mark never accuses somebody of leaving a drawn defect und
   began from; a drag with no area draws nothing. Under Select a box moves like any region and its four
   corners are vertex handles: dragging one resizes the box against the opposite corner, and dragging past
   it flips the box rather than inverting it. `shapeOutline` is the one place a box becomes points, for
-  the scene and the resize. The pixel readout tests a box half-open at the pixel's centre, the rule
-  completion owns its pixels by.
+  the scene and the resize. The pixel readout tests a box half-open, and a polygon even-odd, at the
+  pixel's centre — the rules completion owns their pixels by.
 - **Class keys.** `2`–`9` pick the class for new regions, in the order the class picker lists them, which
   prints each class's key beside its name; `0` and `1` stay Fit and 1:1. They are one entry in
   `EDITOR_BINDINGS`, so the shortcut sheet lists them.
