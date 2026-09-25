@@ -4706,6 +4706,11 @@ export interface components {
             name: string;
             /** Registered Dataset Id */
             registered_dataset_id: number | null;
+            /**
+             * Pending
+             * @description Registration would change this dataset: it is not registered, or the box truth its pack ships is not yet entered on every image.
+             */
+            pending: boolean;
         };
         /** ReferencePackCatalog */
         ReferencePackCatalog: {
