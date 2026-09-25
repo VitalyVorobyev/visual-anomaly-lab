@@ -26,6 +26,9 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision an experiment can reference, so a run's spatial input is reproducible. On a
   grouped dataset the channels of one part can share one union crop, so they stay registered.
+  MobileSAM can reject masks that wrap the frame border and unite the rest; that rule is opt-in, since
+  on held-out public classes it localised the part but kept 0.92 of defect pixels, below the
+  predeclared 0.98 ([measurements.md](measurements.md)).
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
 - **Train and score** through one plugin interface. Seven anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,

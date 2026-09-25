@@ -122,7 +122,7 @@ evidence *for* localisation while the crop omitted a quarter of the defect pixel
 stays available as an explicit, previewable choice. Source-frame float maps cost about 1.23 GB per 200-image
 run regardless of crop — a storage item in [backlog.md](backlog.md), not a reason to change the verdict.
 
-## MobileSAM mask selection — protocol predeclared
+## MobileSAM mask selection — the border rule stays opt-in
 
 `mobile_sam` keeps the largest mask inside its area window. **Design evidence** — MobileSAM's candidates on
 12 evenly spaced *training normals* of each of six VisA design classes (`candle`, `capsules`, `cashew`,
@@ -145,6 +145,25 @@ incorrect and keeps nothing. The rule becomes the `mobile_sam` default when, poo
 images, (1) its correct rate beats the current default's by at least 0.20, (2) it keeps at least 0.98 of all
 defect pixels, and (3) it fails on at most 5 % of images. The largest surviving mask alone is reported
 beside it and decides nothing.
+
+| 16 deciding classes, 384 images | Correct | Defect pixels kept | Failures | Mean box |
+|---|---:|---:|---:|---:|
+| current default (largest in window) | 0.151 | 0.975 | 0 % | 96.0 % |
+| **border 0.33, union** | **0.781** | **0.920** | 0 % | 50.2 % |
+| border 0.33, largest (reported only) | 0.734 | 0.797 | 0 % | 37.4 % |
+
+Verdict: checks (1) and (3) pass, **(2) fails** — the rule stays available and **is not the default**. It
+does what it was designed to do: the default's mean box was at least 97 % of the frame on 13 of the 16
+classes; the rule's was 17–48 % on every VisA class, and it kept at least 0.99 of the defect pixels on
+`macaroni1`, `macaroni2`, `pipe_fryum`, `capsule`, `hazelnut`, `pill` and `toothbrush`.
+The lost pixels are concentrated: `metal_nut` keeps 0.52, `pcb3` 0.86, `pcb2` 0.90, `screw` 0.92, where
+defects lie outside every surviving mask's box. Two classes show the rule's limits in the other
+direction: on `zipper` and `transistor` a surviving mask still spans the frame, so it keeps everything
+and localises nothing. Uniting rather than picking one mask was right — the largest surviving mask alone
+keeps 0.80. Textures: both rules fail on 74–78 % of images, which is the correct answer for a picture
+with no object. Retention is measured on the unpadded box; a profile's `padding_fraction` would recover
+some of the loss, and the protocol did not credit it. 504 images, one CPU MobileSAM pass each (1.01 s
+mean; MPS rejects the prompt grid's float64), 519 s in all.
 
 ## DINO patch memory — promoted
 
