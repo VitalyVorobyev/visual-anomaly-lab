@@ -340,11 +340,12 @@ vs 0.938, with a pixel-level win.
   against `global_knn`'s 0.891 / 0.9952 / 0.9252. Restricting the bank by position sharpens *where* and
   costs a little *whether*. VisA is not a registered benchmark; this is the one public anchor for the mode.
 
-## `dino_memory`'s layers on DINOv3 — predeclared, not yet run
+## `dino_memory`'s layers on DINOv3 — `last_two` stays; the deficit is the encoder's
 
 Whether the DINOv3 row above measures the encoder or the recipe: `last_two` was chosen with DINOv2, and
 DINOv3 may keep what a nearest-neighbour bank needs in other blocks. Predeclared here before any run;
-`scripts/dino-memory-layer-sweep.py`, 10 cells, one child process each. Every arm is a full fit through
+`scripts/dino-memory-layer-sweep.py`, 10 cells, one child process each, in 6 min on MPS (torch 2.13.0,
+timm 1.0.28, numpy 2.5.1, Pillow 12.3.0). Every arm is a full fit through
 the application's own train and infer jobs, so this is the gate's harness, not a campaign's (ADR-0038).
 Nothing is trained: a fit is one encoder pass over the bank images and a coreset selection, so there is
 no step budget and no smoke length.
@@ -407,7 +408,39 @@ about a minute per cell for the child's start, the encoder load, the fit and 200
 the ten cells take 10–15 min, and the whole sweep, with both classes' registration and prepared-input
 builds, under half an hour on MPS.
 
-**Result.** Not yet run.
+**Result.** The control and the reference reproduce the recorded rows to within 0.0001 on every mean.
+
+| Class | Arm | Layers | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | ms/image |
+|---|---|---|---:|---:|---:|---:|
+| `candle` | reference | DINOv2, `last_two` | 0.9085 | 0.9890 | 0.9378 | 65 |
+| | control | DINOv3, `last_two` | 0.7250 | 0.9757 | 0.8831 | 59 |
+| | | DINOv3, `last` | 0.8062 | 0.9769 | 0.8813 | 59 |
+| | | DINOv3, `mid_late` | 0.5529 | 0.9698 | 0.8927 | 59 |
+| | | DINOv3, `last_four` | 0.5774 | 0.9764 | 0.8971 | 63 |
+| `pcb1` | reference | DINOv2, `last_two` | 0.8914 | 0.9952 | 0.9252 | 65 |
+| | control | DINOv3, `last_two` | 0.9043 | 0.9943 | 0.8346 | 60 |
+| | | DINOv3, `last` | 0.9059 | 0.9927 | 0.7952 | 59 |
+| | | DINOv3, `mid_late` | 0.7053 | 0.9920 | 0.8491 | 61 |
+| | | DINOv3, `last_four` | 0.8380 | 0.9940 | 0.8370 | 64 |
+| **mean** | reference | DINOv2, `last_two` | 0.9000 | 0.9921 | 0.9315 | |
+| | control | DINOv3, `last_two` | 0.8147 | 0.9850 | 0.8588 | |
+| | | DINOv3, `last` | 0.8561 | 0.9848 | 0.8382 | |
+| | | DINOv3, `mid_late` | 0.6291 | 0.9809 | 0.8709 | |
+| | | DINOv3, `last_four` | 0.7077 | 0.9852 | 0.8671 | |
+
+**Verdict, by the rule.**
+- **Which layers DINOv3 is run with: `last_two` stays.** No arm passes. `last` gains 0.041 on the mean
+  image ROC-AUC, all of it on `candle` (+0.081), but loses 0.021 mean AU-PRO, past the 0.01 allowed;
+  `mid_late` and `last_four` lose image ROC-AUC on both classes (−0.186 and −0.107 on the mean).
+- **Whose deficit it is: the encoder's**, as far as the layers the field offers reach. The control trails
+  the reference by 0.085 image ROC-AUC and 0.073 AU-PRO, so the deficit is reproduced, and no arm passes
+  the first rule to close it. The best arm on the image metric, `last`, still trails by 0.044 image
+  ROC-AUC and 0.093 AU-PRO.
+
+**What the table adds.** DINOv3's gap is not uniform: on `pcb1` it matches or beats DINOv2 on image
+ROC-AUC under `last_two` and `last` while trailing on AU-PRO by 0.09 or more, and on `candle` it trails on
+both. Deeper fusion (`mid_late`, `last_four`) moves AU-PRO up a little and image ROC-AUC down a lot, the
+trade the rule was written to refuse.
 
 ## SubspaceAD — defaults from a sweep, gate open
 
