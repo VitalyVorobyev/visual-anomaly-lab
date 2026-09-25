@@ -630,7 +630,9 @@ boxes, the probability of anything but background as its map, and the top confid
 - `min_area` (4 prepared pixels) and `max_detections` (100), as for the floor.
 - It refuses to fit without box targets. `save` writes the head's files and a class list, each whole or
   not at all; the encoder is not saved and `load` refuses a different backbone or layer set.
-- **Experimental** until the public detection gate. ONNX: none.
+- **Experimental**, by the public detection gate: it led the floor by less than 0.01 AP@[.5:.95] on both
+  VisA classes, where neither boxes a defect and many truth boxes are specks of a few pixels
+  ([measurements](../measurements.md)). ONNX: none.
 
 ### `fss_dino`
 

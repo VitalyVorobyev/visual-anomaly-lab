@@ -44,11 +44,12 @@ maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_li
 the `class_stratified` split, its result screens and its public gates (`measurements.md`). Detection
 runs end to end torch-free — box truth, box targets, stored boxes, COCO's AP, the `color_detector`
 floor, the `class_stratified` split and its result screens — and the `dino_linear_det` deep detector
-runs on the frozen-DINO path. What remains:
+runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
-- [ ] **Public detection gate** (M): predeclared in `measurements.md` before it runs — VisA's masks
-      boxed by their connected components on a `class_stratified` split, `dino_linear_det` against
-      the `color_detector` floor, with AP@[.5:.95] as the decision and AP50 and recall reported.
+- [ ] **A detection gate on truth drawn as boxes** (M): the VisA gate (`measurements.md`) cannot
+      say whether frozen DINO features are worth a box-regression head, because many boxes of a
+      VisA mask's components are specks of a few pixels. Choose a public dataset whose objects are
+      annotated as boxes, predeclare the protocol, and run `dino_linear_det` against the floor on it.
 
 - [ ] **A polygon owns the pixels whose centres it contains** (S): boxes follow the half-open
       pixel-centre rule, but completion still fills a polygon including its outline (Pillow), so a
