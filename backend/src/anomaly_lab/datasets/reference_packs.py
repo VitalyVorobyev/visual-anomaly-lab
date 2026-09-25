@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from anomaly_lab.annotations.imported_boxes import (
+    ImportedBox,
+    ImportedClass,
+    ensure_classes,
+    write_box_truth,
+)
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.adapters.csv_table import CsvTableAdapter, CsvTableOptions
 from anomaly_lab.datasets.adapters.folder_classes import (
@@ -16,8 +22,10 @@ from anomaly_lab.datasets.adapters.folder_classes import (
 )
 from anomaly_lab.datasets.commit import CommitResult, commit_manifests_atomically
 from anomaly_lab.datasets.manifest import Manifest
+from anomaly_lab.datasets.voc import clamp_box, read_voc
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.repositories import datasets as datasets_repo
+from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.domain.entities import Dataset
 from anomaly_lab.jobs.context import JobContext
 
@@ -62,11 +70,42 @@ FSS_PANEL = (
     "wooden_spoon",
 )
 
+# PKU-Market-PCB's six defect kinds: the directory holding each kind's images and VOC files,
+# and the class name those files use. The order is the taxonomy's, so it is the class order
+# every detection run on the dataset pins.
+PCB_DEFECTS = (
+    ("Missing_hole", "missing_hole"),
+    ("Mouse_bite", "mouse_bite"),
+    ("Open_circuit", "open_circuit"),
+    ("Short", "short"),
+    ("Spur", "spur"),
+    ("Spurious_copper", "spurious_copper"),
+)
+
 
 class RegisterReferencePacksParams(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     pack_keys: list[str] = Field(default_factory=lambda: ["visa", "gkn"])
+
+
+@dataclass(frozen=True)
+class BoxTruthSpec:
+    """Where a pack's box annotations are: one Pascal VOC file per image.
+
+    `annotation_dir` and `pattern` take the image's `{class}` (its directory's name) and
+    `{stem}`, relative to the dataset's root. `classes` is the taxonomy the files speak, in
+    order, keyed by the name a file uses; a box of any other name fails the registration
+    rather than inventing a class.
+    """
+
+    annotation_dir: str
+    pattern: str
+    classes: tuple[ImportedClass, ...]
+
+    def path_for(self, root: Path, image: Path) -> Path:
+        fields = {"class": image.parent.name, "stem": image.stem}
+        return root / self.annotation_dir.format(**fields) / self.pattern.format(**fields)
 
 
 @dataclass(frozen=True)
@@ -80,6 +119,10 @@ class DatasetSpec:
     # What the catalogue says about this dataset when nobody has written anything. A VisA
     # class is named `candle` and nothing else on the card explains what that is.
     description: str = ""
+    # Box truth, entered as each image's first completed revision once the dataset is
+    # committed: for a pack whose objects are annotated as boxes of several classes, which an
+    # imported mask cannot carry.
+    box_truth: BoxTruthSpec | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +210,33 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
         )
         for target in FSS_PANEL
     )
+    pcb = base / "PKU-PCB" / "PCB_DATASET"
+    pcb_dataset = DatasetSpec(
+        key="pku_pcb:pcb",
+        name="PKU-Market-PCB",
+        root=pcb,
+        scan_root=pcb,
+        adapter="folder_classes",
+        options={
+            "defect_dirs": [f"images/{directory}" for directory, _ in PCB_DEFECTS],
+            # `rotation/` holds rotated copies with no VOC files, and `PCB_USED/` the
+            # defect-free boards the defects were synthesised on; neither is the benchmark.
+            "import_unnamed_dirs": False,
+            "extensions": [".jpg"],
+        },
+        description=(
+            "Printed circuit boards with six kinds of synthesised defect, every defect "
+            "annotated as a box of its kind."
+        ),
+        box_truth=BoxTruthSpec(
+            annotation_dir="Annotations/{class}",
+            pattern="{stem}.xml",
+            classes=tuple(
+                ImportedClass(key=name, name=name.replace("_", " ").capitalize())
+                for _, name in PCB_DEFECTS
+            ),
+        ),
+    )
     return (
         PackSpec(
             key="visa",
@@ -196,6 +266,18 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
             required=tuple(fss_classes / target for target in FSS_PANEL),
             datasets=fss_datasets,
             install_url="https://github.com/HKUSTCV/FSS-1000",
+        ),
+        PackSpec(
+            key="pku_pcb",
+            title="PKU-Market-PCB",
+            root=pcb,
+            required=tuple(
+                pcb / kind / directory
+                for kind in ("images", "Annotations")
+                for directory, _ in PCB_DEFECTS
+            ),
+            datasets=(pcb_dataset,),
+            install_url="https://robotics.pkusz.edu.cn/resources/datasetENG/",
         ),
     )
 
@@ -268,6 +350,105 @@ def scan_spec(spec: DatasetSpec, progress: Any) -> Manifest:
     return manifest.model_copy(update={"root_path": str(spec.root)})
 
 
+@dataclass
+class BoxTruthResult:
+    """What entering one dataset's box truth did, for the job's result and log."""
+
+    images: int = 0
+    """Images given their first revision by this pass."""
+    boxes: int = 0
+    kept: int = 0
+    """Images that already had a revision or an open draft, which they keep."""
+    without_file: int = 0
+    """Images with no annotation file: left unlabelled, never read as an absence."""
+    clipped: int = 0
+    """Boxes cut to the image's frame."""
+    reshaped: int = 0
+    """Boxes whose instance box differs from the box drawn, because a smaller box overlaps it."""
+    classes_added: list[str] | None = None
+
+
+def register_box_truth(
+    settings: Settings,
+    spec: DatasetSpec,
+    dataset_id: int,
+    progress: Any = None,
+) -> BoxTruthResult:
+    """Enter `spec`'s box truth for every image of the dataset that has no truth of its own.
+
+    Every file is read and checked before the first revision is written, so a malformed
+    file or an unknown class fails the pass with nothing changed; the classes are added
+    first, because a revision answers only for the classes that existed at its completion.
+    """
+    box_spec = spec.box_truth
+    if box_spec is None:
+        raise ValueError(f"{spec.key} has no box truth")
+    keys = {entry.key for entry in box_spec.classes}
+    with connection(settings.db_path) as conn:
+        images = images_repo.list_images_for_dataset(conn, dataset_id)
+    result = BoxTruthResult()
+    planned: list[tuple[int, int, int, list[ImportedBox]]] = []
+    for image in images:
+        path = box_spec.path_for(spec.root, Path(image.path))
+        if not path.is_file():
+            result.without_file += 1
+            continue
+        annotation = read_voc(path)
+        if annotation.size is not None and annotation.size != (image.width, image.height):
+            raise ValueError(
+                f"{path} describes a {annotation.size[0]}x{annotation.size[1]} image, but "
+                f"{image.path} is {image.width}x{image.height}"
+            )
+        boxes: list[ImportedBox] = []
+        for item in annotation.objects:
+            if item.name not in keys:
+                raise ValueError(f"{path}: class {item.name!r} is not one of {sorted(keys)}")
+            clamped = clamp_box(item.box, image.width, image.height)
+            if clamped is None:
+                raise ValueError(f"{path}: a {item.name} box lies outside the image")
+            result.clipped += int(clamped != item.box)
+            boxes.append(ImportedBox(item.name, clamped))
+        planned.append((image.id, image.width, image.height, boxes))
+
+    result.classes_added = ensure_classes(settings, dataset_id, box_spec.classes)
+    for index, (image_id, width, height, boxes) in enumerate(planned):
+        written = write_box_truth(settings, image_id, width, height, boxes)
+        if written.written:
+            result.images += 1
+            result.boxes += len(boxes)
+            result.reshaped += written.reshaped
+        else:
+            result.kept += 1
+        if progress is not None:
+            progress((index + 1) / max(len(planned), 1), f"box truth {index + 1}/{len(planned)}")
+    return result
+
+
+def box_truth_unfinished(settings: Settings, spec: DatasetSpec, dataset_id: int) -> int:
+    """Images whose box truth an earlier pass left unentered: a file and no truth of their own.
+
+    Box truth is entered after the commit and image by image, so a cancelled or failed pass
+    leaves a registered dataset partly labelled. The catalogue counts such a dataset as
+    pending, which is what lets the next registration finish it.
+    """
+    if spec.box_truth is None:
+        return 0
+    with connection(settings.db_path) as conn:
+        rows = conn.execute(
+            """
+            SELECT image.path
+              FROM image JOIN sample ON sample.id = image.sample_id
+             WHERE sample.dataset_id = ?
+               AND NOT EXISTS (SELECT 1 FROM annotation_revision AS revision
+                                WHERE revision.image_id = image.id)
+               AND NOT EXISTS (SELECT 1 FROM annotation_draft AS draft
+                                WHERE draft.image_id = image.id)
+            """,
+            (dataset_id,),
+        ).fetchall()
+    return sum(spec.box_truth.path_for(spec.root, Path(row["path"])).is_file() for row in rows)
+
+
 def run_reference_pack_job(context: JobContext) -> dict[str, Any]:
     params = RegisterReferencePacksParams.model_validate(dict(context.params))
     wanted = set(params.pack_keys)
@@ -288,6 +469,11 @@ def run_reference_pack_job(context: JobContext) -> dict[str, Any]:
             spec for spec in pack.datasets if registered_dataset_id(spec, existing) is None
         )
 
+    # Box truth is entered after the commit, for every dataset of the chosen packs that has
+    # it -- also one registered earlier, so an interrupted pass is finished by the next.
+    boxed = [spec for key in params.pack_keys for spec in known[key].datasets if spec.box_truth]
+    scan_share = 0.5 if boxed else 0.9
+
     manifests: list[Manifest] = []
     total = len(selected)
     for index, spec in enumerate(selected):
@@ -301,7 +487,7 @@ def run_reference_pack_job(context: JobContext) -> dict[str, Any]:
         ) -> None:
             context.raise_if_cancelled()
             overall = (position + fraction) / max(total, 1)
-            context.progress(overall * 0.9, f"{dataset_name}: {message or 'scanning'}")
+            context.progress(overall * scan_share, f"{dataset_name}: {message or 'scanning'}")
 
         context.log(f"scanning {spec.key}")
         manifests.append(scan_spec(spec, report))
@@ -309,10 +495,38 @@ def run_reference_pack_job(context: JobContext) -> dict[str, Any]:
     context.raise_if_cancelled()
     with connection(context.settings.db_path) as conn:
         results: list[CommitResult] = commit_manifests_atomically(conn, context.settings, manifests)
+        registered = datasets_repo.list_datasets(conn)
+
+    box_truth: dict[str, dict[str, Any]] = {}
+    for index, spec in enumerate(boxed):
+        dataset_id = registered_dataset_id(spec, registered)
+        if dataset_id is None:  # pragma: no cover - committed just above
+            raise RuntimeError(f"{spec.key} is not registered")
+
+        def box_report(
+            fraction: float, message: str, position: int = index, dataset_name: str = spec.name
+        ) -> None:
+            context.raise_if_cancelled()
+            overall = (position + fraction) / len(boxed)
+            context.progress(
+                scan_share + overall * (1.0 - scan_share), f"{dataset_name}: {message}"
+            )
+
+        context.log(f"entering the box truth of {spec.key}")
+        entered = register_box_truth(context.settings, spec, dataset_id, box_report)
+        context.log(
+            f"{spec.key}: {entered.boxes} boxes on {entered.images} images; {entered.kept} kept "
+            f"their own truth, {entered.without_file} have no annotation file, "
+            f"{entered.clipped} boxes clipped to the frame, {entered.reshaped} reshaped by an "
+            "overlapping box"
+        )
+        box_truth[spec.key] = asdict(entered)
+
     context.progress(1.0, f"registered {len(results)} datasets")
     return {
         "registered": len(results),
         "already_registered": sum(len(known[key].datasets) for key in params.pack_keys)
         - len(results),
         "dataset_ids": [result.dataset_id for result in results],
+        "box_truth": box_truth,
     }

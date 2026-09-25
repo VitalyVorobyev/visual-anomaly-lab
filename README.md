@@ -89,6 +89,12 @@ offers a one-click registration when it recognizes a complete pack. Registration
   foreground mask (Li et al., CVPR 2020), registered as a twenty-class few-shot panel. The upstream
   repository publishes no licence and asks that users cite the paper; unzip its download so the classes
   sit under `datasets/FSS-1000/fewshot_data/`.
+- [PKU-Market-PCB](https://robotics.pkusz.edu.cn/resources/datasetENG/)—693 printed-circuit-board images
+  with six kinds of synthesised defect, every defect a Pascal VOC box of its kind (Huang and Wei,
+  [arXiv:1901.08204](https://arxiv.org/abs/1901.08204)), registered as one detection dataset. The Open Lab
+  on Human Robot Interaction at Peking University publishes it for detection, classification and
+  registration research with no licence; cite the paper. Unzip `PCB_DATASET.zip` so that
+  `datasets/PKU-PCB/PCB_DATASET/images/` and `…/Annotations/` exist.
 
 Use the imported split to compare with a provider protocol. Any other tree can use the configurable CSV,
 folder-class, or multi-channel adapters.

@@ -125,7 +125,8 @@ reproducibility record — which files became which samples under which channel 
 ## Reference packs
 
 `GET /api/reference-packs` discovers public packs under the configured reference-data root (the gitignored
-`/datasets/` in development) from metadata alone — it knows the published layouts of VisA, GKN and FSS-1000 and
+`/datasets/` in development) from metadata alone — it knows the published layouts of VisA, GKN, FSS-1000 and
+PKU-Market-PCB and
 opens no image to decide whether a pack exists. Absent and incomplete packs are instructional states showing the
 expected root and upstream link.
 
@@ -141,6 +142,32 @@ Masks are read as any non-zero pixel, like every imported mask; FSS-1000's are a
 is foreground here. All scans
 finish before the database changes, then every missing manifest commits in one transaction, so a failed
 class cannot leave half a benchmark registered. Repeating the action skips datasets already present.
+
+### Box truth a pack ships
+
+PKU-Market-PCB becomes one `folder_classes` dataset of 693 `defect` samples, its six `images/<kind>/`
+directories named and `rotation/` and `PCB_USED/` left out. Its truth is a Pascal VOC file per image under
+`Annotations/<kind>/`: boxes of six classes, which an imported mask cannot carry, since a mask answers for
+the default class alone. A pack declares such truth with `DatasetSpec.box_truth` — where the files are and
+the taxonomy they speak, in order — and after the commit `register_box_truth` enters it:
+
+- every file is read first (`datasets/voc.py`), and one that names a class outside the taxonomy, declares a
+  size other than its image's, or holds a box wholly outside the frame fails the job before anything is
+  written. A box partly outside is clipped and counted;
+- the classes are added to the taxonomy after the ones the dataset has, in the editor's palette, because a
+  revision answers only for classes that existed when it was completed;
+- each image's boxes become one document of `box` shapes on an empty base, completed through the ordinary
+  draft lifecycle (`annotations/imported_boxes.py`) as the image's first revision. It answers every class,
+  present where it has a box and absent where it has none, so detection reads it like a drawn revision
+  ([detection truth](annotations.md#detection-truth)).
+
+VOC corners are 1-based and inclusive, so `xmin = 1, xmax = 3` is the pixel-edge box `[0, 3)`. Boxes are
+drawn largest first, so where two overlap the smaller keeps its pixels; one whose whole edge an overlap
+covers has a tighter instance box than was drawn, and the job counts it. An image that already has a
+revision or an open draft keeps it and is counted as kept, and an image with no file stays unlabelled.
+This step runs after the commit and image by image, so a cancelled or failed job can leave a registered
+dataset partly labelled. The catalogue therefore counts a dataset as `pending` while any image with a file
+has neither a revision nor a draft (`box_truth_unfinished`), and registering the pack again finishes it.
 
 A pack supplies a **collection name** (`PackSpec.collection`, falling back to its title) and a **one-line
 description** per dataset (`DatasetSpec.description`). Neither is written at registration: `pack_membership`

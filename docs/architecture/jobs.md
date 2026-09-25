@@ -33,7 +33,8 @@ parameters.
 - **`import`, `verify`, `prewarm`** — scanning and hashing is slow enough to need progress, so import reuses
   this machinery rather than growing a second progress mechanism ([import](import.md), [media](media.md)).
 - **`reference_import`** — one worker scans every missing dataset in the selected public packs and
-  atomically commits the manifests. The worker receives the app-data and reference-data directories
+  atomically commits the manifests, then enters the box truth of any pack that ships boxes, image by image
+  ([import](import.md#reference-packs)). The worker receives the app-data and reference-data directories
   explicitly, so discovery in the API and execution agree in a packaged build.
 - **`model_asset_download`** — the handler knows only an asset key; the fixed catalogue supplies the URL,
   byte count and SHA-256, so the sidecar cannot become an arbitrary downloader. The licence is accepted

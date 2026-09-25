@@ -11,6 +11,7 @@ from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.reference_packs import (
     RegisterReferencePacksParams,
+    box_truth_unfinished,
     is_present,
     pack_specs,
     registered_dataset_id,
@@ -38,6 +39,12 @@ class ReferenceDatasetInfo(BaseModel):
     key: str
     name: str
     registered_dataset_id: int | None = None
+    pending: bool = Field(
+        description=(
+            "Registration would change this dataset: it is not registered, or the box truth "
+            "its pack ships is not yet entered on every image."
+        ),
+    )
 
 
 class ReferencePackInfo(BaseModel):
@@ -68,24 +75,28 @@ def _catalog(settings: Settings) -> ReferencePackCatalog:
     available = pending = 0
     for pack in pack_specs(settings):
         missing = [str(path) for path in pack.required if not is_present(path)]
-        datasets = [
-            ReferenceDatasetInfo(
-                key=spec.key,
-                name=spec.name,
-                registered_dataset_id=registered_dataset_id(spec, registered),
+        datasets: list[ReferenceDatasetInfo] = []
+        for spec in pack.datasets:
+            dataset_id = registered_dataset_id(spec, registered)
+            datasets.append(
+                ReferenceDatasetInfo(
+                    key=spec.key,
+                    name=spec.name,
+                    registered_dataset_id=dataset_id,
+                    pending=dataset_id is None
+                    or box_truth_unfinished(settings, spec, dataset_id) > 0,
+                )
             )
-            for spec in pack.datasets
-        ]
         if not pack.root.is_dir():
             status = ReferencePackStatus.ABSENT
         elif missing:
             status = ReferencePackStatus.INCOMPLETE
-        elif all(item.registered_dataset_id is not None for item in datasets):
+        elif not any(item.pending for item in datasets):
             status = ReferencePackStatus.REGISTERED
         else:
             status = ReferencePackStatus.AVAILABLE
             available += len(datasets)
-            pending += sum(item.registered_dataset_id is None for item in datasets)
+            pending += sum(item.pending for item in datasets)
         packs.append(
             ReferencePackInfo(
                 key=pack.key,
@@ -119,9 +130,7 @@ def register_reference_packs(request: Request, body: RegisterReferencePacksParam
             status_code=409,
             detail=f"reference packs are not ready: {', '.join(unavailable)}",
         )
-    if not any(
-        dataset.registered_dataset_id is None for pack in selected for dataset in pack.datasets
-    ):
+    if not any(dataset.pending for pack in selected for dataset in pack.datasets):
         raise HTTPException(
             status_code=409, detail="all selected reference datasets are registered"
         )

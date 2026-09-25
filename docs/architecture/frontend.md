@@ -122,7 +122,7 @@ threshold. A method is shown by its title, its registry key as secondary text.
 
 ## Screens
 
-**Dataset catalogue and import** — a grid of covers grouped by collection. Local VisA/GKN/FSS-1000 packs register
+**Dataset catalogue and import** — a grid of covers grouped by collection. Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
 in one job; a folder is scanned, its manifest reviewed (channel mapping, labels, warnings) and committed.
 The scan job and manifest are in the URL (`scan=`, `manifest=`). A collection is a string on each dataset
 ([domain model](domain-model.md)), so `CollectionDialog` names and fills it in one form via

@@ -75,6 +75,13 @@ column.
   owns. Treating mask-only images as unlabelled for detection was the alternative, and it would make
   every public benchmark whose truth is a mask unusable for the task until each image was redrawn.
   Components merge two touching objects and split one broken object, and the handbook says so.
+- **Boxes a dataset ships enter as each image's first completed revision**, one box shape per object of
+  its class, rather than as a second kind of imported source beside the mask. The source kind was the
+  alternative, and it keeps the file-to-truth line that ADR-0032 draws for masks; it would cost a
+  migration, a second presence rule that answers every class, and a second reader in detection,
+  segmentation and the editor. The revision reuses all three, and the box file stays referenced in place
+  as the manifest's image is; what is given up is that the truth is app-owned from the start, so a
+  correction is a new revision rather than a divergence from the source.
 - **Detection is read by COCO's protocol**: per class, detections ranked by confidence are matched
   greedily to the unmatched truth box of highest IoU at each of ten IoU thresholds from 0.50 to 0.95;
   AP is the 101-point interpolated area under the precision envelope, averaged over the thresholds

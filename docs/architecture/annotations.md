@@ -63,6 +63,12 @@ integer corners is its own instance box. A reader keeps
 the classes its run pinned; `load_boxes` returns every instance and verifies each source against its
 digest.
 
+**Boxes a dataset ships are a revision, not a source.** A pack annotated as boxes of several classes
+(PKU-Market-PCB's Pascal VOC files) enters each image's boxes as its first completed revision, one `box`
+shape per object on an empty base (`annotations/imported_boxes.py`, [import](import.md#box-truth-a-pack-ships)).
+It is read by the first rule above, answers every class the dataset had when it was completed, and opens in
+the editor like any drawn truth; a correction completes the next revision.
+
 `GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
 `GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
 outlines one class's region from its own truth (`annotations/class_truth.py`), in the source frame; an
