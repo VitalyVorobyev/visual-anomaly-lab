@@ -12,7 +12,7 @@ This page is generated from the live model registry and checked method metadata.
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
 | `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
-| `anomalyvfm_anomalib` | AnomalyVFM (zero-shot, experimental) | zero-shot adapted foundation model | experimental | no | — |
+| `anomalyvfm_anomalib` | AnomalyVFM (zero-shot reference) | zero-shot adapted foundation model | supported | no | — |
 | `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | experimental | no | — |
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
 | `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
@@ -128,9 +128,9 @@ PCA of frozen DINO patch features over a few normal images; a patch scores the p
 - Dataset-specific: no
 - Portable formats: —
 
-## AnomalyVFM (zero-shot, experimental)
+## AnomalyVFM (zero-shot reference)
 
-`anomalyvfm_anomalib` · **zero-shot adapted foundation model** · experimental
+`anomalyvfm_anomalib` · **zero-shot adapted foundation model** · supported
 
 A foundation model adapted once for anomaly detection and used as published: it reads no normal images, so every dataset gets the same weights. The zero-shot reference; its public gate has not run yet.
 

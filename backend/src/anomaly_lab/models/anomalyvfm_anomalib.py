@@ -326,7 +326,7 @@ def _package_version(name: str) -> str | None:
 class AnomalyVfmAnomalibModel(AnomalyModel):
     """AnomalyVFM's published checkpoint, scored per image; nothing is fitted."""
 
-    title = "AnomalyVFM (zero-shot, experimental)"
+    title = "AnomalyVFM (zero-shot reference)"
     summary = (
         "A foundation model adapted once for anomaly detection and used as published: it "
         "reads no normal images, so every dataset gets the same weights. The zero-shot "

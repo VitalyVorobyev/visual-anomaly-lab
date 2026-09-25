@@ -517,7 +517,7 @@ sweep run outside the application (ADR-0038) and its promotion gate is open.
 AnomalyVFM, through anomalib: a RADIO ViT-L/16 with DoRA adapters, a mask decoder and an image-score
 head, trained once by its authors on synthetic anomalies and used here as published. **Zero-shot**: no
 image of the dataset enters the model, so the same image scores the same in every experiment.
-**Experimental** until its public gate runs ([measurements](../measurements.md)).
+It is supported: its public gate cleared the floors on VisA at 768 px ([measurements](../measurements.md)).
 
 - **`requires_training` is false.** An `infer` job scores a draft experiment directly, with no saved
   model to load. A `train` job — what the run bar's *Train & score* starts — reads none of its images:
