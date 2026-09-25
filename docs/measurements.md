@@ -775,3 +775,36 @@ cut moves across it, so no tolerance can be proven to leave every bin, curve poi
 
 The eligible candidate with the fewest bytes per map is adopted, with backward-compatible reading of
 existing `.npy` maps. None eligible: storage stays as it is.
+
+**Result.** numpy 2.5.1, Pillow 12.3.0; source maps 1284 × 1168. Re-projecting every prepared copy
+reproduced its stored map bit for bit on both legs. Read, overlay and evaluator times are warm (page
+cache), medians over three passes; the peak is `tracemalloc`'s over one evaluator pass.
+
+| Leg | Format | Bytes / map | Write ms | Read ms | Overlay ms | Evaluate s | Peak MB | Maps identical |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `identity` | (a) `.npy` float32 | 5 998 976 | 1.19 | 0.31 | 69.9 | 2.28 | 60.4 | — |
+| | (b) compressed float32 | 5 192 870 | 157.7 | 10.95 | 81.7 | 6.60 | 60.4 | 200 / 200 |
+| | (b) compressed float16 | 1 758 148 | 57.9 | 4.69 | 76.2 | 4.05 | 62.3 | 0 / 200 |
+| | (c) prepared + transform | 262 919 | 0.13 | 1.66 | 73.1 | 2.87 | 60.4 | 200 / 200 |
+| | (c) compressed | **229 278** | 6.67 | 2.16 | 73.8 | 3.06 | 60.4 | 200 / 200 |
+| `threshold` | (a) `.npy` float32 | 5 998 976 | 5.81 | 0.34 | 44.7 | 2.59 | 55.3 | — |
+| | (b) compressed float32 | 752 383 | 23.9 | 2.68 | 47.2 | 3.52 | 55.3 | 200 / 200 |
+| | (b) compressed float16 | 331 396 | 12.4 | 1.49 | 45.9 | 3.04 | 55.3 | 0 / 200 |
+| | (c) prepared + transform | 262 918 | 0.25 | 0.47 | 44.8 | 2.63 | 55.3 | 200 / 200 |
+| | (c) compressed | 229 521 | 6.84 | 0.95 | 45.3 | 2.82 | 55.3 | 200 / 200 |
+
+The projection every format pays at write time took 1.58 ms a map (median) under `identity`. Every
+bit-identical format gave metrics identical to (a)'s on both legs. Float16 did not: its maps moved by up to
+0.062 (`identity`) and 0.125 (`threshold`), and `identity`'s pixel ROC-AUC went from 0.8892576 to
+0.8892575 and its AU-PRO from 0.8074951 to 0.8074991 — small, and exactly the movement the rule excludes.
+Compressing the source frame barely helps where a map covers the whole frame (0.87 of (a)'s bytes); it
+helps under a crop only because the NaN outside it compresses.
+
+**Verdict, by the rule.** Compressed float32 fails checks 3 and 4, float16 fails check 1. Both prepared-frame
+forms pass every check; the compressed one is the smaller, at **3.8 % of (a)'s bytes** — 46 MB instead of
+1.2 GB for the run — with the overlay at 1.06×, the evaluator at 1.34× and its peak unchanged, so
+**prepared-frame maps with their pinned transform, `np.savez_compressed`, are adopted**, and an existing
+`.npy` map still reads. One property moves with it: a stored map is now projected on every read, so the
+source-frame array is Pillow's bilinear resize of the day rather than of the run, while the display range
+and each map's peak were taken at write time; a change to Pillow's resampler would separate them, and the
+bit-identity check above is the test that would show it.
