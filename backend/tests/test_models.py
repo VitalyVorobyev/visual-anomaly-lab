@@ -12,6 +12,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import (
     Capabilities,
     Device,
@@ -79,6 +80,7 @@ from anomaly_lab.models.preprocessing import (
 )
 from anomaly_lab.models.registry import UnknownModelError, describe_all, get_model_class
 from anomaly_lab.models.subspace_ad import SubspaceAdConfig
+from anomaly_lab.regions.transform import PixelBounds, SpatialTransform
 from tests.conftest import write_image
 
 # ----------------------------------------------------------------- preprocessing
@@ -707,7 +709,7 @@ def test_predictions_come_back_one_per_input_in_order(tmp_path: Path) -> None:
     assert [p.image_id for p in predictions] == [record.image_id for record in train]
 
 
-def test_maps_are_written_as_float32_npy(tmp_path: Path) -> None:
+def test_maps_read_back_as_float32(tmp_path: Path) -> None:
     config = PreprocessingConfig(width=16, height=16)
     train_ctx, infer_ctx = _contexts(tmp_path, config)
     train = [
@@ -721,7 +723,7 @@ def test_maps_are_written_as_float32_npy(tmp_path: Path) -> None:
     prediction = model.predict(train[:1], infer_ctx)[0]
 
     assert prediction.anomaly_map is not None
-    stored = np.load(prediction.anomaly_map)
+    stored = read_map(prediction.anomaly_map)
     assert stored.dtype == np.float32
     assert stored.shape == (16, 16)
 
@@ -848,7 +850,7 @@ def test_a_map_with_a_stray_channel_axis_is_squeezed_not_stored(tmp_path: Path) 
     """Torch hands back `(1, H, W)`; a stored 3-D map fails much later, in evaluation."""
     _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=16, height=16))
     path = infer_ctx.write_map(1, np.zeros((1, 16, 16), dtype=np.float32))
-    assert np.load(path).shape == (16, 16)
+    assert read_map(path).shape == (16, 16)
 
 
 def test_a_genuinely_wrong_map_shape_is_reported_at_the_plugin(tmp_path: Path) -> None:
@@ -857,20 +859,21 @@ def test_a_genuinely_wrong_map_shape_is_reported_at_the_plugin(tmp_path: Path) -
         infer_ctx.write_map(1, np.zeros((3, 16, 16), dtype=np.float32))
 
 
-def test_a_map_projector_runs_before_persistence_and_ignores_uncovered_extremes(
+def test_a_map_transform_places_the_map_and_its_uncovered_pixels_skip_the_range(
     tmp_path: Path,
 ) -> None:
     _, infer_ctx = _contexts(tmp_path, PreprocessingConfig(width=8, height=8))
+    transform = SpatialTransform.resolve(
+        source_size=(12, 12),
+        prepared_size=(8, 8),
+        region=PixelBounds(left=2, top=2, right=10, bottom=10),
+        padding_fraction=0.0,
+    )
 
-    def project(_: int, values: np.ndarray) -> np.ndarray:
-        source = np.full((12, 12), np.nan, dtype=np.float32)
-        source[2:10, 2:10] = values
-        return source
-
-    infer_ctx.map_projector = project
+    infer_ctx.map_transform = lambda _: transform
     path = infer_ctx.write_map(7, np.arange(64, dtype=np.float32).reshape(8, 8))
 
-    stored = np.load(path)
+    stored = read_map(path)
     assert stored.shape == (12, 12)
     assert np.isnan(stored[0, 0])
     assert infer_ctx.display_range() == pytest.approx((0.0, 62.937))

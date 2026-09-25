@@ -37,6 +37,7 @@ from anomaly_lab.db.repositories.images import SplitImage
 from anomaly_lab.domain.entities import Subset, Task
 from anomaly_lab.experiments.context import to_records
 from anomaly_lab.experiments.targets import PreparedClassTargets
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import AnomalyModel, InferContext, NullReporter, TrainContext
 from anomaly_lab.models.device import resolve_device
 from anomaly_lab.models.diagnostics import DiagnosticWriter
@@ -188,9 +189,7 @@ class PreviewSession:
             reporter=NullReporter(),
             diagnostics=diagnostics,
             maps_subdir="maps",
-            map_projector=lambda image_id, values: build.transform_for(image_id).project_map(
-                values
-            ),
+            map_transform=build.transform_for,
             mask_projector=lambda image_id, values: build.transform_for(image_id).project_mask(
                 values
             ),
@@ -218,7 +217,7 @@ class PreviewSession:
             subset=Subset.TEST,
         )
         (prediction,) = self._model.predict(to_records([record], self._build), self._infer)
-        values = np.load(self._infer.map_path(image_id))
+        values = read_map(self._infer.map_path(image_id))
         return {
             "image_id": image_id,
             "score": prediction.score,

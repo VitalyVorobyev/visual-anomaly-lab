@@ -30,7 +30,7 @@ class Prediction(BaseModel):
     image_id: int
     score: float               # higher = more anomalous; for segmentation, the share given a class;
                                # for detection, the highest confidence
-    anomaly_map: Path | None   # float32 .npy
+    anomaly_map: Path | None   # read with map_files.read_map
     label_map: Path | None     # semantic segmentation: 8-bit class-index PNG (write_label_map)
     instances: Path | None     # object detection: boxes as JSON (write_instances)
     inference_ms: float
@@ -108,8 +108,9 @@ untouched field is sent as unset.
   pinned `classes` and `boxes(image_id)`, the image's object instances of those classes as `TargetBox`es
   (`label_key`, `box`) in the prepared frame, clipped to the region crop. Boxes are pixel-edge
   `(x0, y0, x1, y1)` with `x1`/`y1` exclusive. An empty list is a confirmed absence;
-- `InferContext.write_map(image_id, array)` — projects a prepared-frame map to source coordinates,
-  persists it as float32 and accumulates the run's finite display range;
+- `InferContext.write_map(image_id, array)` — persists a prepared-frame map as float32 beside the image's
+  pinned transform, and accumulates the run's finite display range and the map's peak from its projection
+  to source coordinates;
 - `InferContext.write_mask(image_id, mask)` — a method's own foreground decision, projected nearest
   into the source frame and stored as a 0/255 PNG beside the map (`maps/<id>.mask.png`). For a
   targeted task the map is the foreground probability, and a run that writes no mask is read by
@@ -149,8 +150,8 @@ padding. Every plugin receives the build's lossless prepared PNG paths and decod
 `models/preprocessing.load_array`, which applies the colour policy and verifies the frozen size but never
 resizes. A model that opens another path is a bug.
 
-Plugins emit maps in prepared coordinates; `InferContext.write_map` projects them through the image's
-recorded transform, so stored maps, source masks and overlays share source coordinates. Pixels outside the
+Plugins emit maps in prepared coordinates; every read of a stored map projects it through the image's
+recorded transform, so maps as read, source masks and overlays share source coordinates. Pixels outside the
 crop are `NaN`: rendered transparent, and kept by evaluation in the denominator at the score floor with
 their defect/normal counts reported — a crop cannot improve its metric by hiding a defect.
 
@@ -267,7 +268,14 @@ produce a confident map of the difference between two illuminations.
 
 ## Anomaly maps
 
-Maps are stored as **float32 `.npy`** — lossless, the source of truth for statistics and pixel metrics.
+Maps are stored **raw float32, in the prepared frame**, one `maps/<id>.npz` per image
+(`np.savez_compressed`: `map` and the image's pinned `SpatialTransform` as JSON) — lossless, the source of
+truth for statistics and pixel metrics. **`map_files.read_map` is the one reader**: it projects the map
+to source pixels (NaN outside the crop), and every consumer — the evaluators, the peak backfill, the
+overlay and `/values` routes, the per-image scale, the studio's previews — reads through it. Projection is
+deterministic, so the array read is bit-identical to the one `write_map` took the range and peak from,
+and a map costs about a twenty-sixth of its projection on disk ([measurements](../measurements.md#anomaly-map-storage)).
+An older run's source-frame float32 `.npy` maps read unchanged; re-scoring the run replaces each one.
 The API renders colormapped PNGs on demand at `GET /api/images/{image_id}/anomaly-map?experiment_id=…`
 and caches them. Overlay opacity is applied in CSS, never baked into the image ([media](media.md)).
 

@@ -47,7 +47,7 @@ visual-anomaly-lab/
     ├── app.sqlite3                 # metadata, scores, paths
     ├── manifests/                  # committed import manifests (dataset-<id>-*.json)
     ├── thumbnails/{thumb,preview}/ # 256 px and 1024 px WebP
-    ├── artifacts/exp-<id>/         # method state, maps/ (float32 .npy), logs/<job>.log, exports/
+    ├── artifacts/exp-<id>/         # method state, maps/ (float32 .npz), logs/<job>.log, exports/
     ├── jobs/logs/                  # logs of jobs that belong to no experiment
     ├── annotations/image-<id>/     # revision-<n>.png, .classes.png, .instances.json — immutable truth
     ├── region-profiles/profile-<id>/build/  # lossless prepared PNGs + transforms

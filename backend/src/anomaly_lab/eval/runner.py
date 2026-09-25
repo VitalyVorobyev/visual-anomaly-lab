@@ -43,6 +43,7 @@ from anomaly_lab.eval.ground_truth import resolved_masks
 from anomaly_lab.eval.localization import hits, peak_of, tolerance_px
 from anomaly_lab.eval.metrics import average_precision, roc_auc, timing_summary
 from anomaly_lab.eval.pixel import DEFAULT_BINS, PixelAccumulator
+from anomaly_lab.map_files import read_map
 from anomaly_lab.media.decode import UnreadableImageError
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -157,7 +158,7 @@ def _pixel_metrics(
     missing_maps = 0
     for image, map_path, mask_path in evaluable:
         try:
-            array = np.load(map_path, allow_pickle=False)
+            array = read_map(map_path)
         except (OSError, ValueError):
             missing_maps += 1
             continue
@@ -177,7 +178,7 @@ def _pixel_metrics(
     accumulator = PixelAccumulator(vmin=minimum, vmax=maximum, bins=bins)
     unreadable_masks = 0
     for image, map_path, mask_path in readable:
-        array = np.load(map_path, allow_pickle=False)
+        array = read_map(map_path)
         if mask_path is None:
             shape = (image.height, image.width)
             mask = np.zeros(shape, dtype=bool)
@@ -206,7 +207,7 @@ def ensure_peaks(
 
     A run written after migration 019 records its peaks as it writes each map, so this is a
     no-op for it. A run from before has none, and re-evaluating is the backfill path — one
-    `np.load` per map, once, after which the column is filled forever. Idempotent by
+    `read_map` per map, once, after which the column is filled forever. Idempotent by
     construction: a row that already has a peak is never re-read, so the cost of the second
     call is a dictionary comprehension.
 
@@ -224,7 +225,7 @@ def ensure_peaks(
         if image.map_path is None or image.image_id in resolved:
             continue
         try:
-            array = np.load(image.map_path, allow_pickle=False)
+            array = read_map(image.map_path)
         except (OSError, ValueError):
             continue
         peak = peak_of(array)

@@ -48,7 +48,7 @@ traversal is impossible by construction ([security](security.md)).
   the display range**, with `Cache-Control: no-cache`.
 
 **A diagnostic is served in the prepared frame.** A stored anomaly map is projected through the pinned
-region transform before it is written ([methods](methods.md)); a diagnostic is not, because a per-branch
+region transform whenever it is read ([methods](methods.md#anomaly-maps)); a diagnostic is not, because a per-branch
 map means what it means on the grid the branch computed it on. The payload route renders at the array's
 own size, and the pane is prepared-frame (or grid-frame, for a `grid`).
 

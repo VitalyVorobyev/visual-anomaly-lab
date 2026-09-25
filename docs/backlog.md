@@ -51,12 +51,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
       VisA mask's components are specks of a few pixels. Choose a public dataset whose objects are
       annotated as boxes, predeclare the protocol, and run `dino_linear_det` against the floor on it.
 
-## Spatial input
-
-- [ ] **Measure compact source-map persistence** (M): projected float32 maps consume about 1.23 GB
-      for a 200-image VisA test set. Compare compressed source maps against prepared-frame map plus
-      pinned-transform projection, preserving constant-memory evaluation and exact overlay semantics.
-
 ## Methods
 
 - [ ] **ONNX export for `dinomaly_custom`** (S): the retired anomalib wrapper exported and this does

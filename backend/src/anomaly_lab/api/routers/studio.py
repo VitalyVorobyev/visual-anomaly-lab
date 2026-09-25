@@ -31,6 +31,7 @@ from anomaly_lab.experiments.preview import (
 from anomaly_lab.experiments.service import refuse_while_a_job_runs
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
+from anomaly_lab.map_files import read_map, stored_map_file
 from anomaly_lab.media.overlay import render_anomaly_map
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -203,10 +204,10 @@ def preview_map(request: Request, generation: str, image_id: int) -> Response:
     """The map one preview wrote, coloured on the fixed probability range [0, 1]."""
     if not generation.isalnum():
         raise HTTPException(status_code=404, detail="no such preview")
-    path: Path = preview_dir(_settings(request), generation) / "maps" / f"{image_id}.npy"
+    path: Path = stored_map_file(preview_dir(_settings(request), generation) / "maps", image_id)
     if not path.is_file():
         raise HTTPException(status_code=404, detail="no such preview")
-    values = np.load(path, allow_pickle=False)
+    values = read_map(path)
     payload = render_anomaly_map(values, value_range=(0.0, 1.0))
     return Response(
         content=payload,
@@ -260,10 +261,10 @@ def set_region(request: Request, image_id: int, body: RegionRequest) -> RegionOu
     if body.action is not RegionAction.ABSENT:
         if body.generation is None or not body.generation.isalnum():
             raise HTTPException(status_code=422, detail=f"{body.action.value} needs a preview")
-        path = preview_dir(settings, body.generation) / "maps" / f"{image_id}.npy"
+        path = stored_map_file(preview_dir(settings, body.generation) / "maps", image_id)
         if not path.is_file():
             raise HTTPException(status_code=404, detail="that preview has no map of this image")
-        region = np.nan_to_num(np.load(path, allow_pickle=False), nan=0.0) >= 0.5
+        region = np.nan_to_num(read_map(path), nan=0.0) >= 0.5
     document = annotation_service.class_region_document(settings, image_id, body.class_key, region)
     written = annotation_service.write_class_region(
         settings, image_id, document, complete=body.action is not RegionAction.FIX

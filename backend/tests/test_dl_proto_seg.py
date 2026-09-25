@@ -17,6 +17,7 @@ pytest.importorskip("timm")
 
 from PIL import Image
 
+from anomaly_lab.map_files import read_map
 from anomaly_lab.models.base import (
     Device,
     ImageRecord,
@@ -114,7 +115,7 @@ def test_references_in_a_probability_map_out(tmp_path: Path, overrides: dict[str
     model.fit(references, train_ctx)
     (prediction,) = model.predict(queries, infer_ctx)
 
-    probability = np.load(infer_ctx.map_path(10))
+    probability = read_map(infer_ctx.map_path(10))
     assert probability.shape == (SIZE, SIZE)
     assert probability.min() >= 0.0 and probability.max() <= 1.0
     assert 0.0 <= prediction.score <= 1.0
@@ -197,8 +198,8 @@ def test_leave_one_out_rescales_the_same_bank(tmp_path: Path, adaptation: Adapta
     (before,) = plain.predict(queries, plain_ctx)
     (after,) = calibrated.predict(queries, calibrated_ctx)
     np.testing.assert_allclose(
-        np.load(calibrated_ctx.map_path(10)),
-        scale.apply(np.load(plain_ctx.map_path(10))),
+        read_map(calibrated_ctx.map_path(10)),
+        scale.apply(read_map(plain_ctx.map_path(10))),
         rtol=1e-5,
         atol=1e-6,
     )

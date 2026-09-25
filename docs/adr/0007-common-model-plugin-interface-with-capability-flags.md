@@ -37,8 +37,9 @@ registry.**
 - **`predict` returns a per-image score and, optionally, a per-image anomaly map.** Reducing a
   sample's images to one score is the evaluation layer's job (see ADR-0011); a channel-aware method
   may consult channel metadata but still emits per-image results.
-- **Maps are stored raw, as float32 `.npy`** (see ADR-0004). Colormap, normalization and blending
-  are applied at view time and never baked into stored data.
+- **Maps are stored raw, as float32 numpy files** (see ADR-0004; the format is in the handbook's
+  methods page). Colormap, normalization and blending are applied at view time and never baked
+  into stored data.
 
 A new method is one module and one registry entry. If it needs a route, a schema change or a line
 of TypeScript, the boundary is wrong and is fixed there, not in the caller.

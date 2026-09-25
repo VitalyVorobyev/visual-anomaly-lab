@@ -10,13 +10,13 @@ every map in the prepared frame, before the pinned transform projects it.
 
 Every candidate format is then written from those arrays and read back:
 
-* `a_npy`      — today: the projected source-frame map, float32 `.npy`;
+* `a_npy`      — the projected source-frame map, float32 `.npy` (what older runs hold);
 * `b_npz32`    — the same array, `np.savez_compressed`;
 * `b_npz16`    — the same array as float16, `np.savez_compressed` (answers the tolerance
   question; a narrowing cast is not exact);
 * `c_npz`      — the prepared-frame map plus its pinned `SpatialTransform`, `np.savez`,
   projected on read;
-* `c_npz_z`    — the same, `np.savez_compressed`.
+* `c_npz_z`    — the same, `np.savez_compressed` (the format `InferContext.write_map` writes).
 
 Measured per format: bytes on disk per map, write ms (encode and save; the projection that
 every format pays at write time for the display range and the peak is reported once), read
@@ -25,9 +25,9 @@ ms (warm, decode to the source-frame float32 array), overlay ms (decode plus
 evaluator's wall time and traced peak memory over the whole run, whether every decoded map
 is bit-identical to `a_npy`, and whether the evaluator's metrics are identical.
 
-The evaluator is run on each format by repointing `image_result.map_path` at that format's
-files and routing `numpy.load` for them through the format's decoder — every map consumer
-reads through `np.load`, so this is the reader a format change would install.
+Every candidate is read by `anomaly_lab.map_files.read_map`, the one reader every map consumer
+uses, which decodes all five; the evaluator runs on each format by repointing
+`image_result.map_path` at that format's files.
 
     ./scripts/map-storage-measure.py --data-dir /tmp/map-storage
 
@@ -39,7 +39,6 @@ from __future__ import annotations
 import argparse
 import contextlib
 import json
-import os
 import platform
 import statistics
 import sys
@@ -69,6 +68,7 @@ from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.experiments.infer import run_infer_job
 from anomaly_lab.experiments.train import run_train_job
 from anomaly_lab.jobs.context import JobContext
+from anomaly_lab.map_files import read_map
 from anomaly_lab.media.overlay import read_display_range, render_anomaly_map
 from anomaly_lab.models.base import InferContext, evenly_spaced
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -93,11 +93,9 @@ PROFILES: tuple[tuple[str, str, bool], ...] = (
 OVERLAY_IMAGES = 20
 READ_REPEATS = 3
 
-_NP_LOAD = np.load
 _NP_SAVE = np.save
 
 Encoder = Callable[[Path, np.ndarray, np.ndarray, SpatialTransform], None]
-Decoder = Callable[[Path], np.ndarray]
 
 
 # -- the candidate formats --------------------------------------------------------------
@@ -131,28 +129,12 @@ def _save_prepared_z(
     np.savez_compressed(path, map=prepared, transform=_transform_bytes(t))
 
 
-def _load_npy(path: Path) -> np.ndarray:
-    return np.asarray(_NP_LOAD(path, allow_pickle=False))
-
-
-def _load_npz(path: Path) -> np.ndarray:
-    with _NP_LOAD(path, allow_pickle=False) as stored:
-        return np.asarray(stored["map"], dtype=np.float32)
-
-
-def _load_prepared(path: Path) -> np.ndarray:
-    with _NP_LOAD(path, allow_pickle=False) as stored:
-        prepared = np.asarray(stored["map"], dtype=np.float32)
-        transform = SpatialTransform.model_validate_json(bytes(stored["transform"]))
-    return transform.project_map(prepared)
-
-
-FORMATS: dict[str, tuple[str, Encoder, Decoder]] = {
-    "a_npy": (".npy", _save_npy, _load_npy),
-    "b_npz32": (".npz", _save_npz32, _load_npz),
-    "b_npz16": (".npz", _save_npz16, _load_npz),
-    "c_npz": (".npz", _save_prepared, _load_prepared),
-    "c_npz_z": (".npz", _save_prepared_z, _load_prepared),
+FORMATS: dict[str, tuple[str, Encoder]] = {
+    "a_npy": (".npy", _save_npy),
+    "b_npz32": (".npz", _save_npz32),
+    "b_npz16": (".npz", _save_npz16),
+    "c_npz": (".npz", _save_prepared),
+    "c_npz_z": (".npz", _save_prepared_z),
 }
 
 
@@ -316,20 +298,6 @@ def _max_abs_difference(left: np.ndarray, right: np.ndarray) -> float:
     return float(np.max(np.abs(left[both].astype(np.float64) - right[both].astype(np.float64))))
 
 
-@contextlib.contextmanager
-def _reading_through(root: Path) -> Iterator[None]:
-    """Route `numpy.load` for a format's files through that format's decoder."""
-
-    def load(file: Any, *args: Any, **kwargs: Any) -> Any:
-        path = Path(os.fspath(file)) if isinstance(file, (str, os.PathLike)) else None
-        if path is not None and path.parent.parent == root:
-            return FORMATS[path.parent.name][2](path)
-        return _NP_LOAD(file, *args, **kwargs)
-
-    with mock.patch.object(np, "load", load):
-        yield
-
-
 def _evaluate(settings: Settings, experiment_id: int) -> tuple[dict[str, Any], float]:
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.get_experiment(conn, experiment_id)
@@ -363,8 +331,8 @@ def _measure_leg(
         ]
     stored = {image.image_id: str(image.map_path) for image in scored}
     ids = sorted(stored)
-    sources = {image_id: _load_npy(Path(stored[image_id])) for image_id in ids}
-    prepared = {image_id: _load_npy(capture / f"{image_id}.npy") for image_id in ids}
+    sources = {image_id: read_map(stored[image_id]) for image_id in ids}
+    prepared = {image_id: read_map(capture / f"{image_id}.npy") for image_id in ids}
 
     projection_seconds: list[float] = []
     for image_id in ids:
@@ -391,7 +359,7 @@ def _measure_leg(
         "formats": {},
     }
     baseline_metrics: dict[str, Any] | None = None
-    for name, (suffix, encode, decode) in FORMATS.items():
+    for name, (suffix, encode) in FORMATS.items():
         directory = root / name
         directory.mkdir(parents=True, exist_ok=True)
         paths = {image_id: directory / f"{image_id}{suffix}" for image_id in ids}
@@ -407,7 +375,7 @@ def _measure_leg(
         identical = 0
         worst = 0.0
         for image_id in ids:
-            decoded = decode(paths[image_id])
+            decoded = read_map(paths[image_id])
             if _bit_identical(decoded, sources[image_id]):
                 identical += 1
             else:
@@ -417,7 +385,7 @@ def _measure_leg(
         for _ in range(READ_REPEATS):
             for image_id in ids:
                 started = time.perf_counter()
-                decode(paths[image_id])
+                read_map(paths[image_id])
                 read_seconds.append(time.perf_counter() - started)
 
         overlay_seconds: list[float] = []
@@ -425,18 +393,17 @@ def _measure_leg(
             for image_id in overlay_ids:
                 started = time.perf_counter()
                 render_anomaly_map(
-                    decode(paths[image_id]), value_range=value_range, size=sizes[image_id]
+                    read_map(paths[image_id]), value_range=value_range, size=sizes[image_id]
                 )
                 overlay_seconds.append(time.perf_counter() - started)
 
         _repoint(settings, experiment_id, {key: str(value) for key, value in paths.items()})
         try:
-            with _reading_through(root):
-                metrics, evaluate_seconds = _evaluate(settings, experiment_id)
-                tracemalloc.start()
-                _evaluate(settings, experiment_id)
-                _, peak = tracemalloc.get_traced_memory()
-                tracemalloc.stop()
+            metrics, evaluate_seconds = _evaluate(settings, experiment_id)
+            tracemalloc.start()
+            _evaluate(settings, experiment_id)
+            _, peak = tracemalloc.get_traced_memory()
+            tracemalloc.stop()
         finally:
             _repoint(settings, experiment_id, stored)
         if baseline_metrics is None:

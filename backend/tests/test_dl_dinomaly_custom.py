@@ -41,6 +41,7 @@ from PIL import Image
 torch = pytest.importorskip("torch")
 pytest.importorskip("timm")
 
+from anomaly_lab.map_files import read_map  # noqa: E402
 from anomaly_lab.models.base import (  # noqa: E402
     Device,
     ImageRecord,
@@ -511,7 +512,7 @@ def test_predictions_come_back_one_per_input_in_order(
     assert [item.image_id for item in predictions] == [70, 71, 72]
     for prediction in predictions:
         assert prediction.anomaly_map is not None
-        values = np.load(prediction.anomaly_map)
+        values = read_map(prediction.anomaly_map)
         assert values.ndim == 2
         assert values.shape == (SIZE, SIZE)
         assert values.dtype == np.float32
@@ -535,7 +536,7 @@ def test_a_stamped_defect_separates_from_the_normals(
     assert marked.score > clean.score
 
     assert marked.anomaly_map is not None
-    values = np.load(marked.anomaly_map)
+    values = read_map(marked.anomaly_map)
     inside = float(values[STAMP, STAMP].mean())
     outside = float(np.mean(np.delete(values, np.s_[STAMP], axis=0)))
     assert inside > outside
@@ -808,7 +809,7 @@ def test_a_four_block_decoder_trains_and_produces_maps(tmp_path: Path) -> None:
     probe = ImageRecord(image_id=60, sample_id=60, path=_defect(tmp_path / "p.png", 60))
     prediction = model.predict([probe], infer_ctx)[0]
     assert prediction.anomaly_map is not None
-    assert np.load(prediction.anomaly_map).shape == (SIZE, SIZE)
+    assert read_map(prediction.anomaly_map).shape == (SIZE, SIZE)
     assert recorder.losses[-1][1] < recorder.losses[0][1]
 
 
@@ -836,7 +837,7 @@ def test_the_other_encoder_family_runs_on_the_same_pixels(tmp_path: Path) -> Non
 
     probe = ImageRecord(image_id=64, sample_id=64, path=_defect(tmp_path / "p.png", 64))
     prediction = model.predict([probe], infer_ctx)[0]
-    values = np.load(prediction.anomaly_map)  # type: ignore[arg-type]
+    values = read_map(prediction.anomaly_map)  # type: ignore[arg-type]
     assert values.shape == (SIZE, SIZE)
     assert np.isfinite(values).all()
 
@@ -871,12 +872,12 @@ def test_map_blur_smooths_the_stored_map_without_moving_the_score(tmp_path: Path
 
     probe = ImageRecord(image_id=40, sample_id=40, path=_defect(tmp_path / "p.png", 40))
     plain = sharp.predict([probe], infer_ctx)[0]
-    plain_values = np.load(plain.anomaly_map)  # type: ignore[arg-type]
+    plain_values = read_map(plain.anomaly_map)  # type: ignore[arg-type]
 
     blurred_model = DinomalyCustomModel(_config(max_steps=8, seed=9, map_blur_sigma=4.0))
     blurred_model.load(train_ctx.artifact_dir)
     blurred = blurred_model.predict([probe], infer_ctx)[0]
-    blurred_values = np.load(blurred.anomaly_map)  # type: ignore[arg-type]
+    blurred_values = read_map(blurred.anomaly_map)  # type: ignore[arg-type]
 
     assert blurred.score == pytest.approx(plain.score, abs=1e-6)
     assert float(blurred_values.std()) < float(plain_values.std())

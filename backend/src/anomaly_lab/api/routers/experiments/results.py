@@ -39,6 +39,7 @@ from anomaly_lab.eval.metrics import pr_curve, roc_curve
 from anomaly_lab.eval.runner import EvalConfig
 from anomaly_lab.eval.segmentation import SegmentationOutcomes, sample_outcomes
 from anomaly_lab.eval.threshold import ThresholdReport, classify, report, suggest_threshold
+from anomaly_lab.map_files import read_map
 from anomaly_lab.media.overlay import (
     fit_label_plane,
     parse_label_colours,
@@ -545,13 +546,13 @@ def _curve(
 def _map_scale(map_path: str | None) -> MapScale | None:
     """This map's own extremes, or `None` if it cannot be read.
 
-    One `.npy` read per image of the sample being viewed — a few hundred kilobytes for the
+    One map read per image of the sample being viewed — a few hundred kilobytes for the
     one part on screen, not a scan of the run.
     """
     if not map_path:
         return None
     try:
-        array = np.load(map_path, allow_pickle=False)
+        array = read_map(map_path)
     except (OSError, ValueError):
         # Deletable by design; the caller renders the absence rather than failing.
         return None

@@ -42,8 +42,10 @@ from pydantic import BaseModel, Field
 # same reason — one rule, one implementation.
 from anomaly_lab.domain.entities import Task
 from anomaly_lab.eval.localization import peak_of
+from anomaly_lab.map_files import map_file, write_map_file
 from anomaly_lab.models.diagnostics import DiagnosticKind, DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
+from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 
@@ -351,18 +353,18 @@ class InferContext(ModelContext):
     Set by the caller, never by a plugin, and the default is what every job uses. It
     exists because `predict` writes a map unconditionally, and a caller that is *not* a
     run must not be able to overwrite one: an on-demand diagnostic request scores a single
-    image to see what its branches did, and dropping the result into `maps/{image_id}.npy`
+    image to see what its branches did, and dropping the result into `maps/{image_id}.npz`
     would replace a stored map under a `range.json` fitted by a different run — leaving
     that image's map a generation ahead of its own score row, with nothing saying so
     (ADR-0026).
     """
 
-    map_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
-    """Injected source-frame projection applied before a plugin's map is persisted.
+    map_transform: Callable[[int], SpatialTransform] | None = None
+    """Injected: the pinned spatial transform that places an image's map in its source.
 
-    Plugins still emit maps in the prepared frame. The experiment boundary owns the
-    pinned spatial transform, so projection happens here once and no method needs to know
-    that region profiles exist.
+    Plugins emit maps in the prepared frame. The experiment boundary owns the pinned
+    transform, so the map is stored beside it here and projected on read (`read_map`), and
+    no method needs to know that region profiles exist.
     """
 
     mask_projector: Callable[[int, np.ndarray], np.ndarray] | None = None
@@ -392,11 +394,11 @@ class InferContext(ModelContext):
         return path
 
     def map_path(self, image_id: int) -> Path:
-        """The canonical float32 `.npy` path for one image's map (ADR-0007)."""
-        return self.maps_dir / f"{image_id}.npy"
+        """Where one image's map is written (ADR-0007); `anomaly_lab.map_files` owns the format."""
+        return map_file(self.maps_dir, image_id)
 
     def write_map(self, image_id: int, array: np.ndarray) -> Path:
-        """Persist one anomaly map as float32 and return where it went.
+        """Persist one anomaly map, raw float32, and return where it went.
 
         Raw and unnormalized on purpose: colormap, range and opacity are view decisions,
         applied when the map is looked at, so they stay changeable after the expensive
@@ -424,14 +426,16 @@ class InferContext(ModelContext):
                 f"shape {np.shape(array)}, which is not a 2-D map with singleton axes"
             )
             raise ValueError(msg)
-        if self.map_projector is not None:
-            values = np.ascontiguousarray(self.map_projector(image_id, values), dtype=np.float32)
-        finite = values[np.isfinite(values)]
+        transform = self.map_transform(image_id) if self.map_transform is not None else None
+        # Range and peak are taken on the source-frame array a reader will get back, which
+        # `read_map` reproduces bit for bit from what is stored.
+        projected = transform.project_map(values) if transform is not None else values
+        finite = projected[np.isfinite(projected)]
         if finite.size == 0:
             raise ValueError(f"anomaly map for image {image_id} has no covered finite pixels")
-        np.save(path, values)
+        write_map_file(path, values, transform)
         self._map_extremes.append((float(finite.min()), float(np.percentile(finite, 99.9))))
-        peak = peak_of(values)
+        peak = peak_of(projected)
         if peak is not None:
             self._map_peaks[image_id] = peak
         return path

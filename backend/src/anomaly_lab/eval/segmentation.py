@@ -41,6 +41,7 @@ from anomaly_lab.domain.entities import Experiment, Subset
 from anomaly_lab.eval.metrics import roc_auc, timing_summary
 from anomaly_lab.eval.pixel import PixelAccumulator
 from anomaly_lab.eval.threshold import SampleVerdict
+from anomaly_lab.map_files import read_map
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 THRESHOLD_RULE = "foreground probability >= 0.5"
@@ -208,7 +209,7 @@ def probability_map(image: ScoredImage) -> np.ndarray | None:
     """
     if image.map_path is None or not Path(image.map_path).is_file():
         return None
-    return np.asarray(np.load(image.map_path), dtype=np.float32)
+    return read_map(image.map_path)
 
 
 def predicted_mask(

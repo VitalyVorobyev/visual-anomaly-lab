@@ -18,6 +18,7 @@ from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.experiments.context import ExperimentJobError
+from anomaly_lab.map_files import read_map
 from anomaly_lab.media.overlay import LABEL_FILL_ALPHA
 from anomaly_lab.models.base import (
     IGNORE_INDEX,
@@ -116,7 +117,7 @@ def test_it_labels_each_class_by_colour_and_scores_the_share_it_found(tmp_path: 
     assert both.label_map == infer_ctx.label_map_path(11)
     assert both.score == pytest.approx(32 / SIZE**2)
     assert neither.score == 0.0
-    probability = np.load(infer_ctx.map_path(11))
+    probability = read_map(infer_ctx.map_path(11))
     assert probability[truth[11] > 0].min() > 0.9 > 0.1 > probability[truth[11] == 0].max()
 
 
