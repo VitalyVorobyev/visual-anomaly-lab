@@ -110,8 +110,9 @@ because pills mark in-page state.
 **Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. Every
 run needs a built profile; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
 class with a reference and something to test on (from the coverage read) and a split of references;
-`semantic_segmentation` (named *Segment*) needs the same annotated class and a `class_stratified` or
-`manual` split (`splitServesTask`). With one task the band is a checklist. With more, the shared first
+`semantic_segmentation` (named *Segment*) and `object_detection` (named *Detect*) each need the same
+annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence rule
+serving both. With one task the band is a checklist. With more, the shared first
 step comes first, then each task shows a check or the link to its next step.
 
 **Vocabulary.** A *region profile* is the crop-and-resize recipe built on Prepare; *Colour* is the
@@ -186,7 +187,8 @@ previews files, bytes, active-work blockers and resident eviction.
 task's kind of split (`splitServesTask`), method cards are those whose `capabilities.tasks` include it,
 and a targeted task adds a **Target class** select beside the split, defaulting to the class a `few_shot`
 split was drawn for (ADR-0040). With no split its task can use, the Split field links to the Splits tab
-opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation.
+opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation
+and detection.
 With one task the form starts at its inputs. The band lists what is
 missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
 `sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes

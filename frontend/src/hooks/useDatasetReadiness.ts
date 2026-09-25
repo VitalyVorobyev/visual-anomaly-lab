@@ -3,8 +3,9 @@
  *
  * Every run needs a *built* region profile. An anomaly run needs a split drawn or adopted for
  * it; a few-shot run needs a class with a reference and something to test on, and a split of
- * references (ADR-0040); a supervised segmentation run needs the same annotated class and a
- * split of annotated samples, drawn by class or listed by hand (ADR-0039). This reads the facts the create form checks, with the same rule for
+ * references (ADR-0040); a supervised run — segmentation or detection — needs the same annotated
+ * class and a split of annotated samples, drawn by class or listed by hand (ADR-0039). This reads
+ * the facts the create form checks, with the same rule for
  * "built" (a build report exists and no image failed), so the band and the form cannot
  * disagree about whether a dataset is ready.
  */
@@ -46,22 +47,33 @@ export const READINESS_TASKS: Task[] = [
   "anomaly",
   "few_shot_segmentation",
   "semantic_segmentation",
+  "object_detection",
 ];
 
 /** The tasks that learn from annotation, and so wait on a class that has some. */
-const ANNOTATED_TASKS: Task[] = ["few_shot_segmentation", "semantic_segmentation"];
+const ANNOTATED_TASKS: Task[] = [
+  "few_shot_segmentation",
+  "semantic_segmentation",
+  "object_detection",
+];
+
+/**
+ * The tasks that fit on annotated samples of every pinned class (ADR-0039). Segmentation and
+ * detection share one presence rule, so one split serves both.
+ */
+export const SUPERVISED_TASKS: Task[] = ["semantic_segmentation", "object_detection"];
 
 /**
  * Which split strategies a task trains on: an anomaly run on a drawn or adopted partition
  * whose train is normals, a few-shot run on a split of references (ADR-0040), and a
- * supervised run on annotated samples — drawn by class (`class_stratified`) or listed by hand
- * (`manual`) (ADR-0039).
+ * supervised run — segmentation or detection — on annotated samples, drawn by class
+ * (`class_stratified`) or listed by hand (`manual`) (ADR-0039).
  */
 export function splitServesTask(split: Pick<SplitDetail, "strategy">, task: Task): boolean {
   if (task === "few_shot_segmentation") {
     return split.strategy === "manual" || split.strategy === "few_shot";
   }
-  if (task === "semantic_segmentation") {
+  if (SUPERVISED_TASKS.includes(task)) {
     return split.strategy === "class_stratified" || split.strategy === "manual";
   }
   return split.strategy === "normal_only_train" || split.strategy === "imported";

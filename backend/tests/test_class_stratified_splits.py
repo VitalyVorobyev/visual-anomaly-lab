@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
+from anomaly_lab.annotations.class_truth import resolve_box_truth
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.splitting import (
     SplitParams,
@@ -228,3 +229,57 @@ def test_the_api_refuses_a_dataset_with_too_little_truth(
 
     parked = _draw(client, seeded, "train on nothing", unlabeled_subset="train")
     assert parked.status_code == 422
+
+
+def _box(label_key: str) -> dict[str, Any]:
+    return {
+        "id": f"{label_key}-box",
+        "label_key": label_key,
+        "kind": "box",
+        "operation": "add",
+        "x": 2,
+        "y": 2,
+        "width": 3,
+        "height": 4,
+    }
+
+
+def test_a_detection_run_reads_boxes_on_every_sample_the_draw_placed(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    # Detection truth answers by the presence rule the draw stratifies by, so a split drawn
+    # over boxed truth trains and tests only on images a detection run can read as boxes,
+    # and leaves out every image it cannot.
+    with connection(settings.db_path) as conn:
+        _add_class(conn, seeded.dataset_id, "scratch")
+        images = _image_ids(conn, seeded.dataset_id)
+        boxed = images[:-1]
+        for index, image_id in enumerate(boxed):
+            _complete(conn, image_id, [_box("scratch")] if index % 3 == 0 else [])
+
+    response = _draw(client, seeded, "detection", train_fraction=0.6, unlabeled_subset=None)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    classes = body["params"]["classes"]
+    assert classes == ["defect", "scratch"]
+
+    with connection(settings.db_path) as conn:
+        rows = conn.execute(
+            "SELECT image.id AS image_id, split_assignment.subset AS subset "
+            "FROM split_assignment JOIN image ON image.sample_id = split_assignment.sample_id "
+            "WHERE split_assignment.split_id = ?",
+            (body["id"],),
+        ).fetchall()
+        by_subset: dict[Subset, set[int]] = {}
+        for row in rows:
+            by_subset.setdefault(Subset(row["subset"]), set()).add(int(row["image_id"]))
+        drawn = by_subset[Subset.TRAIN] | by_subset[Subset.TEST]
+        truth = resolve_box_truth(conn, seeded.dataset_id, sorted(drawn), classes)
+        left_out = resolve_box_truth(conn, seeded.dataset_id, [images[-1]], classes)
+
+    assert set(by_subset) == {Subset.TRAIN, Subset.TEST}
+    assert drawn == set(boxed)
+    assert set(truth) == drawn
+    assert {entry.kind for entry in truth.values()} == {"document"}
+    # The one image never annotated after `scratch` existed is neither drawn nor boxed.
+    assert left_out == {}

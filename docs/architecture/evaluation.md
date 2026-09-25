@@ -212,7 +212,7 @@ Splits are assigned at **sample** level, so a part's channels never straddle sub
 
 A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
 and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
-A semantic segmentation run fits on the annotated images of whatever `train` holds, so it is offered
+A semantic segmentation or detection run fits on the annotated images of whatever `train` holds, so it is offered
 `class_stratified` — annotated samples drawn under the seed, stratified by the set of classes each
 shows, with the rest parked in `test` where they are scored but measured against nothing — and
 `manual`. The anomaly strategies put normals alone in `train`, and a supervised run cannot learn a

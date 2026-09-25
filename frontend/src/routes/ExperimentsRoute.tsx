@@ -53,7 +53,11 @@ import { refusalReason, toggleRun } from "../api/compareState";
 import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
 import { formatHeadline } from "../api/headline";
-import { isUsableBuild, splitServesTask } from "../hooks/useDatasetReadiness";
+import {
+  isUsableBuild,
+  splitServesTask,
+  SUPERVISED_TASKS,
+} from "../hooks/useDatasetReadiness";
 import { experimentStatusTone } from "../api/statusTone";
 
 type ExperimentRow = ExperimentSummary;
@@ -590,8 +594,9 @@ function CreateExperiment({
   // A targeted task segments one class (ADR-0040); a `few_shot` split was drawn for one, so
   // it names the class unless the reader has chosen.
   const targeted = task === "few_shot_segmentation";
-  // A supervised run fits on annotated samples, which a drawn split of normals never trains on.
-  const supervised = task === "semantic_segmentation";
+  // A supervised run — segmentation or detection — fits on annotated samples, which a drawn
+  // split of normals never trains on.
+  const supervised = SUPERVISED_TASKS.includes(task);
   const splitClass = splits.data?.find((entry) => entry.id === splitId)?.params.label_key ?? "";
   const effectiveTarget = targetLabel || splitClass;
   // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker

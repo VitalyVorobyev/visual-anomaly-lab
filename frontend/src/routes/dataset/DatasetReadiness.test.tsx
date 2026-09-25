@@ -34,6 +34,16 @@ const WITH_SEGMENT: [readonly unknown[], unknown] = [
   },
 ];
 
+const WITH_DETECT: [readonly unknown[], unknown] = [
+  queryKeys.modelTypes(),
+  {
+    methods: [
+      method("pixel_reference", ["anomaly"]),
+      method("box_floor", ["object_detection"]),
+    ],
+  },
+];
+
 function renderWith(seed: [readonly unknown[], unknown][], catalog = ANOMALY_ONLY) {
   return render(
     withProviders(
@@ -187,5 +197,39 @@ describe("dataset readiness", () => {
     expect(ready.textContent).toContain("Segment");
     expect(ready.textContent).not.toContain("Segment:");
     expect(screen.queryByRole("link", { name: /Make a split/ })).toBeNull();
+  });
+
+  it("names detection beside anomaly, ready on the split segmentation draws", () => {
+    const annotated = [
+      [queryKeys.classCoverage(7), [{ label_key: "scratch", present: 3, absent: 5, unlabeled: 0 }]],
+    ] as [readonly unknown[], unknown][];
+    const { unmount } = renderWith(
+      [...BUILT, [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]], ...annotated],
+      WITH_DETECT,
+    );
+    const band = screen.getByRole("navigation", { name: "Readiness by task" });
+    expect(band.textContent).toContain("Detect:");
+    expect(screen.getByRole("link", { name: /Make a split/ }).getAttribute("href")).toBe(
+      "/datasets/7/splits",
+    );
+    unmount();
+
+    renderWith(
+      [
+        ...BUILT,
+        [
+          queryKeys.splits(7),
+          [
+            { id: 3, strategy: "imported" },
+            { id: 4, strategy: "class_stratified" },
+          ],
+        ],
+        ...annotated,
+      ],
+      WITH_DETECT,
+    );
+    const ready = screen.getByRole("navigation", { name: "Readiness by task" });
+    expect(ready.textContent).toContain("Detect");
+    expect(ready.textContent).not.toContain("Detect:");
   });
 });
