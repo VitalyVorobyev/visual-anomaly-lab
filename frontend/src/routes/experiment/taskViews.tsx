@@ -9,8 +9,9 @@
  * confusion matrix; a few-shot segmentation run reads overlap against its class and what
  * happened on each sample (ADR-0040); a supervised segmentation run reads each class's IoU
  * across subsets, its confusion matrix drawn, and what happened on each sample (ADR-0039); an
- * object detection run reads COCO's AP per subset and per class, and has no per-sample verdict
- * or drawn boxes yet. No body is reached except through here.
+ * object detection run reads COCO's AP per class across subsets, the confidence cut its
+ * verdicts are drawn at with the rule that resolved it (ADR-0028), and what happened on each
+ * sample at that cut. No body is reached except through here.
  */
 
 import type { ReactNode } from "react";
@@ -283,14 +284,46 @@ const DETECTION_HEADLINE = [
   { key: "recall", label: "recall" },
 ];
 
+const DETECTION_OUTCOMES: Outcome[] = [
+  "hit",
+  "miss",
+  "false_presence",
+  "mixed",
+  "correct_absence",
+  "unlabeled",
+];
+
 const DETECTION: TaskView = {
-  filters: [{ id: "all", label: "all", outcomes: undefined }],
+  filters: [
+    { id: "all", label: "all", outcomes: undefined },
+    {
+      id: "mistakes",
+      label: "mistakes",
+      outcomes: MISTAKE_OUTCOMES.filter((outcome) => DETECTION_OUTCOMES.includes(outcome)),
+    },
+    { id: "hit", label: "hit", outcomes: ["hit"] },
+    { id: "miss", label: "miss", outcomes: ["miss"] },
+    { id: "false_presence", label: "false presence", outcomes: ["false_presence"] },
+    { id: "mixed", label: "mixed", outcomes: ["mixed"] },
+    { id: "correct_absence", label: "correct absence", outcomes: ["correct_absence"] },
+    { id: "unlabeled", label: "unlabeled", outcomes: ["unlabeled"] },
+  ],
   rank: { desc: "most confident", asc: "least" },
-  outcomeNote: () => (
-    <>A detection run is ranked by its most confident box; it has no per-sample verdict yet.</>
+  outcomeNote: (verdicts) => (
+    <>
+      Outcomes at IoU 0.5 and{" "}
+      <span className="font-mono text-fg">{verdicts.rationale ?? "the run's cut"}</span>: a true
+      box no kept detection found is a miss, a kept box on nothing is a false presence, and both
+      on one sample is mixed.
+    </>
   ),
-  Scored: ({ metrics, state }) => (
-    <Headline metrics={metrics} subset={state.subset} keys={DETECTION_HEADLINE} />
+  Scored: ({ metrics, state, verdicts }) => (
+    <>
+      <Headline metrics={metrics} subset={state.subset} keys={DETECTION_HEADLINE} />
+      <DetectionClassTable metrics={metrics} />
+      <CutPanel metrics={metrics} />
+      <OutcomeTally verdicts={verdicts} outcomes={DETECTION_OUTCOMES} />
+    </>
   ),
   MetricTables: ({ experimentId, metrics }) => (
     <Metrics
@@ -299,18 +332,14 @@ const DETECTION: TaskView = {
       note={
         <>
           COCO&apos;s protocol over the boxes the method wrote: detections matched by confidence
-          at IoU 0.50 to 0.95, at most 100 an image, no confidence cut. Counted per image;
-          unlabelled images are left out and counted.
+          at IoU 0.50 to 0.95, at most 100 an image, no confidence cut. The cut the verdicts use
+          is printed apart. Counted per image; unlabelled images are left out and counted.
         </>
       }
       body={(subset, values) => <DetectionSubset subset={subset} metrics={values} />}
     />
   ),
-  Benchmark: () => (
-    <Panel title="Boxes">
-      <Empty>A detection run&apos;s boxes are not drawn on this screen yet.</Empty>
-    </Panel>
-  ),
+  Benchmark: ({ metrics }) => <BoxCounts metrics={metrics} />,
 };
 
 const VIEWS: Partial<Record<Task, TaskView>> = {
@@ -704,6 +733,216 @@ export function ConfusionPanel({
         dashes.
       </p>
       <Table columns={columns} rows={rows} rowKey={(row) => row.name} caption="Confusion matrix" />
+    </Panel>
+  );
+}
+
+// ------------------------------------------------------------------------ object detection
+
+function scoredEntries(metrics: MetricSummary[]): MetricSummary[] {
+  return SUBSET_ORDER.flatMap((subset) => {
+    const entry = metrics.find((row) => row.subset === subset);
+    return entry ? [entry] : [];
+  });
+}
+
+function classesOf(entry: MetricSummary | undefined): string[] {
+  return Array.isArray(entry?.metrics.classes)
+    ? (entry.metrics.classes as unknown[]).map(String)
+    : [];
+}
+
+function entryOf(metrics: MetricValue, table: string, name: string): unknown {
+  const values = metrics[table];
+  return values !== null && typeof values === "object"
+    ? (values as Record<string, unknown>)[name]
+    : undefined;
+}
+
+const AP_COLUMNS = [
+  { table: "per_class_ap", mean: "ap", label: "AP" },
+  { table: "per_class_ap50", mean: "ap50", label: "AP50" },
+  { table: "per_class_ap75", mean: "ap75", label: "AP75" },
+  { table: "per_class_recall", mean: "recall", label: "recall" },
+] as const;
+
+interface ApRow {
+  key: string;
+  name: string;
+  /** The pinned position the class is drawn in; `null` for the mean. */
+  index: number | null;
+  read: (metrics: MetricValue, column: (typeof AP_COLUMNS)[number]) => unknown;
+}
+
+function Dash() {
+  return <span className="text-fg-subtle">—</span>;
+}
+
+function ClassName({ name, index }: { name: string; index: number | null }) {
+  return (
+    <span className={cn("flex items-center gap-1.5", index === null && "text-fg-muted")}>
+      {index !== null && (
+        <span
+          aria-hidden
+          className="inline-block size-2.5 shrink-0 rounded-sm"
+          style={{ backgroundColor: classColour(index) }}
+        />
+      )}
+      {name}
+    </span>
+  );
+}
+
+/**
+ * Each pinned class's AP family, per scored subset — which class the run finds and whether
+ * that holds off its training data. Every number is threshold-free; a class with no truth box
+ * in a subset has no AP and no recall, a dash.
+ */
+export function DetectionClassTable({ metrics }: { metrics: MetricSummary[] }) {
+  const entries = scoredEntries(metrics);
+  const classes = classesOf(entries[0]);
+  if (entries.length === 0) return null;
+  const rows: ApRow[] = [
+    ...classes.map((name, position) => ({
+      key: `class:${name}`,
+      name,
+      index: position + 1,
+      read: (values: MetricValue, column: (typeof AP_COLUMNS)[number]) =>
+        entryOf(values, column.table, name),
+    })),
+    {
+      key: "mean",
+      name: "mean over classes",
+      index: null,
+      read: (values: MetricValue, column: (typeof AP_COLUMNS)[number]) => values[column.mean],
+    },
+  ];
+  const columns: Column<ApRow>[] = [
+    { key: "class", header: "class", cell: (row) => <ClassName name={row.name} index={row.index} /> },
+    ...entries.flatMap((entry) =>
+      AP_COLUMNS.map<Column<ApRow>>((column) => ({
+        key: `${entry.subset}:${column.label}`,
+        header: `${column.label} · ${entry.subset}`,
+        numeric: true,
+        cell: (row) => formatScore(row.read(entry.metrics, column)) ?? <Dash />,
+      })),
+    ),
+  ];
+  return (
+    <Panel title="AP per class">
+      <p className="mb-3 text-xs text-fg-muted">
+        AP averages IoU 0.50 to 0.95; recall is averaged over the same thresholds.
+      </p>
+      <Table columns={columns} rows={rows} rowKey={(row) => row.key} caption="AP per class and subset" />
+    </Panel>
+  );
+}
+
+interface CutRow {
+  subset: Subset;
+  metrics: MetricValue;
+}
+
+function formatCut(value: unknown): ReactNode {
+  return typeof value === "number" ? value.toFixed(4) : <Dash />;
+}
+
+/**
+ * The confidence each subset's verdicts are drawn at, and the rule that resolved it — printed
+ * beside what it achieves there, because a cut nobody can name is an operating point nobody
+ * chose (ADR-0028). It is this run's own; another run resolves its own by the same rule.
+ */
+export function CutPanel({ metrics }: { metrics: MetricSummary[] }) {
+  const rows: CutRow[] = scoredEntries(metrics).map((entry) => ({
+    subset: entry.subset,
+    metrics: entry.metrics,
+  }));
+  const rule = rows.map((row) => row.metrics.cut_rule).find((value) => typeof value === "string");
+  if (rows.length === 0) return null;
+  const columns: Column<CutRow>[] = [
+    { key: "subset", header: "subset", cell: (row) => row.subset },
+    {
+      key: "cut",
+      header: "confidence cut",
+      numeric: true,
+      cell: (row) => formatCut(row.metrics.confidence_cut),
+    },
+    ...(
+      [
+        ["f1_at_cut", "F1"],
+        ["precision_at_cut", "precision"],
+        ["recall_at_cut", "recall"],
+      ] as const
+    ).map<Column<CutRow>>(([key, header]) => ({
+      key,
+      header: `${header} at the cut`,
+      numeric: true,
+      cell: (row) => formatScore(row.metrics[key]) ?? <Dash />,
+    })),
+  ];
+  return (
+    <Panel title="Confidence cut">
+      <p className="mb-3 text-xs text-fg-muted">
+        The verdicts on the Samples tab and the boxes on each sample keep the detections at or
+        above this run&apos;s own cut, matched at IoU 0.5 —{" "}
+        <span className="font-mono text-fg">{typeof rule === "string" ? rule : "no rule"}</span>.
+        The AP family above needs no cut.
+      </p>
+      <Table columns={columns} rows={rows} rowKey={(row) => row.subset} caption="Confidence cut per subset" />
+    </Panel>
+  );
+}
+
+interface CountRow {
+  key: string;
+  name: string;
+  index: number;
+}
+
+/** True and predicted boxes per class and subset: how much each AP is measured over. */
+function BoxCounts({ metrics }: { metrics: MetricSummary[] }) {
+  const entries = scoredEntries(metrics);
+  const classes = classesOf(entries[0]);
+  if (entries.length === 0 || classes.length === 0) {
+    return (
+      <Panel title="Boxes">
+        <Empty>Nothing is scored yet.</Empty>
+      </Panel>
+    );
+  }
+  const rows: CountRow[] = classes.map((name, position) => ({
+    key: name,
+    name,
+    index: position + 1,
+  }));
+  const count = (values: MetricValue, table: string, name: string) => {
+    const found = entryOf(values, table, name);
+    return typeof found === "number" ? found.toLocaleString() : <Dash />;
+  };
+  const columns: Column<CountRow>[] = [
+    { key: "class", header: "class", cell: (row) => <ClassName name={row.name} index={row.index} /> },
+    ...entries.flatMap((entry) => [
+      {
+        key: `${entry.subset}:truth`,
+        header: `true · ${entry.subset}`,
+        numeric: true,
+        cell: (row: CountRow) => count(entry.metrics, "truth_instances", row.name),
+      },
+      {
+        key: `${entry.subset}:predicted`,
+        header: `predicted · ${entry.subset}`,
+        numeric: true,
+        cell: (row: CountRow) => count(entry.metrics, "predicted_instances", row.name),
+      },
+    ]),
+  ];
+  return (
+    <Panel title="Boxes per class">
+      <p className="mb-3 text-xs text-fg-muted">
+        Every stored detection, before any cut, and every true box of a pinned class — what each
+        AP is measured over.
+      </p>
+      <Table columns={columns} rows={rows} rowKey={(row) => row.key} caption="Boxes per class and subset" />
     </Panel>
   );
 }

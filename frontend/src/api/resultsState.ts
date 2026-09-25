@@ -39,8 +39,10 @@ import { parseTab } from "./experimentTabs";
  * Two vocabularies, disjoint: an anomaly run is `tp`/`fp`/`tn`/`fn` at a threshold (the
  * threshold report); a segmentation run is `hit`/`low_iou`/`miss`/`false_presence`/
  * `correct_absence` against its class truth (ADR-0040), and a supervised one adds
- * `false_class`, a class predicted on a sample that does not show it (ADR-0039). Disjoint is
- * what lets one URL parameter and one "mistakes" set serve every task.
+ * `false_class`, a class predicted on a sample that does not show it (ADR-0039). A detection
+ * run reuses `hit`/`miss`/`false_presence`/`correct_absence` for its boxes at the run's cut
+ * and adds `mixed`, a sample with both a missed box and a box on nothing. Disjoint is what
+ * lets one URL parameter and one "mistakes" set serve every task.
  */
 export const OUTCOMES = [
   "tp",
@@ -52,6 +54,7 @@ export const OUTCOMES = [
   "miss",
   "false_class",
   "false_presence",
+  "mixed",
   "correct_absence",
   "unlabeled",
 ] as const;
@@ -67,6 +70,7 @@ export const MISTAKE_OUTCOMES: readonly Outcome[] = [
   "false_class",
   "false_presence",
   "low_iou",
+  "mixed",
 ];
 
 export type SortOrder = "score-desc" | "score-asc";
@@ -156,13 +160,16 @@ const MAP_FIRST: OverlayDefaults = { heatmap: true, region: false, truth: true, 
  * A map-producing task opens on its map: the anomaly heatmap, and a few-shot run's foreground
  * probability, of which its prediction is only a cut. A supervised segmentation run opens on
  * its label map with the truth beside it; its foreground map is a secondary question and,
- * drawn first, covers the answer. Detection has no screens yet and takes the anomaly set.
+ * drawn first, covers the answer. A detection run opens the same way on its boxes: the
+ * predictions and the truth they are matched against, with no heatmap over them.
  */
+const ANSWER_FIRST: OverlayDefaults = { heatmap: false, region: true, truth: true, peak: false };
+
 const OVERLAY_DEFAULTS: Record<Task, OverlayDefaults> = {
   anomaly: MAP_FIRST,
   few_shot_segmentation: MAP_FIRST,
-  semantic_segmentation: { heatmap: false, region: true, truth: true, peak: false },
-  object_detection: MAP_FIRST,
+  semantic_segmentation: ANSWER_FIRST,
+  object_detection: ANSWER_FIRST,
 };
 
 /**

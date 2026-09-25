@@ -48,6 +48,7 @@ from anomaly_lab.eval.compare import (
     agreement,
     resolve_threshold,
 )
+from anomaly_lab.eval.detection import CUT_KEYS
 from anomaly_lab.eval.evaluators import evaluator_for
 from anomaly_lab.eval.segmentation import sample_outcomes
 from anomaly_lab.eval.threshold import ConfusionCounts, report
@@ -283,7 +284,8 @@ def _selected(conn: sqlite3.Connection, ids: list[int]) -> list[Experiment]:
                 status_code=422,
                 detail=(
                     f"'{experiment.name}' is a {experiment.task.value} run; this comparison "
-                    "reads anomaly runs, and few-shot runs are compared at /api/compare/few-shot"
+                    "reads anomaly runs — few-shot runs are compared at /api/compare/few-shot "
+                    "and detection runs at /api/compare/detection"
                 ),
             )
 
@@ -645,5 +647,155 @@ def compare_few_shot(
         target_label=first.target_label or "",
         runs=runs,
         samples=samples,
+        warnings=warnings,
+    )
+
+
+# ---------------------------------------------------------------------------- detection
+
+
+class DetectionRun(BaseModel):
+    """One object detection run as a column: its threshold-free metrics on one subset."""
+
+    model_config = API_MODEL_CONFIG
+
+    id: int
+    name: str
+    model_type: str
+    status: ExperimentStatus
+    scored: bool = Field(description="Whether this run has results for the chosen subset.")
+    metrics: dict[str, Any] = Field(
+        default_factory=dict,
+        description=(
+            "The stored metric set, less everything read at the run's own confidence cut: "
+            "only the AP family, recall and counts cross runs (ADR-0028)."
+        ),
+    )
+    ground_truth_stale: bool = False
+
+
+class DetectionComparison(BaseModel):
+    """N object detection runs of one split and one class list, threshold-free."""
+
+    model_config = API_MODEL_CONFIG
+
+    dataset_id: int
+    dataset_name: str | None = None
+    split_id: int
+    split_name: str | None = None
+    subset: Subset | None = None
+    subsets: list[Subset] = Field(default_factory=list)
+    classes: list[str] = Field(default_factory=list)
+    runs: list[DetectionRun] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+def _detection_selected(conn: sqlite3.Connection, ids: list[int]) -> list[Experiment]:
+    """Detection runs of one dataset, one split and one class list, or why not."""
+    if len(ids) < 2:
+        raise HTTPException(status_code=422, detail="a comparison needs at least two experiments")
+    if len(set(ids)) != len(ids):
+        raise HTTPException(status_code=422, detail="the same experiment was selected twice")
+    if len(ids) > MAX_RUNS:
+        raise HTTPException(
+            status_code=422, detail=f"at most {MAX_RUNS} experiments can be compared at once"
+        )
+    experiments: list[Experiment] = []
+    for experiment_id in ids:
+        found = experiments_repo.get_experiment(conn, experiment_id)
+        if found is None:
+            raise HTTPException(status_code=404, detail=f"no experiment with id {experiment_id}")
+        if found.task is not Task.OBJECT_DETECTION:
+            raise HTTPException(
+                status_code=422,
+                detail=f"'{found.name}' is a {found.task.value} run, not a detection one",
+            )
+        experiments.append(found)
+    first = experiments[0]
+    for other in experiments[1:]:
+        if other.dataset_id != first.dataset_id or other.split_id != first.split_id:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{other.name}' is on a different dataset or split from '{first.name}'; "
+                    "the numbers would be computed over different samples"
+                ),
+            )
+        if list(other.classes) != list(first.classes):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"'{other.name}' pins different classes from '{first.name}'; its AP is "
+                    "averaged over a different set"
+                ),
+            )
+    return experiments
+
+
+@router.get("/detection", summary="Object detection runs of one split side by side")
+def compare_detection(
+    request: Request,
+    ids: Annotated[
+        list[int],
+        Query(description="Experiment ids, in the order the columns should appear."),
+    ],
+    subset: Subset | None = Query(
+        default=None,
+        description="Omitted means the most test-like subset every selected run has scored.",
+    ),
+) -> DetectionComparison:
+    """Detection runs of one split and class list, on their threshold-free metrics alone.
+
+    A run's verdicts are read at its own confidence cut, and a confidence means nothing
+    outside its run (ADR-0028), so nothing cut crosses a column: each run's AP family,
+    recall and box counts are the stored ones, and the cut and what it achieves stay on
+    that run's own Overview.
+    """
+    settings: Settings = request.app.state.settings
+    with connection(settings.db_path) as conn:
+        experiments = _detection_selected(conn, ids)
+        first = experiments[0]
+        scored_by_run = [results_repo.scored_subsets(conn, run.id) for run in experiments]
+        subsets = [value for value in Subset if any(value in found for found in scored_by_run)]
+        chosen = subset if subset is not None else _default_subset(scored_by_run)
+        samples_by_run = [
+            results_repo.list_scored_samples(conn, run.id, subset=chosen) for run in experiments
+        ]
+        runs: list[DetectionRun] = []
+        for run, samples in zip(experiments, samples_by_run, strict=True):
+            summary = _metrics_for(conn, run, chosen)
+            runs.append(
+                DetectionRun(
+                    id=run.id,
+                    name=run.name,
+                    model_type=run.model_type,
+                    status=run.status,
+                    scored=bool(samples),
+                    metrics={
+                        key: value
+                        for key, value in (summary.metrics if summary else {}).items()
+                        if key not in CUT_KEYS
+                    },
+                    ground_truth_stale=summary.ground_truth_stale if summary else False,
+                )
+            )
+        warnings = _warnings(conn, experiments, samples_by_run, chosen)
+        stale = [run.name for run in runs if run.ground_truth_stale]
+        if stale:
+            warnings.append(
+                f"Ground truth changed after metrics were computed for {', '.join(stale)}. "
+                "Recompute those runs before comparing them."
+            )
+        dataset = datasets_repo.get_dataset(conn, first.dataset_id)
+        split = splits_repo.get_split(conn, first.split_id)
+    return DetectionComparison(
+        dataset_id=first.dataset_id,
+        dataset_name=dataset.name if dataset else None,
+        split_id=first.split_id,
+        split_name=split.name if split else None,
+        subset=chosen,
+        subsets=subsets,
+        classes=list(first.classes),
+        runs=runs,
         warnings=warnings,
     )

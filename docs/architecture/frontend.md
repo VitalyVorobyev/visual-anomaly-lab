@@ -209,7 +209,7 @@ reported once is printed as a value. `GET /api/jobs/{id}`, `WS /ws/jobs/{id}`,
 **Results** — Overview, Benchmark and Samples share one `ResultsState` in the URL (`t`, `subset`),
 resolved by `resolveSubset` to the last scored subset when none is named. Its overlay defaults are the
 task's (`resultsDefaults`): heatmap and truth on for `anomaly` and `few_shot_segmentation`, prediction
-and truth on with the foreground map off for `semantic_segmentation`. `readResultsState` and
+and truth on with the map off for `semantic_segmentation` and `object_detection`. `readResultsState` and
 `writeResultsState` both take the task, so the URL carries only departures from that task's defaults
 and an untouched view's URL is clean; before the experiment loads the task is unknown and the anomaly
 defaults stand in. Ranked per-sample scores, a
@@ -226,12 +226,13 @@ rows carrying a verdict. An optional `peak` layer draws the stored argmax and it
 **Results by task** (`routes/experiment/taskViews.tsx`). The shell is shared — run bar, tab set,
 `ResultsState`, the gallery's grid, the sample page — and so is the data flow: `useVerdicts(experiment,
 state, task)` hands every screen the same classified rows, from the threshold report for `anomaly` or
-from `GET /api/experiments/{id}/segmentation-outcomes?subset=` for both segmentation tasks, and asks
-neither until the task is known. What the registry holds per task is the gallery's outcome strip and rank
+from `GET /api/experiments/{id}/segmentation-outcomes?subset=` for both segmentation tasks, or from
+`GET /api/experiments/{id}/detection-outcomes?subset=` for detection, and asks none until the task is
+known. What the registry holds per task is the gallery's outcome strip and rank
 words, the note saying what an outcome is measured against, and the bodies of Overview, the metric tables
 and Benchmark. The outcome vocabularies are disjoint (`tp`/`fp`/`tn`/`fn`; `hit`/`low_iou`/`miss`/
-`false_presence`/`correct_absence`, and `false_class` for a supervised run), so one URL parameter and
-one "mistakes" set serve every task. A few-shot
+`false_presence`/`correct_absence`, `false_class` for a supervised run, and `mixed` for a detection
+run), so one URL parameter and one "mistakes" set serve every task. A few-shot
 Overview promotes IoU, Dice, presence ROC-AUC and the rate flagged on absent images, and tallies outcomes
 per sample. Its tables are `segmentationRows`, with present / absent / unlabelled image counts. Its
 Benchmark shows present samples by IoU band and absent samples by outcome. How overlap moves with the
@@ -256,10 +257,24 @@ toggles are prediction / truth / foreground with the class legend, and each tile
 drawing `labelPaint`'s rule at the thumbnail's size, because a tile cannot afford a value plane each.
 The colours travel in the URL, one per pinned class, from `classColour` (`labelMapUrl`), so lab-ui stays
 the palette's only home. An anomaly or few-shot tile draws the cut and the outline.
-An `object_detection` run has its own view with less in it: Overview promotes AP@[.5:.95], AP50, AP75
-and recall, and its tables are `objectDetectionRows` — those, then one AP per pinned class, with labelled
-/ unlabelled image counts. `useVerdicts` asks neither report for it, so its gallery strip is `all` alone
-and it has no per-sample verdict; Benchmark says its boxes are not drawn.
+An `object_detection` run's verdicts are read at its subset's **confidence cut**, resolved by the
+evaluator by one rule and stored beside the metrics ([evaluation](evaluation.md#object-detection)); every
+screen that draws a verdict prints that rule and value (ADR-0028). Overview promotes AP@[.5:.95], AP50,
+AP75 and recall, then a lab-ui `Table` of each class's AP, AP50, AP75 and recall across the scored
+subsets (the mean beside them, class swatches from `classColour`), the cut per subset with the F1,
+precision and recall it reaches and the rule printed, and the outcome tally (`hit`, `miss`,
+`false_presence`, `mixed`, `correct_absence`; `mistakes` is the middle three). Its tables are
+`objectDetectionRows`, with labelled / unlabelled image counts, and its Benchmark counts true and
+predicted boxes per class and subset. On the sample page its layers are boxes: `GET
+/api/experiments/{id}/images/{iid}/boxes` feeds `boxShapes` (`components/viewer/boxTones.ts`) into
+`SampleStage`'s `VectorLayer` — truth dashed, kept detections solid and tagged with class and confidence
+in the class's colour, each outline toned `normal` for a match, `defect` for a false positive and `warn`
+for a missed truth box, a class the run does not pin `muted`; detections below the cut are not drawn.
+The overlay row (`OverlayControls`' box mode) is prediction / truth / map with the tone key, the class
+legend and the cut's rule, and a line under each image counts the kept detections and the found truth.
+Each gallery tile lays `GET …/images/{iid}/box-map?colours=` over its thumbnail — one server-drawn SVG,
+because a tile cannot afford a box request each; the three tones travel in the URL, read once per grid
+from the theme's custom properties (`boxToneColours`).
 
 **Reference studio** (`routes/StudioRoute.tsx`, `/datasets/{id}/studio/{class}`, a flush canvas) —
 where a few-shot run's references are chosen by eye rather than drawn blind (ADR-0040). Reached from each
@@ -312,6 +327,12 @@ config diff calling out preprocessing, a disagreement-filtered sample table, and
 *fraction* and one `StageView` across panes. `StageView.scale` is absolute (CSS pixels per image pixel),
 which is correct because every pane draws the same image. Localization verdicts and `peak` layers are per
 pane. `GET /api/compare?ids=&subset=&at=`.
+
+**Detection comparison** (`routes/compare/DetectionCompare.tsx`, `GET /api/compare/detection?ids=&subset=`).
+Object detection runs of one dataset, split and class list compare on **threshold-free metrics alone**:
+each run's AP family, recall, AP per class and timing on the anomaly table's grid, with a subset picker.
+A run's confidence cut is its own, so the server strips it and what it reaches from the report and it
+stays on that run's Overview (ADR-0028).
 
 **Few-shot comparison** (`routes/compare/FewShotCompare.tsx`, `GET /api/compare/few-shot?ids=`). The first run
 picked decides which comparison it is. Few-shot runs of one dataset and one class compare **across

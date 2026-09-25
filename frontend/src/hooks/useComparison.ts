@@ -13,6 +13,7 @@ import { api, unwrap } from "../api/client";
 import type {
   ComparisonReport,
   CurveSet,
+  DetectionComparison,
   FewShotComparison,
   ImageScore,
   OperatingPoint,
@@ -32,6 +33,28 @@ export function useFewShotComparison(ids: number[], enabled: boolean) {
       unwrap(
         await api.GET("/api/compare/few-shot", { params: { query: { ids } } }),
         "the few-shot comparison",
+      ),
+    enabled: enabled && ids.length >= 2,
+  });
+}
+
+/**
+ * Object detection runs of one split side by side (ADR-0039), on their threshold-free
+ * metrics alone: each run's confidence cut is its own and stays off this table (ADR-0028).
+ */
+export function useDetectionComparison(
+  ids: number[],
+  subset: Subset | undefined,
+  enabled: boolean,
+) {
+  return useQuery<DetectionComparison>({
+    queryKey: queryKeys.detectionComparison(ids, subset),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/compare/detection", {
+          params: { query: { ids, ...(subset === undefined ? {} : { subset }) } },
+        }),
+        "the detection comparison",
       ),
     enabled: enabled && ids.length >= 2,
   });

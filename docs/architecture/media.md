@@ -50,6 +50,15 @@ traced, so the response is bounded whatever the image's size. It is revalidated 
 because re-scoring or completing an annotation changes it: the `ETag` is the drawn plane's digest plus
 the colours, and a match is a 304 without encoding.
 
+**A detection run's boxes are drawn for a gallery tile.**
+`GET /api/experiments/{id}/images/{iid}/box-map?colours=match,false_positive,missed[&predictions=false][&truth=false]`
+draws one image's detections that the subset's cut keeps (solid) and its true boxes of a pinned class
+(dashed) as an SVG laid out at the source's size, so the tile stretches it exactly as it stretches the
+thumbnail; the stroke does not scale with it, and no text is written. Each box takes the tone of its
+verdict at IoU 0.5 ([evaluation](evaluation.md#object-detection)), and the three tones arrive from the
+client — read from the theme's custom properties — so the server keeps no copy of them. The response is
+bounded by construction (at most 100 detections an image) and revalidated by the drawing's digest.
+
 ---
 
 [← the handbook](README.md) · [why it is shaped this way](../adr/README.md)

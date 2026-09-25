@@ -73,7 +73,8 @@ has annotation, and whether it is ready for a task is a readiness check.
    `SampleStage`. Truth is dashed and predictions solid: shapes with `VectorLayer`
    (`frontend/src/components/viewer/`), toned per shape (`normal` for a match, `defect` for a false
    positive, `warn` for a miss); a label map with `LabelLayer`, served as class indices and painted in
-   lab-ui's series palette by pinned class position (`labelPaint.ts`). What branches on the task is the
+   lab-ui's series palette by pinned class position (`labelPaint.ts`); boxes through `boxShapes`
+   (`boxTones.ts`), at the cut the evaluator stored and printed. What branches on the task is the
    body of Overview and Benchmark, the outcome strip, and the sample page's layers — not the screens
    around them.
 

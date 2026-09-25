@@ -43,13 +43,8 @@ Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, la
 maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_linear_seg` deep head,
 the `class_stratified` split, its result screens and its public gates (`measurements.md`). Detection
 runs end to end torch-free — box truth, box targets, stored boxes, COCO's AP, the `color_detector`
-floor and the `class_stratified` split. What remains, in dependency order, one PR each:
+floor, the `class_stratified` split and its result screens. What remains, in dependency order, one PR each:
 
-- [ ] **Detection result screens** (M): through `taskViews.tsx` — a route serving an image's stored
-      and true boxes, drawn on `VectorLayer` on `SampleStage` and the gallery tiles (truth dashed, prediction solid, toned `normal` for a match,
-      `defect` for a false positive, `warn` for a miss), a per-class AP table across subsets, and a
-      per-sample verdict for the gallery. A verdict needs a confidence cut, so it is resolved per run
-      by one shared rule whose name and value are printed (ADR-0028), and the matching IoU is AP50's.
 - [ ] **A deep detector** (M): on the frozen-DINO path, fitted through `box_targets` and writing
       instances; `dl`-gated tests, seed reproducibility in both directions, and one module plus one
       registry entry.

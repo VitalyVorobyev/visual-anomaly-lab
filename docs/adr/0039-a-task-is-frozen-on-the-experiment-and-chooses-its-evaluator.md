@@ -82,8 +82,12 @@ column.
   beside it. Pascal VOC's AP at 0.5 alone was the alternative; it is what small defect benchmarks
   often report, but it cannot tell a box that grazes a defect from one that fits it. At most 100
   detections per image count, COCO's cap, and the write seam refuses more rather than dropping them.
-  Nothing here cuts a confidence, so ADR-0028 holds by construction; a per-sample verdict will need
-  one and resolves it per run.
+  No metric cuts a confidence. A per-sample verdict and a drawn box do, so each subset resolves one
+  cut by one rule — the confidence that maximises F1 at IoU 0.5, every class pooled — stored beside
+  the metrics and printed wherever a verdict is drawn (ADR-0028). A fixed confidence was the
+  alternative, and it would mean a different operating point for every method, since confidences are
+  on each method's own scale; a cut per class was another, and it would print as many values as the
+  run has classes beside one verdict. The cut never crosses runs: Compare reads the AP family alone.
 - **The annotation document grows, it is not replaced** (ADR-0032): boxes and instance ids join the
   versioned document, completion keeps writing the binary mask the anomaly task reads, and a revision
   pins the class-to-index table it used so a renamed or reordered class cannot relabel old truth.

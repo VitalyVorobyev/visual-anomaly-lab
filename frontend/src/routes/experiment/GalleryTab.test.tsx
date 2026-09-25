@@ -119,3 +119,37 @@ describe("an anomaly run's gallery", () => {
     expect(screen.queryByRole("list", { name: "Classes" })).toBeNull();
   });
 });
+
+describe("an object detection run's gallery", () => {
+  it("draws the server's box picture in the verdict tones, and the box legend", () => {
+    const { container } = renderGallery("object_detection", ["rust", "moss"]);
+
+    const boxes = container.querySelector<HTMLImageElement>("img[data-boxes]");
+    expect(boxes).not.toBeNull();
+    const url = new URL(boxes?.src ?? "", "http://localhost");
+    expect(url.pathname).toMatch(/\/api\/experiments\/3\/images\/70\/box-map$/);
+    // Match, false positive, missed — three tones, no class colour on the tile.
+    expect(url.searchParams.get("colours")?.split(",")).toHaveLength(3);
+    expect(url.searchParams.has("predictions")).toBe(false);
+    expect(url.searchParams.has("truth")).toBe(false);
+
+    // Neither a label map nor the anomaly cut or outline is drawn beside it.
+    expect(container.querySelector("img[data-labels]")).toBeNull();
+    expect(container.querySelector('img[src*="render=region"]')).toBeNull();
+    expect(container.querySelector('img[src$="/mask"]')).toBeNull();
+
+    expect(screen.getByRole("list", { name: "Box verdicts" }).textContent).toContain("missed");
+    expect(screen.getByRole("list", { name: "Classes" }).textContent).toContain("moss");
+    expect(screen.queryByText("peak")).toBeNull();
+  });
+
+  it("opens with the boxes on and the heatmap off", () => {
+    const state = readResultsState(new URLSearchParams(), "object_detection");
+    expect([state.region, state.truth, state.heatmap, state.peak]).toEqual([
+      true,
+      true,
+      false,
+      false,
+    ]);
+  });
+});
