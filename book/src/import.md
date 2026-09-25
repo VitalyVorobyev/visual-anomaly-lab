@@ -4,12 +4,14 @@ Import is deliberately two-phase: **scan proposes; commit persists**. Source tre
 
 ## Public packs
 
-The catalogue recognizes complete local VisA and GKN packs under `/datasets/` and offers one registration
-action per dataset/class. Registration still uses ordinary adapters; the pack catalogue only supplies known,
+The catalogue recognizes complete local VisA, GKN and FSS-1000 packs under `/datasets/` and offers one
+registration action per dataset/class. Registration still uses ordinary adapters; the pack catalogue only supplies known,
 credited options. This avoids a parallel “special benchmark” data model.
 
 VisA uses `csv_table`, preserves official one-class assignments and mask paths, and registers each object
-class as a dataset. GKN uses `folder_classes`, with `Good` normal and `Nick`/`Scratch` defective. These are
+class as a dataset. GKN uses `folder_classes`, with `Good` normal and `Nick`/`Scratch` defective. FSS-1000
+uses `folder_classes` too, one dataset per class of a twenty-class panel: the class's images and masks are
+the few-shot target (`defect`), and the other nineteen classes are images that do not show it. These are
 provider mappings, not global label conventions.
 
 ## General scan

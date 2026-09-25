@@ -56,6 +56,12 @@ truth, including in a sibling directory. The matched directory's name is recorde
 per-defect-type breakdown needs no defect-type schema. A file in a directory no option names imports
 unlabelled **and is reported**. One image per sample, `channel_id = NULL`.
 
+Two options cut a few-shot panel out of a many-class tree. `import_unnamed_dirs = false` imports only the
+named directories, filtered before anything is probed, and counts the rest as excluded. `masks_for_normal_dirs
+= false` leaves a normal directory's masks behind: they are still recognised as masks rather than imported as
+images, but they are not attached, so the image is a confirmed absence of the class rather than a positive
+([annotations](annotations.md)).
+
 ### `csv_table`
 
 Reads a table the dataset ships. Every column name is an option, as are the values meaning normal, defective
@@ -119,12 +125,20 @@ reproducibility record — which files became which samples under which channel 
 ## Reference packs
 
 `GET /api/reference-packs` discovers public packs under the configured reference-data root (the gitignored
-`/datasets/` in development) from metadata alone — it knows the published layouts of VisA and GKN and opens no
-image to decide whether a pack exists. Absent and incomplete packs are instructional states showing the
+`/datasets/` in development) from metadata alone — it knows the published layouts of VisA, GKN and FSS-1000 and
+opens no image to decide whether a pack exists. Absent and incomplete packs are instructional states showing the
 expected root and upstream link.
 
 `POST /api/reference-packs/register` creates one cancellable `reference_import` job for the selected packs.
-VisA becomes twelve `csv_table` datasets, one per class; GKN becomes one `folder_classes` dataset. All scans
+VisA becomes twelve `csv_table` datasets, one per class; GKN becomes one `folder_classes` dataset. FSS-1000
+becomes twenty `folder_classes` datasets, one per class of a fixed panel (`FSS_PANEL`,
+[measurements](../measurements.md)): the target's ten images with their masks are `defect`, and the other
+nineteen classes' images are normal with their masks left behind. An imported mask answers for the default
+class alone, so this is how "this class, and every image that does not show it" enters without a per-class
+mask. The panel's datasets share the scan root `fewshot_data/` and each is identified by its class directory;
+only `.jpg` files import, because a few classes carry a stray `.jpeg` beside the image its mask pairs with.
+Masks are read as any non-zero pixel, like every imported mask; FSS-1000's are anti-aliased, so its soft edge
+is foreground here. All scans
 finish before the database changes, then every missing manifest commits in one transaction, so a failed
 class cannot leave half a benchmark registered. Repeating the action skips datasets already present.
 

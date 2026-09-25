@@ -36,6 +36,32 @@ VISA_CLASSES = (
     "pipe_fryum",
 )
 
+# FSS-1000's few-shot panel: 20 of the 240 classes the dataset's authors hold out for
+# testing (`fss_test_set.txt` in the upstream repository), taken by `evenly_spaced(240, 20)`
+# over that list sorted by name -- a rule, not a choice by eye (docs/measurements.md).
+FSS_PANEL = (
+    "abe's_flyingfish",
+    "banana_boat",
+    "bucket",
+    "chalk_brush",
+    "clam",
+    "diver",
+    "electronic_stove",
+    "flying_snakes",
+    "hair_razor",
+    "jet_aircraft",
+    "little_blue_heron",
+    "moist_proof_pad",
+    "oriole",
+    "poached_egg",
+    "rally_car",
+    "sealion",
+    "spinach",
+    "tiltrotor",
+    "wandering_albatross",
+    "wooden_spoon",
+)
+
 
 class RegisterReferencePacksParams(BaseModel):
     model_config = ConfigDict(frozen=True)
@@ -111,6 +137,36 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
             "kinds -- nick and scratch -- by the directory they were published in."
         ),
     )
+    fss = base / "FSS-1000"
+    fss_classes = fss / "fewshot_data"
+    fss_datasets = tuple(
+        DatasetSpec(
+            key=f"fss1000:{target}",
+            name=target,
+            root=fss_classes / target,
+            scan_root=fss_classes,
+            adapter="folder_classes",
+            options={
+                # Imported masks answer for the default class alone, so the target's
+                # images are its `defect` samples and the rest of the panel its confirmed
+                # absences: labelled normal, with their own classes' masks left behind.
+                "defect_dirs": [target],
+                "normal_dirs": [other for other in FSS_PANEL if other != target],
+                "mask_dir": "{dir}",
+                "mask_pattern": "{stem}.png",
+                "masks_for_normal_dirs": False,
+                "import_unnamed_dirs": False,
+                # A few classes carry a stray `.jpeg` beside the `.jpg` its mask pairs with.
+                "extensions": [".jpg"],
+            },
+            description=(
+                f"FSS-1000's {target.replace('_', ' ')} class as a few-shot target: its "
+                "ten images with their masks, and the other nineteen classes of the panel "
+                "as images that do not show it."
+            ),
+        )
+        for target in FSS_PANEL
+    )
     return (
         PackSpec(
             key="visa",
@@ -132,6 +188,14 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
             ),
             datasets=(gkn_dataset,),
             install_url="https://doi.org/10.17632/3bh998k78g.1",
+        ),
+        PackSpec(
+            key="fss1000",
+            title="FSS-1000",
+            root=fss,
+            required=tuple(fss_classes / target for target in FSS_PANEL),
+            datasets=fss_datasets,
+            install_url="https://github.com/HKUSTCV/FSS-1000",
         ),
     )
 

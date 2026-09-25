@@ -90,6 +90,15 @@ class FolderClassesOptions(BaseModel):
         default="{stem}.png",
         description="Mask filename within `mask_dir`. Same placeholders.",
     )
+    masks_for_normal_dirs: bool = Field(
+        default=True,
+        description=(
+            "Attach a mask found for an image in a normal directory, which makes that image "
+            "show the class. Turn off when the normal directories carry masks of something "
+            "else: in a few-shot panel cut from a many-class tree, the other classes' images "
+            "are confirmed absences of the target, and their masks are not its truth."
+        ),
+    )
     extensions: list[str] = Field(
         default=DEFAULT_EXTENSIONS,
         description="File extensions to consider. The adapter is not tied to one format.",
@@ -99,6 +108,14 @@ class FolderClassesOptions(BaseModel):
         description=(
             "Glob patterns matched against each file's path relative to the root. "
             "`*` crosses directory separators, so `sub/*` excludes the whole subtree."
+        ),
+    )
+    import_unnamed_dirs: bool = Field(
+        default=True,
+        description=(
+            "Import files in directories no option names, as unlabelled samples, and report "
+            "them. Turn off to import only the named directories -- one class, or a panel "
+            "of classes, out of a many-class tree. Skipped files are counted as excluded."
         ),
     )
 
@@ -142,7 +159,7 @@ class FolderClassesAdapter:
         # single-pass walk would import every mask as a sample of its own — and then
         # attach it to itself. Resolving them first is what keeps "where the masks are"
         # from having to be repeated as an `exclude` pattern.
-        inputs = builder.without_masks(candidates)
+        inputs = builder.named_only(builder.without_masks(candidates))
         report(0.0, f"{len(inputs)} candidate files")
 
         for index, path in enumerate(inputs):
@@ -167,6 +184,7 @@ class _Builder:
         self._missing_masks: list[str] = []
         self._masks = 0
         self._mask_inputs = 0
+        self._unnamed_inputs = 0
 
     def without_masks(self, candidates: list[Path]) -> list[Path]:
         """Drop the files that are ground truth for other files in the same walk.
@@ -186,11 +204,30 @@ class _Builder:
         self._mask_inputs = len(candidates) - len(kept)
         return kept
 
+    def named_only(self, candidates: list[Path]) -> list[Path]:
+        """Drop the files in directories no option names, when the options say to.
+
+        Filtered before anything is probed, so a panel of twenty classes cut from a tree of
+        a thousand hashes twenty classes' files, not a thousand.
+        """
+        if self._options.import_unnamed_dirs:
+            return candidates
+        named = [
+            *self._options.defect_dirs,
+            *self._options.normal_dirs,
+            *self._options.unlabeled_dirs,
+        ]
+        kept = [path for path in candidates if directory_matches(self._directory(path), named)]
+        self._unnamed_inputs = len(candidates) - len(kept)
+        return kept
+
+    def _directory(self, path: Path) -> str:
+        directory = PurePosixPath(self._files.relative(path)).parent.as_posix()
+        return "" if directory == "." else directory
+
     def add(self, path: Path) -> None:
         relative = PurePosixPath(self._files.relative(path))
-        directory = relative.parent.as_posix()
-        if directory == ".":
-            directory = ""
+        directory = self._directory(path)
 
         # Probe before classifying, so an excluded or unreadable file does not also get
         # counted as one this configuration failed to label.
@@ -202,7 +239,11 @@ class _Builder:
         if conflicted:
             self._conflicting.append(str(relative))
 
-        mask_path = self._mask_for(path, relative)
+        mask_path = (
+            None
+            if label is Label.NORMAL and not self._options.masks_for_normal_dirs
+            else self._mask_for(path, relative)
+        )
         if mask_path is not None:
             image = image.model_copy(update={"mask_path": mask_path})
             self._masks += 1
@@ -303,10 +344,11 @@ class _Builder:
             samples=samples,
             warnings=self._warnings(samples),
             stats=ManifestStats(
-                files_seen=self._files.seen + self._mask_inputs,
-                # Ground-truth files are counted as excluded rather than silently
-                # dropped, so the review screen's file arithmetic still adds up.
-                files_excluded=self._files.excluded + self._mask_inputs,
+                files_seen=self._files.seen + self._mask_inputs + self._unnamed_inputs,
+                # Ground-truth files, and files in directories the options chose not to
+                # import, are counted as excluded rather than silently dropped, so the
+                # review screen's file arithmetic still adds up.
+                files_excluded=self._files.excluded + self._mask_inputs + self._unnamed_inputs,
                 files_skipped=self._files.skipped,
                 samples=len(samples),
                 images=sum(len(sample.images) for sample in samples),

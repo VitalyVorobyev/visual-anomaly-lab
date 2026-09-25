@@ -176,6 +176,67 @@ def test_a_mask_template_can_reach_a_sibling_directory(tmp_path: Path) -> None:
     assert manifest.stats.masks == 1
 
 
+def _many_class_tree(root: Path) -> None:
+    """The few-shot shape: one directory per class, each image beside its own mask."""
+    for name in ("bird", "boat", "cup"):
+        for index in range(2):
+            write_image(root / name / f"{index}.jpg")
+            write_image(root / name / f"{index}.png", mode="L")
+
+
+def test_a_normal_directory_keeps_its_masks_by_default(tmp_path: Path) -> None:
+    root = tmp_path / "classes"
+    _many_class_tree(root)
+
+    manifest = _scan(root, defect_dirs=["bird"], normal_dirs=["boat", "cup"], mask_dir="{dir}")
+
+    normals = _by_label(manifest, Label.NORMAL)
+    assert all(image.mask_path for sample in normals for image in sample.images)
+    assert manifest.stats.masks == 6
+
+
+def test_masks_can_be_left_behind_in_normal_directories(tmp_path: Path) -> None:
+    """Another class's mask is not the target's truth: its image is a confirmed absence."""
+    root = tmp_path / "classes"
+    _many_class_tree(root)
+
+    manifest = _scan(
+        root,
+        defect_dirs=["bird"],
+        normal_dirs=["boat", "cup"],
+        mask_dir="{dir}",
+        masks_for_normal_dirs=False,
+    )
+
+    defects, normals = _by_label(manifest, Label.DEFECT), _by_label(manifest, Label.NORMAL)
+    assert [len(defects), len(normals)] == [2, 4]
+    assert all(image.mask_path for sample in defects for image in sample.images)
+    assert not any(image.mask_path for sample in normals for image in sample.images)
+    # The masks were recognised as masks all the same, not imported as images.
+    assert manifest.stats.images == 6
+    assert WarningCode.MISSING_MASK not in _codes(manifest)
+
+
+def test_unnamed_directories_can_be_left_out(tmp_path: Path) -> None:
+    root = tmp_path / "classes"
+    _many_class_tree(root)
+
+    manifest = _scan(
+        root,
+        defect_dirs=["bird"],
+        normal_dirs=["boat"],
+        mask_dir="{dir}",
+        import_unnamed_dirs=False,
+    )
+
+    assert manifest.label_counts()[Label.UNLABELED] == 0
+    assert {sample.group_key for sample in manifest.samples} == {"bird", "boat"}
+    assert WarningCode.UNMATCHED_PATH not in _codes(manifest)
+    # Six masks, and the two images of `cup`, counted rather than silently dropped.
+    assert manifest.stats.files_excluded == 6 + 2
+    assert manifest.stats.files_seen == 12
+
+
 # -- scope and skips -------------------------------------------------------------------
 
 
