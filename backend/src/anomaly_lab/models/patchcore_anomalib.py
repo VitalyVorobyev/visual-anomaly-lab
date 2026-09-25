@@ -75,7 +75,7 @@ import hashlib
 import os
 import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
@@ -107,6 +107,7 @@ from anomaly_lab.models.coreset import greedy_select as greedy_select
 from anomaly_lab.models.diagnostics import DiagnosticKind
 from anomaly_lab.models.feature_view import pca_to_rgb
 from anomaly_lab.models.introspect import build_tree, collect
+from anomaly_lab.models.model_assets import timm_bindings_preserved
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -464,6 +465,9 @@ class PatchcoreAnomalibModel(AnomalyModel):
         `seed` controlled the training order over different initial weights. Here it would
         be worse than noise: the fingerprint written at save time would never match the one
         computed at load time, and every reload would refuse a checkpoint that was fine.
+
+        Built inside `model_assets.timm_bindings_preserved`, so constructing anomalib's
+        feature extractor cannot change what a DINO method later in the same process computes.
         """
         import torch
         from anomalib.models.image.patchcore.anomaly_map import AnomalyMapGenerator
@@ -471,15 +475,9 @@ class PatchcoreAnomalibModel(AnomalyModel):
 
         torch.manual_seed(self.config.seed)
         layers = list(self.config.layer_set.layers)
-        if self.config.pretrained_backbone and not self.config.allow_downloads:
-            with _downloads_refused(self.config.backbone):
-                model = PatchcoreModel(
-                    layers=layers,
-                    backbone=self.config.backbone,
-                    pre_trained=True,
-                    num_neighbors=self.config.num_neighbors,
-                )
-        else:
+        refuse = self.config.pretrained_backbone and not self.config.allow_downloads
+        downloads = _downloads_refused(self.config.backbone) if refuse else nullcontext()
+        with downloads, timm_bindings_preserved():
             model = PatchcoreModel(
                 layers=layers,
                 backbone=self.config.backbone,

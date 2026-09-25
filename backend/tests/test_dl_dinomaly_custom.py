@@ -31,6 +31,7 @@ pass over an untrained ViT-S is a fraction of a second.
 from __future__ import annotations
 
 import hashlib
+import importlib
 from pathlib import Path
 from typing import Any
 
@@ -308,6 +309,11 @@ def _anomalib_pair(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, *, depth: in
             super().__init__(**kwargs)
 
     monkeypatch.setattr(anomalib_dinomaly, "TimmFeatureExtractor", Unpretrained)
+    # anomalib's ViT extractor rebinds timm's resample for the process, and both sides of this
+    # pin forward under that rebinding, as anomalib's own method does. It is undone with the
+    # test so no later test inherits it (`test_dl_timm_bindings.py`).
+    vit: Any = importlib.import_module("timm.models.vision_transformer")
+    monkeypatch.setattr(vit, "resample_abs_pos_embed", vit.resample_abs_pos_embed)
 
     torch.manual_seed(11)
     theirs = anomalib_dinomaly.DinomalyModel(

@@ -53,12 +53,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Methods
 
-- [ ] **Constructing anomalib's feature extractor changes timm for the whole process** (S):
-      building `TimmFeatureExtractor` switches timm's DINOv2 position-table resize process-wide,
-      which moves DINOv2 features by about 0.07 for every later model in that process. Jobs run one
-      per process and the resident worker holds one experiment, so the app is unaffected today, but
-      a sweep or test that runs several methods in one process is not. Find the global it sets,
-      restore it (or isolate the construction), and pin both orders with a test.
 - [ ] **Sweep `dinomaly_custom`'s encoder** (S): the reason the field exists. The default is the
       encoder anomalib pins, so a run against `dinov2_vit_b14` or `dinov3_vit_s16` on identical
       pixels answers whether Dinomaly's published result is about the method or about DINOv2 — a
