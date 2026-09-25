@@ -495,7 +495,8 @@ class DinoLinearSegModel(AnomalyModel):
         "constant per class, fitted for IoU on held-out folds, before the argmax."
     )
 
-    def __init__(self, config: DinoLinearSegConfig) -> None:
+    def __init__(self, config: DinoLinearSegConfig, *, method: str = "dino_linear_seg") -> None:
+        """`method` names who asked for the encoder when its weights cannot be fetched."""
         super().__init__(config)
         self.config = config
         self._encoder = FrozenEncoder(
@@ -503,7 +504,7 @@ class DinoLinearSegModel(AnomalyModel):
             pretrained=config.pretrained_backbone,
             allow_downloads=config.allow_downloads,
             seed=config.seed,
-            method="dino_linear_seg",
+            method=method,
         )
         self._state: dict[str, np.ndarray] = {}
 
@@ -756,34 +757,13 @@ class DinoLinearSegModel(AnomalyModel):
             raise RuntimeError(
                 "dino_linear_seg was asked to predict before it was fitted or loaded"
             )
-        width, height = ctx.preprocessing.width, ctx.preprocessing.height
-        rows, cols = patch_grid(self.config.backbone, width, height)
         classes = int(self._state["classes"][0])
-        absent = ~self._state["present"]
-        # A per-class constant survives the bilinear upsample unchanged, so offsetting the
-        # patch logits is offsetting the pixel logits.
         bias = self._state["bias"] + self._logit_bias()
         predictions: list[Prediction] = []
         for position, record in enumerate(images):
             ctx.raise_if_cancelled()
             started = time.perf_counter()
-            patch_logits = self._grid_features(record, ctx) @ self._state["weights"].T
-            patch_logits += bias
-            logits = np.stack(
-                [upsample(plane.reshape(rows, cols), (width, height)) for plane in patch_logits.T]
-            )
-            logits[absent] = -np.inf
-            probability = _softmax(logits, axis=0)
-            if self.config.refine is Refinement.GUIDED:
-                image = load_array(record.path, ctx.preprocessing)
-                grey = image.mean(axis=2) if image.ndim == 3 else image
-                probability = np.stack(
-                    [
-                        np.clip(guided_filter(plane, grey, GUIDED_RADIUS, GUIDED_EPS), 0.0, 1.0)
-                        for plane in probability
-                    ]
-                ).astype(np.float32)
-                probability[absent] = 0.0
+            probability = self._probabilities(record, ctx, bias)
             labels = np.argmax(probability, axis=0)
             map_path = ctx.write_map(record.image_id, 1.0 - probability[0])
             label_path = ctx.write_label_map(record.image_id, labels, classes=classes)
@@ -798,6 +778,45 @@ class DinoLinearSegModel(AnomalyModel):
             )
             ctx.progress((position + 1) / len(images), f"segmented {position + 1}/{len(images)}")
         return predictions
+
+    def probabilities(self, record: ImageRecord, ctx: InferContext) -> np.ndarray:
+        """`(C, h, w)` class probabilities of one prepared image, background first.
+
+        Exactly what `predict` takes its argmax of — the head, the `logit_bias` constant, the
+        upsample and `refine` — so a method that reads the head another way (`dino_linear_det`
+        boxes its components) reads the same function."""
+        if "weights" not in self._state:
+            raise RuntimeError(
+                "dino_linear_seg was asked to predict before it was fitted or loaded"
+            )
+        return self._probabilities(record, ctx, self._state["bias"] + self._logit_bias())
+
+    def _probabilities(
+        self, record: ImageRecord, ctx: InferContext, bias: np.ndarray
+    ) -> np.ndarray:
+        width, height = ctx.preprocessing.width, ctx.preprocessing.height
+        rows, cols = patch_grid(self.config.backbone, width, height)
+        absent = ~self._state["present"]
+        # A per-class constant survives the bilinear upsample unchanged, so offsetting the
+        # patch logits is offsetting the pixel logits.
+        patch_logits = self._grid_features(record, ctx) @ self._state["weights"].T
+        patch_logits += bias
+        logits = np.stack(
+            [upsample(plane.reshape(rows, cols), (width, height)) for plane in patch_logits.T]
+        )
+        logits[absent] = -np.inf
+        probability = _softmax(logits, axis=0)
+        if self.config.refine is Refinement.GUIDED:
+            image = load_array(record.path, ctx.preprocessing)
+            grey = image.mean(axis=2) if image.ndim == 3 else image
+            probability = np.stack(
+                [
+                    np.clip(guided_filter(plane, grey, GUIDED_RADIUS, GUIDED_EPS), 0.0, 1.0)
+                    for plane in probability
+                ]
+            ).astype(np.float32)
+            probability[absent] = 0.0
+        return probability
 
     def _logit_bias(self) -> np.ndarray:
         """The constant `logit_bias` adds, from what the fit saved beside the head."""

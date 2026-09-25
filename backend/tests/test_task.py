@@ -27,7 +27,7 @@ from .conftest import Fixture, create_experiment
 
 FEW_SHOT_METHODS = {"color_prototype", "fss_dino", "proto_seg"}
 SEGMENTATION_METHODS = {"color_classifier", "dino_linear_seg"}
-DETECTION_METHODS = {"color_detector"}
+DETECTION_METHODS = {"color_detector", "dino_linear_det"}
 
 
 def test_every_method_written_before_tasks_is_an_anomaly_method() -> None:

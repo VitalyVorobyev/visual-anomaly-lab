@@ -108,7 +108,10 @@ comparing them under one evaluation protocol.
   with `color_classifier` (numpy, the floor) and `dino_linear_seg` (a softmax head on the same
   frozen DINO features, trained at sampled pixels): classes pinned at creation, label maps into
   `fit` through `TrainContext.label_targets` and out through `InferContext.write_label_map`, and a
-  per-class confusion-matrix evaluator. A grouped multi-view dataset is now *usable* and not merely
+  per-class confusion-matrix evaluator. The fourth, object detection (ADR-0039), runs with
+  `color_detector` (numpy, the floor) and `dino_linear_det` (the same head fitted on painted box
+  interiors, its components boxed): boxes into `fit` through `TrainContext.box_targets` and out
+  through `InferContext.write_instances`, and COCO's AP. A grouped multi-view dataset is now *usable* and not merely
   representable: a run selects its channels by name, scores are normalized per channel before they are
   aggregated, one annotation covers every channel of a part, and the editor blends two channels to show
   the registration the scan measured.

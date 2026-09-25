@@ -43,14 +43,12 @@ Planned in ADR-0039. Supervised segmentation's slice runs — pinned classes, la
 maps, the confusion-matrix evaluator, the `color_classifier` floor, the `dino_linear_seg` deep head,
 the `class_stratified` split, its result screens and its public gates (`measurements.md`). Detection
 runs end to end torch-free — box truth, box targets, stored boxes, COCO's AP, the `color_detector`
-floor, the `class_stratified` split and its result screens. What remains, in dependency order, one PR each:
+floor, the `class_stratified` split and its result screens — and the `dino_linear_det` deep detector
+runs on the frozen-DINO path. What remains:
 
-- [ ] **A deep detector** (M): on the frozen-DINO path, fitted through `box_targets` and writing
-      instances; `dl`-gated tests, seed reproducibility in both directions, and one module plus one
-      registry entry.
 - [ ] **Public detection gate** (M): predeclared in `measurements.md` before it runs — VisA's masks
-      boxed by their connected components on a `class_stratified` split, the deep detector against
-      the floor, with AP@[.5:.95] as the decision and AP50 and recall reported.
+      boxed by their connected components on a `class_stratified` split, `dino_linear_det` against
+      the `color_detector` floor, with AP@[.5:.95] as the decision and AP50 and recall reported.
 
 - [ ] **A polygon owns the pixels whose centres it contains** (S): boxes follow the half-open
       pixel-centre rule, but completion still fills a polygon including its outline (Pillow), so a

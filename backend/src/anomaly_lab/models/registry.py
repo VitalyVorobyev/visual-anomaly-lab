@@ -94,6 +94,12 @@ def _dino_linear_seg() -> type[AnomalyModel]:
     return DinoLinearSegModel
 
 
+def _dino_linear_det() -> type[AnomalyModel]:
+    from anomaly_lab.models.dino_linear_det import DinoLinearDetModel
+
+    return DinoLinearDetModel
+
+
 def _subspace_ad() -> type[AnomalyModel]:
     from anomaly_lab.models.subspace_ad import SubspaceAdModel
 
@@ -134,6 +140,8 @@ def _subspace_ad() -> type[AnomalyModel]:
 # trained at sampled pixels, and it needed nothing the floor had not already put in place.
 # `color_detector` is the first method of detection: it fits through `TrainContext.box_targets`
 # and writes boxes through `InferContext.write_instances` — one module and this one line.
+# `dino_linear_det` is its first deep method, `dino_linear_seg`'s head fitted on painted boxes
+# and decoded by the floor's components: it imports both and adds nothing beside them.
 LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "pixel_reference": _pixel_reference,
     "efficientad_custom": _efficientad_custom,
@@ -148,6 +156,7 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
     "color_classifier": _color_classifier,
     "dino_linear_seg": _dino_linear_seg,
     "color_detector": _color_detector,
+    "dino_linear_det": _dino_linear_det,
 }
 
 

@@ -18,6 +18,7 @@ This page is generated from the live model registry and checked method metadata.
 | `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | experimental | no | — |
 | `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | supported | no | — |
 | `color_detector` | Colour detector (detection floor) | detection colour components | experimental | no | — |
+| `dino_linear_det` | DINO linear head (detection) | detection linear head on frozen DINO | experimental | no | — |
 
 **Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
 
@@ -209,6 +210,21 @@ Fits one colour model to the inside of each class's boxes and one to everything 
 
 - Tasks: `object_detection`
 - Preferred device: `cpu`
+- Requires fitting: yes
+- Anomaly map: yes
+- Diagnostics: no
+- Exact continuation: no
+- Dataset-specific: no
+- Portable formats: —
+
+## DINO linear head (detection)
+
+`dino_linear_det` · **detection linear head on frozen DINO** · experimental
+
+Paints each class's boxes as its pixels, fits the DINO linear segmentation head on a bounded sample of them, then boxes each connected region of a class; a region's confidence is the mean probability of its class.
+
+- Tasks: `object_detection`
+- Preferred device: `mps`
 - Requires fitting: yes
 - Anomaly map: yes
 - Diagnostics: no

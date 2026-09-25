@@ -25,7 +25,7 @@ from __future__ import annotations
 import json
 import math
 import time
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 
@@ -90,12 +90,53 @@ def paint_boxes(
     return labels
 
 
-class _PaintedBoxes:
-    """The run's box targets as the label targets `color_classifier` fits on."""
+def component_boxes(
+    labels: np.ndarray,
+    planes: Mapping[int, np.ndarray],
+    classes: Sequence[str],
+    *,
+    min_area: int,
+    max_detections: int,
+) -> list[PredictedInstance]:
+    """Every 8-connected component of a class in a label map, boxed, most confident first.
 
-    def __init__(self, ctx: TrainContext) -> None:
+    `labels` is an `(h, w)` map of class indices, 0 the background; `planes` maps each class
+    index to be boxed to its `(h, w)` posterior, and `classes[index - 1]` names it. A
+    component's box is its tight bounding box in pixel edges, its confidence the mean
+    posterior of its class over it. Components under `min_area` pixels are dropped, and at
+    most `max_detections` are kept. Pure numpy; the detection floor and `dino_linear_det`
+    decode through it, so a comparison between them measures what labels the pixels.
+    """
+    width = labels.shape[1]
+    found: list[PredictedInstance] = []
+    for index, plane in planes.items():
+        confidence = plane.reshape(-1)
+        for region in connected_regions(labels == index):
+            if region.size < min_area:
+                continue
+            ys, xs = np.divmod(region, width)
+            found.append(
+                PredictedInstance(
+                    label_key=classes[index - 1],
+                    box=(
+                        float(xs.min()),
+                        float(ys.min()),
+                        float(xs.max()) + 1.0,
+                        float(ys.max()) + 1.0,
+                    ),
+                    confidence=float(confidence[region].mean()),
+                )
+            )
+    found.sort(key=lambda instance: -instance.confidence)
+    return found[:max_detections]
+
+
+class PaintedBoxes:
+    """The run's box targets as label targets: what a detector that labels pixels fits on."""
+
+    def __init__(self, ctx: TrainContext, method: str = "color_detector") -> None:
         if ctx.box_targets is None:
-            msg = "color_detector detects annotated classes and needs box targets"
+            msg = f"{method} detects annotated classes and needs box targets"
             raise RuntimeError(msg)
         self._targets = ctx.box_targets
         self._size = (ctx.preprocessing.height, ctx.preprocessing.width)
@@ -137,37 +178,26 @@ class ColorDetectorModel(AnomalyModel):
         )
 
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None:
-        painted = _PaintedBoxes(ctx)
+        painted = PaintedBoxes(ctx)
         self._pixels.fit(train, replace(ctx, box_targets=None, label_targets=painted))
         self._classes = painted.classes
 
     def detect(self, array: np.ndarray) -> tuple[list[PredictedInstance], np.ndarray]:
         """One prepared image's detections, most confident first, and its foreground map."""
         labels, posterior, foreground = self._pixels.classify(array)
-        width = labels.shape[1]
-        found: list[PredictedInstance] = []
-        for plane, index in enumerate(self._pixels.label_indices):
-            if index == 0:
-                continue
-            confidence = posterior[plane].reshape(-1)
-            for region in connected_regions(labels == index):
-                if region.size < self.config.min_area:
-                    continue
-                ys, xs = np.divmod(region, width)
-                found.append(
-                    PredictedInstance(
-                        label_key=self._classes[index - 1],
-                        box=(
-                            float(xs.min()),
-                            float(ys.min()),
-                            float(xs.max()) + 1.0,
-                            float(ys.max()) + 1.0,
-                        ),
-                        confidence=float(confidence[region].mean()),
-                    )
-                )
-        found.sort(key=lambda instance: -instance.confidence)
-        return found[: self.config.max_detections], foreground
+        planes = {
+            index: posterior[plane]
+            for plane, index in enumerate(self._pixels.label_indices)
+            if index != 0
+        }
+        found = component_boxes(
+            labels,
+            planes,
+            self._classes,
+            min_area=self.config.min_area,
+            max_detections=self.config.max_detections,
+        )
+        return found, foreground
 
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
         if not self._classes:
