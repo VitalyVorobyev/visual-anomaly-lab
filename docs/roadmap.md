@@ -13,7 +13,7 @@ A dataset can be taken from a directory tree to a comparison between methods wit
 application.
 
 - **Import** a directory tree through a pluggable adapter, or register a local copy of a public
-  benchmark (VisA, GKN) in one atomic action. Source images are referenced in place and never
+  benchmark (VisA, GKN, FSS-1000) in one atomic action. Source images are referenced in place and never
   copied; the import is idempotent and leaves a reviewable manifest.
 - **Browse and label** the result as a catalogue that groups — a collection is a dataset's stored
   override or the reference pack it came from — with a virtualised grid, channel filters and an

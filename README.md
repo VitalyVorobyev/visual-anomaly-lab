@@ -85,6 +85,10 @@ offers a one-click registration when it recognizes a complete pack. Registration
   pixel masks, CC BY-NC-SA 4.0, so **non-commercial use only**. MVTec distributes it behind a form; the
   mirror this repository's fetch script uses is
   [`TheoM55/mvtec_anomaly_detection`](https://huggingface.co/datasets/TheoM55/mvtec_anomaly_detection).
+- [FSS-1000](https://github.com/HKUSTCV/FSS-1000)—1 000 object classes of ten images, each with a
+  foreground mask (Li et al., CVPR 2020), registered as a twenty-class few-shot panel. The upstream
+  repository publishes no licence and asks that users cite the paper; unzip its download so the classes
+  sit under `datasets/FSS-1000/fewshot_data/`.
 
 Use the imported split to compare with a provider protocol. Any other tree can use the configurable CSV,
 folder-class, or multi-channel adapters.

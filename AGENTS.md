@@ -15,9 +15,10 @@ comparing them under one evaluation protocol.
   `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad`),
   evaluation layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
-  secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits) and GKN are the
-  current two. `check-repo-safety.sh` fails if anything under `datasets/` is staged. Note the leading
-  slash: an unanchored pattern would also match `backend/src/anomaly_lab/datasets/`, the adapter package.
+  secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits), GKN and
+  FSS-1000 (a few-shot panel) are the current packs. `check-repo-safety.sh` fails if anything under
+  `datasets/` is staged. Note the leading slash: an unanchored pattern would also match
+  `backend/src/anomaly_lab/datasets/`, the adapter package.
 - **Channel count is data, never schema.** No constant, enum, column, or UI layout may encode how many
   acquisition channels a dataset has. A 2-channel sample must render and score with no special case.
 

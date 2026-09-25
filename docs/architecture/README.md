@@ -169,7 +169,7 @@ server-visible absolute path.
 | `datasets` | `/api/datasets` | dataset CRUD and deletion preview, channel dictionary, sample listing/filtering, label edits |
 | `annotations` | `/api/datasets/…/annotation-labels`, `/api/images/…/annotations` | label taxonomy, optimistic draft editing, immutable revisions, PNG/LabelMe/COCO import and export |
 | `import` | `/api/import` | `scan` (produce manifest) and `commit` (create rows); `verify` re-check |
-| `reference_packs` | `/api/reference-packs` | discover complete local VisA/GKN packs and register missing datasets atomically |
+| `reference_packs` | `/api/reference-packs` | discover complete local VisA/GKN/FSS-1000 packs and register missing datasets atomically |
 | `splits` | `/api/splits` | create/list seeded or imported splits, per-subset counts, assignments |
 | `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build, prepared images and guarded revision deletion |
 | `segment_assist` | `/api/segment-assist`, `/api/images/…/segment-assist` | MobileSAM readiness and temporary prompt-guided mask suggestions |
