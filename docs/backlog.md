@@ -54,11 +54,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
 
 ## Methods
 
-- [ ] **Sweep `dinomaly_custom`'s encoder** (S): the reason the field exists. The default is the
-      encoder anomalib pins, so a run against `dinov2_vit_b14` or `dinov3_vit_s16` on identical
-      pixels answers whether Dinomaly's published result is about the method or about DINOv2 — a
-      question the retired wrapper could not ask. Pair it with a `decoder_depth` ablation: depth 8 is the
-      published recipe and nothing here has measured whether it is the right one for this data.
 - [ ] **Evaluate AnomalyVFM as the zero-shot reference** (M): the resource gate passed — the pinned
       1.421 GB, 355.36M-parameter asset runs at 591 ms/image at 768 px on MPS with 2.07 GiB driver
       memory. App-managed offline loading, plugin integration and the public quality gate remain.
