@@ -52,9 +52,9 @@ must be `allclose` at the graph's declared `atol` and `rtol`, and the score — 
 outputs through the manifest's score contract, exactly as a host resolves it — must lie within the `atol`
 alone. The export job applies it to its fixture, which proves the graph runs the method's arithmetic.
 `scripts/export-parity-gate.py` applies it on real pixels after a real fit — any candidate, through the
-ordinary train, infer and export jobs on VisA, every test image compared
-([measurements](../measurements.md#export-parity-on-real-pixels)) — which proves the graph does so on the
-activations a trained network produces.
+ordinary train, infer and export jobs on VisA, every test image compared — which proves the graph does so
+on the activations a trained network produces
+([measurements](../measurements.md#export-parity-on-real-pixels--dinomaly_custom-exports)).
 
 ## Runtime boundary
 
@@ -73,12 +73,14 @@ because production systems may own their source geometry independently.
 An operating point is resolved from one named subset rather than a mixture: test first, then validation,
 then train as an explicit last resort. The chosen subset and rule travel with the value.
 
-Four methods across four families have proven exporters: `pixel_reference` (explicit statistics and
+Five methods across five families have proven exporters: `pixel_reference` (explicit statistics and
 a percentile host reducer), `efficientad_custom` (a deep graph and max/top-k host reducer),
-`patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score), and
-`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score).
-`dinomaly_custom`, `dino_memory` and `subspace_ad` report no portable format (`docs/backlog.md`); a method
-reports one only once its graph and parity tolerance have been proven.
+`patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score),
+`glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score), and
+`dinomaly_custom` (a frozen ViT with its position table pinned to the frame, a reconstruction decoder and a
+graph-produced score, the one whose format rests on the real-pixel gate). `dino_memory` and `subspace_ad`
+report no portable format (`docs/backlog.md`); a method reports one only once its graph and parity
+tolerance have been proven.
 
 ## Reference runner
 

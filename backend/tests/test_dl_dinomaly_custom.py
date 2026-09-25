@@ -48,6 +48,7 @@ from anomaly_lab.models.base import (  # noqa: E402
     InferContext,
     ModelCancelledError,
     NullReporter,
+    PortableFormat,
     SupportsResume,
     TrainContext,
 )
@@ -610,9 +611,9 @@ def test_the_capability_flag_and_the_resume_protocol_agree() -> None:
     assert isinstance(DinomalyCustomModel(_config()), SupportsResume)
     assert capabilities.produces_diagnostics is True
     assert capabilities.channel_aware is False
-    # The honest asymmetry with the retired anomalib wrapper, which exported ONNX and this
-    # does not yet — asserted rather than left to a comment.
-    assert capabilities.portable_formats == []
+    # Earned by the export-parity gate on real pixels (docs/measurements.md);
+    # test_dl_dinomaly_export.py holds the graph to it.
+    assert capabilities.portable_formats == [PortableFormat.ONNX]
 
 
 def test_cancellation_stops_training_within_a_step(tmp_path: Path) -> None:

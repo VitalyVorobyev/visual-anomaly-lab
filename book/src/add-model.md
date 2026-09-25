@@ -90,8 +90,9 @@ A torch-dependent file must be named `test_dl_*.py` or CI will run it nowhere.
 
 Declare `PortableFormat.ONNX` only after implementing `SupportsOnnxExport`. Export the complete method path,
 return an explicit score contract, and implement `portable_reference`. Test Python-versus-ONNX map *and*
-score parity. If operator coverage is missing, leave export unsupported; a truthful absence is better than a
-button that changes semantics.
+score parity, then run `scripts/export-parity-gate.py --candidate <key>` — the same rule on every VisA test
+image after a real fit. If operator coverage is missing, leave export unsupported; a truthful absence is
+better than a button that changes semantics.
 
 ## 9. Run the gate
 

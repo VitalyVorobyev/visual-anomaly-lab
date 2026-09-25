@@ -77,7 +77,7 @@ the gate measures only the divergence training order and RNG streams accumulate 
 Verdict: parity to the third decimal; ≈ 570 s per training leg (wrapper ≈ 610 s), 50 ms inference, 0.98 GB
 peak RSS. `dinomaly_custom` is the carried implementation.
 
-## Export parity on real pixels
+## Export parity on real pixels — `dinomaly_custom` exports
 
 Whether a method's ONNX bundle computes what the method computes on the activations a *trained* network
 sees on real parts — the export job's own check uses a dataset-free ramp. A method lists a portable format
@@ -102,6 +102,21 @@ graph computes a different operation.
 within tolerance on map and score; and image ROC-AUC over the portable scores is within **0.001** of that
 over the Python scores. Reported, not gated: the portable outputs against the workbench's stored results,
 which also carry the accelerator's own rounding.
+
+**`dinomaly_custom`** at its gate configuration (392 × 392, DINOv2 ViT-S/14-reg4, 5 000 steps on MPS; a
+134.7 MB opset-18 graph with the score as a named tensor), 200 test images per class:
+
+| | `candle` | `pcb1` |
+|---|---:|---:|
+| Images within tolerance | 200 / 200 | 200 / 200 |
+| Worst map error | 2.3 × 10⁻⁶ | 1.5 × 10⁻⁶ |
+| Worst score error | 4.5 × 10⁻⁷ | 3.5 × 10⁻⁷ |
+| Image ROC-AUC, Python / portable | 0.9624 / 0.9624 | 0.9648 / 0.9648 |
+| Export job's fixture, map / score error | 1.5 × 10⁻⁶ / 3.0 × 10⁻⁷ | 1.8 × 10⁻⁶ / 0 |
+| Portable against stored MPS results, map / score (reported) | 1.7 × 10⁻⁶ / 3.6 × 10⁻⁷ | 1.2 × 10⁻⁶ / 3.3 × 10⁻⁷ |
+
+Verdict: passed on both classes, with the worst disagreement some forty times inside the tolerance and the
+ranking identical. `dinomaly_custom` lists ONNX.
 
 ## GLASS — available, not recommended
 

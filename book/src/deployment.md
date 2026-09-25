@@ -41,7 +41,7 @@ Image score is a discriminated contract:
 
 This prevents a consumer from reproducing a heatmap while silently changing the accept/reject decision.
 
-Every method currently shown in the workbench catalogue has one of these parity-tested export paths. A new
+Every method the catalogue lists with ONNX has one of these parity-tested export paths. A new
 plugin is not exportable by default: it must implement and verify the same contract before the UI offers the
 action.
 

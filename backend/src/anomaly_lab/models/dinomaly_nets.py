@@ -42,7 +42,7 @@ import torch
 import torch.nn.functional as functional
 from torch import Tensor, nn
 
-from anomaly_lab.models.dino_backbone import extract_layer_tokens
+from anomaly_lab.models.dino_backbone import extract_layer_tokens, pin_frame
 
 LAYER_NORM_EPS = 1e-8
 """The reference's decoder LayerNorm epsilon. Unusually small, and load-bearing for a
@@ -266,8 +266,13 @@ class DinomalyNet(nn.Module):
 
     # ---------------------------------------------------------------- the forward
 
-    def features(self, batch: Tensor) -> tuple[list[Tensor], list[Tensor]]:
+    def features(
+        self, batch: Tensor, encoder: nn.Module | None = None
+    ) -> tuple[list[Tensor], list[Tensor]]:
         """`(encoder_groups, decoder_groups)` as `(B, D, rows, cols)` spatial maps.
+
+        `encoder` stands in for `self.encoder` only where an export has pinned its frame
+        (`dino_backbone.pin_frame`); it is the same weights, computing the same tokens.
 
         The order is the mechanism and worth stating: the decoder's outputs are **reversed**
         before grouping, so the *deepest* decoder block is paired with the *shallowest*
@@ -278,7 +283,9 @@ class DinomalyNet(nn.Module):
         cols = batch.shape[3] // self.patch_size
 
         with torch.no_grad():
-            encoder_tokens = extract_layer_tokens(self.encoder, batch, self.target_layers)
+            encoder_tokens = extract_layer_tokens(
+                self.encoder if encoder is None else encoder, batch, self.target_layers
+            )
 
         tokens = self.bottleneck(_fuse(encoder_tokens))
         decoder_tokens: list[Tensor] = []
@@ -452,6 +459,76 @@ def image_score(anomaly_map: Tensor) -> Tensor:
     flat = smoothed.flatten(1)
     keep = max(1, int(flat.shape[1] * SCORE_TOP_FRACTION))
     return torch.sort(flat, dim=1, descending=True).values[:, :keep].mean(dim=1)
+
+
+def map_blur(anomaly_map: Tensor, sigma: float) -> Tensor:
+    """The optional smoothing of the *stored* map; the identity at `sigma == 0`."""
+    if sigma <= 0:
+        return anomaly_map
+    radius = max(1, round(3.0 * sigma))
+    return gaussian_blur(anomaly_map, kernel_size=2 * radius + 1, sigma=sigma)
+
+
+def anomaly_outputs(
+    net: DinomalyNet,
+    batch: Tensor,
+    size: tuple[int, int],
+    *,
+    blur_sigma: float,
+    encoder: nn.Module | None = None,
+) -> tuple[list[Tensor], Tensor, Tensor]:
+    """`(group maps, stored map, image score)` for a standardised batch.
+
+    The one map rule, shared by `predict` and the exported graph so the two cannot drift:
+    the score is read from the *unblurred* mean of the groups, and only the stored map
+    carries `map_blur_sigma`.
+    """
+    encoded, decoded = net.features(batch, encoder)
+    maps = group_maps(encoded, decoded, size)
+    combined = torch.cat(maps, dim=1).mean(dim=1, keepdim=True)
+    return maps, map_blur(combined, blur_sigma), image_score(combined)
+
+
+class PortableDinomaly(nn.Module):
+    """Prepared `[0, 1]` pixels in, `(stored map, image score)` out — the exported graph.
+
+    Plane replication and the encoder's channel standardisation are the graph's own first
+    operations (handbook deployment.md), so a bundle consumes exactly the colour the
+    experiment froze. The score is a graph output rather than a host reducer because it is
+    read from a 256² resampling of the map, not from the map the bundle emits. The encoder
+    is the net's own with its position table pinned to the frame (`pin_frame`).
+    """
+
+    def __init__(
+        self,
+        net: DinomalyNet,
+        *,
+        size: tuple[int, int],
+        blur_sigma: float,
+        mean: Sequence[float],
+        std: Sequence[float],
+    ) -> None:
+        super().__init__()
+        self.net = net
+        self.encoder = pin_frame(net.encoder, size[0] // net.patch_size, size[1] // net.patch_size)
+        self.size = size
+        self.blur_sigma = blur_sigma
+        self.register_buffer("mean", torch.tensor(list(mean)).view(1, -1, 1, 1))
+        self.register_buffer("std", torch.tensor(list(std)).view(1, -1, 1, 1))
+
+    def forward(self, image: Tensor) -> tuple[Tensor, Tensor]:
+        mean = self.get_buffer("mean")
+        std = self.get_buffer("std")
+        if image.shape[1] != mean.shape[1]:
+            image = image.expand(-1, int(mean.shape[1]), -1, -1)
+        _, stored, score = anomaly_outputs(
+            self.net,
+            (image - mean) / std,
+            self.size,
+            blur_sigma=self.blur_sigma,
+            encoder=self.encoder,
+        )
+        return stored, score
 
 
 # --------------------------------------------------------------------- the optimizer

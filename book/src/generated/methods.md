@@ -8,7 +8,7 @@ This page is generated from the live model registry and checked method metadata.
 | `pixel_reference` | Pixel reference (baseline) | statistical reference | supported | no | onnx |
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
-| `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | — |
+| `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | onnx |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
 | `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
@@ -80,7 +80,7 @@ Our implementation of Dinomaly: a frozen DINOv2/DINOv3 encoder with a trainable 
 - Diagnostics: yes
 - Exact continuation: yes
 - Dataset-specific: no
-- Portable formats: —
+- Portable formats: onnx
 
 ## GLASS (experimental)
 
