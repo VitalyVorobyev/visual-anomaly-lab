@@ -58,11 +58,11 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
       experimental; its paired VisA gate at 768 × 768 is predeclared
       (`scripts/anomalyvfm-public-gate.py`, [measurements.md](measurements.md)). Run it and record
       the verdict by the rule written there.
-- [ ] **Sweep `dino_memory`'s layer selection for the DINOv3 backbone** (S): at the shared 448 px
-      gate size DINOv3 ViT-S/16 cleared the floors but trailed DINOv2 ViT-S/14-reg4 on every
-      metric with `last_two` ([measurements.md](measurements.md)). Before concluding the
-      backbone is weaker for this task, sweep `layers` (and consider `mid_late`) on the same
-      pixels — the deficit may belong to the recipe, not the encoder.
+- [ ] **Run the sweep of `dino_memory`'s layers on DINOv3** (S): its protocol and decision rule are
+      predeclared in [measurements.md](measurements.md#dino_memorys-layers-on-dinov3--predeclared-not-yet-run),
+      and `scripts/dino-memory-layer-sweep.py` runs it — every `layers` value on DINOv3 ViT-S/16
+      beside the recorded DINOv2 leg, on the recorded 448 px pixels. Run it, record the result
+      there, and apply the verdict: whether the DINOv3 deficit is the recipe's or the encoder's.
 - [ ] **ONNX export for `dino_memory`'s single-image modes** (M): `per_image` fusion has a real
       single-input graph — encoder, distance kernel, upsample, blur — and `portable_formats` is empty
       today because `feature_concat` does not, and a format that is true for one configuration of a

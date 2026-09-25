@@ -316,6 +316,75 @@ vs 0.938, with a pixel-level win.
   against `global_knn`'s 0.891 / 0.9952 / 0.9252. Restricting the bank by position sharpens *where* and
   costs a little *whether*. VisA is not a registered benchmark; this is the one public anchor for the mode.
 
+## `dino_memory`'s layers on DINOv3 — predeclared, not yet run
+
+Whether the DINOv3 row above measures the encoder or the recipe: `last_two` was chosen with DINOv2, and
+DINOv3 may keep what a nearest-neighbour bank needs in other blocks. Predeclared here before any run;
+`scripts/dino-memory-layer-sweep.py`, 10 cells, one child process each. Every arm is a full fit through
+the application's own train and infer jobs, so this is the gate's harness, not a campaign's (ADR-0038).
+Nothing is trained: a fit is one encoder pass over the bank images and a coreset selection, so there is
+no step budget and no smoke length.
+
+**Protocol.** The recorded row's pixels: VisA `candle` and `pcb1`, official 1cls split, the 200-image
+test subset of each, one identity prepared-input build per class at **448 × 448**, shared by every arm.
+Every arm is the recorded gate candidate's configuration with only `layers` changed — `global_knn`,
+k = 1, coreset ratio 0.1 over at most 50 000 candidates from 256 bank images, blur σ 4, the maximum as
+the image score, `per_image` fusion; seed 20260812. The arms are every value the `layers` field offers
+on DINOv3 ViT-S/16, plus the recorded DINOv2 leg as the reference. Both encoders have 12 blocks, so a
+value names the same blocks on each:
+
+| Arm | Backbone | `layers` | Blocks (of 12) | Fused width |
+|---|---|---|---|---:|
+| `v2_last_two` (reference) | DINOv2 ViT-S/14-reg4 | `last_two` | 11, 12 | 768 |
+| `v3_last_two` (control) | DINOv3 ViT-S/16 (licence-gated) | `last_two` | 11, 12 | 768 |
+| `v3_last` | DINOv3 ViT-S/16 | `last` | 12 | 384 |
+| `v3_mid_late` | DINOv3 ViT-S/16 | `mid_late` | 6, 9 | 768 |
+| `v3_last_four` | DINOv3 ViT-S/16 | `last_four` | 9–12 | 1 536 |
+
+The reference and the control re-run the two recorded rows rather than reading them from the section
+above, so every comparison is between cells of one run. Their two-class means are checked against the
+recorded ones (0.9000 / 0.9921 / 0.9315 and 0.8147 / 0.9850 / 0.8588) as a check of construction, not
+part of the rule.
+
+**Reported.** Per class and arm: image ROC-AUC, pixel ROC-AUC, AU-PRO, fit time, ms/image over the test
+subset (the infer job's wall time, maps included), peak RSS of the child and checkpoint size.
+
+**One seed per cell.** With published weights the encoder is deterministic, and the seed reaches the only
+random draws the fit makes — the coreset's start and the projection it selects in — so a repeated cell
+is the same cell. A different seed moves the bank, not the features, and that is the noise the margins
+below are sized for.
+
+**Decision rule, fixed before the run.** Two questions, each answered from two-class means with a
+per-class guard. The recorded deficit is `candle`'s — 0.725 image ROC-AUC against DINOv2's 0.909, while
+DINOv3's `pcb1` is near 0.904 against 0.891 — so a rule demanding a gain on *both* classes would ask a
+layer choice to improve the class that has no deficit.
+- **Which layers DINOv3 is run with.** A layer arm replaces `last_two` as DINOv3's recommended setting
+  only if its mean image ROC-AUC beats the control's by **at least 0.01**, it loses **no more than 0.01**
+  image ROC-AUC on either class, and its mean pixel ROC-AUC and mean AU-PRO each lose **no more than
+  0.01**. Several passing → the largest mean image gain. `layers` has one default for every backbone, and
+  a licence-gated encoder is never the default, so a passing arm moves no default: it is recorded here and
+  in the handbook's `dino_memory` section as the setting to pick with DINOv3. Moving the shared default
+  would need the same arm run on DINOv2 under this rule, which is a separate question.
+- **Whose deficit it is.** The deficit is reproduced if the control trails the reference by more than
+  0.01 on any two-class mean. If it is not, the recorded row does not survive a re-run and is corrected
+  from the control's cells; nothing else is concluded. If it is, the deficit **belongs to the recipe** when
+  some layer arm passes the first rule and comes within 0.01 of the reference on all three means, and
+  **to the encoder** — as far as the layers the field offers reach — when none does; the best arm's
+  remaining gap is reported either way. An arm that reaches DINOv2 by trading one class for the other
+  fails the first rule and does not count as the recipe.
+- The sweep is not rerun under other fields to reach a margin, and no layer value is added to the field
+  for it.
+
+**Budget — an estimate, not timed.** The recorded DINOv2 leg fits in 13–21 s and scores at 42 ms an
+image, and in the Dinomaly sweep DINOv3 ViT-S/16 cost no more per image than DINOv2 ViT-S/14-reg4 at
+448 px. `last_four` doubles the fused width: a 0.31 GB candidate pool at 50 000 vectors, and twice the
+distance work per patch, while the coreset projection's width, and so the selection, stays put. Allowing
+about a minute per cell for the child's start, the encoder load, the fit and 200 images with their maps,
+the ten cells take 10–15 min, and the whole sweep, with both classes' registration and prepared-input
+builds, under half an hour on MPS.
+
+**Result.** Not yet run.
+
 ## SubspaceAD — defaults from a sweep, gate open
 
 **Not a gate**: a parameter search run outside the application by its own harness (ADR-0038). The promotion
