@@ -363,9 +363,9 @@ them by class, and `refusalReason` refuses another task or another class by name
 4. **Layer registration is structural.** `ImageStage` lays out at the image's own pixel size and carries
    the whole transform, so a layer at `inset-0` covers exactly the source frame. All sample viewers are
    `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, raster layers in order, then
-   `VectorLayer` (boxes and polygons in image pixels, non-scaling strokes, toned by lab-ui's `toneColor`),
-   then screen-specific overlays such as the peak marker. `frontend/src/routes/ExperimentSampleRoute.test.tsx`
-   pins it.
+   `VectorLayer` (boxes and polygons in image pixels, polygons filled even-odd, non-scaling strokes, toned
+   by lab-ui's `toneColor`), then screen-specific overlays such as the peak marker.
+   `frontend/src/routes/ExperimentSampleRoute.test.tsx` pins it.
 5. **A window shortcut goes through `useHotkeys`.** `hotkeyBlocked` (`hooks/useHotkeys.ts`) is the one
    guard — text entry, lists and menus, navigation keys on a slider, tab strip or radio group, any open
    dialog, held modifiers unless opted in — unit-tested case by case.

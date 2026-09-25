@@ -51,14 +51,6 @@ runs on the frozen-DINO path and has had its public gate on VisA. What remains:
       VisA mask's components are specks of a few pixels. Choose a public dataset whose objects are
       annotated as boxes, predeclare the protocol, and run `dino_linear_det` against the floor on it.
 
-- [ ] **A polygon owns the pixels whose centres it contains** (S): boxes follow the half-open
-      pixel-centre rule, but completion still fills a polygon including its outline (Pillow), so a
-      box and the polygon of its four corners own different pixels and the editor's readout, which
-      tests polygons at pixel centres, can disagree on an edge pixel
-      ([annotations.md](architecture/annotations.md)). Changing it changes segmentation truth for
-      new completions: decide it before the next public segmentation gate, and say on the record
-      that earlier revisions keep what they wrote.
-
 ## Spatial input
 
 - [ ] **Revisit automatic mask selection without test leakage** (M): MobileSAM's largest credible

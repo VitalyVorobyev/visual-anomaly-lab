@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import type { AnnotationDocument, BitmapShape, BoxShape, PolygonShape } from "../../api/client";
-import { readPixel } from "./pixelReadout";
+import { insidePolygon, readPixel } from "./pixelReadout";
+// The same file the backend's rasteriser test reads (`tests/test_annotation_polygons.py`).
+import polygonCentres from "./polygonCentres.fixture.json?raw";
 
 const square: PolygonShape = {
   id: "square",
@@ -110,5 +112,29 @@ describe("readPixel over a box", () => {
     const halfway = document({ shapes: [{ ...box, x: 0.5, width: 3 }] });
     expect(readPixel(halfway, { x: 0.2, y: 1.5 }, masks, null)?.value).toBe(1);
     expect(readPixel(halfway, { x: 3.2, y: 1.5 }, masks, null)?.value).toBe(0);
+  });
+});
+
+interface PolygonCase {
+  name: string;
+  points: [number, number][];
+  owned: string[];
+}
+
+describe("insidePolygon over the shared fixture", () => {
+  const fixture = JSON.parse(polygonCentres) as {
+    width: number;
+    height: number;
+    polygons: PolygonCase[];
+  };
+
+  it.each(fixture.polygons)("owns what completion writes: $name", ({ points, owned }) => {
+    const shape = { points: points.map(([x, y]) => ({ x, y })) };
+    const read = Array.from({ length: fixture.height }, (_, row) =>
+      Array.from({ length: fixture.width }, (_, column) =>
+        insidePolygon(shape, column + 0.5, row + 0.5) ? "#" : ".",
+      ).join(""),
+    );
+    expect(read).toEqual(owned);
   });
 });
