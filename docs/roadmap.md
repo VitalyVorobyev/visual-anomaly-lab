@@ -84,7 +84,10 @@ application.
   a small defect at the fixed `>= 0.5` cut ([measurements.md](measurements.md)). Every few-shot method
   can scale its probability on its own references (`calibration` `leave_one_out`); its gate leg kept
   the unscaled default, because the scaled cut stops flagging absent images but finds too few of the
-  present ones. Still open: a cross-domain gate.
+  present ones. On FSS-1000's object classes `proto_seg` ranks pixels and images almost perfectly (pixel AP
+  0.81, presence ROC-AUC 1.000) while `fss_dino`, which assumes the class is present, ranks with the floor;
+  at the fixed cut `proto_seg` still marks nearly every absent image ([measurements.md](measurements.md)).
+  Still open: a mask that honours the run's own presence score.
 - **Supervised segmentation** (ADR-0039) runs end to end on the few-shot task's seams: a run pins its
   dataset's classes at creation, fits on the annotated images of its train subset through
   `label_targets`, writes an 8-bit label map per image, and is read by a per-class confusion matrix

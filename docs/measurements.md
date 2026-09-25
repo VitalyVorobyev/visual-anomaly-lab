@@ -621,11 +621,11 @@ on every class) and shows that on VisA the honest answer at 0.5 is mostly "absen
 is what held it back, and it was added to reject a scale that draws nothing; on `candle` the scale draws
 something useful, on `pcb1` it does not.
 
-## Few-shot segmentation on FSS-1000 — predeclared, not yet run
+## Few-shot segmentation on FSS-1000 — `proto_seg` ranks objects almost perfectly; its cut does not
 
 The cross-domain gate the VisA verdict calls for: object classes rather than defects. Predeclared here
-before any run; `scripts/few-shot-public-gate.py --benchmark fss1000`. 540 runs, one child process each;
-at an estimated 30 s a run (200 queries, against the 1 100 of a VisA run), roughly 4–5 h on MPS.
+before any run; `scripts/few-shot-public-gate.py --benchmark fss1000`. 540 runs, one child process each,
+in 2.9 h on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0).
 
 **Data.** [FSS-1000](https://github.com/HKUSTCV/FSS-1000) (Li et al., CVPR 2020): 1 000 classes of ten
 224 × 224 images, each with a foreground mask. The upstream archive is `fewshot_data.zip`, SHA-256
@@ -690,7 +690,39 @@ alone. Here:
 **What preceded the rule.** One smoke cell — `bucket`, 1 shot, seed 0, `color_prototype` only, torch-free
 — ran to prove the harness. It is not part of the gate.
 
-**Result.** Not yet run.
+**Result.** Means over the twenty classes and three seeds; the spread is across seeds.
+
+| Method | Shots | Pixel AP | ± seeds | Foreground IoU | Boundary F1 | Presence ROC-AUC | Absent FPR | ms/image |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `color_prototype` | 1 | 0.017 | 0.005 | 0.016 | 0.017 | 0.525 | 0.990 | 36 |
+| | 2 | 0.024 | 0.007 | 0.018 | 0.018 | 0.563 | 0.983 | 41 |
+| | 5 | 0.017 | 0.005 | 0.012 | 0.014 | 0.538 | 0.979 | 44 |
+| `fss_dino` | 1 | 0.038 | 0.004 | 0.032 | 0.014 | 0.205 | 1.000 | 98 |
+| | 2 | 0.034 | 0.004 | 0.028 | 0.012 | 0.218 | 1.000 | 98 |
+| | 5 | 0.021 | 0.002 | 0.018 | 0.008 | 0.168 | 1.000 | 99 |
+| `proto_seg` | 1 | 0.789 | 0.052 | 0.043 | 0.019 | 0.998 | 0.997 | 121 |
+| | 2 | 0.812 | 0.043 | 0.039 | 0.017 | 0.998 | 0.996 | 121 |
+| | 5 | 0.809 | 0.034 | 0.025 | 0.011 | 1.000 | 0.997 | 121 |
+
+Every method recalls every present image. At 5 shots `proto_seg`'s pixel AP is 0.53–0.95 by class — lowest
+on `tiltrotor` (0.529), `wandering_albatross` (0.626) and `jet_aircraft` (0.690), highest on `poached_egg`
+(0.951) and `spinach` (0.948) — and no class puts `fss_dino` above 0.044 or `color_prototype` above 0.090.
+
+**Verdict, by the rule.** `fss_dino` does not beat `proto_seg` on the primary (0.021 against 0.809), so
+**`proto_seg` stays the default few-shot method**. The cross-domain clause holds for `proto_seg` alone: it
+leads `color_prototype` (0.017) by 0.79, while `fss_dino` leads it by 0.004, inside the 0.02 margin — so
+`fss_dino` does not carry across domains, and the DINO methods as a pair do not either.
+
+**What the gate says beyond its rule.**
+- `proto_seg` ranks object pixels, and object images, almost perfectly: pixel AP 0.81 against a chance of
+  about 0.006, presence ROC-AUC 1.000. Its mask is the problem, not its features: at the fixed `>= 0.5` cut
+  it marks foreground on 99.7 % of absent images, so its pooled IoU is 0.025. On objects as on VisA's
+  defects the cut is the whole gap, and here, with presence ranked perfectly, a mask gated by the run's own
+  presence score would remove the absent-image pixels that cost the IoU.
+- `fss_dino` ranks presence *below* chance (0.17). FSSDINO min-max normalises its Gram energy within each
+  image, as the paper does, so every query gets a full-range foreground map whether the class is there or
+  not; the method assumes presence. That is faithful to what it reproduces, and it is why the pooled
+  metrics, which include 190 absent queries per run, rank it with the floor.
 
 ## Supervised segmentation — neither pixel sampling alone promoted `dino_linear_seg`; neither method drew a usable defect mask
 
