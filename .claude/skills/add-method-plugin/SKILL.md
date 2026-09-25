@@ -48,7 +48,8 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
       is refused in `check_input`, so creation says so instead of a job failing at fit.
 - [ ] `Capabilities` declares what is true — `requires_training`, `supports_resume` (then also
       satisfy `SupportsResume`), `produces_diagnostics`, `channel_aware`, `preferred_device`.
-      `portable_formats` stays **empty** until an export parity gate has passed.
+      `portable_formats` stays **empty** until `scripts/export-parity-gate.py` has passed on a
+      real fit and its verdict is in `docs/measurements.md`.
 - [ ] Scores are per image (methods.md, "Contract: scores are per-image"); maps go through
       `ctx.write_map`.
 - [ ] **Bound anything linear in the dataset before it runs**, print the plan, and use

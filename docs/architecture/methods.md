@@ -419,7 +419,12 @@ loss, StableAdamW and map rule. **Neither imports anomalib.**
   reaches the optimizer.
 - Bit-exact pins (`atol=0`) against the shared backbone and anomalib's step and map are replaced, never
   loosened, when a divergence is chosen deliberately.
-- ONNX: not yet; the parity gate is on [backlog.md](../backlog.md).
+- ONNX, for every encoder and depth: the graph replicates planes, applies ImageNet statistics, runs the
+  encoder with its position table resampled once to the frame (`dino_backbone.pin_frame` — ONNX has no
+  antialiased bicubic, and the resample depends only on weights and grid), then the same
+  `anomaly_outputs` rule `predict` runs, and emits the stored map and the image score as a named tensor —
+  the score is read from a 256² resampling, not from the emitted map. Claimed on the export-parity gate
+  ([measurements](../measurements.md#export-parity-on-real-pixels--dinomaly_custom-exports)).
 
 ### `glass_anomalib`
 

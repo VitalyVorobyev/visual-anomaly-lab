@@ -27,11 +27,12 @@ Two things the retired wrapper could not do are why this module exists:
 that made the head-to-head meaningful at all: a second reading of one library is not a second
 implementation.
 
-**One asymmetry is worth stating rather than hiding.** The wrapper exported ONNX and this does
-not yet, so `portable_formats` is empty. Nothing about the graph is hard — it is the parity
-gate that has to be written and run — and it is on the backlog. An export offer is made from
-the registry before any configuration is read, so claiming a format that has not passed the
-generic parity gate would be worse than an absent one.
+**It exports ONNX, as the wrapper did**, and claims the format because the export-parity gate
+passed on real VisA pixels after a full fit (**docs/measurements.md**), not because the graph
+traces. The graph is `dinomaly_nets.PortableDinomaly`: plane replication and ImageNet
+standardisation, the encoder with its position table pinned to the frame
+(`dino_backbone.pin_frame`), bottleneck, decoder and the same `anomaly_outputs` map rule
+`predict` runs, with the reference's image score as a named output.
 
 Heavy imports stay inside functions. This module is imported whenever the method picker opens,
 and opening a picker must not cost three seconds of torch.
@@ -51,6 +52,8 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import ScalarTensorSpec, TensorDtype, TensorScore
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -58,6 +61,7 @@ from anomaly_lab.models.base import (
     Device,
     ImageRecord,
     InferContext,
+    PortableFormat,
     Prediction,
     TrainContext,
     module_available,
@@ -75,6 +79,7 @@ from anomaly_lab.models.dino_backbone import (
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
+    ColorMode,
     PreprocessingConfig,
     expand_planes,
     load_array,
@@ -558,11 +563,10 @@ class DinomalyCustomModel(AnomalyModel):
             # a part's channels into one verdict is the evaluation layer's job.
             channel_aware=False,
             dataset_specific=False,
-            # Empty, and the asymmetry with the retired anomalib wrapper (which exported ONNX)
-            # is deliberate rather than forgotten: the export offer is made from the registry
-            # before any configuration is read, so a format that has not passed the generic
-            # Python-versus-runtime parity gate must not be claimed. See docs/backlog.md.
-            portable_formats=[],
+            # Every configuration exports: each encoder in the table and each decoder depth
+            # is one static graph. Claimed because the export-parity gate passed on a real
+            # VisA fit (docs/measurements.md), not because the graph traces.
+            portable_formats=[PortableFormat.ONNX],
             preferred_device=Device.MPS,
         )
 
@@ -878,7 +882,7 @@ class DinomalyCustomModel(AnomalyModel):
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]:
         import torch
 
-        from anomaly_lab.models.dinomaly_nets import gaussian_blur, group_maps, image_score
+        from anomaly_lab.models.dinomaly_nets import anomaly_outputs
 
         if self._net is None:
             msg = f"{METHOD} was asked to predict before it was fitted or loaded"
@@ -899,18 +903,10 @@ class DinomalyCustomModel(AnomalyModel):
                 started = time.perf_counter()
                 batch = torch.from_numpy(_normalised_chw(record, ctx)[None]).to(ctx.device.value)
 
-                encoded, decoded = net.features(batch)
-                maps = group_maps(encoded, decoded, size)
-                combined = torch.cat(maps, dim=1).mean(dim=1, keepdim=True)
-                score = float(image_score(combined)[0])
-                stored = combined
-                if self.config.map_blur_sigma > 0:
-                    radius = max(1, round(3.0 * self.config.map_blur_sigma))
-                    stored = gaussian_blur(
-                        combined,
-                        kernel_size=2 * radius + 1,
-                        sigma=self.config.map_blur_sigma,
-                    )
+                maps, stored, scores = anomaly_outputs(
+                    net, batch, size, blur_sigma=self.config.map_blur_sigma
+                )
+                score = float(scores[0])
                 if ctx.device is Device.MPS:
                     torch.mps.synchronize()
                 elapsed_ms = (time.perf_counter() - started) * 1000.0
@@ -947,6 +943,90 @@ class DinomalyCustomModel(AnomalyModel):
                     f"scored {index + 1}/{len(images)} images",
                 )
         return predictions
+
+    # ------------------------------------------------------------------ deployment
+
+    def _portable_module(self, preprocessing: PreprocessingConfig) -> Any:
+        """The fitted network on CPU, wrapped as prepared pixels in, map and score out."""
+        from anomaly_lab.models.dinomaly_nets import PortableDinomaly
+
+        if self._net is None or self._fitted_size is None:
+            msg = f"{METHOD} has no fitted network to export"
+            raise RuntimeError(msg)
+        if self._fitted_size != (preprocessing.width, preprocessing.height):
+            fitted_width, fitted_height = self._fitted_size
+            msg = (
+                f"this {METHOD} network was fitted at {fitted_width}x{fitted_height} and the "
+                f"export asks for {preprocessing.width}x{preprocessing.height}"
+            )
+            raise ValueError(msg)
+        self._net = self._net.to("cpu").eval()
+        return PortableDinomaly(
+            self._net,
+            size=(preprocessing.height, preprocessing.width),
+            blur_sigma=self.config.map_blur_sigma,
+            mean=IMAGENET_MEAN,
+            std=IMAGENET_STD,
+        ).eval()
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export encoder, bottleneck, decoder, map rule and the reference's image score.
+
+        The score is a named graph output: it is read from a 256² resampling of the
+        unblurred map, which no host reducer over the emitted map could reproduce. The
+        tolerance is the one the paired VisA export-parity gate predeclared and passed
+        (docs/measurements.md).
+        """
+        import torch
+
+        module = self._portable_module(preprocessing)
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        input_name = "image"
+        map_name = "anomaly_map"
+        score_name = "score"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            module,
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[map_name, score_name],
+            opset_version=18,
+            dynamo=False,
+        )
+        return OnnxGraphContract(
+            opset=18,
+            input_name=input_name,
+            output_name=map_name,
+            score=TensorScore(tensor=ScalarTensorSpec(name=score_name, dtype=TensorDtype.FLOAT32)),
+            absolute_tolerance=1e-4,
+            relative_tolerance=1e-4,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """The fitted Python path, on CPU, over an already-prepared parity tensor."""
+        import torch
+
+        preprocessing = PreprocessingConfig(
+            width=int(input_nchw.shape[3]),
+            height=int(input_nchw.shape[2]),
+            color=ColorMode.GRAYSCALE if input_nchw.shape[1] == 1 else ColorMode.RGB,
+        )
+        with torch.inference_mode():
+            anomaly_map, score = self._portable_module(preprocessing)(
+                torch.from_numpy(np.ascontiguousarray(input_nchw, dtype=np.float32))
+            )
+        return anomaly_map[0, 0].numpy().astype(np.float32), float(score[0])
 
     # ------------------------------------------------------------------ persistence
 

@@ -59,8 +59,6 @@ application.
   controls (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen
   says what went wrong. What is left: five buttons nest inside links, waiting on a `ButtonLink`, and two
   disabled tabs explain themselves only in a tooltip, waiting on `Tabs` (see [backlog.md](backlog.md)).
-- **`dinomaly_custom` does not export ONNX yet**, which the retired anomalib wrapper did — that
-  follow-up is in [backlog.md](backlog.md).
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
   passed; plugin integration and the public quality gate remain). SuperADD is no longer on this
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house

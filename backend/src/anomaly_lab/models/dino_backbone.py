@@ -523,6 +523,47 @@ def extract_layer_tokens(model: Any, batch: Any, indices: tuple[int, ...]) -> li
     return [torch.cat((prefix, patches), dim=1) for patches, prefix in pairs]
 
 
+def pin_frame(model: Any, rows: int, cols: int) -> Any:
+    """A copy of `model` whose absolute position table is already resampled to one grid.
+
+    For a portable export, which is static-shape. `dynamic_img_size` makes a DINOv2 ViT
+    resample its position table on every forward with an antialiased bicubic that ONNX has no
+    operator for; the resample depends only on the weights and the grid, so it is done here
+    once, by the *same* timm call with the same arguments, and the copy adds the result
+    directly. The patch tokens are flattened where the dynamic path would have viewed them,
+    which is the same memory order. A DINOv3 encoder carries no absolute table — its rotary
+    embedding is built from the grid in operators ONNX has — and is returned as it is.
+
+    The copy is deep so the fitted model is never changed by exporting it.
+    """
+    import copy
+    import sys
+
+    import torch
+
+    table = getattr(model, "pos_embed", None)
+    if table is None or not getattr(model, "dynamic_img_size", False):
+        return model
+    # Resolved from the model class's own module, where its `_pos_embed` resolves it, and not
+    # imported from `timm.layers`: anomalib's feature extractor rebinds that module global
+    # process-wide (to drop the antialias), and a pin that bypassed the rebinding would
+    # disagree with the very forward it replaces whenever anomalib had been imported first.
+    resample = sys.modules[type(model).__module__].resample_abs_pos_embed
+    prefix = 0 if model.no_embed_class else model.num_prefix_tokens
+    with torch.no_grad():
+        resampled = resample(
+            table,
+            new_size=(rows, cols),
+            old_size=model.patch_embed.grid_size,
+            num_prefix_tokens=prefix,
+        )
+    pinned = copy.deepcopy(model)
+    pinned.pos_embed = torch.nn.Parameter(resampled.detach().clone(), requires_grad=False)
+    pinned.dynamic_img_size = False
+    pinned.patch_embed.flatten = True
+    return pinned
+
+
 def standardized_batch(
     records: Sequence[ImageRecord],
     preprocessing: PreprocessingConfig,
