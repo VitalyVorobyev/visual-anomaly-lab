@@ -502,6 +502,77 @@ on every class) and shows that on VisA the honest answer at 0.5 is mostly "absen
 is what held it back, and it was added to reject a scale that draws nothing; on `candle` the scale draws
 something useful, on `pcb1` it does not.
 
+## Few-shot segmentation on FSS-1000 — predeclared, not yet run
+
+The cross-domain gate the VisA verdict calls for: object classes rather than defects. Predeclared here
+before any run; `scripts/few-shot-public-gate.py --benchmark fss1000`. 540 runs, one child process each;
+at an estimated 30 s a run (200 queries, against the 1 100 of a VisA run), roughly 4–5 h on MPS.
+
+**Data.** [FSS-1000](https://github.com/HKUSTCV/FSS-1000) (Li et al., CVPR 2020): 1 000 classes of ten
+224 × 224 images, each with a foreground mask. The upstream archive is `fewshot_data.zip`, SHA-256
+`4e49282322891eae4511153f1b63f6274042702ecd2b6da4bff949e106ac20e0`; no licence is published with it
+([README](../README.md#public-reference-data)).
+
+**The panel is a rule, not a choice by eye.** The 240 classes the authors hold out for testing
+(`fss_test_set.txt` in the upstream repository), sorted by name, sampled by `evenly_spaced(240, 20)`:
+`abe's_flyingfish`, `banana_boat`, `bucket`, `chalk_brush`, `clam`, `diver`, `electronic_stove`,
+`flying_snakes`, `hair_razor`, `jet_aircraft`, `little_blue_heron`, `moist_proof_pad`, `oriole`,
+`poached_egg`, `rally_car`, `sealion`, `spinach`, `tiltrotor`, `wandering_albatross`, `wooden_spoon`.
+The script re-derives the list from `fss_test_set.txt` when it sits beside the data, and refuses to run on
+a panel that differs. Two known upstream defects stay out: a stray `.jpeg` beside a paired `.jpg` in
+`banana_boat` and `wandering_albatross` is not imported, and `peregine_falcon`'s one broken mask is not in
+the panel.
+
+**Protocol.**
+- Each panel class is its own dataset, registered as the reference pack registers it
+  ([import](architecture/import.md#reference-packs)). Its ten images, with their masks, are the target
+  class `defect`; the other nineteen classes' 190 images are confirmed absences.
+- `few_shot` splits draw k ∈ {1, 2, 5} references among the ten under seeds {0, 1, 2}, and every other
+  image is a query: 10 − k that show the class and 190 that do not. Ten shots would leave no image of the
+  class to segment, so k = 10 is not run.
+- Identity prepared input at 448 × 448, as on VisA, so the DINO encoders see a 32 × 32 patch grid rather
+  than the 16 × 16 of the native size.
+- Three methods at their shipped defaults on the same pixels: `color_prototype`, `fss_dino` (DINOv2
+  ViT-B/14) and `proto_seg` (DINOv2 ViT-B/14), all with `calibration` at `none`.
+- 20 classes × 3 shot counts × 3 seeds × 3 methods is 540 runs.
+
+**Reported.**
+- Per method and shot count: pixel average precision, foreground IoU, boundary F1, presence ROC-AUC,
+  the false-positive rate on absent images, present-image recall and ms per image. Each is a mean over
+  the twenty classes and three seeds, with the spread across seeds of pixel AP and of IoU.
+- Per class at 5 shots: pixel AP for each method, so a lead that is one class's alone is visible.
+- The share of query pixels that show the class, which is pixel AP's chance level: about 0.011 at 1 shot
+  and 0.006 at 5, from a mean foreground of 24 % of the frame (11–41 % by class).
+
+**Why the primary is pixel AP and not IoU.** On VisA the fixed `>= 0.5` cut decided the IoU as much as
+the segmentation did. Here, at 5 shots, five present queries stand against 190 absent ones, and the pooled
+IoU counts every pixel drawn on an absent image, so it would again measure the cut. Pixel AP ranks the
+stored foreground probability against the truth over the same queries, present and absent, without a cut.
+
+**Decision rule, fixed before any run.** The primary number is pixel average precision at 5 shots.
+- `proto_seg` stays the default few-shot method unless both hold:
+  - `fss_dino` beats it by at least 0.02 on the primary;
+  - `fss_dino`'s presence ROC-AUC at 5 shots is no more than 0.02 below `proto_seg`'s.
+  Then `fss_dino` becomes the default and `proto_seg` is experimental. This is the VisA rule, pointed the
+  other way.
+- The DINO methods carry across domains only if each beats `color_prototype` by at least 0.02 on the
+  primary.
+- The gate does not re-decide calibration.
+
+**Not comparable with published FSS-1000 numbers.** Published figures are a mean IoU over present queries
+alone. Here:
+- every pooled metric includes absent queries;
+- a mask is foreground wherever it is non-zero, like every imported mask, where the usual protocol cuts at
+  128. FSS-1000's masks are anti-aliased, and over the whole dataset the soft edge adds 3.8 % to the
+  foreground; for a thin object it adds more than half again (up to 58 % on a `flying_snakes` image);
+- the panel is 20 of the 240 test classes, and a class's references and queries are drawn from its own ten
+  images.
+
+**What preceded the rule.** One smoke cell — `bucket`, 1 shot, seed 0, `color_prototype` only, torch-free
+— ran to prove the harness. It is not part of the gate.
+
+**Result.** Not yet run.
+
 ## Supervised segmentation — neither pixel sampling alone promoted `dino_linear_seg`; neither method drew a usable defect mask
 
 The first supervised segmentation gate (ADR-0039), in two legs, each predeclared before it ran. The legs
