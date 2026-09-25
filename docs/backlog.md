@@ -27,9 +27,11 @@ until its output has been reviewed.
 
 The second task (ADR-0040), in dependency order. Each item is one PR.
 
-- [ ] **A cross-domain few-shot gate** (M): VisA defects are small and subtle, the hardest target for
-      a method built for objects. The FSS-1000 protocol is predeclared in `measurements.md`; run it
-      (`scripts/few-shot-public-gate.py --benchmark fss1000`) and record its verdict.
+- [ ] **Gate the mask on presence** (S): on FSS-1000 `proto_seg` ranks presence perfectly (ROC-AUC
+      1.000), yet its `>= 0.5` mask marks foreground on 99.7 % of absent images
+      ([measurements.md](measurements.md)). Write an empty mask where the run's presence score falls
+      below a cut resolved on the references by one printed rule, predeclare a rerun of the FSS-1000
+      and VisA protocols, and compare with the recorded verdicts.
 
 Later, each behind a measured gate:
 - INSID3 upstream and FSS-SAM3 as quality references.
