@@ -118,6 +118,42 @@ which also carry the accelerator's own rounding.
 Verdict: passed on both classes, with the worst disagreement some forty times inside the tolerance and the
 ranking identical. `dinomaly_custom` lists ONNX.
 
+## `dinomaly_custom`'s encoder and decoder depth — predeclared, not yet run
+
+Whether Dinomaly's recorded result is about the method or about DINOv2, and whether the published
+decoder depth of 8 suits this data. Predeclared before the sweep ran; `scripts/dinomaly-encoder-sweep.py`.
+Each arm is a full fit, so no arm can share a forward pass with another: this is the gate's harness,
+the application's own train and infer jobs, not a campaign's (ADR-0038).
+
+**Protocol.** VisA `candle` and `pcb1`, official 1cls split, one identity prepared-input build per class
+at **448 × 448**, the one size both patch sizes divide, so every arm sees identical pixels. That is not
+the recorded gate's 392, which /16 does not divide, so the default arm is re-run here rather than read
+from the parity table. Every field not named below is the shipped default (5 000 steps, batch 1,
+learning rate 2 × 10⁻³, decoder depth 8); seed 20260812. One child process per cell.
+
+| Arm | Encoder | Decoder depth |
+|---|---|---:|
+| default | `dinov2_vit_s14_reg4` | 8 |
+| `dinov2_vit_b14` | DINOv2 ViT-B/14 | 8 |
+| `dinov3_vit_s16` | DINOv3 ViT-S/16 (licence-gated) | 8 |
+| `depth_4` | `dinov2_vit_s14_reg4` | 4 |
+
+**Reported.** Per class and arm: image ROC-AUC, pixel ROC-AUC, AU-PRO, fit time, ms/image over the
+200-image test subset (the infer job's wall time, maps included), peak RSS of the child.
+
+**Decision rule, fixed before the run.** A variant replaces the default only if its image ROC-AUC beats
+the default arm's by **at least 0.01 on both classes**, and its two-class mean pixel ROC-AUC and mean
+AU-PRO each lose **no more than 0.01**. Several passing → the largest summed image gain. A licence-gated
+encoder is never the default, whatever it scores — an untouched run must not need an account; if one
+passes, it is recorded as the better choice for those with access. The rule applies to `depth_4`
+unchanged, so a cheaper decoder that only ties does not move the default; its cost is reported. If
+nothing passes, the defaults stay and the answer to the question is what the table records. One seed
+per cell, so the 0.01 margin on *each* class is the guard against reading seed noise as a result.
+
+**Budget.** One smoke cell per arm on `candle` at 200 steps, run to time the arms before the sweep:
+0.13 s per training step for the default, 0.35 s for ViT-B/14, 0.12 s for DINOv3 ViT-S/16, 0.09 s at
+depth 4 — about 2.1 h for the eight cells. Its metrics are not part of the sweep.
+
 ## GLASS — available, not recommended
 
 Frozen ImageNet backbone, trainable projection and discriminator: 28.80M parameters, 3.94M trainable,
