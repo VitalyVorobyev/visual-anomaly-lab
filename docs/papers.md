@@ -18,14 +18,13 @@ produce source-frame maps under the shared evaluation protocol. Gate results are
 | `dino_memory` (`local_gaussian`) | one shrunk Gaussian per patch position, Mahalanobis distance | [PaDiM](https://arxiv.org/abs/2011.08785) (Defard et al., 2020); encoder and dimension reduction differ |
 | `dino_memory` (`local_knn`) | one bank per patch position, searched over a window | ours: the registration-aware middle between the two rows above |
 | `subspace_ad` | PCA of frozen patch features; a patch scores its residual against the normal subspace | SubspaceAD (Lendering et al., CVPR 2026). Its layer window, "layers 22-28 of 40", means two different things at any other depth (ADR-0038) |
+| `anomalyvfm_anomalib` | a RADIO encoder adapted once on synthetic anomalies; zero-shot, the published checkpoint | [AnomalyVFM](https://arxiv.org/abs/2601.20524) |
 
 The wrapper baseline is [anomalib](https://github.com/open-edge-platform/anomalib), pinned to 2.6.0 — an
 implementation source, not the specification of our method or evaluation contracts (ADR-0029).
 
 ## Anomaly candidates
 
-- [AnomalyVFM](https://arxiv.org/abs/2601.20524) — zero-shot adapted vision foundation model. The pinned
-  RADIO asset passed the resource gate; offline app-managed loading and a public quality gate remain.
 - [SuperSimpleNet](https://arxiv.org/abs/2408.03143) — compact discriminative synthetic-anomaly model, usable
   with normal-only or labelled anomalies.
 - [INP-Former++](https://arxiv.org/abs/2506.03660) — reconstructs intrinsic normal prototypes from each test
@@ -57,4 +56,5 @@ implementation source, not the specification of our method or evaluation contrac
 Integrate **different useful failure modes**, not the largest leaderboard number. Dinomaly is the
 reconstruction reference; GLASS is an experimental learned-synthesis comparison; `dino_memory` covers the
 frozen-backbone memory family, including the failure mode PatchCore cannot have — a pattern normal in one
-place and anomalous in another; AnomalyVFM is the zero-shot foundation-model candidate.
+place and anomalous in another; AnomalyVFM is the zero-shot foundation-model reference, the one method
+that sees no normal image.

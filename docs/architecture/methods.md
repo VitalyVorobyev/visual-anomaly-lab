@@ -230,7 +230,7 @@ figures are in [measurements](../measurements.md).
 (ADR-0008). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
 missing, and is recorded in the job log. A stage inside a method may be placed elsewhere when a smoke
 test (`scripts/mps-smoke-test.py`, `scripts/patchcore-smoke-test.py`,
-`scripts/dino-memory-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
+`scripts/dino-memory-smoke-test.py`, `scripts/anomalyvfm-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
 because the run finishes with correct numbers either way.
 
 **A probe runs before a plugin is written** (ADR-0008). Before wrapper or method code targets a new
@@ -255,7 +255,8 @@ it builds a ViT, rebinds `timm.models.vision_transformer.resample_abs_pos_embed`
 (dropping the antialias), which moves every later DINOv2 encoder's features. `patchcore_anomalib` and
 `glass_anomalib` construct anomalib's network inside `model_assets.timm_bindings_preserved`, which puts
 the binding back; their own CNN extractors never read it. `test_dl_timm_bindings.py` pins DINO tokens
-bit-identical in both construction orders.
+bit-identical in both construction orders. `anomalyvfm_anomalib` builds no timm model — its RADIO
+encoder is anomalib's own module — so it has nothing to restore.
 
 **A licence is not a config field.** The two DINOv3 entries of the shared `DinoBackbone` table
 (`models/dino_backbone.py`) resolve to gated weights; access reaches the method as an ambient `HF_TOKEN`,
@@ -350,6 +351,7 @@ on a small defect class the scaled map clears 0.5 on too few of the images that 
 | `glass_anomalib` | learned anomaly synthesis | yes | yes | no | yes | mps |
 | `dino_memory` | frozen DINO patch memory | fit | no | yes | no | mps |
 | `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
+| `anomalyvfm_anomalib` | zero-shot adapted RADIO | no | no | no | no | mps |
 | `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
 | `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
 | `proto_seg` | few-shot: debiased prototype bank / probe | fit | no | no | no | mps |
@@ -509,6 +511,44 @@ sweep run outside the application (ADR-0038) and its promotion gate is open.
   encoder gives it no meaningful variance directions — so plugin tests cover plumbing and accuracy is
   asserted in `test_subspace_ad_math.py`.
 - ONNX: none.
+
+### `anomalyvfm_anomalib`
+
+AnomalyVFM, through anomalib: a RADIO ViT-L/16 with DoRA adapters, a mask decoder and an image-score
+head, trained once by its authors on synthetic anomalies and used here as published. **Zero-shot**: no
+image of the dataset enters the model, so the same image scores the same in every experiment.
+**Experimental** until its public gate runs ([measurements](../measurements.md)).
+
+- **`requires_training` is false.** An `infer` job scores a draft experiment directly, with no saved
+  model to load. A `train` job — what the run bar's *Train & score* starts — reads none of its images:
+  it resolves and verifies the checkpoint, logs the plan, and saves `anomalyvfm.json`, the pinned
+  revision and digest it verified. A run with that record refuses to load once the plugin pins another
+  checkpoint, because its scores would no longer be comparable with a new run's.
+- **The checkpoint is resolved, verified, then handed over offline.** anomalib's constructor calls
+  `hf_hub_download(..., local_files_only=False)` itself. The plugin pins the repository, file and
+  revision (`ASSET`) and finds that revision's snapshot in the app cache by its fixed path, without
+  importing `huggingface_hub`. When it is missing, `allow_downloads` (the only field) decides between
+  one fetch through `huggingface_environment` and a refusal that names the pin and the switch. Either
+  way the file's size and SHA-256 are checked before use, and a mismatch is refused, never deleted.
+  The constructor's download call is then answered by `pinned_download`, which returns the verified
+  file and refuses any other repository, file or revision by name — an anomalib release that moves
+  the pin fails loudly instead of loading unverified weights.
+- **Construction touches no process state.** It draws random initial weights that the strict
+  state-dict load overwrites, inside `torch.random.fork_rng`, so torch's global stream does not move.
+  The forward pass has no dropout and no sampling: there is no seed, and reproducibility is "the same
+  image gives the same score and map across two separately built networks", asserted on the real
+  checkpoint when `ANOMALY_LAB_ANOMALYVFM_CACHE` names a cache that holds it.
+- **The frame is the bound.** `plan_inference` is torch-free: the 16-pixel patch grid, the token count
+  (grid plus 8 prefix tokens) and one layer's float32 attention, logged before the weights are read.
+  `check_input` refuses a frame 16 does not divide, and one whose attention would pass 4 GiB (about
+  1 400 px square). 768 × 768 is the size its resources were measured at and the log says when a run
+  differs. The weights are read once per job; on the host the load needs about twice their size.
+- **Pixels in `[0, 1]`.** RADIO standardises with CLIP statistics in its own first module, so the
+  plugin applies no ImageNet statistics; `expand_planes` gives a grey frame three planes. Batch 1.
+  The map is the decoder's sigmoid probability, mean-filtered and upsampled to the frame; the score is
+  the image head's sigmoid, not a statistic of the map.
+- No diagnostics, so the resident worker never holds its 1.4 GB. ONNX: none — anomalib reports export
+  unsupported for this model.
 
 ### `color_prototype`
 

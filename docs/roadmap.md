@@ -30,15 +30,17 @@ application.
   on held-out public classes it localised the part but kept 0.92 of defect pixels, below the
   predeclared 0.98 ([measurements.md](measurements.md)).
 - **Split** a dataset at sample level, or adopt the split a benchmark published.
-- **Train and score** through one plugin interface. Seven anomaly methods ship: `pixel_reference`
+- **Train and score** through one plugin interface. Eight anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
-  `dinomaly_custom`, `glass_anomalib`, `dino_memory` and `subspace_ad`. `dino_memory` is a frozen
+  `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad` and `anomalyvfm_anomalib`. `dino_memory` is a frozen
   DINOv2/DINOv3 patch memory that is a coreset bank, a per-position bank or a per-position
   Gaussian depending on one `scoring` field. It cleared the paired VisA gate and beat its
   PatchCore control on all three floor metrics ([measurements.md](measurements.md)).
   `subspace_ad` keeps what the normal patches *span* rather than the patches themselves — a PCA
   over the same frozen encoders, with no training step at all — and is the first method whose
   defaults were chosen by a measured sweep rather than picked (ADR-0038).
+  `anomalyvfm_anomalib` is the zero-shot reference: AnomalyVFM's published checkpoint, verified by
+  digest and built offline, scores a run with no train job and reads no normal image.
   `dinomaly_custom` is the in-house Dinomaly, with the encoder and the decoder depth as
   fields the anomalib wrapper it was measured against could not offer; that wrapper reached
   VisA parity and retired ([measurements.md](measurements.md)). Jobs run as subprocesses with
@@ -60,7 +62,7 @@ application.
   says what went wrong. What is left: five buttons nest inside links, waiting on a `ButtonLink`, and two
   disabled tabs explain themselves only in a tooltip, waiting on `Tabs` (see [backlog.md](backlog.md)).
 - **Method evaluation that is still open**: AnomalyVFM as a zero-shot reference (its resource gate
-  passed; plugin integration and the public quality gate remain). SuperADD is no longer on this
+  passed and it is integrated; its predeclared public quality gate has not run). SuperADD is no longer on this
   list — the three things its evaluation was waiting on are what `dino_memory` now provides in-house
   (ADR-0037).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).

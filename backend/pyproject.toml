@@ -113,6 +113,8 @@ files = ["src", "tests", "research"]
 [[tool.mypy.overrides]]
 module = [
     "anomalib.*",
+    "huggingface_hub",
+    "huggingface_hub.*",
     "mobile_sam",
     "mobile_sam.*",
     "onnxruntime",
