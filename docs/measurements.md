@@ -118,10 +118,11 @@ which also carry the accelerator's own rounding.
 Verdict: passed on both classes, with the worst disagreement some forty times inside the tolerance and the
 ranking identical. `dinomaly_custom` lists ONNX.
 
-## `dinomaly_custom`'s encoder and decoder depth — predeclared, not yet run
+## `dinomaly_custom`'s encoder and decoder depth — the defaults stay; the result is the method's
 
 Whether Dinomaly's recorded result is about the method or about DINOv2, and whether the published
-decoder depth of 8 suits this data. Predeclared before the sweep ran; `scripts/dinomaly-encoder-sweep.py`.
+decoder depth of 8 suits this data. Predeclared before the sweep ran; `scripts/dinomaly-encoder-sweep.py`,
+8 cells in 1.9 h on MPS (torch 2.13.0, timm 1.0.28, anomalib 2.6.0, numpy 2.5.1, Pillow 12.3.0).
 Each arm is a full fit, so no arm can share a forward pass with another: this is the gate's harness,
 the application's own train and infer jobs, not a campaign's (ADR-0038).
 
@@ -153,6 +154,30 @@ per cell, so the 0.01 margin on *each* class is the guard against reading seed n
 **Budget.** One smoke cell per arm on `candle` at 200 steps, run to time the arms before the sweep:
 0.13 s per training step for the default, 0.35 s for ViT-B/14, 0.12 s for DINOv3 ViT-S/16, 0.09 s at
 depth 4 — about 2.1 h for the eight cells. Its metrics are not part of the sweep.
+
+**Result.** One seed per cell.
+
+| Class | Arm | Image ROC-AUC | Pixel ROC-AUC | AU-PRO | Fit s | ms/image | Peak RSS GiB |
+|---|---|---:|---:|---:|---:|---:|---:|
+| `candle` | default | 0.9639 | 0.9953 | 0.9584 | 644 | 85.6 | 0.95 |
+| | `dinov2_vit_b14` | 0.9708 | 0.9956 | 0.9703 | 1655 | 160.4 | 1.84 |
+| | `dinov3_vit_s16` | 0.9628 | 0.9940 | 0.9596 | 563 | 74.9 | 0.91 |
+| | `depth_4` | 0.9652 | 0.9952 | 0.9606 | 442 | 77.7 | 0.78 |
+| `pcb1` | default | 0.9656 | 0.9968 | 0.9643 | 638 | 85.6 | 0.93 |
+| | `dinov2_vit_b14` | 0.9696 | 0.9976 | 0.9689 | 1640 | 161.7 | 2.03 |
+| | `dinov3_vit_s16` | 0.9626 | 0.9967 | 0.9600 | 565 | 76.3 | 0.91 |
+| | `depth_4` | 0.9704 | 0.9969 | 0.9649 | 444 | 79.6 | 0.80 |
+
+**Verdict, by the rule.** No variant passes, so **the defaults stay**: `dinov2_vit_s14_reg4` and decoder
+depth 8. Image ROC-AUC gains over the default are +0.007 / +0.004 for ViT-B/14 (`candle` / `pcb1`),
+−0.001 / −0.003 for DINOv3 ViT-S/16 and +0.001 / +0.005 for depth 4 — none reaches the 0.01 margin on
+either class, and no arm loses more than 0.002 on the mean pixel metrics.
+
+**What the table answers.** Dinomaly's result here is the method's, not DINOv2's: a different family at
+the same size, DINOv3 ViT-S/16, lands within 0.003 of the default on every metric. A larger encoder buys
+under 0.01 for 2.6× the fit time, 1.9× the latency and twice the memory. Depth 4 ties at 69 % of the fit
+time and 91 % of the latency; by the rule a tie does not move the default, so it stays a field for a run
+that wants the cheaper fit.
 
 ## GLASS — available, not recommended
 
