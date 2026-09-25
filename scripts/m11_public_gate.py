@@ -8,6 +8,7 @@ Each experiment runs in a fresh process so peak RSS is comparable.
 
     ./scripts/dinomaly-public-gate.py --data-dir /tmp/dinomaly-public-gate
     ./scripts/glass-public-gate.py --data-dir /tmp/glass-public-gate
+    ./scripts/anomalyvfm-public-gate.py --data-dir /tmp/anomalyvfm-public-gate
 
 Source images stay read-only under ``/datasets``.  The output directory contains the
 isolated database, prepared pixels, checkpoints, maps, job log and ``result.json``.
@@ -202,6 +203,18 @@ CANDIDATES = {
             "feature_batch_size": 4,
             "seed": SEED,
         },
+        step_field=None,
+    ),
+    # AnomalyVFM is zero-shot: its train job reads no image and only verifies the pinned
+    # checkpoint, so there is no budget to smoke.  768 is the frame its resource gate
+    # measured and kept for quality; the PatchCore control is re-run on the same 768-pixel
+    # build rather than read from another size, so both legs see identical pixels.
+    "anomalyvfm_anomalib": CandidateSpec(
+        key="anomalyvfm_anomalib",
+        label="AnomalyVFM",
+        family="zero-shot",
+        prepared_size=768,
+        config={"allow_downloads": True},
         step_field=None,
     ),
 }
