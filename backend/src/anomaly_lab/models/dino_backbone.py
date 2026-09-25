@@ -546,8 +546,9 @@ def pin_frame(model: Any, rows: int, cols: int) -> Any:
         return model
     # Resolved from the model class's own module, where its `_pos_embed` resolves it, and not
     # imported from `timm.layers`: anomalib's feature extractor rebinds that module global
-    # process-wide (to drop the antialias), and a pin that bypassed the rebinding would
-    # disagree with the very forward it replaces whenever anomalib had been imported first.
+    # (to drop the antialias). Our plugins build it inside
+    # `model_assets.timm_bindings_preserved`, but anything else that builds one leaves the
+    # rebinding in place, and a pin that bypassed it would disagree with the forward it replaces.
     resample = sys.modules[type(model).__module__].resample_abs_pos_embed
     prefix = 0 if model.no_embed_class else model.num_prefix_tokens
     with torch.no_grad():

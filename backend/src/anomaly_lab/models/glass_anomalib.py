@@ -41,7 +41,11 @@ from anomaly_lab.models.base import (
     evenly_spaced,
     module_available,
 )
-from anomaly_lab.models.model_assets import fingerprint_state, huggingface_environment
+from anomaly_lab.models.model_assets import (
+    fingerprint_state,
+    huggingface_environment,
+    timm_bindings_preserved,
+)
 from anomaly_lab.models.preprocessing import (
     IMAGENET_MEAN,
     IMAGENET_STD,
@@ -257,11 +261,14 @@ class GlassAnomalibModel(AnomalyModel):
         import torch
 
         torch.manual_seed(self.config.seed)
-        with huggingface_environment(
-            cache_dir,
-            allow_downloads=self.config.allow_downloads,
-            method="GLASS",
-            asset=BACKBONE,
+        with (
+            huggingface_environment(
+                cache_dir,
+                allow_downloads=self.config.allow_downloads,
+                method="GLASS",
+                asset=BACKBONE,
+            ),
+            timm_bindings_preserved(),
         ):
             from anomalib.models import Glass
 

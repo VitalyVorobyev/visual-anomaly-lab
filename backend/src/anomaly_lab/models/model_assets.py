@@ -66,6 +66,32 @@ def huggingface_environment(
                 os.environ[key] = value
 
 
+@contextlib.contextmanager
+def timm_bindings_preserved() -> Iterator[None]:
+    """Build an anomalib network without letting it rebind timm for the rest of the process.
+
+    anomalib's `TimmFeatureExtractor`, whenever it builds a ViT (its token mode), replaces
+    `timm.models.vision_transformer.resample_abs_pos_embed` with a wrapper that drops the
+    antialias — a module global, so every DINOv2 encoder forwarded afterwards anywhere in the
+    process resamples its position table differently and its features move. Whatever that
+    binding was on entry is put back on exit.
+
+    It is restored rather than frozen for the duration: anomalib's CNN extractors, which are
+    all a plugin here can build (PatchCore's layer sets name residual stages, GLASS fixes
+    WRN-50), never read it, so what an anomalib method computes is unchanged.
+    """
+    try:
+        vit: Any = import_module("timm.models.vision_transformer")
+    except ImportError:
+        vit = None
+    saved = getattr(vit, "resample_abs_pos_embed", None)
+    try:
+        yield
+    finally:
+        if saved is not None:
+            vit.resample_abs_pos_embed = saved
+
+
 def fingerprint_state(state: dict[str, Any]) -> str:
     """Stable SHA-256 over names, shapes, dtypes and raw tensor bytes."""
     digest = hashlib.sha256()

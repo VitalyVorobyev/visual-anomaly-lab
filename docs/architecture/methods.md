@@ -250,6 +250,13 @@ A backbone too large to store per experiment travels as a **sha256 fingerprint**
 `load` refuses a mismatch naming the backbone — a bank selected in one feature space is meaningless
 against other weights.
 
+**Building a third-party network leaves timm as it found it.** anomalib's `TimmFeatureExtractor`, when
+it builds a ViT, rebinds `timm.models.vision_transformer.resample_abs_pos_embed` for the whole process
+(dropping the antialias), which moves every later DINOv2 encoder's features. `patchcore_anomalib` and
+`glass_anomalib` construct anomalib's network inside `model_assets.timm_bindings_preserved`, which puts
+the binding back; their own CNN extractors never read it. `test_dl_timm_bindings.py` pins DINO tokens
+bit-identical in both construction orders.
+
 **A licence is not a config field.** The two DINOv3 entries of the shared `DinoBackbone` table
 (`models/dino_backbone.py`) resolve to gated weights; access reaches the method as an ambient `HF_TOKEN`,
 never as a form field (which would store a credential in the database, logs and exports).
