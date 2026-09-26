@@ -11,7 +11,7 @@ This page is generated from the live model registry and checked method metadata.
 | `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | onnx |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
 | `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported · default for `anomaly` | no | — |
-| `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
+| `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | supported | no | — |
 | `anomalyvfm_anomalib` | AnomalyVFM (zero-shot reference) | zero-shot adapted foundation model | supported | no | — |
 | `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | floor | no | — |
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
@@ -115,7 +115,7 @@ A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of nor
 
 ## SubspaceAD (frozen encoder)
 
-`subspace_ad` · **frozen-backbone subspace** · experimental
+`subspace_ad` · **frozen-backbone subspace** · supported
 
 PCA of frozen DINO patch features over a few normal images; a patch scores the part of itself the normal subspace cannot reconstruct. Nothing is trained.
 

@@ -205,9 +205,10 @@ CANDIDATES = {
         },
         step_field=None,
     ),
-    # SubspaceAD at its shipped defaults — the sweep's verdict (ADR-0038) — on the gate's
-    # 448-pixel frame, which both patch sizes divide.  Nothing is trained, so there is no
-    # budget to smoke; the fit is bounded by `max_fit_images` alone.
+    # SubspaceAD at its shipped defaults but on the DINO gate's 448 px pixels, so the paired
+    # PatchCore control and the recorded dino_memory row read against identical input.  Its
+    # defaults came from a sweep outside the application (ADR-0038); this is the in-app,
+    # shared-pixel control that sweep could not provide.  Nothing is trained.
     "subspace_ad": CandidateSpec(
         key="subspace_ad",
         label="SubspaceAD",
@@ -219,6 +220,7 @@ CANDIDATES = {
             "variance": 0.99,
             "tail_fraction": 0.002,
             "rotations": 30,
+            "rotation_fill": "zeros",
             "max_fit_images": 16,
             "smoothing_sigma": 4.0,
             "pretrained_backbone": True,

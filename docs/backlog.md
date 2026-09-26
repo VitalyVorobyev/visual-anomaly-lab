@@ -95,12 +95,6 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
 - [ ] **Batch inference for the deep methods** (M): one image per forward pass today. PatchCore's
       backbone forward is 7 ms of a ~22 ms image — worth it only once inference is the bottleneck in
       a comparison.
-- [ ] **Run the public promotion gate for `subspace_ad`** (M): it ships `experimental` because it
-      has not run the one thing every other promoted method ran — a paired control on shared
-      immutable pixels, VisA `candle` and `pcb1` at 448 × 448 against PatchCore
-      ([measurements.md](measurements.md)). The sweep behind its defaults is far more evidence than
-      any gate produces, but it is evidence of a different kind: it was collected outside the
-      application, by its own harness. `scripts/dino-memory-public-gate.py` is the template.
 - [ ] **Sweep the three axes the campaign held fixed** (S): per-layer L2 normalization before
       pooling, `concat` instead of `mean` aggregation, and `final_norm=False`. Each is already a
       flag in `research/subspace_ad`, none is a plugin field, and all three change what the PCA sees
