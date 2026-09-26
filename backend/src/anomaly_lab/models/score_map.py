@@ -117,6 +117,22 @@ def gaussian_blur(values: np.ndarray, sigma: float) -> np.ndarray:
 
 
 @lru_cache(maxsize=16)
+def resample_operator(source: int, target: int) -> np.ndarray:
+    """The `(target, source)` matrix of `upsample_bilinear` along one axis.
+
+    Row *j* holds output pixel *j*'s two weights, so `R g R'` is the unsmoothed map. It is
+    what `separable_operator` blurs, and what a portable graph applies when
+    `smoothing_sigma` is zero. Shared and cached: callers must treat it as read-only.
+    """
+    lower, upper, weight = _axis_weights(source, target)
+    resample = np.zeros((target, source), dtype=np.float32)
+    rows = np.arange(target)
+    np.add.at(resample, (rows, lower), 1.0 - weight)
+    np.add.at(resample, (rows, upper), weight)
+    return resample
+
+
+@lru_cache(maxsize=16)
 def separable_operator(source: int, target: int, sigma: float) -> np.ndarray:
     """The `(target, source)` matrix that upsamples one axis and then blurs it.
 
@@ -128,11 +144,7 @@ def separable_operator(source: int, target: int, sigma: float) -> np.ndarray:
     every arm of a category, and building it costs more than applying it. The result is
     shared, so callers must treat it as read-only.
     """
-    lower, upper, weight = _axis_weights(source, target)
-    resample = np.zeros((target, source), dtype=np.float32)
-    rows = np.arange(target)
-    np.add.at(resample, (rows, lower), 1.0 - weight)
-    np.add.at(resample, (rows, upper), weight)
+    resample = resample_operator(source, target)
     smoothed = _convolve_rows(np.ascontiguousarray(resample.T), gaussian_kernel(sigma)).T
     operator: np.ndarray = np.ascontiguousarray(smoothed)
     return operator

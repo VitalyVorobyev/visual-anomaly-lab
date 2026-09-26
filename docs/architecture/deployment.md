@@ -78,9 +78,13 @@ a percentile host reducer), `efficientad_custom` (a deep graph and max/top-k hos
 `patchcore_anomalib` (a frozen backbone, embedded memory bank and graph-produced paper score),
 `glass_anomalib` (projected features, discriminator, segmentation map and graph-produced score), and
 `dinomaly_custom` (a frozen ViT with its position table pinned to the frame, a reconstruction decoder and a
-graph-produced score, the one whose format rests on the real-pixel gate). `dino_memory` and `subspace_ad`
-report no portable format (`docs/backlog.md`); a method reports one only once its graph and parity
-tolerance have been proven.
+graph-produced score, the one whose format rests on the real-pixel gate). `subspace_ad` implements
+`SupportsOnnxExport` — a pinned frozen ViT, a constant basis, the tail mean as a graph-produced score and
+the map as two constant operator matrices — and its fixture parity is tested, but it reports no portable
+format until the real-pixel gate has run on it (`docs/backlog.md`). `scripts/export-parity-gate.py` lends
+the format for the length of its own run to a candidate that implements the protocol without declaring
+it, and records that it did, since the declaration is what the gate decides. `dino_memory` reports none; a
+method reports a format only once its graph and parity tolerance have been proven.
 
 ## Reference runner
 

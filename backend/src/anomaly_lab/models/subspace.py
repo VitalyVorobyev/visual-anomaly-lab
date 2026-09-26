@@ -180,9 +180,9 @@ class SubspaceFit:
 
     mean: np.ndarray
     components: np.ndarray
-    """`(R, D)`, one unit eigenvector per row, descending by eigenvalue. Stored float32:
-    the projection it feeds is a float32 matmul, and a float64 basis would only pay for
-    precision the features do not carry."""
+    """`(R, D)`, one unit eigenvector per row, descending by eigenvalue. Stored float32,
+    like the features it is applied to; `residual_basis` widens both before the sums whose
+    difference is the score."""
     eigenvalues: np.ndarray
     sample_count: int
 
@@ -297,10 +297,16 @@ def residual_basis(fit: SubspaceFit, features: np.ndarray, *, rank: int) -> Resi
             f"{rank}; refit with a larger max_rank"
         )
         raise ValueError(msg)
-    centred = np.asarray(features, dtype=np.float32) - fit.mean
-    total = np.einsum("nd,nd->n", centred, centred, dtype=np.float32).astype(np.float64)
-    coefficients = centred @ fit.components[:rank].T
-    cumulative = np.cumsum(np.square(coefficients, dtype=np.float32), axis=1, dtype=np.float64)
+    # Centred in float32, where the features and the mean live; everything after that in
+    # float64. The score is a difference of two sums of similar size — ‖x-µ‖² of several
+    # hundred against a residual of a few units — so float32 sums lose their last digits to
+    # the cancellation, not to the features: a well-reconstructed patch's score moved by
+    # ~3e-4 between two float32 summation orders, which is what a portable graph's parity
+    # check measures. Widening the sums makes the score a property of the features alone.
+    centred = (np.asarray(features, dtype=np.float32) - fit.mean).astype(np.float64)
+    total = np.einsum("nd,nd->n", centred, centred)
+    coefficients = centred @ fit.components[:rank].T.astype(np.float64)
+    cumulative = np.cumsum(np.square(coefficients), axis=1)
     return ResidualBasis(total=total, cumulative=cumulative)
 
 

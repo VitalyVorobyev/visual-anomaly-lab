@@ -419,10 +419,10 @@ on a small defect class the scaled map clears 0.5 on too few of the images that 
 | `pixel_reference` | per-pixel median/MAD | fit | no | yes | yes | cpu |
 | `efficientad_custom` | student–teacher + autoencoder | yes | yes | no | yes | mps |
 | `patchcore_anomalib` | coreset memory bank | fit | no | no | yes | mps |
-| `dinomaly_custom` | feature reconstruction | yes | yes | no | no | mps |
+| `dinomaly_custom` | feature reconstruction | yes | yes | no | yes | mps |
 | `glass_anomalib` | learned anomaly synthesis | yes | yes | no | yes | mps |
 | `dino_memory` | frozen DINO patch memory | fit | no | yes | no | mps |
-| `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no | mps |
+| `subspace_ad` | PCA residual over frozen DINO | fit | no | yes | no (gate open) | mps |
 | `anomalyvfm_anomalib` | zero-shot adapted RADIO | no | no | no | no | mps |
 | `color_prototype` | few-shot: fg/bg colour Gaussians | fit | no | no | no | cpu |
 | `fss_dino` | few-shot: FSSDINO prototypes + Gram | fit | no | no | no | mps |
@@ -597,7 +597,21 @@ sweep run outside the application (ADR-0038), and it cleared the paired VisA gat
 - One subspace per channel; an unfitted channel refuses by name. It needs pretrained weights — a random
   encoder gives it no meaningful variance directions — so plugin tests cover plumbing and accuracy is
   asserted in `test_subspace_ad_math.py`.
-- ONNX: none.
+- The residual is a difference of two sums of similar size — `‖x-µ‖²` of several hundred against a
+  score of a few units — so `residual_basis` centres in float32 and sums in float64. In float32 the
+  cancellation, not the features, set the last digits: a well-reconstructed patch moved by ~3 × 10⁻⁴
+  between two summation orders, three times the export tolerance.
+- ONNX: the plugin writes a graph and `portable_formats` is still empty, because a format is declared only
+  after the real-pixel export-parity gate (`docs/backlog.md`). The graph (`models/subspace_portable.py`)
+  replicates planes, applies the encoder's own statistics, runs the encoder with its position table
+  pinned to the frame (`dino_backbone.pin_frame`), pools the band, centres and projects onto the basis
+  truncated at the rank `variance` selects, and takes the residual and the tail mean in float64 as the
+  Python path does. The upsample and blur are `pixel_map`'s own per-axis operators as two constant
+  matrices, so the unsmoothed branch is the bare bilinear resample. The score is a named tensor: it is
+  read from the patch grid, not the emitted map. Every one of those is a constant of the fit — no
+  data-dependent control flow. One graph carries one subspace and the bundle has no channel input, so a
+  fit over several channels is refused by name, as `pixel_reference` refuses a per-channel reference;
+  a single-channel fit, named or not, exports.
 
 ### `anomalyvfm_anomalib`
 
