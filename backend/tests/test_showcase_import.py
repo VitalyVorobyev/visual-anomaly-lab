@@ -104,7 +104,7 @@ def test_the_irregular_group_is_grouped_and_surfaced_not_dropped(manifest: Manif
 
     assert per_sample[2] == EXPECTED_TWO_CHANNEL_SAMPLES
     assert per_sample[3] == EXPECTED_SAMPLES - EXPECTED_TWO_CHANNEL_SAMPLES
-    # Warned about, never padded and never dropped (ADR-0005).
+    # Warned about, never padded and never dropped (ADR-0041).
     assert WarningCode.VARIABLE_CHANNEL_COUNT in {w.code for w in manifest.warnings}
 
 

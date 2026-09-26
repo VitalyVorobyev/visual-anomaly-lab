@@ -24,6 +24,8 @@ type Schemas = components["schemas"];
 export type HealthResponse = Schemas["HealthResponse"];
 
 export type Label = Schemas["Label"];
+export type TruthKind = Schemas["TruthKind"];
+export type ClassCount = Schemas["ClassCount"];
 export type LabelSource = Schemas["LabelSource"];
 export type Subset = Schemas["Subset"];
 export type Channel = Schemas["Channel"];

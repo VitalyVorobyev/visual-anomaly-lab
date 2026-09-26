@@ -80,7 +80,7 @@ the backend's last output.
 - **`ReadingLayout`** — one outer vertical scroller, for catalogues, forms and tables.
 - **`DatasetLayout`** (`routes/dataset/`) — owns the viewport without scrolling and renders the dataset's
   identity band and section strip **once, above all five tabs**. Facts are counted in **samples**, never
-  images (ADR-0005); a channel count appears only when a sample has more than one image; root path, adapter
+  images (ADR-0041); a channel count appears only when a sample has more than one image; root path, adapter
   and import date sit behind an information mark. A tab renders no heading, strip or back link, and gives
   its main surface the single scroller through `TabScroll` or its own full-bleed surface (the browser).
 - **`CanvasLayout`** — no page scroll; an image canvas fills the viewport and supporting panes scroll only
@@ -114,7 +114,21 @@ class with a reference and something to test on (from the coverage read) and a s
 `semantic_segmentation` (named *Segment*) and `object_detection` (named *Detect*) each need the same
 annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence rule
 serving both. With one task the band is a checklist. With more, a first step every task
-shares comes alone; otherwise each task shows a check or the link to its next step.
+shares comes alone; otherwise each task shows a check or the link to its next step. A task is named only when the
+dataset's truth can serve it (`truthServesTask`, `api/truth.ts`): a dataset of classes alone is not
+offered `anomaly`, and the create form opens on the first task it is offered.
+
+**Screens follow the dataset's truth** (ADR-0041). `DatasetSummary.truth` says whether a dataset holds
+anomaly labels, classes, both or neither, and `api/truth.ts` turns that into one question per surface:
+
+- **Counts** (`components/DatasetTruth.tsx`) — a dataset with labels is counted in verdicts
+  (`1000 normal · 100 defect`); one with classes in classes (`20 classes`), each class with the samples
+  that show it behind an information mark. A dataset of classes never shows a run of zero defects.
+- **Anomaly labelling** (`labelsApply`) — the label rail, its `n`/`d`/`u` keys, the verdict badges and bulk
+  labelling are there for a dataset with labels and for one with no truth yet, since labelling is how an
+  import becomes an anomaly dataset. A dataset of classes alone hides them; the sample viewer offers
+  *Label for anomaly detection* instead, which brings the rail back for the visit, and one verdict makes
+  it a dataset with labels.
 
 **Vocabulary.** A *region profile* is where a run looks — the crop recipe defined on Prepare, with no size
 of its own; the *input size* is the run's; *Colour* is the
@@ -124,7 +138,9 @@ threshold. A method is shown by its title, its registry key as secondary text.
 
 ## Screens
 
-**Dataset catalogue and import** — a grid of covers grouped by collection. Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
+**Dataset catalogue and import** — a grid of covers grouped by collection, each group headed by its name
+and a muted `N datasets` badge, so a count never reads as part of the name. A card is its cover, its name,
+its description and one quiet line of counts in the unit of its truth (`200 samples · 20 classes`). Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
 in one job; a folder is scanned, its manifest reviewed (channel mapping, labels, warnings) and committed.
 The scan job and manifest are in the URL (`scan=`, `manifest=`). A collection is a string on each dataset
 ([domain model](domain-model.md)), so `CollectionDialog` names and fills it in one form via
@@ -134,15 +150,18 @@ the cascade; source images and masks are never touched.
 `POST /api/import/commit`, `GET /api/datasets`, `PATCH /api/datasets/{id}`,
 `GET /api/datasets/{id}/deletion-preview`, `DELETE /api/datasets/{id}`.
 
-**Browser** — label/channel/split/subset filters in a 256 px rail; the virtual image grid is the only
-vertical scroller. A channel filter selects whole samples having that channel and previews it on each
+**Browser** — class/label/channel/split/subset filters in a 256 px rail; the virtual image grid is the only
+vertical scroller. The class filter is offered for a dataset with classes and lists each with its sample
+count (`class=` in the URL, sent as `class_key` with `presence=present`, and carried into bulk labelling
+as `class_key`); the label filter only for a dataset with labels. A filter already in the URL stays on
+screen so it can be cleared. A channel filter selects whole samples having that channel and previews it on each
 tile; a sample lacking it falls back to its first image. A dataset's default display channel (set in its
 edit dialog when it has more than one) answers wherever one image stands for a part, with the rail's filter
 winning over it. `GET /api/datasets/{id}/samples`, `GET /api/images/{id}/thumb`.
 
 **Sample viewer** — one part, every channel, count driven by data, opening on the filtered channel, else
-the dataset default, else the first. Label editing with keyboard shortcuts; full-resolution zoom; the
-label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
+the dataset default, else the first. Label editing with keyboard shortcuts where anomaly labelling applies
+(above); full-resolution zoom; the label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
 `PATCH /api/datasets/{id}/samples/{sid}`, `GET /api/images/{id}/preview`, `…/full`.
 
 **Annotation queue and editor** — see [annotations](annotations.md) for the behaviour. MobileSAM takes

@@ -427,6 +427,11 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
         void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(imageId) });
       }
       void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverageAll() });
+      // A dataset's truth and class counts are derived from completed annotations (ADR-0041),
+      // so the catalogue and every dataset detail — not their sample pages — go stale too.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "datasets" && query.queryKey.length <= 2,
+      });
     },
   });
 }

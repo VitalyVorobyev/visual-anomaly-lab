@@ -21,7 +21,7 @@ is yet worth more than re-importing its datasets and re-running its experiments.
 **SQLite for metadata, the filesystem for artifacts, both under the data directory** (repo-local
 `data/` by default, relocatable with `ANOMALY_LAB_DATA_DIR`).
 
-- **The database** holds every entity of the domain model (see ADR-0005). It stores scores and
+- **The database** holds every entity of the domain model (see ADR-0041). It stores scores and
   *paths*, never pixels.
 - **The filesystem** holds thumbnails, anomaly maps as raw float32 arrays, checkpoints, manifests
   and job logs, with artifacts namespaced per experiment. Source images are referenced in place,

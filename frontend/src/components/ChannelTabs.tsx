@@ -4,7 +4,7 @@
  * Rendered from the sample's own image list. There is no constant here for how many
  * channels there should be, no padding of a short list and no special case for a long
  * one — a two-channel capture group renders through exactly this code, which is the UI
- * half of "channel count is data, never schema" (ADR-0005, §12).
+ * half of "channel count is data, never schema" (ADR-0041, §12).
  *
  * An image with no channel is labelled `unassigned` rather than hidden: a dataset whose
  * directory names the matcher did not recognize still has to be browsable.

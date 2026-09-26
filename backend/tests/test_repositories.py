@@ -44,7 +44,7 @@ def test_two_datasets_cannot_share_a_root(migrated_db: sqlite3.Connection) -> No
 def test_channel_dictionary_is_per_dataset_and_ordered(
     migrated_db: sqlite3.Connection, catalog: SeededCatalog
 ) -> None:
-    """Channels are rows in a per-dataset dictionary, never a shared enum (ADR-0005)."""
+    """Channels are rows in a per-dataset dictionary, never a shared enum (ADR-0041)."""
     other = datasets.create_dataset(migrated_db, name="other", root_path="/roots/other")
     datasets.upsert_channel(migrated_db, other.id, name="dome", position=0)
 

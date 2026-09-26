@@ -1,6 +1,6 @@
 """Splits.
 
-A split is created once and never edited — changing one means creating another (ADR-0005)
+A split is created once and never edited — changing one means creating another (ADR-0041)
 — so everything needed to reproduce it is written down at creation: the seed, the strategy
 and the fractions. A seed alone reproduces nothing.
 """

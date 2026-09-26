@@ -10,7 +10,7 @@ cost. They are not the system's documentation: to learn how the workbench works,
 |---|---|
 | [0003](0003-tauri-to-python-boundary-is-a-fastapi-sidecar.md) | The Tauri-to-Python boundary is a FastAPI sidecar |
 | [0004](0004-persistence-with-sqlite-and-filesystem-artifacts.md) | SQLite for metadata, files for artifacts; one schema script until a catalogue is worth keeping |
-| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | The sample owns label and split; a channel is data, not schema |
+| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | The sample owns label and split; a channel is data, not schema — superseded by 0041 |
 | [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import goes through pluggable adapters and a reviewable manifest |
 | [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Every method is one plugin behind one interface, with capability flags |
 | [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Every job is its own subprocess, drawn from one FIFO queue |
@@ -26,6 +26,7 @@ cost. They are not the system's documentation: to learn how the workbench works,
 | [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships |
 | [0039](0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md) | A task is frozen on the experiment, and it chooses the evaluator |
 | [0040](0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md) | Few-shot segmentation is a task, and its references are a split |
+| [0041](0041-truth-is-task-scoped.md) | Truth is task-scoped: the sample owns its anomaly label, and classes live in annotations |
 
 Missing numbers belong to records that were removed; numbers are never reused.
 

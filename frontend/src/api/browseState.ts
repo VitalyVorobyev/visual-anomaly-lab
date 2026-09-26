@@ -29,6 +29,8 @@ const SUBSETS: readonly Subset[] = ["train", "val", "test"];
  */
 export interface BrowseState {
   label: Label | undefined;
+  /** Samples whose completed annotation shows this class (ADR-0041), by key. */
+  classKey: string | undefined;
   channelId: number | undefined;
   splitId: number | undefined;
   subset: Subset | undefined;
@@ -37,6 +39,7 @@ export interface BrowseState {
 
 export const EMPTY_BROWSE: BrowseState = {
   label: undefined,
+  classKey: undefined,
   channelId: undefined,
   splitId: undefined,
   subset: undefined,
@@ -47,6 +50,7 @@ export function readBrowseState(params: URLSearchParams): BrowseState {
   const splitId = readNumber(params.get("split"));
   return {
     label: readOneOf(params.get("label"), LABELS),
+    classKey: readClassKey(params.get("class")),
     channelId: readNumber(params.get("channel")),
     splitId,
     // A subset without a split is meaningless — the API says so, and dropping it here
@@ -60,6 +64,7 @@ export function readBrowseState(params: URLSearchParams): BrowseState {
 export function writeBrowseState(state: BrowseState): URLSearchParams {
   const params = new URLSearchParams();
   if (state.label !== undefined) params.set("label", state.label);
+  if (state.classKey !== undefined) params.set("class", state.classKey);
   if (state.channelId !== undefined) params.set("channel", String(state.channelId));
   if (state.splitId !== undefined) params.set("split", String(state.splitId));
   if (state.subset !== undefined && state.splitId !== undefined) {
@@ -76,6 +81,8 @@ export function toSampleQuery(state: BrowseState): SampleQuery {
     channelId: state.channelId,
     splitId: state.splitId,
     subset: state.subset,
+    classKey: state.classKey,
+    presence: state.classKey === undefined ? undefined : "present",
     limit: PAGE_SIZE,
     offset: state.offset,
   };
@@ -93,7 +100,13 @@ export function toBulkFilters(state: BrowseState): BulkLabelFilter {
     channel_id: state.channelId ?? null,
     split_id: state.splitId ?? null,
     subset: state.subset ?? null,
+    class_key: state.classKey ?? null,
   };
+}
+
+/** A class key is `[a-z][a-z0-9_-]*` by construction; anything else is not one. */
+function readClassKey(raw: string | null): string | undefined {
+  return raw !== null && /^[a-z][a-z0-9_-]{0,63}$/.test(raw) ? raw : undefined;
 }
 
 function readNumber(raw: string | null): number | undefined {

@@ -130,7 +130,7 @@ def delete_dataset(conn: sqlite3.Connection, dataset_id: int) -> bool:
     dependency order inside one transaction sidesteps the ordering question entirely.
 
     `experiment` is deliberately *not* deleted here — it references the dataset with
-    `RESTRICT`, so a dataset with experiments attached refuses to delete (ADR-0005).
+    `RESTRICT`, so a dataset with experiments attached refuses to delete (ADR-0041).
     """
     if get_dataset(conn, dataset_id) is None:
         return False
@@ -229,35 +229,84 @@ def label_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[Label, int]:
     return counts
 
 
-def cover_image_id(conn: sqlite3.Connection, dataset_id: int) -> int | None:
+def class_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[str, int]:
+    """Samples whose completed class truth shows each class, for the classes any sample shows.
+
+    Class truth is the newest completed revision of each image, read from the class table it
+    pinned: a class shows where it has pixels. Anomaly truth -- a sample's label, an imported
+    mask -- is not counted here (ADR-0041). A sample shows a class when any of its images does.
+    Ordered as the dataset's classes are.
+    """
+    rows = conn.execute(
+        """
+        SELECT json_extract(entry.value, '$.key') AS key,
+               COUNT(DISTINCT image.sample_id) AS n
+          FROM image
+          JOIN sample ON sample.id = image.sample_id
+          JOIN annotation_revision AS latest
+            ON latest.id = (SELECT id FROM annotation_revision
+                             WHERE annotation_revision.image_id = image.id
+                             ORDER BY revision_no DESC LIMIT 1)
+          JOIN json_each(latest.class_table) AS entry
+         WHERE sample.dataset_id = ?
+           AND latest.class_table IS NOT NULL
+           AND json_extract(entry.value, '$.pixels') > 0
+         GROUP BY key
+        """,
+        (dataset_id,),
+    ).fetchall()
+    shown = {str(row["key"]): int(row["n"]) for row in rows}
+    order = [label.key for label in annotations_repo.list_labels(conn, dataset_id)]
+    return {key: shown[key] for key in [*order, *sorted(set(shown) - set(order))] if key in shown}
+
+
+def cover_image_id(
+    conn: sqlite3.Connection, dataset_id: int, *, showing: str | None = None
+) -> int | None:
     """One image that stands for the dataset in the catalogue, or `None` if it has none.
 
     The dataset's own default channel is preferred first, so a card shows the view the
-    dataset is actually read in rather than whichever illumination was scanned first. A
-    normal sample is preferred next: the cover answers "what am I looking at", and the
-    healthy part is the better answer to that. Within a label the order is the insertion
-    order, so the same image comes back on every read and a card does not change picture
-    between visits.
+    dataset is actually read in rather than whichever illumination was scanned first.
+
+    What comes next follows the dataset's truth (ADR-0041). With `showing`, a class, the
+    cover is an image whose completed annotation shows it -- the caller passes the class most
+    samples show, so a dataset of objects is shown by one of them rather than by whatever
+    was imported first. Without it, a normal sample is preferred: the cover answers "what
+    am I looking at", and for an anomaly dataset the healthy part is the better answer.
+    Within that, the order is the insertion order, so the same image comes back on every
+    read and a card does not change picture between visits.
 
     A dataset with no default, or one naming a channel a later import renamed away, sorts
     every row equally on that first term and falls back to exactly the order above.
     """
-    row = conn.execute(
+    if showing is not None:
+        preference = """
+            EXISTS (SELECT 1
+                      FROM annotation_revision AS latest, json_each(latest.class_table) AS entry
+                     WHERE latest.id = (SELECT id FROM annotation_revision
+                                         WHERE annotation_revision.image_id = image.id
+                                         ORDER BY revision_no DESC LIMIT 1)
+                       AND json_extract(entry.value, '$.key') = :showing
+                       AND json_extract(entry.value, '$.pixels') > 0)
         """
+    else:
+        preference = "(sample.label = 'normal')"
+    row = conn.execute(
+        f"""
         SELECT image.id AS id
           FROM image
           JOIN sample ON sample.id = image.sample_id
           LEFT JOIN channel ON channel.id = image.channel_id
           JOIN dataset ON dataset.id = sample.dataset_id
-         WHERE sample.dataset_id = ?
+         WHERE sample.dataset_id = :dataset_id
          ORDER BY (dataset.default_channel IS NOT NULL
                    AND channel.name = dataset.default_channel) DESC,
-                  (sample.label = 'normal') DESC,
+                  {preference} DESC,
                   sample.id,
                   image.id
          LIMIT 1
         """,
-        (dataset_id,),
+        {"dataset_id": dataset_id, "showing": showing},
     ).fetchone()
     return int(row["id"]) if row is not None else None
 

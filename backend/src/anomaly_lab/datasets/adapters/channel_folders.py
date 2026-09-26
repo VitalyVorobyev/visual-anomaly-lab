@@ -58,7 +58,7 @@ class ChannelFoldersOptions(BaseModel):
 
     `channels` is **empty by default, deliberately**. Shipping a vocabulary would make one
     acquisition setup's illumination names part of the application, and the rule is that
-    channel count and channel naming are data (ADR-0005). An operator says what their
+    channel count and channel naming are data (ADR-0041). An operator says what their
     channels are called; the adapter does the matching.
 
     The label vocabularies do keep defaults, and that is a different case: `good` and

@@ -34,6 +34,8 @@ function detail(over: Record<string, unknown> = {}) {
     samples: 1100,
     images: 1100,
     label_counts: { normal: 1000, defect: 100, unlabeled: 0 },
+    truth: ["labels"],
+    class_counts: [],
     collection: "VisA",
     description: null,
     cover_image_id: 3,
@@ -128,10 +130,37 @@ describe("the dataset band", () => {
     expect(band.textContent).toContain("1000 normal");
     expect(band.textContent).toContain("100 defect");
     // Two denominators for one dataset, and an absolute path as permanent furniture.
-    // `label_counts` is stored per sample (ADR-0005), so samples is the honest unit.
+    // `label_counts` is stored per sample (ADR-0041), so samples is the honest unit.
     expect(band.textContent).not.toContain("images");
     expect(band.textContent).not.toContain("/datasets/VisA_20220922");
     expect(band.textContent).not.toContain("csv_table");
+  });
+
+  it("counts a dataset of classes in classes, not in verdicts it does not have", () => {
+    const { container } = renderAt(
+      "/datasets/7",
+      detail({
+        name: "FSS-1000 panel",
+        samples: 200,
+        images: 200,
+        label_counts: { normal: 0, defect: 0, unlabeled: 200 },
+        truth: ["classes"],
+        class_counts: [
+          { key: "bucket", name: "Bucket", color: "#1c7ed6", samples: 10 },
+          { key: "clam", name: "Clam", color: "#2f9e44", samples: 10 },
+        ],
+      }),
+    );
+    const band = container.querySelector('[data-band="dataset"]')!;
+
+    expect(band.textContent).toContain("200 samples");
+    expect(band.textContent).toContain("2 classes");
+    // ADR-0041: no normal/defect run for a dataset whose truth is its classes.
+    expect(band.textContent).not.toContain("defect");
+    expect(band.textContent).not.toContain("unlabeled");
+    expect(
+      screen.getByRole("button", { name: "Classes and the samples that show them" }),
+    ).toBeTruthy();
   });
 
   it("names the channel count only when a sample is more than one image", () => {

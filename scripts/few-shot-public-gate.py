@@ -1,7 +1,8 @@
 #!/usr/bin/env -S uv run --project backend --extra dl python
 """Run a few-shot segmentation public gate (ADR-0040; protocols in docs/measurements.md).
 
-Every run is at 448 x 448 with target class `defect`. For every class, shot count and seed,
+Every run is at 448 x 448. On VisA the target class is `defect`; on FSS-1000 it is the panel
+class itself. For every class, shot count and seed,
 a `few_shot` split draws the references; each method then fits on them and segments every
 other sample, in its own child process on the same immutable prepared pixels.
 
@@ -16,9 +17,11 @@ default) is the first gate: three methods at their shipped defaults over k in {1
 left out, so at k = 1 the two are the same run.
 
 `--benchmark fss1000` is the cross-domain gate: the twenty classes of the FSS-1000 panel
-(`FSS_PANEL`), each its own dataset whose other nineteen classes are confirmed absences, and
-three methods at their shipped defaults over k in {1, 2, 5}. A class has ten images, so ten
-shots would leave no image of it to segment. It has the methods leg only.
+(`FSS_PANEL`), one dataset whose masks are each image's class truth, so a class's queries are
+its own other images and the other nineteen classes' images, confirmed absences by their own
+completed annotations; three methods at their shipped defaults over k in {1, 2, 5}. A class
+has ten images, so ten shots would leave no image of it to segment. It has the methods leg
+only.
 
 The destination must be absent or empty; source images stay read-only under `--datasets-dir`.
 It holds the isolated database, prepared pixels, `gate.log` and `result.json`, which is
@@ -43,7 +46,13 @@ import numpy as np
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.commit import commit_manifest
-from anomaly_lab.datasets.reference_packs import FSS_PANEL, pack_specs, scan_spec
+from anomaly_lab.datasets.reference_packs import (
+    FSS_PANEL,
+    class_key,
+    pack_specs,
+    register_class_truth,
+    scan_spec,
+)
 from anomaly_lab.datasets.splitting import SplitParams, SplitStrategy, plan_few_shot_split
 from anomaly_lab.db.connection import connection
 from anomaly_lab.db.migrate import apply_schema
@@ -93,28 +102,32 @@ REPORTED = {
 }
 
 
-def _panel_dataset(settings: Settings, category: str, log: Any) -> int:
-    """One FSS-1000 panel class, registered as the reference pack registers it."""
+def _panel_dataset(settings: Settings, log: Any) -> int:
+    """The FSS-1000 panel, registered as the reference pack registers it, class truth and all."""
     pack = next(pack for pack in pack_specs(settings) if pack.key == "fss1000")
-    spec = next((item for item in pack.datasets if item.key == f"fss1000:{category}"), None)
-    if spec is None:
-        raise ValueError(f"{category!r} is not a class of the FSS-1000 panel")
+    spec = pack.datasets[0]
     missing = [path for path in pack.required if not path.exists()]
     if missing:
         raise FileNotFoundError(f"FSS-1000 is incomplete; missing {missing[0]}")
-    print(f"Scanning FSS-1000 {category}...", file=sys.stderr)
+    print("Scanning the FSS-1000 panel...", file=sys.stderr)
     started = time.perf_counter()
     manifest = scan_spec(spec, lambda _fraction, _message: None)
     with connection(settings.db_path) as conn:
         committed = commit_manifest(conn, settings, manifest)
+    print("Entering its class truth...", file=sys.stderr)
+    entered = register_class_truth(settings, spec, committed.dataset_id)
     log.write(
         json.dumps(
             {
                 "event": "import",
-                "category": category,
+                "category": "panel",
                 "dataset_id": committed.dataset_id,
                 "samples": len(manifest.samples),
-                "labels": {label.value: count for label, count in manifest.label_counts().items()},
+                "class_truth": {
+                    "images": entered.images,
+                    "regions": entered.regions,
+                    "without_file": entered.without_file,
+                },
                 "elapsed_seconds": time.perf_counter() - started,
             }
         )
@@ -122,6 +135,11 @@ def _panel_dataset(settings: Settings, category: str, log: Any) -> int:
     )
     log.flush()
     return committed.dataset_id
+
+
+def _target(benchmark: str, category: str) -> str:
+    """The class a run segments: VisA's `defect`, or the panel class's own key."""
+    return class_key(category) if benchmark == "fss1000" else TARGET
 
 
 def _panel_check(datasets_dir: Path) -> str:
@@ -136,13 +154,13 @@ def _panel_check(datasets_dir: Path) -> str:
     return f"evenly_spaced({len(names)}, {len(FSS_PANEL)}) over the sorted official test classes"
 
 
-def _split(conn: Any, dataset_id: int, shots: int, seed: int) -> int:
-    params = SplitParams(strategy=SplitStrategy.FEW_SHOT, label_key=TARGET, shots=shots)
-    assignments = plan_few_shot_split(conn, dataset_id, seed=seed, label_key=TARGET, shots=shots)
+def _split(conn: Any, dataset_id: int, target: str, shots: int, seed: int) -> int:
+    params = SplitParams(strategy=SplitStrategy.FEW_SHOT, label_key=target, shots=shots)
+    assignments = plan_few_shot_split(conn, dataset_id, seed=seed, label_key=target, shots=shots)
     split = splits_repo.create_split(
         conn,
         dataset_id,
-        name=f"{shots} shots · seed {seed}",
+        name=f"{target} · {shots} shots · seed {seed}",
         strategy=SplitStrategy.FEW_SHOT.value,
         seed=seed,
         params=params.model_dump(mode="json"),
@@ -160,6 +178,7 @@ def _experiment(
     variant: str,
     build: PreparedRegionBuild,
     name: str,
+    target: str,
 ) -> int:
     overrides = {} if variant == "default" else {"calibration": variant}
     config = (
@@ -176,7 +195,7 @@ def _experiment(
             region_manifest_sha256=build.summary.manifest_sha256,
             model_type=method,
             task=Task.FEW_SHOT_SEGMENTATION.value,
-            target_label=TARGET,
+            target_label=target,
             model_config=config,
             preprocessing_config=preprocessing.model_dump(mode="json"),
             eval_config=EvalConfig().model_dump(mode="json"),
@@ -417,23 +436,39 @@ def main() -> int:
     result_path = data_dir / "result.json"
 
     with (data_dir / "gate.log").open("a", encoding="utf-8") as log:
+        # FSS-1000 is one dataset, imported and prepared once; each VisA class is its own.
+        shared: tuple[int, PreparedRegionBuild] | None = None
+        if benchmark == "fss1000":
+            panel_id = _panel_dataset(settings, log)
+            shared = (
+                panel_id,
+                harness._identity_profile(
+                    settings,
+                    category="the FSS-1000 panel",
+                    dataset_id=panel_id,
+                    prepared_size=PREPARED_SIZE,
+                    job_id=30_000,
+                    log=log,
+                ),
+            )
         for index, category in enumerate(categories):
-            if benchmark == "fss1000":
-                dataset_id = _panel_dataset(settings, category, log)
+            target = _target(benchmark, category)
+            if shared is not None:
+                dataset_id, build = shared
             else:
                 dataset_id, _official = harness._official_dataset(settings, category, log)
-            build = harness._identity_profile(
-                settings,
-                category=category,
-                dataset_id=dataset_id,
-                prepared_size=PREPARED_SIZE,
-                job_id=30_000 + index,
-                log=log,
-            )
+                build = harness._identity_profile(
+                    settings,
+                    category=category,
+                    dataset_id=dataset_id,
+                    prepared_size=PREPARED_SIZE,
+                    job_id=30_000 + index,
+                    log=log,
+                )
             for shots in shot_counts:
                 for seed in seeds:
                     with connection(settings.db_path) as conn:
-                        split_id = _split(conn, dataset_id, shots, seed)
+                        split_id = _split(conn, dataset_id, target, shots, seed)
                     for method in methods:
                         for variant in LEG_VARIANTS[leg]:
                             label = method if variant == "default" else f"{method} ({variant})"
@@ -449,6 +484,7 @@ def main() -> int:
                                 variant=variant,
                                 build=build,
                                 name=name,
+                                target=target,
                             )
                             print(f"{name}...", file=sys.stderr)
                             report = harness._execute(data_dir, experiment_id, log)
@@ -479,7 +515,11 @@ def main() -> int:
                                             "methods": methods,
                                             "variants": LEG_VARIANTS[leg],
                                             "prepared_size": PREPARED_SIZE,
-                                            "target": TARGET,
+                                            "target": (
+                                                "the panel class"
+                                                if benchmark == "fss1000"
+                                                else TARGET
+                                            ),
                                             "primary": BENCHMARK_PRIMARY[benchmark],
                                         },
                                         "packages": harness._packages(),

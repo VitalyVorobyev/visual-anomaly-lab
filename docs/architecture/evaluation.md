@@ -222,6 +222,9 @@ Splits are assigned at **sample** level, so a part's channels never straddle sub
 
 A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
 and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
+Every other sample of the dataset is a query, so on a dataset of many classes the other classes' images
+are the target's negatives — confirmed absent by their own completed annotations, not by a label
+(ADR-0041).
 A semantic segmentation or detection run fits on the annotated images of whatever `train` holds, so it is offered
 `class_stratified` — annotated samples drawn under the seed, stratified by the set of classes each
 shows, with the rest parked in `test` where they are scored but measured against nothing — and
@@ -247,6 +250,12 @@ facts: each image's presence `score`, its map or written mask, and the class tru
 - **Per image.** No sample-level rule for a class on a multi-channel part has been decided, so every count
   is of images and every rate is named `image_*`. The sample rows are still rebuilt from presence scores,
   so the ranked list and the gallery work unchanged.
+- **Present, absent and unlabelled come from class truth** (`class_truth.resolve_class_truth`, the
+  presence rule of [annotations](annotations.md)): an image whose newest completed revision shows the
+  target is present, one whose revision answers for the target without showing it is absent, whatever
+  other class it shows. A sample's anomaly label is read only for the default class `defect`, where a
+  `normal` sample without a revision is absent (ADR-0041). One multi-class dataset therefore measures
+  exactly what a dataset per class, its other classes labelled normal, would.
 - **Unlabelled images are excluded and counted** in `images.unlabeled`. A scored image with neither a map
   nor a mask is counted in `images.without_prediction`, not scored as empty.
 - **The prediction** is the method's own mask (`maps/<id>.mask.png`) when it wrote one. Otherwise it is

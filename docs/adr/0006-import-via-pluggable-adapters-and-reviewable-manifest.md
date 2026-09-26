@@ -24,7 +24,7 @@ into every experiment run afterwards.
    importer or the UI.
 2. **Manifest.** The scan emits a manifest: proposed channels, samples, images and labels, plus
    **warnings**. Warnings are informative, not fatal — a two-view part is a warning, never an error
-   (see ADR-0005) — and files that could not be grouped are surfaced individually.
+   (see ADR-0041) — and files that could not be grouped are surfaced individually.
 3. **Review.** The operator inspects the proposal, corrects channel canonicalization, resolves
    ungrouped files and adjusts labels before anything is written. Channel canonicalization is an
    **editable mapping**, not code.

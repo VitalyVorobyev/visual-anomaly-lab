@@ -2626,6 +2626,11 @@ export interface components {
             split_id?: number | null;
             /** @description Only meaningful together with `split_id`. */
             subset?: components["schemas"]["Subset"] | null;
+            /**
+             * Class Key
+             * @description Samples whose completed annotation shows this class (ADR-0041).
+             */
+            class_key?: string | null;
         };
         /**
          * BulkLabelRequest
@@ -2728,6 +2733,20 @@ export interface components {
             channel: string;
             /** Matched By */
             matched_by: string;
+        };
+        /**
+         * ClassCount
+         * @description One class the dataset's completed annotations show, and how many samples show it.
+         */
+        ClassCount: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /** Samples */
+            samples: number;
         };
         /**
          * ClassCoverage
@@ -3260,6 +3279,16 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /**
+             * Truth
+             * @description Which truth the dataset holds, derived (ADR-0041): `labels` when a sample has an anomaly verdict, `classes` when a completed annotation shows a class. Both, or neither.
+             */
+            truth: components["schemas"]["TruthKind"][];
+            /**
+             * Class Counts
+             * @description The classes completed annotations show, in class order, with sample counts.
+             */
+            class_counts: components["schemas"]["ClassCount"][];
             /** Collection */
             collection: string | null;
             /** Description */
@@ -3304,6 +3333,16 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /**
+             * Truth
+             * @description Which truth the dataset holds, derived (ADR-0041): `labels` when a sample has an anomaly verdict, `classes` when a completed annotation shows a class. Both, or neither.
+             */
+            truth: components["schemas"]["TruthKind"][];
+            /**
+             * Class Counts
+             * @description The classes completed annotations show, in class order, with sample counts.
+             */
+            class_counts: components["schemas"]["ClassCount"][];
             /** Collection */
             collection: string | null;
             /** Description */
@@ -4167,6 +4206,10 @@ export interface components {
         };
         /**
          * Label
+         * @description A sample's anomaly truth (ADR-0041). `UNLABELED` is no verdict, not a third verdict.
+         *
+         *     It says nothing about classes: a dataset whose truth is class annotations leaves every
+         *     sample `UNLABELED`.
          * @enum {string}
          */
         Label: "normal" | "defect" | "unlabeled";
@@ -6003,6 +6046,12 @@ export interface components {
              */
             found: boolean;
         };
+        /**
+         * TruthKind
+         * @description Which truth a dataset holds, derived from it and never stored (ADR-0041).
+         * @enum {string}
+         */
+        TruthKind: "labels" | "classes";
         /** ValidationError */
         ValidationError: {
             /** Location */

@@ -1,6 +1,6 @@
 # ADR-0005: Sample owns label and split; channel is data, not schema
 
-**Status:** Accepted (2026-08-06)
+**Status:** Superseded by ADR-0041 (2026-09-26)
 
 ## Context
 

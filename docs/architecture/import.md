@@ -140,43 +140,57 @@ opens no image to decide whether a pack exists. Absent and incomplete packs are 
 expected root and upstream link.
 
 `POST /api/reference-packs/register` creates one cancellable `reference_import` job for the selected packs.
-VisA becomes twelve `csv_table` datasets, one per class; GKN becomes one `folder_classes` dataset. FSS-1000
-becomes twenty `folder_classes` datasets, one per class of a fixed panel (`FSS_PANEL`,
-[measurements](../measurements.md)): the target's ten images with their masks are `defect`, and the other
-nineteen classes' images are normal with their masks left behind. An imported mask answers for the default
-class alone, so this is how "this class, and every image that does not show it" enters without a per-class
-mask. The panel's datasets share the scan root `fewshot_data/` and each is identified by its class directory;
-only `.jpg` files import, because a few classes carry a stray `.jpeg` beside the image its mask pairs with.
-Masks are read as any non-zero pixel, like every imported mask; FSS-1000's are anti-aliased, so its soft edge
-is foreground here. All scans
-finish before the database changes, then every missing manifest commits in one transaction, so a failed
-class cannot leave half a benchmark registered. Repeating the action skips datasets already present.
+VisA becomes twelve `csv_table` datasets, one per class; GKN becomes one `folder_classes` dataset. Both are
+anomaly datasets, and their labels come from the source's own normal/defect split. All scans finish before
+the database changes, then every missing manifest commits in one transaction, so a failed class cannot
+leave half a benchmark registered. Repeating the action skips datasets already present.
 
-### Box truth a pack ships
+FSS-1000 becomes **one** `folder_classes` dataset, `FSS-1000 panel`: the 200 images of a fixed panel of
+twenty classes (`FSS_PANEL`, [measurements](../measurements.md)), scanned from `fewshot_data/` with the
+twenty class directories named as `unlabeled_dirs`. No sample gets a label — an FSS-1000 image shows an
+object, and is neither normal nor defective (ADR-0041). Each image's mask is its **class truth**, entered
+after the commit (below) as a region of the class its directory names. A few-shot run then names its class
+and draws its references from this one dataset; the other nineteen classes' images are its confirmed
+absences by their own annotations (ADR-0040). Only `.jpg` files import, because a few classes carry a
+stray `.jpeg` beside the image its mask pairs with, and the `.png` masks are truth rather than samples.
 
-PKU-Market-PCB becomes one `folder_classes` dataset of 693 `defect` samples, its six `images/<kind>/`
-directories named and `rotation/` and `PCB_USED/` left out. Its truth is a Pascal VOC file per image under
-`Annotations/<kind>/`: boxes of six classes, which an imported mask cannot carry, since a mask answers for
-the default class alone. A pack declares such truth with `DatasetSpec.box_truth` — where the files are and
-the taxonomy they speak, in order — and after the commit `register_box_truth` enters it:
+### Class truth a pack ships
 
-- every file is read first (`datasets/voc.py`), and one that names a class outside the taxonomy, declares a
-  size other than its image's, or holds a box wholly outside the frame fails the job before anything is
-  written. A box partly outside is clipped and counted;
+Some packs are annotated with classes rather than with verdicts, and an imported mask cannot carry that: it
+answers for the default class alone. A pack declares such truth with `DatasetSpec.class_truth`, and after
+the commit `register_class_truth` enters it as each image's first completed revision. It sets no sample
+label. Two shapes are supported:
+
+- **`BoxTruthSpec`** — a Pascal VOC file per image. PKU-Market-PCB becomes one `folder_classes` dataset of
+  693 unlabelled boards, its six `images/<kind>/` directories named as `unlabeled_dirs` and `rotation/` and
+  `PCB_USED/` left out; its files under `Annotations/<kind>/` hold boxes of six classes.
+- **`MaskTruthSpec`** — a binary mask per image, of the class its directory names (`classes` maps each
+  directory to a class). FSS-1000's `<class>/<n>.png` beside `<class>/<n>.jpg`. A directory name becomes a
+  class key by `class_key` — lower case, `[a-z0-9_-]`, a letter first, so `abe's_flyingfish` is
+  `abes_flyingfish` — and a name by `class_name` (`Abe's flyingfish`).
+
+Both follow the same steps:
+
+- every file is found and checked first, and one that names a class outside the taxonomy, has a size other
+  than its image's, or holds a box wholly outside the frame fails the job before anything is written. A box
+  partly outside is clipped and counted (`datasets/voc.py`);
 - the classes are added to the taxonomy after the ones the dataset has, in the editor's palette, because a
   revision answers only for classes that existed when it was completed;
-- each image's boxes become one document of `box` shapes on an empty base, completed through the ordinary
-  draft lifecycle (`annotations/imported_boxes.py`) as the image's first revision. It answers every class,
-  present where it has a box and absent where it has none, so detection reads it like a drawn revision
-  ([detection truth](annotations.md#detection-truth)).
+- each image's truth becomes one document on an empty base — one `box` shape per object, or one `bitmap`
+  shape of its class cropped to the mask — completed through the ordinary draft lifecycle
+  (`annotations/imported_truth.py`) as the image's first revision. It answers every class, present where it
+  has a region and absent where it has none, so a class task reads it like a drawn revision
+  ([class truth](annotations.md#detection-truth)). An empty mask asserts every class absent.
 
-VOC corners are 1-based and inclusive, so `xmin = 1, xmax = 3` is the pixel-edge box `[0, 3)`. Boxes are
-drawn largest first, so where two overlap the smaller keeps its pixels; one whose whole edge an overlap
-covers has a tighter instance box than was drawn, and the job counts it. An image that already has a
-revision or an open draft keeps it and is counted as kept, and an image with no file stays unlabelled.
-This step runs after the commit and image by image, so a cancelled or failed job can leave a registered
-dataset partly labelled. The catalogue therefore counts a dataset as `pending` while any image with a file
-has neither a revision nor a draft (`box_truth_unfinished`), and registering the pack again finishes it.
+A mask is foreground wherever it is non-zero, the rule every imported mask is read by; FSS-1000's are
+anti-aliased, so its soft edge is foreground here. VOC corners are 1-based and inclusive, so
+`xmin = 1, xmax = 3` is the pixel-edge box `[0, 3)`. Boxes are drawn largest first, so where two overlap the
+smaller keeps its pixels; one whose whole edge an overlap covers has a tighter instance box than was drawn,
+and the job counts it. An image that already has a revision or an open draft keeps it and is counted as
+kept, and an image with no file stays unlabelled. This step runs after the commit and image by image, so a
+cancelled or failed job can leave a registered dataset partly labelled. The catalogue therefore counts a
+dataset as `pending` while any image with a file has neither a revision nor a draft
+(`class_truth_unfinished`), and registering the pack again finishes it.
 
 A pack supplies a **collection name** (`PackSpec.collection`, falling back to its title) and a **one-line
 description** per dataset (`DatasetSpec.description`). Neither is written at registration: `pack_membership`

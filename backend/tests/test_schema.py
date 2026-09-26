@@ -25,7 +25,7 @@ from anomaly_lab.db.migrate import (
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import JobKind
 
-# The canonical domain entities of ADR-0005, one table each, and the annotation and
+# The canonical domain entities of ADR-0041, one table each, and the annotation and
 # region-profile tables beside them.
 EXPECTED_TABLES = {
     "annotation_draft",
@@ -205,7 +205,7 @@ def test_sample_identity_is_unique_per_dataset(migrated_db: sqlite3.Connection) 
 
 
 def test_image_channel_is_optional(migrated_db: sqlite3.Connection) -> None:
-    """Single-view datasets need no synthetic channel (ADR-0005)."""
+    """Single-view datasets need no synthetic channel (ADR-0041)."""
     migrated_db.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/tmp/d')")
     migrated_db.execute(
         "INSERT INTO sample (dataset_id, group_key, external_id) VALUES (1, 'g', '1')"

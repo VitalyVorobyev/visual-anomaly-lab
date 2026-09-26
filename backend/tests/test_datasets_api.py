@@ -26,7 +26,7 @@ def dataset_id(client: TestClient, settings: Settings) -> int:
     """A dataset with two capture groups, three channels, and one two-channel sample.
 
     The odd sample is deliberate: every list, filter and detail response below has to
-    handle it without a special case (ADR-0005).
+    handle it without a special case (ADR-0041).
     """
     with connection(settings.db_path) as conn:
         dataset = datasets_repo.create_dataset(

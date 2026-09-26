@@ -8,7 +8,7 @@
  * acknowledgement rather than merely displaying a notice.
  *
  * Warnings are never fatal. A sample with a different channel count from its siblings is
- * legitimate data (ADR-0005); the operator is being asked to look, not to fix.
+ * legitimate data (ADR-0041); the operator is being asked to look, not to fix.
  */
 
 import type { ManifestWarning } from "../api/client";

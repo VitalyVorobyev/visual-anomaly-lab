@@ -13,7 +13,7 @@
 import { ChevronRight, Pencil } from "lucide-react";
 
 import type { DatasetSummary } from "../../api/client";
-import { Button, cn, focusRing } from "@vitavision/lab-ui";
+import { Badge, Button, cn, focusRing } from "@vitavision/lab-ui";
 import { DatasetCard } from "./DatasetCard";
 
 const GRID = "grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
@@ -84,7 +84,12 @@ export function DatasetGroup({
             aria-hidden
           />
           <h2 className="text-sm font-semibold tracking-tight text-fg">{name}</h2>
-          <span className="font-mono text-xs text-fg-subtle tabular-nums">{datasets.length}</span>
+          {/* A count, not part of the name: `FSS-1000 20` read as a dataset called that. A
+              badge that says what it counts cannot be read as a suffix. */}
+          <Badge tone="neutral">
+            <span className="font-mono tabular-nums">{datasets.length}</span>{" "}
+            {datasets.length === 1 ? "dataset" : "datasets"}
+          </Badge>
           <span className="ml-3 h-px flex-1 bg-line" aria-hidden />
         </button>
 

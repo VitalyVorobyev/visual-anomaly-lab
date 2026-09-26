@@ -62,7 +62,7 @@ def _scan(client: TestClient, root: Path, **body: Any) -> dict[str, Any]:
     """Scan the fixture tree, supplying the vocabulary its channel directories use.
 
     The adapter ships none: naming a dataset's channels is the operator's job, not an
-    assumption baked into the application (ADR-0005). A caller that scans a channelled
+    assumption baked into the application (ADR-0041). A caller that scans a channelled
     tree therefore has to say so, and that includes this helper.
     """
     options = {"channels": FIXTURE_CHANNELS, **body.pop("options", {})}

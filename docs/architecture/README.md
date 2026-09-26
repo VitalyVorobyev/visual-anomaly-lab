@@ -61,7 +61,7 @@ scalability**.
 
 1. **Dataset-agnostic core.** The domain model, import layer, DL methods and evaluation layer assume
    nothing about a dataset's geometry, and the number of acquisition channels is per-dataset data, never
-   hard-coded (ADR-0005).
+   hard-coded (ADR-0041).
 2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images.
    Labels and split membership live on the *sample*, never on the image, so all views of a part share a
    subset.

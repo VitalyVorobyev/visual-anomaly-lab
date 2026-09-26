@@ -24,6 +24,7 @@ describe("browse state", () => {
   it("round-trips a fully specified browse", () => {
     const state = {
       label: "defect",
+      classKey: "abes_flyingfish",
       channelId: 3,
       splitId: 5,
       subset: "test",
@@ -45,6 +46,14 @@ describe("browse state", () => {
     expect(read("channel=-4").channelId).toBeUndefined();
     expect(read("channel=abc").channelId).toBeUndefined();
     expect(read("offset=1.5").offset).toBe(0);
+    expect(read("class=Not%20a%20key").classKey).toBeUndefined();
+  });
+
+  it("asks for the samples that show a class", () => {
+    const query = toSampleQuery({ ...EMPTY_BROWSE, classKey: "bucket" });
+    expect(query.classKey).toBe("bucket");
+    expect(query.presence).toBe("present");
+    expect(toSampleQuery(EMPTY_BROWSE).presence).toBeUndefined();
   });
 
   it("drops a subset that has no split to belong to", () => {
@@ -72,6 +81,9 @@ describe("browse state", () => {
       channel_id: null,
       split_id: null,
       subset: null,
+      class_key: null,
     });
+    // A class filter travels with it, so "label all" cannot reach past the samples shown.
+    expect(toBulkFilters({ ...EMPTY_BROWSE, classKey: "bucket" }).class_key).toBe("bucket");
   });
 });

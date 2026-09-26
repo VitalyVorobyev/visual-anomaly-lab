@@ -1,6 +1,6 @@
 """Channel to sample aggregation — the one substantive decision in this layer.
 
-Models emit per-image scores; labels and splits belong to the sample (ADR-0005). Three
+Models emit per-image scores; labels and splits belong to the sample (ADR-0041). Three
 views of one part therefore produce three numbers and one verdict is needed. That
 reduction is a detection decision, not a formatting step, so it lives here, applies
 identically to every method, and is recorded on every row it produces.

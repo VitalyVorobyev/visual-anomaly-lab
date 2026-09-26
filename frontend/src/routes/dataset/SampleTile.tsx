@@ -44,6 +44,7 @@ export function SampleTile({
   active = false,
   selectLabel,
   selectable = true,
+  showLabel = true,
 }: {
   datasetId: number;
   sample: SampleSummary;
@@ -65,6 +66,11 @@ export function SampleTile({
   selectLabel?: string | undefined;
   /** Off where the tile cannot be selected at all, which then shows no checkbox. */
   selectable?: boolean | undefined;
+  /**
+   * Off on a dataset whose truth is its classes (ADR-0041): a column of `unl` badges says
+   * nothing there but that anomaly labels do not apply.
+   */
+  showLabel?: boolean | undefined;
 }) {
   // Filtering by channel means "samples having an image in this channel", so the grid keeps
   // showing whole samples — but it must show *that* channel. Previewing the first image
@@ -107,7 +113,9 @@ export function SampleTile({
           <span className="truncate font-mono text-[10px] text-fg-subtle">
             {channelId === undefined ? `${sample.images.length}ch` : (cover?.channel ?? "—")}
           </span>
-          <Badge tone={LABEL_TONE[sample.label]}>{sample.label.slice(0, 3)}</Badge>
+          {showLabel && (
+            <Badge tone={LABEL_TONE[sample.label]}>{sample.label.slice(0, 3)}</Badge>
+          )}
         </span>
       </div>
     </>

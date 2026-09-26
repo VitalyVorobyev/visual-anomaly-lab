@@ -10,11 +10,15 @@ value is never reused. Repositories are small modules of functions returning pyd
 contain the SQL and nothing else.
 `foreign_keys` and WAL journaling are enabled on every connection.
 
-The model is defined by ADR-0005. Two rules carry most of its weight:
+The model is defined by ADR-0041. Three rules carry most of its weight:
 
-> **The Sample owns the label and the split assignment.** An `Image` is a file; a `Sample` is a physical
-> object. Labels and split membership attach to samples, which structurally prevents putting two views of
-> one part in different subsets.
+> **The Sample owns its anomaly label and the split assignment.** An `Image` is a file; a `Sample` is a
+> physical object. Verdicts and split membership attach to samples, which structurally prevents putting two
+> views of one part in different subsets.
+
+> **Truth is task-scoped.** A sample's `normal`/`defect` label is anomaly truth. A class — a region or a
+> box of an `AnnotationLabel` — is class truth, and lives only in completed annotation revisions. A
+> dataset whose truth is its classes leaves every sample `unlabeled`.
 
 > **Channel is data, not schema.** Channels are rows in a per-dataset dictionary table, not columns and not
 > an enum. A dataset with two channels, three, or none is representable without a schema change.
@@ -75,7 +79,18 @@ three are **overrides**: null means something derived answers instead.
   name survives a re-import that renumbers the dictionary. The API returns the **raw** value and the client
   resolves it per sample, falling back to the first image when a part lacks that channel. **Validated on
   write, forgiving on read**: `PATCH` refuses a name the dataset has no channel for and lists the ones it
-  has. The catalogue cover (`cover_image_id`) prefers the default channel, then a normal sample.
+  has. The catalogue cover (`cover_image_id`) prefers the default channel, then follows the dataset's
+  truth: a normal sample for a dataset with labels, and for a dataset of classes alone an image whose
+  completed annotation shows the class most samples show (the first such class in class order).
+
+**What truth a dataset holds is derived on every read, never stored** (ADR-0041), and the API reports it
+on `DatasetSummary`:
+
+- `truth` lists `labels` when some sample's label is `normal` or `defect`, and `classes` when some image's
+  newest completed revision pins a class with pixels in its class table. Both, or neither, are ordinary.
+- `class_counts` lists each class that some sample shows — `key`, `name`, `color`, and `samples`, the
+  samples any of whose images' newest revision shows it — in class order. An imported ground-truth mask is
+  anomaly truth and is not counted here.
 
 ### Channel
 
@@ -89,7 +104,9 @@ samples. Unique on `(dataset_id, name)`.
 `id`, `dataset_id`, `group_key`, `external_id`, `label`, `label_source`, `notes`. One physical part.
 `group_key` identifies the source group (e.g. a batch folder) and `external_id` the part within it; the
 pair is unique per dataset, because numeric ids collide across groups. `label ∈ {normal, defect,
-unlabeled}`; `label_source` is `import` (inferred from folder structure) or `manual` (edited in the UI).
+unlabeled}` is the part's **anomaly** verdict, and `unlabeled` means there is none; it is never null, and it
+says nothing about classes (ADR-0041). An adapter sets a verdict only where its source asserts one;
+`label_source` is `import` (inferred from folder structure) or `manual` (edited in the UI).
 
 ### Image
 
@@ -113,8 +130,11 @@ separately from digest coverage.
 ### Annotation truth
 
 - **`AnnotationLabel`** — `id`, `dataset_id`, `key`, `name`, `color`, `position`, `created_at`. The
-  dataset's defect taxonomy; `key` is the stable identity stored in shapes, so presentation fields change
-  without rewriting documents.
+  dataset's class taxonomy — defect kinds on an anomaly dataset, object classes on a class dataset;
+  `key` is the stable identity stored in shapes, so presentation fields change without rewriting
+  documents. Every dataset has the default class `defect`, the one class anomaly truth also answers
+  for: an imported ground-truth mask is its region, and a sample labelled `normal` is its absence
+  (ADR-0041).
 - **`AnnotationDraft`** — `image_id`, `base_revision_id`, `document` (JSON), `version`, source-mask
   provenance, `updated_at`. At most one mutable source-frame document per image; `version` is the
   optimistic-concurrency token exposed as an ETag.

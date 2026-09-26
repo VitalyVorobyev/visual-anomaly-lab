@@ -118,7 +118,7 @@ class SeededCatalog:
 
     Deliberately irregular — one sample has a single channel and one has none — so that
     any code which quietly assumes a fixed channel count fails here rather than on real
-    data (ADR-0005).
+    data (ADR-0041).
     """
 
     dataset_id: int

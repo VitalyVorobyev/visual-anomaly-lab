@@ -9,7 +9,7 @@ Three properties are load-bearing:
   * **It is versioned.** A manifest outlives the code that wrote it, and `manifest_version`
     is what lets a future reader know which shape it is holding.
   * **Warnings are never fatal.** A sample with a different channel count from its
-    siblings is legitimate data (ADR-0005); a file that could not be read is worth
+    siblings is legitimate data (ADR-0041); a file that could not be read is worth
     knowing about but must not abort a scan of three thousand others.
   * **Nothing here counts channels.** `channels` is a list because a dataset has whatever
     channels it has — one, two, three, or none.
