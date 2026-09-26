@@ -1,0 +1,30 @@
+{
+  "id": "DEC-001",
+  "kind": "Decision",
+  "title": "Task frozen on experiment",
+  "summary": "Experiment task determines evaluator and truth/output contracts.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-009",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "REQ-006"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

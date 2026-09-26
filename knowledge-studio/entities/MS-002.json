@@ -1,0 +1,25 @@
+{
+  "id": "MS-002",
+  "kind": "Milestone",
+  "title": "Few-shot quality follow-up",
+  "summary": "Presence-gated masks await a measured rerun.",
+  "status": "open",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-001",
+      "section": "Open"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

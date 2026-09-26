@@ -1,0 +1,30 @@
+{
+  "id": "CMP-006",
+  "kind": "Component",
+  "title": "Shared UI system",
+  "summary": "Tokens and primitives live in lab-ui; application consumes them.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-007",
+      "section": "Design system"
+    }
+  ],
+  "relations": [
+    {
+      "type": "implemented_in",
+      "target": "REP-002"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

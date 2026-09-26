@@ -82,6 +82,10 @@ comparing them under one evaluation protocol.
   step** like `slate-500`. A raw colour will compile and look almost right, and quietly ignore the
   theme.
 
+## Knowledge Studio maintenance
+
+`knowledge-studio/` is the curated project graph. Keep it aligned with the handbook, roadmap, backlog, ADRs and measurements in the same PR as a product change. Source records cite exact tracked paths and `##` headings; the documents remain authoritative. Add or close requirements, work packages, risks, decisions and validations only with their evidence; leave unknown owners, person-week estimates and dates unset. Other code repositories, including lab-ui, are linked by Repository records rather than copied here. Validate with the Knowledge Studio CLI; review the semantic diff and never stage `.knowledge-studio/` runtime files.
+
 ## Current status and working discipline
 
 - **Everything below closes, and every screen has been reviewed at rest and in its transient

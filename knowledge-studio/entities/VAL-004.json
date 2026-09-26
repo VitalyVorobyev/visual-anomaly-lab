@@ -1,0 +1,30 @@
+{
+  "id": "VAL-004",
+  "kind": "Validation",
+  "title": "Detection PCB gate",
+  "summary": "Recorded AP50 improvement and loose boxes.",
+  "status": "passed",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-008",
+      "section": "Detection on box-drawn truth (PCB) — the features find defects; the boxes are loose"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-006"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

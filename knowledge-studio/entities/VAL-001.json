@@ -1,0 +1,30 @@
+{
+  "id": "VAL-001",
+  "kind": "Validation",
+  "title": "DINO memory paired gate",
+  "summary": "Recorded paired public gate cleared promotion floors.",
+  "status": "passed",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-008",
+      "section": "DINO patch memory — promoted"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-004"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

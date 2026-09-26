@@ -1,0 +1,32 @@
+{
+  "id": "WP-008",
+  "kind": "WorkPackage",
+  "title": "Run SubspaceAD public promotion gate",
+  "summary": "Execute paired public gate for current defaults.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Execute paired public gate for current defaults.",
+  "work_type": "research",
+  "validation_criterion": "Measurements record paired control and promotion verdict.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "EXP-004"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

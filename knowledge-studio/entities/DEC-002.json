@@ -1,0 +1,30 @@
+{
+  "id": "DEC-002",
+  "kind": "Decision",
+  "title": "Few-shot references are a split",
+  "summary": "Reference identity is reproducible and belongs to experiment setup.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-010",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "REQ-007"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,28 @@
+{
+  "id": "SRC-008",
+  "kind": "Source",
+  "title": "Measurements and gates",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "DINO patch memory — promoted": "Tracked section in docs/measurements.md",
+    "Few-shot segmentation — `proto_seg` is the default; no method yet draws a usable mask": "Tracked section in docs/measurements.md",
+    "Supervised segmentation, logit bias — `dino_linear_seg` is supported, under `per_class` and `held_out_iou`": "Tracked section in docs/measurements.md",
+    "Detection on box-drawn truth (PCB) — the features find defects; the boxes are loose": "Tracked section in docs/measurements.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/measurements.md"
+  }
+}

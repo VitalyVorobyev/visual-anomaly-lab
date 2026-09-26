@@ -1,0 +1,25 @@
+{
+  "id": "SRC-010",
+  "kind": "Source",
+  "title": "Few-shot task decision",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Decision": "Tracked section in docs/adr/0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/adr/0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "id": "RSK-003",
+  "kind": "Risk",
+  "title": "Upstream accessibility gaps",
+  "summary": "Remaining interface findings depend on lab-ui controls.",
+  "status": "open",
+  "confidence": 0.9,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-001",
+      "section": "Open"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "REP-002"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

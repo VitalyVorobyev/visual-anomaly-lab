@@ -1,0 +1,30 @@
+{
+  "id": "REQ-010",
+  "kind": "Requirement",
+  "title": "Presence-gated few-shot masks",
+  "summary": "An absent-image decision should suppress a foreground mask.",
+  "status": "open",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Few-shot segmentation"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "CAP-005"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

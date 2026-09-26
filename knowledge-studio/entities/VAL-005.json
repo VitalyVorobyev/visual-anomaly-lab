@@ -1,0 +1,30 @@
+{
+  "id": "VAL-005",
+  "kind": "Validation",
+  "title": "Presence gate rerun",
+  "summary": "Pending repeat after presence-gated mask implementation.",
+  "status": "planned",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Few-shot segmentation"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-010"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

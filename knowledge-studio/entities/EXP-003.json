@@ -1,0 +1,30 @@
+{
+  "id": "EXP-003",
+  "kind": "Experiment",
+  "title": "PatchCore tuning comparison",
+  "summary": "Tune comparable PatchCore axes before comparing with EfficientAD.",
+  "status": "planned",
+  "confidence": 0.8,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-004"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

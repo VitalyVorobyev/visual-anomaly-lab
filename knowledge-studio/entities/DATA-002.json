@@ -1,0 +1,25 @@
+{
+  "id": "DATA-002",
+  "kind": "Dataset",
+  "title": "Few-shot reference records",
+  "summary": "Reference selection and truth are captured as experiment-linked records.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-010",
+      "section": "Decision"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

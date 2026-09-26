@@ -1,0 +1,30 @@
+{
+  "id": "VAL-002",
+  "kind": "Validation",
+  "title": "Few-shot public gate",
+  "summary": "Recorded segmentation gate exposes fixed-cut shortcomings.",
+  "status": "passed",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-008",
+      "section": "Few-shot segmentation — `proto_seg` is the default; no method yet draws a usable mask"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-007"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

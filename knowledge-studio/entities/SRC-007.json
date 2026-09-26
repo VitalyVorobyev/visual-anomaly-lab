@@ -1,0 +1,27 @@
+{
+  "id": "SRC-007",
+  "kind": "Source",
+  "title": "Frontend handbook",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Design system": "Tracked section in docs/architecture/frontend.md",
+    "Screens": "Tracked section in docs/architecture/frontend.md",
+    "UI rule ratchet": "Tracked section in docs/architecture/frontend.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/architecture/frontend.md"
+  }
+}

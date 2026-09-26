@@ -1,0 +1,30 @@
+{
+  "id": "VAL-003",
+  "kind": "Validation",
+  "title": "Supervised segmentation gate",
+  "summary": "Recorded logit-bias gate supports the method under selected settings.",
+  "status": "passed",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-008",
+      "section": "Supervised segmentation, logit bias — `dino_linear_seg` is supported, under `per_class` and `held_out_iou`"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-006"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

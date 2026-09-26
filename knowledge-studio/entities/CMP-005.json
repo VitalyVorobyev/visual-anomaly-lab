@@ -1,0 +1,30 @@
+{
+  "id": "CMP-005",
+  "kind": "Component",
+  "title": "Evaluation engine",
+  "summary": "Task-aware metrics, rankings and comparison semantics.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-006",
+      "section": "Metrics"
+    }
+  ],
+  "relations": [
+    {
+      "type": "implemented_in",
+      "target": "REP-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

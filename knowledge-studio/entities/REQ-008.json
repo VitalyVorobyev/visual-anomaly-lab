@@ -1,0 +1,30 @@
+{
+  "id": "REQ-008",
+  "kind": "Requirement",
+  "title": "Shared design system",
+  "summary": "Visual primitives and tokens come from lab-ui.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-011",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "CAP-004"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

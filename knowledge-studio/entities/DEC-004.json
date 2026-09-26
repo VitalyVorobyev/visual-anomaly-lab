@@ -1,0 +1,30 @@
+{
+  "id": "DEC-004",
+  "kind": "Decision",
+  "title": "Per-run score resolution",
+  "summary": "Run-local score scales require shared threshold rules.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-012",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "REQ-005"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

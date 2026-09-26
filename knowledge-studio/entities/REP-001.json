@@ -1,0 +1,25 @@
+{
+  "id": "REP-001",
+  "kind": "Repository",
+  "title": "visual-anomaly-lab",
+  "summary": "Entry-point repository: application, backend, handbook, roadmap, backlog and knowledge studio.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-003",
+      "section": "Component architecture"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": "https://github.com/VitalyVorobyev/visual-anomaly-lab",
+  "location": null
+}

@@ -1,0 +1,32 @@
+{
+  "id": "WP-011",
+  "kind": "WorkPackage",
+  "title": "Make custom autoencoder resolution-agnostic",
+  "summary": "Remove fixed input-size ladder and bottleneck assumption.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Remove fixed input-size ladder and bottleneck assumption.",
+  "work_type": "known",
+  "validation_criterion": "Smaller supported inputs train and score through the method contract.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "CMP-004"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

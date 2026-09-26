@@ -1,0 +1,32 @@
+{
+  "id": "WP-009",
+  "kind": "WorkPackage",
+  "title": "Supply labelled validation to TrainContext",
+  "summary": "Extend plugin train context with labelled validation data.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Extend plugin train context with labelled validation data.",
+  "work_type": "known",
+  "validation_criterion": "A method can compute per-epoch validation AUROC from labels.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Evaluation"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "INT-002"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}
