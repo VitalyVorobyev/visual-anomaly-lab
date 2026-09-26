@@ -410,7 +410,7 @@ def test_a_grayscale_experiment_scores_the_same_as_an_rgb_one(tmp_path: Path) ->
 
 
 def test_the_diagnostic_keys_are_the_ones_the_views_expect(tmp_path: Path) -> None:
-    """ADR-0018 names key agreement as a coordination cost M6 has to pay. This pays it.
+    """Diagnostic keys agree by convention, not schema (handbook diagnostics.md). This pins them.
 
     These keys used to be read out of `efficientad_anomalib`'s source rather than
     restated here, so this test agreed with the thing the M4 views were written against

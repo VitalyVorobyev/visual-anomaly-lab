@@ -78,6 +78,7 @@ class GlassConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     max_steps: int = Field(
+        json_schema_extra={"x-primary": True},
         default=5_000,
         ge=1,
         le=100_000,
@@ -114,6 +115,7 @@ class GlassConfig(BaseModel):
         ),
     )
     synthesis_anchor: SynthesisAnchor = Field(
+        json_schema_extra={"x-primary": True},
         default=SynthesisAnchor.SAMPLE,
         description=(
             "Anchor for truncating mined feature perturbations. 'sample' is one fixed, "

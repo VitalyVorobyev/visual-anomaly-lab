@@ -1,6 +1,6 @@
 /**
  * The render-by-kind switch — the one place in the frontend that decides how a diagnostic
- * is drawn, and the reason M4's views cost M6 nothing (ADR-0018).
+ * is drawn, and the reason a new method's views cost nothing (handbook diagnostics.md).
  *
  * The switch below is over `entry.kind` and nothing else. It does not read `entry.key`, it
  * does not read the experiment's `model_type`, and it must not start: a method that emits
@@ -44,7 +44,7 @@ export function DiagnosticBody({
  *
  * The description is the plugin's, verbatim. A weakly-typed contract means the caption is
  * the only thing standing between a reader and a plausible, wrong interpretation of a
- * picture — ADR-0018 says so outright — so it is shown, never summarized.
+ * picture — the diagnostics handbook says so outright — so it is shown, never summarized.
  */
 export function DiagnosticCard({
   experimentId,

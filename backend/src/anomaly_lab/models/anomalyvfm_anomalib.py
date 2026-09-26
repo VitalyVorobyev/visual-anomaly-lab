@@ -123,6 +123,7 @@ class AnomalyVfmConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     allow_downloads: bool = Field(
+        json_schema_extra={"x-primary": True},
         default=True,
         description=(
             "Permit fetching the pinned 1.42 GB AnomalyVFM checkpoint into the app model "

@@ -4,22 +4,15 @@
 
 ## Context
 
-The frontend is styled with Tailwind. With no token layer, colour was a raw ramp step restated at
-hundreds of call sites and agreeing by luck, the type face was whatever the OS called `system-ui`,
-and dark mode could not be overridden — on a tool whose whole job is judging images. With no
-primitives, native `<select>` lists rendered in the OS palette, range inputs were unstyled, tables
-were copy-pasted, destructive actions had no confirmation, and nothing had a visible focus ring.
-One gap was not cosmetic: the schema-driven form had no control for a closed set, so an enum option
-rendered as a text box or a JSON textarea.
+The frontend is styled with Tailwind. Without a token layer, colour is a raw ramp step restated at
+every call site and agreeing by luck, the type face is whatever the OS calls `system-ui`, and dark
+mode cannot be overridden — on a tool whose whole job is judging images. Without primitives,
+native `<select>` lists render in the OS palette, range inputs are unstyled, tables are copied,
+destructive actions have no confirmation, and nothing has a visible focus ring. The schema-driven
+form also needs a control for a closed set, or an enum option renders as a text box.
 
 The same pressures apply to every lab application, not just this one, and a visual language
 defined in one app and copied into the next stops agreeing within a release.
-
-The alternatives were: keep hand-rolling (the remaining controls are the ones where accessibility
-is genuinely hard, and a wrong listbox keyboard model is worse than a dependency); a full component
-library such as MUI or shadcn/ui (it brings an opinionated visual system this application does not
-want, and its distinctive views are custom regardless); and unstyled primitives for the hard
-controls only, kept either in this repository or in a shared package.
 
 ## Decision
 
@@ -43,6 +36,15 @@ correctly.**
 - **Every interactive element has a visible focus outline** in the accent colour.
 - **The application's own stylesheet only imports the package**, plus rules that are genuinely the
   application's own. A primitive that needs improving is improved upstream, never patched locally.
+
+## Alternatives considered
+
+- **Keep hand-rolling.** The remaining controls are the ones where accessibility is genuinely hard,
+  and a wrong listbox keyboard model is worse than a dependency.
+- **A full component library** (MUI, shadcn/ui). It brings an opinionated visual system this
+  application does not want, and its distinctive views are custom regardless.
+- **The token layer and primitives inside this repository.** Cheaper to change, and the next lab
+  app copies them and drifts.
 
 ## Consequences
 

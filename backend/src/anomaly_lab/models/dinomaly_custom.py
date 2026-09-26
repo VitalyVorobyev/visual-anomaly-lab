@@ -373,6 +373,7 @@ class DinomalyCustomConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     encoder: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_S14_REG4,
         description=(
             "Frozen encoder the reconstructed features come from. The default is the "
@@ -384,6 +385,7 @@ class DinomalyCustomConfig(BaseModel):
         ),
     )
     decoder_depth: int = Field(
+        json_schema_extra={"x-primary": True},
         default=8,
         ge=2,
         le=12,
@@ -398,6 +400,7 @@ class DinomalyCustomConfig(BaseModel):
         ),
     )
     max_steps: int = Field(
+        json_schema_extra={"x-primary": True},
         default=5_000,
         ge=1,
         le=100_000,

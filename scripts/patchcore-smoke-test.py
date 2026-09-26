@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --project backend --extra dl python
 """What does PatchCore actually cost on this Mac? Measure it before writing the wrapper.
 
-ADR-0008 requires a standalone probe **run first**, and `scripts/mps-smoke-test.py` has
+ADR-0029 requires a standalone probe **run first**, and `scripts/mps-smoke-test.py` has
 already paid for itself once. This is the same discipline applied to a method whose cost is
 not a step budget but a memory footprint: PatchCore holds every training patch in one
 tensor, then runs a greedy selection whose loop count *is* the size of the memory bank.
@@ -342,7 +342,7 @@ def main() -> int:
     import torch
 
     print(RULE)
-    print("PatchCore smoke test — run before writing the wrapper (ADR-0008)")
+    print("PatchCore smoke test — run before writing the wrapper (ADR-0029)")
     print(f"torch {torch.__version__} on {platform.machine()} / macOS {platform.mac_ver()[0]}")
     print(f"MPS available: {torch.backends.mps.is_available()}")
     print(RULE)

@@ -52,7 +52,7 @@ CITING_FILES = ("CLAUDE.md", "AGENTS.md", "README.md")
 
 
 def _stale_adr_citations() -> list[str]:
-    """A removed record's citations are repointed in the same change (ADR-0030).
+    """A removed record's citations are repointed in the same change (docs/adr/README.md).
 
     A record may still name the record it superseded, so docs/adr/ itself is exempt.
     """

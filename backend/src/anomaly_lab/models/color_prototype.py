@@ -58,6 +58,7 @@ class ColorPrototypeConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     color_space: ColorSpace = Field(
+        json_schema_extra={"x-primary": True},
         default=ColorSpace.LAB,
         description=(
             "Where the two colour models live. Lab separates lightness from hue, so a class "
@@ -81,6 +82,7 @@ class ColorPrototypeConfig(BaseModel):
         description="Gaussian smoothing of the probability map, in prepared pixels. 0 is none.",
     )
     calibration: Calibration = Field(
+        json_schema_extra={"x-primary": True},
         default=Calibration.NONE,
         description=(
             "'leave_one_out' rescales the foreground probability on the references: each is "

@@ -386,7 +386,7 @@ def export_annotation_coco(request: Request, image_id: int) -> CocoDocument:
     return coco_from_mask(mask, image_path=image_path, label=label)
 
 
-# --- Sample-scoped editing (ADR-0036) --------------------------------------------------
+# --- Sample-scoped editing (handbook annotations.md) ----------------------------------------
 #
 # The same lifecycle as above behind `SAMPLE_DRAFTS`; see the service for what differs.
 

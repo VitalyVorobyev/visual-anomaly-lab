@@ -30,6 +30,8 @@ const METHOD = {
     preferred_device: "cpu",
   },
   availability: { available: true, reason: null },
+  status: "floor",
+  recommended_for: [],
   config_schema: { type: "object", properties: {} },
 };
 
@@ -66,8 +68,14 @@ const OTHER_PROFILE = {
 function seed({
   splits = [SPLIT],
   methods = [METHOD],
+  evaluation = { type: "object", properties: {} },
   profiles = [PROFILE],
-}: { splits?: unknown[]; methods?: unknown[]; profiles?: unknown[] } = {}): [
+}: {
+  splits?: unknown[];
+  methods?: unknown[];
+  evaluation?: unknown;
+  profiles?: unknown[];
+} = {}): [
   readonly unknown[],
   unknown,
 ][] {
@@ -77,7 +85,7 @@ function seed({
       {
         methods,
         preprocessing_schema: { type: "object", properties: {} },
-        evaluation_schema: { type: "object", properties: {} },
+        evaluation_schema: evaluation,
       },
     ],
     [queryKeys.datasets(), [{ id: 7, name: "candle" }]],
@@ -102,7 +110,12 @@ function seed({
   ];
 }
 
-function renderForm(splits?: unknown[], methods?: unknown[], profiles?: unknown[]) {
+function renderForm(
+  splits?: unknown[],
+  methods?: unknown[],
+  profiles?: unknown[],
+  evaluation?: unknown,
+) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={["/datasets/7/experiments/new"]}>
@@ -113,6 +126,7 @@ function renderForm(splits?: unknown[], methods?: unknown[], profiles?: unknown[
       seed({
         ...(splits === undefined ? {} : { splits }),
         ...(methods === undefined ? {} : { methods }),
+        ...(evaluation === undefined ? {} : { evaluation }),
         ...(profiles === undefined ? {} : { profiles }),
       }),
     ),
@@ -261,6 +275,47 @@ describe("the create-experiment form", () => {
     const split = screen.getByRole("combobox", { name: "Split" });
     expect(split.textContent).toContain("by class");
     expect(screen.queryByRole("link", { name: "Draw one by class" })).toBeNull();
+  });
+
+  it("starts from the registry's recommended method, badged, and puts the floor last", () => {
+    const recommended = {
+      ...METHOD,
+      key: "patch_memory",
+      title: "Patch memory",
+      status: "supported",
+      recommended_for: ["anomaly"],
+    };
+    const trial = { ...METHOD, key: "trial", title: "Trial method", status: "experimental" };
+    renderForm(undefined, [METHOD, trial, recommended]);
+
+    const cards = screen.getAllByRole("radio").filter((radio) => radio.getAttribute("name") === "method");
+    expect(cards.map((radio) => (radio as HTMLInputElement).value)).toEqual([
+      "patch_memory",
+      "trial",
+      "pixel_reference",
+    ]);
+    expect((cards[0] as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText("recommended")).toBeTruthy();
+    expect(screen.getByText("experimental")).toBeTruthy();
+  });
+
+  it("offers only the evaluation options the task's evaluator reads", () => {
+    const floor = {
+      ...METHOD,
+      key: "color_classifier",
+      title: "Colour classifier",
+      capabilities: { ...METHOD.capabilities, tasks: ["semantic_segmentation"] },
+    };
+    const evaluation = {
+      type: "object",
+      properties: {
+        pixel_bins: { type: "integer", default: 4096, "x-tasks": ["anomaly"] },
+      },
+    };
+    renderForm(undefined, [METHOD, floor], undefined, evaluation);
+    expect(screen.getByRole("tab", { name: /Evaluation/ })).toBeTruthy();
+    fireEvent.click(screen.getByRole("radio", { name: "Segmentation" }));
+    expect(screen.queryByRole("tab", { name: /Evaluation/ })).toBeNull();
   });
 
   it("brings back what was typed before following a prerequisite link", () => {

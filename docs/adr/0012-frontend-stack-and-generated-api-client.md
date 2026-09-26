@@ -4,16 +4,14 @@
 
 ## Context
 
-ADR-0003 settled the boundary between shell and backend, and ADR-0002 that the frontend is a
-`bun`-managed React + TypeScript + Vite application. Neither says how it routes, how it holds server
-state, or how its TypeScript stays in agreement with the Python routes. Made implicitly, one screen
-at a time, those choices are how a codebase ends up with three ways to fetch data.
+ADR-0003 settles the boundary between shell and backend, and the frontend is a `bun`-managed
+React + TypeScript + Vite application. That leaves how it routes, how it holds server state, and
+how its TypeScript stays in agreement with the Python routes. Made implicitly, one screen at a
+time, those choices are how a codebase ends up with three ways to fetch data.
 
-The sidecar boundary also carried a cost that looked inherent: the TypeScript client and the Python
-routes are two definitions of one contract, and drift between them surfaces only at runtime.
-
-The alternatives were `BrowserRouter`, hand-rolled fetch-and-cache per screen or a global store,
-and a hand-written client checked by tests. How the UI is styled is ADR-0021's.
+The sidecar boundary also carries a cost that looks inherent: the TypeScript client and the Python
+routes are two definitions of one contract, and drift between them surfaces only at runtime. How
+the UI is styled is ADR-0021's.
 
 ## Decision
 
@@ -34,8 +32,16 @@ from the backend's OpenAPI schema.**
 - **The frontend imports no Tauri API.** The shell injects the sidecar's base URL before the page
   loads, with an environment variable and a default as fallbacks. The browser path stays
   first-class rather than a degraded mode.
-- **TypeScript tracks the current release.** A build-time tool that lags a major version runs in
-  its own isolated project, rather than holding the whole frontend back.
+
+## Alternatives considered
+
+- **`BrowserRouter`.** Clean URLs, and a blank screen under one of the three origins the bundle is
+  served from.
+- **Hand-rolled fetch-and-cache per screen, or a global store.** Either re-implements polling,
+  invalidation and deduplication that TanStack Query already has, and a store holds server state
+  in a shape that goes stale silently.
+- **A hand-written client checked by tests.** Tests catch the drift they were written for; a
+  generated client makes every route and field a compile-time fact.
 
 ## Consequences
 
@@ -49,5 +55,6 @@ diff of the generated file showing exactly what changed.
   file only after the fact, and a merge conflict in it is resolved by regenerating.
 - **Hash URLs.** `/#/datasets` rather than `/datasets`: invisible in the desktop app, mildly ugly in
   a browser.
-- **The type generator is pinned to an older TypeScript** inside its isolated project. The
-  workaround has a shelf life and should go when the tool supports the current compiler.
+- **The type generator can lag the TypeScript release.** When it does, it runs in its own isolated
+  project rather than holding the whole frontend back, and that workaround goes when the tool
+  catches up.

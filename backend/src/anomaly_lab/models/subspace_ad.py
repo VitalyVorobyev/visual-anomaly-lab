@@ -110,6 +110,7 @@ class SubspaceAdConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_L14,
         description=(
             "Frozen encoder the patch features come from. ViT-L is the default because it "
@@ -123,6 +124,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     layers: LayerWindow = Field(
+        json_schema_extra={"x-primary": True},
         default=LayerWindow.UPPER_HALF,
         description=(
             "Which band of transformer blocks the patch features are pooled over, as a "
@@ -134,6 +136,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     variance: float = Field(
+        json_schema_extra={"x-primary": True},
         default=0.99,
         gt=0.0,
         le=1.0,
@@ -146,6 +149,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     tail_fraction: float = Field(
+        json_schema_extra={"x-primary": True},
         default=0.002,
         gt=0.0,
         le=1.0,

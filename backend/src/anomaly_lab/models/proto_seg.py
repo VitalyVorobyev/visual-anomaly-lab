@@ -91,6 +91,7 @@ class ProtoSegConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder. The DINOv3 entries are licence-gated (an approved HF_TOKEN must "
@@ -132,6 +133,7 @@ class ProtoSegConfig(BaseModel):
         description="Softmax temperature over cosine similarities. Lower is a harder maximum.",
     )
     adaptation: Adaptation = Field(
+        json_schema_extra={"x-primary": True},
         default=Adaptation.TRAINING_FREE,
         description=(
             "'training_free' scores with the prototype bank. 'linear_adapt' fits a "
@@ -146,6 +148,7 @@ class ProtoSegConfig(BaseModel):
         ),
     )
     calibration: Calibration = Field(
+        json_schema_extra={"x-primary": True},
         default=Calibration.NONE,
         description=(
             "'leave_one_out' rescales the foreground probability on the references: each is "

@@ -5,7 +5,7 @@
  * the value beside the typed body. A save can never silently overwrite another window:
  * the backend rejects a stale token and this hook surfaces that conflict as an error.
  *
- * A dataset annotates either each image or each whole sample (ADR-0036), and the two use
+ * A dataset annotates either each image or each whole sample (handbook annotations.md), and the two use
  * different routes, different ETag namespaces and different cache keys. That branch lives
  * *here*, in one `DraftTarget`, rather than in the editor: the screen is the same screen
  * either way, and duplicating the fork through every call site is how the two halves drift.

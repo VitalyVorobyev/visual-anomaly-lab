@@ -62,6 +62,7 @@ CLASSES_FILENAME = "dino_linear_det.json"
 
 class DinoLinearDetConfig(DinoLinearSegConfig):
     min_area: int = Field(
+        json_schema_extra={"x-primary": True},
         default=4,
         ge=1,
         le=1_000_000,

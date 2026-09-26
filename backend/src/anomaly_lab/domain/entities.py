@@ -118,7 +118,7 @@ class AnnotationScope(StrEnum):
     `IMAGE` is the original and the default: every photograph carries its own document.
     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
     part -- one document is edited once and materialised onto every image of the sample.
-    Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+    Truth stays image-keyed in both cases; only the editing scope moves (handbook annotations.md).
     """
 
     IMAGE = "image"
@@ -331,16 +331,16 @@ class ExperimentStatus(StrEnum):
 
 
 class Aggregation(StrEnum):
-    """How a sample's per-image scores become one number (ADR-0011)."""
+    """How a sample's per-image scores become one number (handbook evaluation.md)."""
 
     MAX = "max"
     MEAN = "mean"
 
 
 class ChannelNormalization(StrEnum):
-    """How per-channel scores are put on one scale before they are reduced (ADR-0011).
+    """How per-channel scores are put on one scale before they are reduced (handbook evaluation.md).
 
-    ADR-0011 chose `max` and recorded the caveat in the same breath: `max` assumes a
+    Evaluation chose `max` and states the caveat in the same breath: `max` assumes a
     part's per-channel scores are comparable, and for a deep method they are not — one
     illumination's distribution simply sits higher and wins every maximum, so the sample
     score measures which channel the model finds noisiest rather than which part is
@@ -496,7 +496,7 @@ class SampleResult(BaseModel):
 
 
 class MetricSet(BaseModel):
-    """Threshold-independent metrics for one subset of one experiment (ADR-0011)."""
+    """Threshold-independent metrics for one subset of one experiment (handbook evaluation.md)."""
 
     model_config = API_MODEL_CONFIG
 

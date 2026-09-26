@@ -4,9 +4,9 @@
 
 ## Context
 
-The comparison screen puts N runs of one split side by side under one evaluation protocol. The
-evaluation layer already produces every number it needs (ADR-0011), so the obvious design fetches N
-metric sets and lays them out in columns.
+The comparison screen puts N runs of one split side by side under one evaluation protocol, and the
+evaluation layer already stores every metric it needs, so the obvious design fetches N metric sets
+and lays them out in columns.
 
 That works only for metrics that are unit-free. **A score has no meaning outside its own run.**
 `pixel_reference` scores a pixel as a robust z against the training median; `efficientad_custom`
@@ -15,13 +15,6 @@ nothing relates, because there is no shared physical quantity underneath. So a s
 threshold applied to N runs describes operating points nobody chose, and a single display range
 applied to N maps renders the lower-scaled method as blank. ROC-AUC, average precision and AU-PRO
 are functions of the ranking and compare directly.
-
-For the threshold-dependent half, three designs were live. **Rescale every run into a common unit**
-(min-max or quantile to `[0, 1]`): tidy, and a lie, since the normalization is fitted per run and
-"0.5" is a different claim per method. **Compare only what is unit-free**: honest, and it discards
-the question an engineer actually asks — at a usable operating point, which method raises fewer
-false alarms. **One shared rule, resolved per run**: each run gets its own threshold from the same
-stated rule, and the rule and the resolved values are shown.
 
 ## Decision
 
@@ -43,8 +36,14 @@ stated rule, and the rule and the resolved values are shown.
   "a score at or above the threshold is a defect" exists once, in Python.
 - **It is N-way at every layer.** A new method may not cost a line here.
 
-**Ruled out:** a common score unit; one threshold slider over N runs; one colour scale over N maps;
-dropping the confusion matrix; and computing anything shown here from the maps on disk.
+## Alternatives considered
+
+- **Rescale every run into a common unit** (min-max or quantile to `[0, 1]`). Tidy, and a lie: the
+  normalization is fitted per run, so "0.5" is a different claim per method.
+- **Compare only what is unit-free.** Honest, and it discards the question an engineer actually
+  asks — at a usable operating point, which method raises fewer false alarms.
+- **One threshold slider, or one colour scale, over N runs.** Both assume the common unit the first
+  alternative fakes.
 
 ## Consequences
 

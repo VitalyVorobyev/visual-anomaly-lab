@@ -279,7 +279,7 @@ export function useResults(
 /**
  * The confusion matrix at one threshold.
  *
- * Nothing is persisted per threshold (ADR-0011), so this is a read over a few hundred
+ * Nothing is persisted per threshold (handbook evaluation.md), so this is a read over a few hundred
  * stored floats. `placeholderData` keeps the previous numbers on screen while the next
  * request lands, which is what makes dragging the slider feel like a filter rather than
  * a series of round trips.

@@ -21,7 +21,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def _default_data_dir() -> Path:
-    """Repo-local `data/` (ADR-0002, ADR-0004).
+    """Repo-local `data/` (ADR-0004).
 
     Only evaluated when `ANOMALY_LAB_DATA_DIR` is unset. A packaged build (M7) does not
     live in a source checkout, so it must set that variable explicitly rather than rely
