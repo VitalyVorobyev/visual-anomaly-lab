@@ -7,7 +7,9 @@ the method's arithmetic, not that it does so on the activations a trained networ
 real parts. This gate is that second claim, and it is what a method must pass before its
 `Capabilities.portable_formats` lists a format (ADR-0034, docs/measurements.md).
 
-Method-agnostic: any key in `m11_public_gate.CANDIDATES` whose plugin declares ONNX.
+Method-agnostic: any key in `m11_public_gate.CANDIDATES` whose plugin implements the export
+protocol. A plugin that writes a graph but has not yet declared ONNX — because this gate is
+what decides the declaration — is lent it for the length of the run, and the report says so.
 
     ./scripts/export-parity-gate.py --data-dir /tmp/export-parity --candidate dinomaly_custom
 
@@ -27,6 +29,7 @@ import importlib
 import json
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +66,7 @@ from anomaly_lab.experiments.train import MODEL_SUBDIR, run_train_job
 from anomaly_lab.jobs.context import JobContext
 from anomaly_lab.models.base import PortableFormat
 from anomaly_lab.models.preprocessing import load_array, to_chw
+from anomaly_lab.models.registry import get_model_class
 
 DEFAULT_CATEGORIES = ("candle", "pcb1")
 
@@ -74,6 +78,31 @@ RELATIVE_TOLERANCE = 1e-4
 AUC_TOLERANCE = 1e-3
 """Image ROC-AUC over the portable scores may differ from the Python scores' by at most this.
 Per-image parity already bounds it; stated separately because ranking is what a score is for."""
+
+
+@contextlib.contextmanager
+def _declared_for_the_gate(key: str) -> Iterator[bool]:
+    """Lend ONNX to a plugin that implements the protocol but has not yet declared it.
+
+    The export job refuses an undeclared format, and the declaration is what this gate
+    decides — so a candidate on its way to declaring ONNX is lent it for the export call
+    alone, and the yielded flag goes into the report. A plugin that already declares it is
+    left untouched; one that implements no graph is refused before any work.
+    """
+    model_class = get_model_class(key)
+    declared = model_class.capabilities()
+    if PortableFormat.ONNX in declared.portable_formats:
+        yield False
+        return
+    if not issubclass(model_class, SupportsOnnxExport):
+        raise TypeError(f"{key} does not implement the ONNX export protocol")
+    lent = declared.model_copy(update={"portable_formats": [PortableFormat.ONNX]})
+    original = model_class.__dict__["capabilities"]
+    model_class.capabilities = classmethod(lambda cls: lent)  # type: ignore[method-assign]
+    try:
+        yield True
+    finally:
+        model_class.capabilities = original  # type: ignore[method-assign]
 
 
 def _job(settings: Any, job_id: int, kind: JobKind, params: dict[str, Any]) -> JobContext:
@@ -142,14 +171,15 @@ def _leg(
         )
         fit_seconds = time.perf_counter() - started
         print(f"Exporting {category} / {candidate.key}...", file=sys.stderr)
-        exported = run_export_job(
-            _job(
-                settings,
-                base + 2,
-                JobKind.EXPORT,
-                {"experiment_id": experiment_id, "format": PortableFormat.ONNX.value},
+        with _declared_for_the_gate(candidate.key) as lent:
+            exported = run_export_job(
+                _job(
+                    settings,
+                    base + 2,
+                    JobKind.EXPORT,
+                    {"experiment_id": experiment_id, "format": PortableFormat.ONNX.value},
+                )
             )
-        )
     bundle = Path(exported["bundle_path"])
     manifest = DeploymentManifest.model_validate_json(
         (bundle / MANIFEST_FILENAME).read_text(encoding="utf-8")
@@ -222,6 +252,7 @@ def _leg(
     passed = summary.passed and auc_delta is not None and auc_delta <= AUC_TOLERANCE
     return {
         "experiment_id": experiment_id,
+        "format_lent_for_the_gate": lent,
         "config": config,
         "prepared_size": candidate.prepared_size,
         "fit_and_score_seconds": fit_seconds,

@@ -111,11 +111,13 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
       what a literal reading of the paper does, so the option that excludes a rotation's invented
       corners is shipped unmeasured. It is a one-axis rerun of one phase, and the honest expectation
       is that it matters most where the part does not fill the frame.
-- [ ] **ONNX export for `subspace_ad`** (M): unlike `dino_memory`, every configuration of this
-      method has a single-input static graph — encoder, centre, project onto a fixed basis,
-      residual, sort for the tail mean, upsample, blur — with no data-dependent control flow and no
-      per-channel branch once a channel's basis is chosen. `portable_formats` is empty today because
-      nothing has been measured for parity, not because the graph is hard.
+- [ ] **Run the real-pixel export-parity gate for `subspace_ad`** (S, unattended compute): the graph
+      is written and its fixture parity is tested (`test_dl_subspace_ad_export.py`); what remains is
+      `scripts/export-parity-gate.py --candidate subspace_ad` on VisA `candle` and `pcb1` under the
+      predeclared rule ([measurements.md](measurements.md)), its verdict recorded there, and — on a
+      pass — `portable_formats=[PortableFormat.ONNX]` with the handbook and the book updated to say so.
+      A fit over several channels stays refused; exporting one graph per channel would need a bundle
+      contract with a channel input.
 
 ## Evaluation
 

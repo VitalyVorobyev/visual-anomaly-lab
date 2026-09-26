@@ -205,6 +205,28 @@ CANDIDATES = {
         },
         step_field=None,
     ),
+    # SubspaceAD at its shipped defaults — the sweep's verdict (ADR-0038) — on the gate's
+    # 448-pixel frame, which both patch sizes divide.  Nothing is trained, so there is no
+    # budget to smoke; the fit is bounded by `max_fit_images` alone.
+    "subspace_ad": CandidateSpec(
+        key="subspace_ad",
+        label="SubspaceAD",
+        family="frozen-backbone subspace",
+        prepared_size=448,
+        config={
+            "backbone": "dinov2_vit_l14",
+            "layers": "upper_half",
+            "variance": 0.99,
+            "tail_fraction": 0.002,
+            "rotations": 30,
+            "max_fit_images": 16,
+            "smoothing_sigma": 4.0,
+            "pretrained_backbone": True,
+            "allow_downloads": True,
+            "seed": SEED,
+        },
+        step_field=None,
+    ),
     # AnomalyVFM is zero-shot: its train job reads no image and only verifies the pinned
     # checkpoint, so there is no budget to smoke.  768 is the frame its resource gate
     # measured and kept for quality; the PatchCore control is re-run on the same 768-pixel

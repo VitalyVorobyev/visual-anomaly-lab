@@ -48,6 +48,8 @@ from typing import Any
 import numpy as np
 from pydantic import BaseModel, Field
 
+from anomaly_lab.deployment.protocol import OnnxGraphContract
+from anomaly_lab.deployment.schema import ScalarTensorSpec, TensorDtype, TensorScore
 from anomaly_lab.models.base import (
     AnomalyModel,
     Availability,
@@ -78,7 +80,12 @@ from anomaly_lab.models.preprocessing import (
     load_array,
     to_chw,
 )
-from anomaly_lab.models.score_map import pixel_map, upsample_bilinear
+from anomaly_lab.models.score_map import (
+    pixel_map,
+    resample_operator,
+    separable_operator,
+    upsample_bilinear,
+)
 from anomaly_lab.models.subspace import (
     CovarianceAccumulator,
     RotationFill,
@@ -98,6 +105,14 @@ CHECKPOINT_FORMAT = 1
 UNASSIGNED = ""
 """Key for an image belonging to no channel, so a single-view dataset is a one-entry
 mapping rather than a branch. The same convention `pixel_reference` uses."""
+
+PORTABLE_OPSET = 18
+
+PORTABLE_TOLERANCE = 1e-4
+"""What the export job holds the graph to on its fixture — `atol = rtol` on the map, `atol` on
+the score. The bound the export-parity gate predeclared for a deep frozen backbone
+(docs/measurements.md). The graph widens to float64 where the Python path does, so the
+residual's cancellation is not what spends it."""
 
 BATCH_FRAMES = 4
 """Frames per forward pass. The campaign's figure, kept because a fit's rotated copies and
@@ -315,6 +330,10 @@ class SubspaceAdModel(AnomalyModel):
             # spanning both, against which neither is far from normal.
             channel_aware=True,
             supports_resume=False,
+            # The plugin writes a graph (`export_onnx`) and its parity reference, but a format
+            # is declared only once `scripts/export-parity-gate.py` has passed on a real fit
+            # and its verdict is in docs/measurements.md. Until then the export job refuses.
+            portable_formats=[],
             preferred_device=Device.MPS,
         )
 
@@ -549,24 +568,8 @@ class SubspaceAdModel(AnomalyModel):
                 fitted = self._fits.get(channel)
                 if fitted is None:
                     raise RuntimeError(self._channel_message(record, channel))
-                basis = residual_basis(fitted.fit, features[row], rank=ranks[channel])
-                scores = basis.at_rank(ranks[channel])
-                # The image score is taken on the **patch grid**, before the upsample and
-                # before the blur, so `smoothing_sigma` cannot move it. A score that
-                # depended on the smoothing would make a display decision a scoring one.
-                score = tail_value_at_risk(scores, [self.config.tail_fraction])[
-                    self.config.tail_fraction
-                ]
-                tokens = scores.reshape(grid).astype(np.float32)
-                # `pixel_map` refuses a non-positive sigma, and rightly: a Gaussian of width
-                # zero is not a blur, it is the absence of one, and a blur helper that
-                # silently accepted it would hide a misconfigured sweep. The absence is
-                # meaningful here, though — it is how a reader sees the raw upsample — so the
-                # plugin spends the branch rather than asking the helper to be vague.
-                values = (
-                    pixel_map(tokens, size, sigma=self.config.smoothing_sigma)
-                    if self.config.smoothing_sigma > 0.0
-                    else upsample_bilinear(tokens, size)
+                tokens, values, score = self._score(
+                    fitted, features[row], rank=ranks[channel], grid=grid, size=size
                 )
                 map_path = ctx.write_map(record.image_id, values)
                 ctx.emit_diagnostic(
@@ -601,6 +604,176 @@ class SubspaceAdModel(AnomalyModel):
                 f"scored {len(predictions)}/{len(images)} images",
             )
         return predictions
+
+    def _score(
+        self,
+        fitted: _Fitted,
+        features: np.ndarray,
+        *,
+        rank: int,
+        grid: tuple[int, int],
+        size: tuple[int, int],
+    ) -> tuple[np.ndarray, np.ndarray, float]:
+        """One image's patch residual, pixel map and image score from its `(P, D)` features.
+
+        The one scoring path: `predict` stores what this returns, and `portable_reference`
+        hands it to the export's parity check, so the graph is compared with the method.
+        """
+        basis = residual_basis(fitted.fit, features, rank=rank)
+        scores = basis.at_rank(rank)
+        # The image score is taken on the **patch grid**, before the upsample and before
+        # the blur, so `smoothing_sigma` cannot move it. A score that depended on the
+        # smoothing would make a display decision a scoring one.
+        score = tail_value_at_risk(scores, [self.config.tail_fraction])[self.config.tail_fraction]
+        tokens = scores.reshape(grid).astype(np.float32)
+        # `pixel_map` refuses a non-positive sigma, and rightly: a Gaussian of width zero is
+        # not a blur, it is the absence of one, and a blur helper that silently accepted it
+        # would hide a misconfigured sweep. The absence is meaningful here, though — it is
+        # how a reader sees the raw upsample — so the plugin spends the branch rather than
+        # asking the helper to be vague.
+        values = (
+            pixel_map(tokens, size, sigma=self.config.smoothing_sigma)
+            if self.config.smoothing_sigma > 0.0
+            else upsample_bilinear(tokens, size)
+        )
+        return tokens, values, score
+
+    # ------------------------------------------------------------------ deployment
+
+    def _single_fit(self) -> _Fitted:
+        """The one subspace a portable graph can carry, or a refusal that names the others.
+
+        A bundle is one static graph over one prepared frame, and its contract has no
+        channel input to branch on. A fit over several channels holds one subspace per
+        channel, so it is refused here — inside the plugin, never pre-checked in a route,
+        which is how `pixel_reference` refuses a per-channel reference too (ADR-0007).
+        """
+        if not self._fits or self._grid is None or self._encoder is None:
+            msg = "subspace_ad has no fitted subspace to export; fit or load it first"
+            raise RuntimeError(msg)
+        if len(self._fits) > 1:
+            named = ", ".join(sorted(name or "unassigned" for name in self._fits))
+            msg = (
+                f"subspace_ad fitted {len(self._fits)} subspaces, one per channel ({named}), "
+                "and one ONNX graph carries exactly one: the bundle contract has no channel "
+                "input to choose between them. Export a run whose channel selection leaves "
+                "a single channel."
+            )
+            raise ValueError(msg)
+        return next(iter(self._fits.values()))
+
+    def _check_frame(self, width: int, height: int) -> tuple[int, int]:
+        grid = patch_grid(self.config.backbone, width, height)
+        if grid != self._grid:
+            fitted = "x".join(str(side) for side in self._grid or ())
+            msg = (
+                f"this subspace_ad model was fitted on a {fitted} token grid and is asked for "
+                f"{width}x{height}, a {grid[0]}x{grid[1]} one"
+            )
+            raise ValueError(msg)
+        return grid
+
+    def _portable_module(self, preprocessing: PreprocessingConfig) -> Any:
+        """The fitted subspace on CPU, wrapped as prepared pixels in, map and score out."""
+        from anomaly_lab.models.dino_backbone import pin_frame
+        from anomaly_lab.models.subspace_portable import PortableSubspace
+
+        fitted = self._single_fit()
+        grid = self._check_frame(preprocessing.width, preprocessing.height)
+        if self._stats is None or self._encoder is None:
+            msg = "subspace_ad has no encoder; it was neither fitted nor loaded"
+            raise RuntimeError(msg)
+        rank = fitted.rank_for(self.config.variance)
+        sigma = self.config.smoothing_sigma
+        height, width = preprocessing.height, preprocessing.width
+        # The map is linear in the token grid, so the upsample and the blur are one constant
+        # matrix per axis — the very operators `pixel_map` applies, built from the same
+        # primitives, rather than a second implementation of either in graph operators.
+        if sigma > 0.0:
+            rows = separable_operator(grid[0], height, sigma)
+            columns = separable_operator(grid[1], width, sigma)
+        else:
+            rows = resample_operator(grid[0], height)
+            columns = resample_operator(grid[1], width)
+        self._encoder = self._encoder.to("cpu").eval()
+        mean_values, std_values = self._stats
+        return PortableSubspace(
+            pin_frame(self._encoder, grid[0], grid[1]),
+            indices=self.config.layers.indices(BACKBONES[self.config.backbone].depth),
+            mean=mean_values,
+            std=std_values,
+            centre=fitted.fit.mean,
+            components=fitted.fit.components[:rank],
+            grid=grid,
+            # `tail_value_at_risk`'s own count, fixed by the grid: at least one patch.
+            tail_count=max(1, round(self.config.tail_fraction * grid[0] * grid[1])),
+            rows=rows,
+            columns=columns,
+        ).eval()
+
+    def export_onnx(
+        self,
+        destination: Path,
+        preprocessing: PreprocessingConfig,
+    ) -> OnnxGraphContract:
+        """Export encoder, residual, tail mean and map as one static graph.
+
+        The score is a named graph output: it is the tail mean of the *patch grid*, which no
+        host reducer over the emitted pixel map could reproduce. The rank `variance` selects,
+        the tail count and the upsample-and-blur operators are constants of the graph, so a
+        bundle answers for the configuration it was exported under.
+        """
+        import torch
+
+        module = self._portable_module(preprocessing)
+        fixture = torch.zeros(
+            1,
+            preprocessing.channels,
+            preprocessing.height,
+            preprocessing.width,
+            dtype=torch.float32,
+        )
+        input_name = "image"
+        map_name = "anomaly_map"
+        score_name = "score"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        torch.onnx.export(
+            module,
+            (fixture,),
+            destination,
+            input_names=[input_name],
+            output_names=[map_name, score_name],
+            opset_version=PORTABLE_OPSET,
+            dynamo=False,
+        )
+        return OnnxGraphContract(
+            opset=PORTABLE_OPSET,
+            input_name=input_name,
+            output_name=map_name,
+            score=TensorScore(tensor=ScalarTensorSpec(name=score_name, dtype=TensorDtype.FLOAT32)),
+            absolute_tolerance=PORTABLE_TOLERANCE,
+            relative_tolerance=PORTABLE_TOLERANCE,
+        )
+
+    def portable_reference(self, input_nchw: np.ndarray) -> tuple[np.ndarray, float]:
+        """`predict`'s own arithmetic, on CPU, over an already-prepared parity tensor."""
+        fitted = self._single_fit()
+        height, width = int(input_nchw.shape[2]), int(input_nchw.shape[3])
+        grid = self._check_frame(width, height)
+        if self._encoder is None:
+            msg = "subspace_ad has no encoder; it was neither fitted nor loaded"
+            raise RuntimeError(msg)
+        self._encoder = self._encoder.to("cpu")
+        planes = expand_planes(np.asarray(input_nchw[0], dtype=np.float32), 3)
+        features = self._encode([np.ascontiguousarray(planes.transpose(1, 2, 0))], "cpu")[0]
+        _, values, score = self._score(
+            fitted,
+            features,
+            rank=fitted.rank_for(self.config.variance),
+            grid=grid,
+            size=(height, width),
+        )
+        return np.asarray(values, dtype=np.float32), float(score)
 
     def _channel_message(self, record: ImageRecord, channel: str) -> str:
         known = ", ".join(name or "unassigned" for name in sorted(self._fits)) or "no channels"
