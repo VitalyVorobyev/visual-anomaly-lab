@@ -205,6 +205,30 @@ CANDIDATES = {
         },
         step_field=None,
     ),
+    # SubspaceAD at its shipped defaults but on the DINO gate's 448 px pixels, so the paired
+    # PatchCore control and the recorded dino_memory row read against identical input.  Its
+    # defaults came from a sweep outside the application (ADR-0038); this is the in-app,
+    # shared-pixel control that sweep could not provide.  Nothing is trained.
+    "subspace_ad": CandidateSpec(
+        key="subspace_ad",
+        label="SubspaceAD",
+        family="frozen-backbone subspace",
+        prepared_size=448,
+        config={
+            "backbone": "dinov2_vit_l14",
+            "layers": "upper_half",
+            "variance": 0.99,
+            "tail_fraction": 0.002,
+            "rotations": 30,
+            "rotation_fill": "zeros",
+            "max_fit_images": 16,
+            "smoothing_sigma": 4.0,
+            "pretrained_backbone": True,
+            "allow_downloads": True,
+            "seed": SEED,
+        },
+        step_field=None,
+    ),
     # AnomalyVFM is zero-shot: its train job reads no image and only verifies the pinned
     # checkpoint, so there is no budget to smoke.  768 is the frame its resource gate
     # measured and kept for quality; the PatchCore control is re-run on the same 768-pixel

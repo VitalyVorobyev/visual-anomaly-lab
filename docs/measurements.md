@@ -527,6 +527,25 @@ load).
 `concat` instead of `mean`, `final_norm=False`; `rotation_fill=masked` never measured. All four are in
 [backlog.md](backlog.md).
 
+## SubspaceAD promotion gate — predeclared
+
+The in-application control the sweep above could not provide. Predeclared here before any run;
+`scripts/subspace-ad-public-gate.py`.
+
+**Protocol.** The DINO patch-memory gate's, unchanged: VisA `candle` and `pcb1` under the official one-class
+split, one identity build at 448 × 448 per class, and PatchCore re-run on that same build as the paired
+control. `subspace_ad` runs at its shipped defaults (`dinov2_vit_l14`, `upper_half`, τ 0.99, ρ 0.002, 30
+rotations filled with zeros, 16 fit images, σ 4) with only the size moved to 448, so its pixels are the
+ones `dino_memory`'s recorded row read. `dino_memory` is re-run in the same batch on the same builds, and
+that same-day row is the one compared, not the recorded one.
+
+**Rule.** Means over both classes.
+- **Supported** if it clears the three floors (image ROC-AUC 0.80, pixel ROC-AUC 0.85, AU-PRO 0.60) and
+  its image ROC-AUC is not below PatchCore's. Otherwise it stays `experimental`.
+- **Recommended for anomaly detection**, replacing `dino_memory`, if it is supported *and* beats
+  `dino_memory` by at least 0.02 on image ROC-AUC while trailing it by no more than 0.01 on pixel
+  ROC-AUC and on AU-PRO. Otherwise `dino_memory` stays the recommended method.
+
 ## Few-shot segmentation — `proto_seg` is the default; no method yet draws a usable mask
 
 The first few-shot gate (ADR-0040), predeclared below before it ran. `scripts/few-shot-public-gate.py`,
