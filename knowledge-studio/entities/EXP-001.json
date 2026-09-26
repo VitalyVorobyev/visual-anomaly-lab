@@ -1,0 +1,30 @@
+{
+  "id": "EXP-001",
+  "kind": "Experiment",
+  "title": "Presence-gate protocol rerun",
+  "summary": "Predeclare and rerun FSS-1000 and VisA presence/mask gates.",
+  "status": "planned",
+  "confidence": 0.8,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Few-shot segmentation"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-010"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

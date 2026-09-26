@@ -1,0 +1,36 @@
+{
+  "id": "WP-001",
+  "kind": "WorkPackage",
+  "title": "Explain disabled tabs in lab-ui",
+  "summary": "Release Tabs guidance and replace local title tooltips.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Release Tabs guidance and replace local title tooltips.",
+  "work_type": "known",
+  "validation_criterion": "Focus and hover expose the disabled reason; transient-state pass is reviewed.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Interface"
+    }
+  ],
+  "relations": [
+    {
+      "type": "implemented_in",
+      "target": "REP-002"
+    },
+    {
+      "type": "uses",
+      "target": "RSK-003"
+    }
+  ],
+  "details": {
+    "backlog_size": "S"
+  },
+  "repo_url": null,
+  "location": null
+}

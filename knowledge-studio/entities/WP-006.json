@@ -1,0 +1,32 @@
+{
+  "id": "WP-006",
+  "kind": "WorkPackage",
+  "title": "Export single-image DINO memory modes",
+  "summary": "Make export capability configuration-aware or reject unsupported fusion explicitly.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Make export capability configuration-aware or reject unsupported fusion explicitly.",
+  "work_type": "known",
+  "validation_criterion": "Supported modes pass the portable export contract.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "CAP-007"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

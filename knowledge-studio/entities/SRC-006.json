@@ -1,0 +1,30 @@
+{
+  "id": "SRC-006",
+  "kind": "Source",
+  "title": "Evaluation contract",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Channel selection": "Tracked section in docs/architecture/evaluation.md",
+    "Metrics": "Tracked section in docs/architecture/evaluation.md",
+    "Comparing runs": "Tracked section in docs/architecture/evaluation.md",
+    "Few-shot segmentation": "Tracked section in docs/architecture/evaluation.md",
+    "Semantic segmentation": "Tracked section in docs/architecture/evaluation.md",
+    "Object detection": "Tracked section in docs/architecture/evaluation.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/architecture/evaluation.md"
+  }
+}

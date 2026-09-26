@@ -1,0 +1,32 @@
+{
+  "id": "WP-002",
+  "kind": "WorkPackage",
+  "title": "Add sortable Table column upstream",
+  "summary": "Release a Table sort prop and migrate catalogue header.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Release a Table sort prop and migrate catalogue header.",
+  "work_type": "integration",
+  "validation_criterion": "Column header exposes aria-sort and catalogue sorting still works.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Interface"
+    }
+  ],
+  "relations": [
+    {
+      "type": "implemented_in",
+      "target": "REP-002"
+    }
+  ],
+  "details": {
+    "backlog_size": "S"
+  },
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,25 @@
+{
+  "id": "REP-002",
+  "kind": "Repository",
+  "title": "lab-ui",
+  "summary": "Shared design tokens and UI primitives consumed by the workbench.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-007",
+      "section": "Design system"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": "https://github.com/VitalyVorobyev/lab-ui",
+  "location": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "EXP-004",
+  "kind": "Experiment",
+  "title": "SubspaceAD promotion gate",
+  "summary": "Run paired control on shared immutable pixels.",
+  "status": "planned",
+  "confidence": 0.8,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-004"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

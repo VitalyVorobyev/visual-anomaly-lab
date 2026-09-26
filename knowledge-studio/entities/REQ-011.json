@@ -1,0 +1,30 @@
+{
+  "id": "REQ-011",
+  "kind": "Requirement",
+  "title": "Tighter detection boxes",
+  "summary": "A box-regression head should improve high-IoU precision on box truth.",
+  "status": "open",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Supervised tasks"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "CAP-006"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

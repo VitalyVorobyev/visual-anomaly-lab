@@ -1,0 +1,30 @@
+{
+  "id": "CAP-004",
+  "kind": "Capability",
+  "title": "Evaluation and comparison",
+  "summary": "Read task-specific metrics and compare runs under one protocol.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-006",
+      "section": "Metrics"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "PRD-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "SRC-005",
+  "kind": "Source",
+  "title": "Method plugins",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Plugin interface": "Tracked section in docs/architecture/methods.md",
+    "Shipped methods": "Tracked section in docs/architecture/methods.md",
+    "Memory planning": "Tracked section in docs/architecture/methods.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/architecture/methods.md"
+  }
+}

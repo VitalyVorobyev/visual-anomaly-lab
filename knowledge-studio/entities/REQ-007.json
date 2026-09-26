@@ -1,0 +1,30 @@
+{
+  "id": "REQ-007",
+  "kind": "Requirement",
+  "title": "Few-shot reference split",
+  "summary": "References are selected and frozen as a split; absence is an answer.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-010",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "CAP-005"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

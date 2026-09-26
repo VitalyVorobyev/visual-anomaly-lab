@@ -1,0 +1,32 @@
+{
+  "id": "WP-012",
+  "kind": "WorkPackage",
+  "title": "Run official one-class split",
+  "summary": "Compare selected methods on published split rather than generated split.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Compare selected methods on published split rather than generated split.",
+  "work_type": "research",
+  "validation_criterion": "Protocol and result are added to measurements before claims of parity.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "CAP-004"
+    }
+  ],
+  "details": {
+    "backlog_size": "S"
+  },
+  "repo_url": null,
+  "location": null
+}

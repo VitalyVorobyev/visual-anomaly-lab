@@ -1,0 +1,31 @@
+{
+  "id": "SRC-002",
+  "kind": "Source",
+  "title": "Open backlog",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Interface": "Tracked section in docs/backlog.md",
+    "Few-shot segmentation": "Tracked section in docs/backlog.md",
+    "Supervised tasks": "Tracked section in docs/backlog.md",
+    "Methods": "Tracked section in docs/backlog.md",
+    "Evaluation": "Tracked section in docs/backlog.md",
+    "Deployment": "Tracked section in docs/backlog.md",
+    "Upstream": "Tracked section in docs/backlog.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/backlog.md"
+  }
+}

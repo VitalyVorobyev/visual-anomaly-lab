@@ -81,3 +81,6 @@ deployment/runner/target/
 .claude/settings.local.json
 # Agent worktrees: whole checkouts, created and removed by the tooling.
 .claude/worktrees/
+
+# Knowledge Studio local lock, journal and recent demo state
+/.knowledge-studio/

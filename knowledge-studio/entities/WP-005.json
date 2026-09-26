@@ -1,0 +1,40 @@
+{
+  "id": "WP-005",
+  "kind": "WorkPackage",
+  "title": "Add detector box-regression head",
+  "summary": "Regress box edges from frozen DINO patch features as detector configuration.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Regress box edges from frozen DINO patch features as detector configuration.",
+  "work_type": "known",
+  "validation_criterion": "Rerun public PCB protocol and compare with recorded gate.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Supervised tasks"
+    }
+  ],
+  "relations": [
+    {
+      "type": "depends_on",
+      "target": "VAL-004"
+    },
+    {
+      "type": "uses",
+      "target": "EXP-002"
+    },
+    {
+      "type": "uses",
+      "target": "REQ-011"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "RSK-002",
+  "kind": "Risk",
+  "title": "Detection boxes remain loose",
+  "summary": "Public box-truth gate finds defects but precision falls at high IoU.",
+  "status": "open",
+  "confidence": 0.9,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-008",
+      "section": "Detection on box-drawn truth (PCB) — the features find defects; the boxes are loose"
+    }
+  ],
+  "relations": [
+    {
+      "type": "blocks",
+      "target": "REQ-011"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,30 @@
+{
+  "id": "CMP-002",
+  "kind": "Component",
+  "title": "FastAPI backend sidecar",
+  "summary": "Python service exposes domain operations to the shell.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-003",
+      "section": "Component architecture"
+    }
+  ],
+  "relations": [
+    {
+      "type": "implemented_in",
+      "target": "REP-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

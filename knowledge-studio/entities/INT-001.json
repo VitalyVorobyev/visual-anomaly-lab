@@ -1,0 +1,25 @@
+{
+  "id": "INT-001",
+  "kind": "Interface",
+  "title": "Desktop-to-sidecar HTTP boundary",
+  "summary": "Documented boundary between project components.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-003",
+      "section": "Component architecture"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

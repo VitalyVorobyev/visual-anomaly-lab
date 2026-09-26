@@ -1,0 +1,32 @@
+{
+  "id": "WP-013",
+  "kind": "WorkPackage",
+  "title": "Make guided-run truth legible at thumbnail size",
+  "summary": "Present class truth clearly in the Goal and Split strips at thumbnail size.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Present class truth clearly in the Goal and Split strips at thumbnail size.",
+  "work_type": "known",
+  "validation_criterion": "A small defect or box remains findable in both strips at 112 px; visual states are reviewed.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Interface"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "CAP-002"
+    }
+  ],
+  "details": {
+    "backlog_size": "S"
+  },
+  "repo_url": null,
+  "location": null
+}

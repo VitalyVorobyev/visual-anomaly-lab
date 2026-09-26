@@ -1,0 +1,30 @@
+{
+  "id": "CAP-006",
+  "kind": "Capability",
+  "title": "Supervised tasks",
+  "summary": "Semantic segmentation and object detection share task-selected seams.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-009",
+      "section": "Decision"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "PRD-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

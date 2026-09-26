@@ -1,0 +1,30 @@
+{
+  "id": "EXP-002",
+  "kind": "Experiment",
+  "title": "Box-regression public gate",
+  "summary": "Compare box-head output with the recorded PCB detection verdict.",
+  "status": "planned",
+  "confidence": 0.8,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Supervised tasks"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-011"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,27 @@
+{
+  "id": "SRC-014",
+  "kind": "Source",
+  "title": "Import handbook",
+  "summary": "Tracked project documentation; follow the linked document for full current detail.",
+  "status": "active",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [],
+  "relations": [],
+  "details": {
+    "Scan — `POST /api/import/scan`": "Tracked section in docs/architecture/import.md",
+    "Commit — `POST /api/import/commit`": "Tracked section in docs/architecture/import.md",
+    "Reference packs": "Tracked section in docs/architecture/import.md"
+  },
+  "repo_url": null,
+  "location": {
+    "type": "local",
+    "path": "docs/architecture/import.md"
+  }
+}

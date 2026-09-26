@@ -1,0 +1,30 @@
+{
+  "id": "REQ-002",
+  "kind": "Requirement",
+  "title": "Channel count remains data",
+  "summary": "Channel selection is per experiment; no fixed channel-count schema.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-006",
+      "section": "Channel selection"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "CAP-008"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

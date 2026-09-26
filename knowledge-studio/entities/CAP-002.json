@@ -1,0 +1,30 @@
+{
+  "id": "CAP-002",
+  "kind": "Capability",
+  "title": "Truth and annotation",
+  "summary": "Browse, explore, label and annotate source-frame images with versioned, task-scoped truth.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-013",
+      "section": "Document contract"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "PRD-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

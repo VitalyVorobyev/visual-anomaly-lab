@@ -1,0 +1,30 @@
+{
+  "id": "VAL-006",
+  "kind": "Validation",
+  "title": "Box regression rerun",
+  "summary": "Pending repeat of the PCB protocol after head changes.",
+  "status": "planned",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Supervised tasks"
+    }
+  ],
+  "relations": [
+    {
+      "type": "validates",
+      "target": "REQ-011"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

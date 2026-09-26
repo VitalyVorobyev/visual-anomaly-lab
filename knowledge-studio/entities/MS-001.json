@@ -1,0 +1,25 @@
+{
+  "id": "MS-001",
+  "kind": "Milestone",
+  "title": "Core workbench available",
+  "summary": "Import, annotation, anomaly methods, comparison and export are documented as current.",
+  "status": "done",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-001",
+      "section": "What it does today"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

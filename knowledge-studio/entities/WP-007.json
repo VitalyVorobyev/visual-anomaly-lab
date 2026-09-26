@@ -1,0 +1,32 @@
+{
+  "id": "WP-007",
+  "kind": "WorkPackage",
+  "title": "Tune PatchCore and re-compare",
+  "summary": "Ablate declared backbone, layers, coreset and candidate cap.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Ablate declared backbone, layers, coreset and candidate cap.",
+  "work_type": "research",
+  "validation_criterion": "Comparison uses matched protocol and published ablation record.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Methods"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "EXP-003"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

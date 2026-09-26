@@ -1,0 +1,30 @@
+{
+  "id": "CAP-007",
+  "kind": "Capability",
+  "title": "Portable deployment",
+  "summary": "Export verified ONNX bundles for supported methods.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-001",
+      "section": "What it does today"
+    }
+  ],
+  "relations": [
+    {
+      "type": "derived_from",
+      "target": "PRD-001"
+    }
+  ],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

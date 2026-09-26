@@ -1,0 +1,25 @@
+{
+  "id": "DATA-001",
+  "kind": "Dataset",
+  "title": "Public anomaly benchmark references",
+  "summary": "Public benchmark registrations are described by the import handbook; image data is outside Git.",
+  "status": "accepted",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-014",
+      "section": "Reference packs"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

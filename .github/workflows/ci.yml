@@ -23,6 +23,20 @@ jobs:
       # nothing from it was ever committed, not that this run is clean.
       - run: ./scripts/check-repo-safety.sh
 
+  knowledge-studio:
+    name: Knowledge Studio graph
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7
+        with:
+          repository: VitalyVorobyev/knowledge-studio
+          ref: 7367194bf0049176e6fc2c7c699aee1543c66848
+          path: studio-validator
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Validate curated project graph
+        run: cargo run --locked --manifest-path studio-validator/src-tauri/Cargo.toml --bin knowledge-studio-cli -- validate "$GITHUB_WORKSPACE"
+
   backend:
     name: Backend
     runs-on: ubuntu-latest

@@ -1,0 +1,25 @@
+{
+  "id": "MS-003",
+  "kind": "Milestone",
+  "title": "Detection precision follow-up",
+  "summary": "Box-regression head and public rerun remain open.",
+  "status": "open",
+  "confidence": 0.95,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Supervised tasks"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}

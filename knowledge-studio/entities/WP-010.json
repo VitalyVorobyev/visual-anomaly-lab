@@ -1,0 +1,32 @@
+{
+  "id": "WP-010",
+  "kind": "WorkPackage",
+  "title": "Test dedicated-hardware handoff",
+  "summary": "Run only bundle and runner offline on a second target.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Run only bundle and runner offline on a second target.",
+  "work_type": "integration",
+  "validation_criterion": "Record latency, memory, provider and parity against source.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Deployment"
+    }
+  ],
+  "relations": [
+    {
+      "type": "uses",
+      "target": "CAP-007"
+    }
+  ],
+  "details": {
+    "backlog_size": "M"
+  },
+  "repo_url": null,
+  "location": null
+}

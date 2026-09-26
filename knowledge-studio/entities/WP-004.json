@@ -1,0 +1,40 @@
+{
+  "id": "WP-004",
+  "kind": "WorkPackage",
+  "title": "Gate few-shot mask on presence",
+  "summary": "Suppress foreground mask when reference-resolved presence cut says absent.",
+  "status": "open",
+  "confidence": 0.78,
+  "owner": null,
+  "effort": null,
+  "outcome": "Suppress foreground mask when reference-resolved presence cut says absent.",
+  "work_type": "known",
+  "validation_criterion": "Predeclared FSS-1000 and VisA reruns are compared against recorded verdicts.",
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-002",
+      "section": "Few-shot segmentation"
+    }
+  ],
+  "relations": [
+    {
+      "type": "depends_on",
+      "target": "VAL-002"
+    },
+    {
+      "type": "uses",
+      "target": "EXP-001"
+    },
+    {
+      "type": "uses",
+      "target": "REQ-010"
+    }
+  ],
+  "details": {
+    "backlog_size": "S"
+  },
+  "repo_url": null,
+  "location": null
+}

@@ -1,0 +1,25 @@
+{
+  "id": "OWN-001",
+  "kind": "Team",
+  "title": "Project maintainers",
+  "summary": "Responsible ownership is tracked in the repository; individual assignment is not inferred.",
+  "status": "accepted",
+  "confidence": 0.7,
+  "owner": null,
+  "effort": null,
+  "outcome": null,
+  "work_type": null,
+  "validation_criterion": null,
+  "skill": null,
+  "milestone": null,
+  "evidence": [
+    {
+      "source": "SRC-001",
+      "section": "What it does today"
+    }
+  ],
+  "relations": [],
+  "details": {},
+  "repo_url": null,
+  "location": null
+}
