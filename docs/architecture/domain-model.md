@@ -173,6 +173,16 @@ be regenerated exactly — a seed alone reproduces nothing without its fractions
   sample of another class; a class one sample shows goes where its stratum's draw puts it
   (`datasets/splitting.draw_class_stratified`).
 
+A split's `name` is optional on creation: left empty it is derived from the params and seed as
+`<label> · seed <n>` (`Standard · 60/20/20, normals only · seed 0`, `5-shot · bucket · seed 2`,
+`70/30 by class · seed 0`, or `Published`, whose seed means nothing), with ` (2)` appended if taken.
+Left empty too, the seed is the first one no split of the same label has used, so asking for the same
+split twice draws a second one rather than colliding (`datasets/split_presets.py`).
+
+A split is deleted with its assignments (`ON DELETE CASCADE`) only when no `Experiment` ran on it:
+`experiment.split_id` is `ON DELETE RESTRICT`, and `DELETE /api/splits/{id}` refuses with 409 and names
+the runs, since a run's numbers mean something only against its split. Nothing cascades to experiments.
+
 ### SplitAssignment
 
 `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`, primary key `(split_id, sample_id)`.

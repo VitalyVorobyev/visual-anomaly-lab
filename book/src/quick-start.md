@@ -40,7 +40,9 @@ are ignored for size and must never be committed.
 
 Open **Datasets**. A complete local VisA pack appears automatically. Choose an object class and select
 **Register**. Registration reads the official CSV and masks in place; it does not copy or edit the source.
-Create a split using the **Imported** strategy so the run follows the provider's one-class protocol.
+Open **Splits** and press **Create** on the **Published** card, so the run follows the provider's
+one-class protocol. Each card shows what the split will contain before it exists; nothing needs
+configuring.
 
 If you use your own tree instead, continue with [Import and registration](import.md).
 

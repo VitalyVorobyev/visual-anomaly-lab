@@ -111,6 +111,10 @@ export type SplitDetail = Schemas["SplitDetail"];
 export type SplitParams = Schemas["SplitParams-Output"];
 export type SplitParamsInput = Schemas["SplitParams-Input"];
 export type SubsetComposition = Schemas["SubsetComposition"];
+export type SplitPreset = Schemas["SplitPreset"];
+export type SplitPreview = Schemas["SplitPreview"];
+export type SplitDeletionPreview = Schemas["SplitDeletionPreview"];
+export type SplitDeletionResult = Schemas["SplitDeletionResult"];
 
 export type ImageTier = Schemas["ImageTier"];
 

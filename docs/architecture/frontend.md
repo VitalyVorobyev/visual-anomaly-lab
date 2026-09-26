@@ -177,14 +177,26 @@ revision names the experiments pinning it. `GET /api/region-extractors`,
 `POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}`,
 `GET/DELETE /api/region-profiles/{id}`.
 
-**Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a
-class** (`few_shot`: a class that some sample shows, a shot count and a seed, with the class's coverage
-beside the picker), or **draw annotated samples by class** (`class_stratified`: a seed and the
-annotated share that trains, with what happens to unannotated samples and small classes said under
-the form). `?strategy=` opens the form on a strategy, which is how a prerequisite link lands on the
-one its task needs. Per-subset counts by label; the train-defect tick appears only for a strategy
-whose train is normals. Immutable once created. `POST /api/splits`,
-`GET /api/splits?dataset_id=`, `GET /api/datasets/{id}/annotation-labels/coverage`.
+**Splits** — presets first, tuning optional. The top is a card per preset the dataset can serve
+(`GET /api/datasets/{id}/split-presets`, [evaluation](evaluation.md#splits)): its task badges, a
+one-line meaning, a composition bar with counts from the dry run, the name Create will give, and one
+**Create** press; a few-shot card adds a class `Select` on the most frequent class, and another class
+is a fresh dry run. `components/SplitComposition.tsx` draws every composition on the screen: the bar
+divided by subset and within it by what the task reads — verdicts for an anomaly split, the drawn class
+against the rest for `few_shot`, class colours for `class_stratified` (a range past eight classes).
+**Custom split** is a `Disclosure` holding the strategy form, offering only the strategies the
+dataset's truth can feed, each labelled with its task — the seeded draw, the published partition
+(only with a published preset), **draw references for a class** (`few_shot`, defaulting to the most
+frequent class, coverage beside the picker) and **draw annotated samples by class**
+(`class_stratified`). Name and seed are optional and their placeholders are what the server will
+derive; a debounced `POST /api/datasets/{id}/splits/preview` shows the composition as the form
+changes. `?strategy=` opens the disclosure on a strategy, which is how a prerequisite link lands on
+the one its task needs. Each existing split shows its tasks, its composition with a `browse` link per
+subset, the experiments that ran on it, and **Delete**, whose `ConfirmDialog` reads the deletion
+preview and is disabled, naming the runs, while any experiment holds it. With no split the empty
+state points at the presets; with no preset a `Callout` points at labelling and annotation.
+`POST /api/splits`, `GET /api/splits?dataset_id=`, `GET /api/splits/{id}/deletion-preview`,
+`DELETE /api/splits/{id}`, `GET /api/datasets/{id}/annotation-labels/coverage`.
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
 in the URL and are applied in SQLite: a search that also matches a run's number (`12`, `#12`), any set of
@@ -205,7 +217,9 @@ previews files, bytes, active-work blockers and resident eviction.
 (ADR-0039), step 1 is the task, because it decides everything after it: the split list offers only the
 task's kind of split (`splitServesTask`), method cards are those whose `capabilities.tasks` include it,
 and a targeted task adds a **Target class** select beside the split, defaulting to the class a `few_shot`
-split was drawn for (ADR-0040). With no split its task can use, the Split field links to the Splits tab
+split was drawn for (ADR-0040). With no split its task can use, the Split field offers the task's
+first preset in place — "Use Standard · 60/20/20, normals only — create it", with the target class for
+a few-shot preset — which creates it in one press and is then preselected, and links to the Splits tab
 opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation
 and detection.
 With one task the form starts at its inputs. The band lists what is

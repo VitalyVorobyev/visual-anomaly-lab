@@ -221,6 +221,18 @@ shows, with the rest parked in `test` where they are scored but measured against
 `manual`. The anomaly strategies put normals alone in `train`, and a supervised run cannot learn a
 class from them.
 
+**Presets are the zero-configuration way in.** `GET /api/datasets/{id}/split-presets` returns the
+requests that work on this dataset, per task, each with its params, the tasks it serves, the name and
+seed Create would use, and its **dry-run composition** — per subset, counts by verdict and by class,
+computed by the same `plan_*` functions as creation and written nowhere
+(`datasets/split_presets.py`). A dataset with anomaly verdicts gets **Standard · 60/20/20, normals
+only** (`normal_only_train` at its defaults) and, only when its committed manifest publishes a
+partition, **Published** (`imported`). A dataset with class truth (ADR-0041) gets **1-shot** and
+**5-shot** (`few_shot`), each once with the classes that have enough samples to draw from, most
+frequent first, and **70/30 by class** (`class_stratified`) for segmentation and detection. A preset
+whose dry run fails is not offered. `POST /api/datasets/{id}/splits/preview` is the same dry run for
+arbitrary params, answering 200 with `error` set when they cannot be drawn.
+
 **A missing `val` subset is normal.** VisA's official protocol has train and test only, so every layer
 tolerates an empty subset:
 

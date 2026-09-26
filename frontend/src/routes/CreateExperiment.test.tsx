@@ -220,6 +220,44 @@ describe("the create-experiment form", () => {
     expect(screen.queryByRole("link", { name: "Draw one by class" })).toBeNull();
   });
 
+  it("offers the task's default preset in place when no split serves it", () => {
+    render(
+      withProviders(
+        <MemoryRouter initialEntries={["/datasets/7/experiments/new"]}>
+          <Routes>
+            <Route
+              path="datasets/:datasetId/experiments/new"
+              element={<DatasetCreateExperimentRoute />}
+            />
+          </Routes>
+        </MemoryRouter>,
+        [
+          ...seed({ splits: [] }),
+          [
+            queryKeys.splitPresets(7),
+            [
+              {
+                key: "standard",
+                label: "Standard · 60/20/20, normals only",
+                meaning: "",
+                tasks: ["anomaly"],
+                params: { strategy: "normal_only_train" },
+                seed: 0,
+                name: "Standard · 60/20/20, normals only · seed 0",
+                composition: [],
+                classes: [],
+              },
+            ],
+          ],
+        ],
+      ),
+    );
+    expect(
+      screen.getByRole("button", { name: "Use Standard · 60/20/20, normals only — create it" }),
+    ).toBeTruthy();
+    expect(screen.getByRole("link", { name: "tune one on Splits" })).toBeTruthy();
+  });
+
   it("brings back what was typed before following a prerequisite link", () => {
     sessionStorage.setItem(
       draftKey(7),

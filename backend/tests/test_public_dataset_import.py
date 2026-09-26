@@ -240,6 +240,24 @@ def test_the_split_records_which_import_asserted_it(client: TestClient, publishe
     assert split["params"]["manifest_id"] == result["manifest_id"]
 
 
+def test_the_published_partition_is_a_preset_with_its_composition(
+    client: TestClient, published: Path
+) -> None:
+    result = _import(client, published)
+
+    presets = {
+        preset["key"]: preset
+        for preset in client.get(f"/api/datasets/{result['dataset_id']}/split-presets").json()
+    }
+
+    assert list(presets) == ["standard", "published"]
+    published_preset = presets["published"]
+    assert published_preset["name"] == "Published"
+    composition = {row["subset"]: row for row in published_preset["composition"]}
+    assert composition["train"]["total"] == TRAIN_NORMAL
+    assert composition["test"]["defect"] == TEST_ANOMALY
+
+
 def test_importing_a_split_a_dataset_never_published_is_refused(
     client: TestClient, tmp_path: Path
 ) -> None:
@@ -263,6 +281,8 @@ def test_importing_a_split_a_dataset_never_published_is_refused(
 
     assert response.status_code == 409
     assert "without split information" in response.json()["detail"]
+    presets = client.get(f"/api/datasets/{result['dataset_id']}/split-presets").json()
+    assert "published" not in [preset["key"] for preset in presets]
 
 
 def test_a_seeded_split_still_works_on_an_imported_dataset(

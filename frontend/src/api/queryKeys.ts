@@ -77,6 +77,11 @@ export const queryKeys = {
     ["region-profiles", profileId, "deletion-preview"] as const,
 
   splits: (datasetId: number) => ["datasets", datasetId, "splits"] as const,
+  /** Under `splits`, so a created or deleted split refreshes the presets' next seed and name. */
+  splitPresets: (datasetId: number) => ["datasets", datasetId, "splits", "presets"] as const,
+  splitPreview: (datasetId: number, request: unknown) =>
+    ["datasets", datasetId, "splits", "preview", request] as const,
+  splitDeletion: (splitId: number) => ["splits", splitId, "deletion-preview"] as const,
 
   jobs: () => ["jobs"] as const,
   job: (jobId: number) => ["jobs", jobId] as const,
