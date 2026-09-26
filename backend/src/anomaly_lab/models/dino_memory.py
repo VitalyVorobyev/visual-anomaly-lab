@@ -98,7 +98,9 @@ from anomaly_lab.models.dino_backbone import (
     backbone_fingerprint,
     image_patch_features,
     load_backbone,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import (
@@ -830,6 +832,22 @@ class DinoMemoryModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return DinoMemoryConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: its promotion gate and its DINOv3 layer sweep both ran at 448x448.
+
+        See docs/measurements.md.
+        """
+        if not isinstance(config, DinoMemoryConfig):
+            raise TypeError(f"expected DinoMemoryConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, DinoMemoryConfig):
+            raise TypeError(f"expected DinoMemoryConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

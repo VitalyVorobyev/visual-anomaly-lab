@@ -31,6 +31,7 @@ from anomaly_lab.experiments.context import (
 from anomaly_lab.experiments.train import MODEL_SUBDIR
 from anomaly_lab.jobs.context import JobCancelledError, JobContext
 from anomaly_lab.models.base import InferContext, ModelCancelledError
+from anomaly_lab.models.registry import get_model_class
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 RANGE_FILENAME = "range.json"
@@ -85,29 +86,37 @@ def run_infer_job(ctx: JobContext) -> dict[str, Any]:
     """Score images with a trained experiment, persist results, and evaluate."""
     params = InferParams.model_validate(dict(ctx.params))
 
+    # Refused before the region build is resolved: a run that cannot score should not
+    # first prepare a dataset's worth of pixels.
     with connection(ctx.settings.db_path) as conn:
-        loaded = load_experiment(conn, ctx.settings, params.experiment_id)
-        experiment = loaded.experiment
+        stored = experiments_repo.get_experiment(conn, params.experiment_id)
+        if stored is None:
+            raise ExperimentJobError(f"no experiment with id {params.experiment_id}")
         selected = images_repo.list_images_for_split(
-            conn, experiment.split_id, subsets=params.subsets, channels=experiment.channels
+            conn, stored.split_id, subsets=params.subsets, channels=stored.channels
         )
 
-    if experiment.status is not ExperimentStatus.TRAINED:
-        capabilities = loaded.model_class.capabilities()
-        if capabilities.requires_training:
-            msg = (
-                f"experiment {experiment.id} is {experiment.status.value}, not trained. "
-                f"{experiment.model_type} needs a train job to run first."
-            )
-            raise ExperimentJobError(msg)
+    if (
+        stored.status is not ExperimentStatus.TRAINED
+        and get_model_class(stored.model_type).capabilities().requires_training
+    ):
+        msg = (
+            f"experiment {stored.id} is {stored.status.value}, not trained. "
+            f"{stored.model_type} needs a train job to run first."
+        )
+        raise ExperimentJobError(msg)
 
     if not selected:
         names = ", ".join(subset.value for subset in params.subsets)
         msg = (
-            f"split {experiment.split_id} has no samples in subset(s) {names}. "
+            f"split {stored.split_id} has no samples in subset(s) {names}. "
             "An imported split may legitimately have no val subset — choose test."
         )
         raise ExperimentJobError(msg)
+
+    with connection(ctx.settings.db_path) as conn:
+        loaded = load_experiment(conn, ctx.settings, params.experiment_id, job=ctx)
+        experiment = loaded.experiment
 
     model_dir = loaded.artifact_dir / MODEL_SUBDIR
     if model_dir.is_dir():

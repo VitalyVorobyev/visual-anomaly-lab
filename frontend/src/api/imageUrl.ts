@@ -34,9 +34,13 @@ export function tierFor(view: StageView | null): "full" | "preview" {
   return (view?.scale ?? 0) > 0.5 ? "full" : "preview";
 }
 
-/** One immutable profile revision's materialised, lossless model input. */
-export function preparedImageUrl(profileId: number, imageId: number): string {
-  return `${apiBaseUrl}/api/region-profiles/${profileId}/prepared/${imageId}`;
+/** One immutable profile build's materialised, lossless model input at one size. */
+export function preparedImageUrl(
+  profileId: number,
+  imageId: number,
+  size: { width: number; height: number },
+): string {
+  return `${apiBaseUrl}/api/region-profiles/${profileId}/prepared/${imageId}?width=${size.width}&height=${size.height}`;
 }
 
 /**

@@ -31,8 +31,7 @@ from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import JobKind, JobStatus, Label
-from anomaly_lab.jobs.context import JobContext
-from anomaly_lab.regions.preparation import run_region_prepare_job
+from anomaly_lab.regions.preparation import read_build_summary
 
 from .conftest import FIXTURE_SIZE as SIZE
 from .conftest import TEST_DEFECTS, TEST_NORMALS, TRAIN_NORMALS, Fixture
@@ -82,11 +81,12 @@ def test_creating_an_experiment_freezes_its_configuration(
     assert created["preprocessing"]["width"] == SIZE
     assert created["preprocessing"]["height"] == SIZE
     assert created["region_profile_id"] == seeded.region_profile_id
-    assert len(created["region_manifest_sha256"]) == 64
+    # Nothing is pinned until a job builds or adopts the profile at the run's size.
+    assert created["region_manifest_sha256"] is None
     assert created["artifact_dir"].endswith(f"exp-{created['id']}")
 
 
-def test_an_unbuilt_region_profile_cannot_become_experiment_input(
+def test_an_unbuilt_profile_is_built_by_the_first_train_job_and_pinned_once(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
     with connection(settings.db_path) as conn:
@@ -96,24 +96,72 @@ def test_an_unbuilt_region_profile_cannot_become_experiment_input(
             name="not built",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=SIZE,
-            prepared_height=SIZE,
             padding_fraction=0.0,
         )
+    size = (SIZE // 2, SIZE // 2)
+    first = _create(client, seeded, region_profile_id=profile.id, width=size[0], height=size[1])
+    assert first["region_manifest_sha256"] is None
+    assert read_build_summary(settings, profile.id, size) is None
 
-    response = client.post(
+    _run(settings, JobKind.TRAIN, {"experiment_id": first["id"]})
+
+    built = read_build_summary(settings, profile.id, size)
+    assert built is not None and built.succeeded == built.total
+    pinned = client.get(f"/api/experiments/{first['id']}").json()["region_manifest_sha256"]
+    assert pinned == built.manifest_sha256
+
+    # A second run at the same size adopts the build rather than preparing it again.
+    second = _create(
+        client, seeded, name="again", region_profile_id=profile.id, width=size[0], height=size[1]
+    )
+    _run(settings, JobKind.TRAIN, {"experiment_id": second["id"]})
+    again = client.get(f"/api/experiments/{second['id']}").json()["region_manifest_sha256"]
+    assert again == pinned
+    assert read_build_summary(settings, profile.id, size) == built
+
+    # A pin is frozen: the same value is a no-op, another is refused.
+    with connection(settings.db_path) as conn:
+        experiments_repo.pin_region_build(conn, first["id"], pinned)
+        with pytest.raises(experiments_repo.PinConflictError, match="never changes"):
+            experiments_repo.pin_region_build(conn, first["id"], "0" * 64)
+
+
+def test_a_run_that_cannot_score_prepares_nothing(
+    client: TestClient, settings: Settings, seeded: Fixture
+) -> None:
+    """An infer job refused for an untrained run is refused before any pixels are built."""
+    created = _create(client, seeded, width=SIZE * 2, height=SIZE * 2)
+    with pytest.raises(Exception, match="not trained"):
+        _run(settings, JobKind.INFER, {"experiment_id": created["id"]})
+    assert read_build_summary(settings, seeded.region_profile_id, (SIZE * 2, SIZE * 2)) is None
+    assert client.get(f"/api/experiments/{created['id']}").json()["region_manifest_sha256"] is None
+
+
+def test_a_run_needs_no_region_profile_and_no_size(client: TestClient, seeded: Fixture) -> None:
+    created = client.post(
         "/api/experiments",
         json={
-            "name": "missing pixels",
+            "name": "defaults",
             "dataset_id": seeded.dataset_id,
             "split_id": seeded.split_id,
-            "region_profile_id": profile.id,
             "model_type": "pixel_reference",
         },
     )
-
-    assert response.status_code == 422
-    assert "has not been built" in response.text
+    assert created.status_code == 200, created.text
+    assert created.json()["region_profile_id"] == seeded.region_profile_id
+    frozen = created.json()["preprocessing"]
+    assert (frozen["width"], frozen["height"]) == (256, 256)
+    one_sided = client.post(
+        "/api/experiments",
+        json={
+            "name": "half",
+            "dataset_id": seeded.dataset_id,
+            "split_id": seeded.split_id,
+            "model_type": "pixel_reference",
+            "width": 64,
+        },
+    )
+    assert one_sided.status_code == 422
 
 
 def test_an_invalid_configuration_is_refused_at_creation_not_at_job_time(
@@ -862,23 +910,16 @@ def test_model_input_values_are_projected_back_into_source_coordinates(
             name="coarse identity input",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=SIZE // 2,
-            prepared_height=SIZE // 2,
             padding_fraction=0.0,
         )
-    run_region_prepare_job(
-        JobContext(
-            job_id=98,
-            kind=JobKind.REGION_PREPARE,
-            params={
-                "dataset_id": seeded.dataset_id,
-                "profile_id": profile.id,
-                "mode": "build",
-            },
-            settings=settings,
-        )
+    experiment = _create(
+        client, seeded, region_profile_id=profile.id, width=SIZE // 2, height=SIZE // 2
     )
-    experiment = _create(client, seeded, region_profile_id=profile.id)
+    unpinned = client.get(
+        f"/api/experiments/{experiment['id']}/images/{seeded.defect_image_ids[0]}/source-values"
+    )
+    assert unpinned.status_code == 404
+    _run(settings, JobKind.TRAIN, {"experiment_id": experiment["id"]})
 
     response = client.get(
         f"/api/experiments/{experiment['id']}/images/{seeded.defect_image_ids[0]}/source-values"

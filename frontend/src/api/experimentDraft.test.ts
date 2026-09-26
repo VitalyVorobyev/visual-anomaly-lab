@@ -26,6 +26,8 @@ const DRAFT: ExperimentDraft = {
   preprocessingValues: {},
   evaluationValues: { rule: "f1" },
   channels: ["top"],
+  width: "448",
+  height: "",
 };
 
 describe("the create-experiment draft", () => {
@@ -56,6 +58,8 @@ describe("the create-experiment draft", () => {
       preprocessingValues: {},
       evaluationValues: {},
       channels: ["a"],
+      width: "",
+      height: "",
     });
   });
 

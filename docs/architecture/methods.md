@@ -45,6 +45,10 @@ class AnomalyModel(ABC):
     def availability(cls) -> Availability: ...   # available by default
     @classmethod
     def check_input(cls, config, preprocessing) -> None: ...   # any input by default
+    @classmethod
+    def native_size(cls, config) -> tuple[int, int]: ...      # (256, 256) by default
+    @classmethod
+    def size_multiple(cls, config) -> int: ...                # 1 by default
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None: ...
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]: ...
     def save(self, artifact_dir: Path) -> None: ...
@@ -52,8 +56,33 @@ class AnomalyModel(ABC):
 ```
 
 **`check_input` refuses at creation what could only fail at fit.** `create_experiment` and the reference
-studio's preview call it with the frozen config and prepared size, and a `ValueError` becomes a 422 that
-names the reason. The frozen-DINO methods use it for a patch size the prepared frame does not divide.
+studio's preview call it with the frozen config and the run's input size, and a `ValueError` becomes a 422
+that names the reason. The frozen-DINO methods use it for a patch size the prepared frame does not divide.
+
+### Native size
+
+**The input size is the run's, and a method says what its own is.** An experiment that names no `width`
+and `height` is frozen at `native_size(config)`: the frame the method's recorded measurement ran at
+([measurements](../measurements.md)), so a run at its defaults reproduces a measured protocol. It follows
+the configuration where the configuration decides the patch — `dino_backbone.native_frame` keeps the
+measured side when the backbone's patch divides it and otherwise takes 448, the frame both patch sizes
+divide and the one every cross-encoder measurement ran at. `size_multiple(config)` is the patch a named
+size must be a multiple of, which the create form snaps to (`POST /api/experiments/input-size` answers
+both for a method and config). `tests/test_check_input.py` asserts, torch-free, that every registered
+method's native size passes its own `check_input` at its default config.
+
+| Method | Native size | Why (`docs/measurements.md`) |
+|---|---|---|
+| `pixel_reference`, `efficientad_custom` | 256 × 256 (the base default) | the anomaly-map storage measurement ran `pixel_reference` at 256; 256 is EfficientAD's architectural floor |
+| `patchcore_anomalib` | 448 × 448 | the frame it ran at as the DINO patch memory gate's control, its best-read frame (the region-profile gate ran it at 256) |
+| `dinomaly_custom` | 392 × 392 on a /14 encoder, 448 on /16 | the promotion and parity gates ran at 392; the encoder sweep ran every arm at 448 |
+| `glass_anomalib` | 288 × 288 | its public gate |
+| `dino_memory` | 448 × 448 | its promotion gate and its DINOv3 layer sweep |
+| `subspace_ad` | 672 × 672 | the sweep's leading arm, the shipped defaults (16 divides it too) |
+| `anomalyvfm_anomalib` | 768 × 768 | its resource gate kept it and its public gate ran at it |
+| `color_prototype`, `fss_dino`, `proto_seg` | 448 × 448 | the few-shot gates |
+| `color_classifier`, `dino_linear_seg` | 448 × 448 | the supervised-segmentation gates |
+| `color_detector`, `dino_linear_det` | 448 × 448 | the VisA detection gate |
 
 Two optional structural protocols sit beside the ABC rather than on it, so no method carries a stub it
 cannot honestly implement:
@@ -144,11 +173,14 @@ Models never touch SQLite, never read application settings, and never write outs
 **Spatial input is configuration of the experiment, not of the model.** A comparison means something only
 if both methods saw the same pixels.
 
-Every `Experiment` pins a complete `RegionProfileRevision` build by profile id and manifest digest.
+Every `Experiment` names a `RegionProfileRevision` — where to look, the dataset's "Full frame" unless it
+names another — and freezes its own input size. Its first train or infer job adopts or prepares that
+profile's build at that size and pins it by manifest digest ([jobs](jobs.md#preparing-a-runs-input)).
 `SpatialTransform` records a clipped half-open source crop, an integer contain-resize and symmetric edge
 padding. Every plugin receives the build's lossless prepared PNG paths and decodes them through
 `models/preprocessing.load_array`, which applies the colour policy and verifies the frozen size but never
-resizes. A model that opens another path is a bug.
+resizes. A model that opens another path is a bug. `preprocessing` in a context is that frozen size and
+colour, and equals the pinned build's transforms' prepared size by construction.
 
 Plugins emit maps in prepared coordinates; every read of a stored map projects it through the image's
 recorded transform, so maps as read, source masks and overlays share source coordinates. Pixels outside the
@@ -189,10 +221,12 @@ failure; its pydantic schema drives the client as model schemas do.
   MobileSAM pass. It tries MPS and falls back to CPU after an MPS runtime failure, reporting the chosen
   device as extractor metadata.
 
-Extractor confidence is method-specific and not comparable between entries. Preview samples at most 24
-images evenly and writes no pixels. A full build is one cancellable `region_prepare` job that writes to a
-job-specific staging directory, records successes and failures in a deterministic JSON-lines manifest, and
-publishes atomically. A build is immutable; rebuilding needs a new profile revision. Each entry pins the
+Extractor confidence is method-specific and not comparable between entries. A profile has no size: a
+preview or build names one. Preview samples at most 24 images evenly and writes no pixels. A full build of
+one size is a cancellable `region_prepare` job — or part of the first train or infer job of a run at that
+size — that writes to a job-specific staging directory, records successes and failures in a deterministic
+JSON-lines manifest, and publishes atomically. A build is immutable; rebuilding needs a new profile
+revision, while another size is simply another build of the same revision. Each entry pins the
 source digest, realised transform, extractor metadata and prepared-image digest. The dataset's
 **Prepare** screen overlays each crop and can switch to the prepared pixels. The default-profile verdict
 is in [measurements](../measurements.md).

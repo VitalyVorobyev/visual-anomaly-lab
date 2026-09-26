@@ -44,7 +44,7 @@ from anomaly_lab.domain.entities import Task
 from anomaly_lab.eval.localization import peak_of
 from anomaly_lab.map_files import map_file, write_map_file
 from anomaly_lab.models.diagnostics import DiagnosticKind, DiagnosticWriter
-from anomaly_lab.models.preprocessing import PreprocessingConfig
+from anomaly_lab.models.preprocessing import DEFAULT_INPUT_SIZE, PreprocessingConfig
 from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -624,6 +624,26 @@ class AnomalyModel(ABC):
         input by default.
         """
         return
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """The `(width, height)` a run is prepared at when its experiment names no size.
+
+        The size belongs to the method, not to the region profile: a profile says only where
+        to look. A method returns the frame its recorded measurement ran at
+        (`docs/measurements.md`), so a run at its defaults reproduces a measured protocol,
+        and it must pass the method's own `check_input` for the same `config`.
+        """
+        return (DEFAULT_INPUT_SIZE, DEFAULT_INPUT_SIZE)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        """What both input dimensions must be a multiple of — a patch size; 1 for any size.
+
+        Read by the create form to snap a typed size, and stated beside it, so the refusal
+        `check_input` would give is avoided rather than explained.
+        """
+        return 1
 
     @classmethod
     def build(cls, config: dict[str, Any]) -> AnomalyModel:

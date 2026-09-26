@@ -81,8 +81,6 @@ def create_revision(
     name: str,
     extractor_type: str,
     extractor_config: Mapping[str, Any],
-    prepared_width: int,
-    prepared_height: int,
     padding_fraction: float,
     resample: SpatialResample = SpatialResample.BILINEAR,
     sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE,
@@ -100,8 +98,8 @@ def create_revision(
         """
         INSERT INTO region_profile_revision (
             dataset_id, name, revision_no, extractor_type, extractor_config,
-            prepared_width, prepared_height, padding_fraction, resample, sample_alignment
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            padding_fraction, resample, sample_alignment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             dataset_id,
@@ -109,8 +107,6 @@ def create_revision(
             revision_no,
             extractor_type,
             json.dumps(dict(extractor_config), sort_keys=True),
-            prepared_width,
-            prepared_height,
             padding_fraction,
             resample.value,
             sample_alignment.value,
@@ -120,3 +116,47 @@ def create_revision(
     if created is None:  # pragma: no cover
         raise RuntimeError("region profile row vanished immediately after insertion")
     return created
+
+
+FULL_FRAME_NAME = "Full frame"
+"""The implicit profile every dataset has: the identity extractor, no padding."""
+
+
+def _is_full_frame(profile: RegionProfileRevision) -> bool:
+    return (
+        profile.name == FULL_FRAME_NAME
+        and profile.extractor_type == "identity"
+        and not profile.extractor_config
+        and profile.padding_fraction == 0.0
+        and profile.resample is SpatialResample.BILINEAR
+        and profile.sample_alignment is SampleAlignment.PER_IMAGE
+    )
+
+
+def full_frame_profile(conn: sqlite3.Connection, dataset_id: int) -> RegionProfileRevision:
+    """The dataset's "Full frame" identity revision, created if it is missing.
+
+    Created with the dataset, so a run needs no region profile of its own: an experiment
+    that names none reads the whole source frame. Found by its configuration rather than
+    by a flag, and recreated if someone deleted it, so asking is always safe.
+    """
+    rows = conn.execute(
+        """
+        SELECT * FROM region_profile_revision
+         WHERE dataset_id = ? AND name = ? AND extractor_type = 'identity'
+         ORDER BY revision_no DESC, id DESC
+        """,
+        (dataset_id, FULL_FRAME_NAME),
+    ).fetchall()
+    for row in rows:
+        profile = _to_profile(row)
+        if _is_full_frame(profile):
+            return profile
+    return create_revision(
+        conn,
+        dataset_id=dataset_id,
+        name=FULL_FRAME_NAME,
+        extractor_type="identity",
+        extractor_config={},
+        padding_fraction=0.0,
+    )

@@ -183,7 +183,7 @@ def run_export_job(ctx: JobContext) -> dict[str, Any]:
             operating_point=operating_point,
             region=RegionContract(
                 profile_revision_id=loaded.experiment.region_profile_id,
-                manifest_sha256=loaded.experiment.region_manifest_sha256,
+                manifest_sha256=loaded.region_build.summary.manifest_sha256,
             ),
             files=files,
             parity=ParityFixture(

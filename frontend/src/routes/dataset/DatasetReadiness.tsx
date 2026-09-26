@@ -1,13 +1,15 @@
 /**
  * One line beside "New experiment" saying whether pressing it can lead anywhere yet — per task.
  *
- * Every run needs a built region profile; an anomaly run needs a split, a few-shot run a
- * class with references and a split of them (ADR-0040), and a supervised segmentation or
- * detection run an annotated class and a split of annotated samples (ADR-0039). The band says it before the create
- * form does, in the order the steps have to be done, and each step is the link that does it.
- * With one task it reads as a checklist. With more, the shared first step comes first, and
- * then each task says whether it is ready or what it needs next. Held to one line with no
- * wrap, because the band's height is fixed by construction.
+ * No region profile is asked for: a run reads the dataset's "Full frame" profile unless it
+ * names another, and prepares it at its own size when it trains. An anomaly run needs a split,
+ * a few-shot run a class with references and a split of them (ADR-0040), and a supervised
+ * segmentation or detection run an annotated class and a split of annotated samples
+ * (ADR-0039). The band says it before the create form does, in the order the steps have to be
+ * done, and each step is the link that does it. With one task it reads as a checklist. With
+ * more, a first step every task shares comes alone, and otherwise each task says whether it is
+ * ready or what it needs next. Held to one line with no wrap, because the band's height is
+ * fixed by construction.
  */
 
 import { Check, CircleDashed } from "lucide-react";
@@ -23,7 +25,6 @@ import {
 } from "../../hooks/useDatasetReadiness";
 
 const STEP: Record<ReadinessStep, { label: string; path: string }> = {
-  prepare: { label: "Build a region profile", path: "prepare" },
   split: { label: "Make a split", path: "splits" },
   annotate: { label: "Annotate a class", path: "annotate" },
   references: { label: "Choose references", path: "splits" },
@@ -49,11 +50,13 @@ export function DatasetReadiness({ datasetId }: { datasetId: number }) {
     </Link>
   );
   const [only] = readiness.tasks;
-  const shared = readiness.tasks.every((entry) => entry.missing[0] === "prepare");
+  const first = only?.missing[0];
+  const shared =
+    first !== undefined && readiness.tasks.every((entry) => entry.missing[0] === first);
 
   if (readiness.tasks.length === 1 || shared) {
-    const missing =
-      readiness.tasks.length === 1 && only ? only.missing : (["prepare"] as ReadinessStep[]);
+    const missing: ReadinessStep[] =
+      readiness.tasks.length === 1 && only ? only.missing : first === undefined ? [] : [first];
     if (missing.length === 0) {
       return (
         <p

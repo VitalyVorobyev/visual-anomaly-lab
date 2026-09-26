@@ -88,7 +88,9 @@ from anomaly_lab.models.dino_backbone import (
     FeatureLayers,
     FrozenEncoder,
     image_patch_features,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
@@ -511,6 +513,19 @@ class DinoLinearSegModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return DinoLinearSegConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the supervised-segmentation gates ran at 448x448 (measurements.md)."""
+        if not isinstance(config, DinoLinearSegConfig):
+            raise TypeError(f"expected DinoLinearSegConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, DinoLinearSegConfig):
+            raise TypeError(f"expected DinoLinearSegConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

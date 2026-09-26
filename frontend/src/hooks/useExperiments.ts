@@ -25,6 +25,7 @@ import type {
   DiagnosticIndex,
   ImageBoxes,
   ImageScore,
+  InputSizeAnswer,
   MethodCatalog,
   MetricSummary,
   PruneResult,
@@ -45,6 +46,26 @@ export function useModelTypes() {
       unwrap(await api.GET("/api/experiments/model-types"), "the method catalog"),
     // The registry cannot change while the app is running, and the picker is opened often.
     staleTime: Infinity,
+  });
+}
+
+/**
+ * The size a run of `modelType` reads when the experiment names none, for this config — and
+ * the multiple a named size must keep. The create form shows it beside the empty size fields.
+ */
+export function useInputSize(modelType: string | undefined, config: Record<string, unknown>) {
+  return useQuery<InputSizeAnswer>({
+    queryKey: queryKeys.inputSize(modelType ?? "", config),
+    queryFn: async () =>
+      unwrap(
+        await api.POST("/api/experiments/input-size", {
+          body: { model_type: modelType as string, config },
+        }),
+        "the method's input size",
+      ),
+    enabled: modelType !== undefined && modelType !== "",
+    staleTime: Infinity,
+    retry: false,
   });
 }
 
@@ -134,8 +155,12 @@ export interface CreateExperimentInput {
   name: string;
   dataset_id: number;
   split_id: number;
-  region_profile_id: number;
+  /** Where to look; omitted means the dataset's implicit "Full frame" profile. */
+  region_profile_id?: number;
   model_type: string;
+  /** The run's input size; both omitted means the method's own (`useInputSize`). */
+  width?: number;
+  height?: number;
   /** What the run is asked to do (ADR-0039); the method must list it. */
   task: Task;
   /** The class a targeted task segments (ADR-0040); null for `anomaly`. */

@@ -50,7 +50,9 @@ from anomaly_lab.models.dino_backbone import (
     DinoBackbone,
     FrozenEncoder,
     image_patch_features,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -163,6 +165,19 @@ class FssDinoModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return FssDinoConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the few-shot gates ran at 448x448 (docs/measurements.md)."""
+        if not isinstance(config, FssDinoConfig):
+            raise TypeError(f"expected FssDinoConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, FssDinoConfig):
+            raise TypeError(f"expected FssDinoConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

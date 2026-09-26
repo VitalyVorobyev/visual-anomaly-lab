@@ -19,7 +19,7 @@ This is a single-user, local research tool, and the security model is stated pla
   arbitrary file.
 - **Destructive path handling.** Experiment deletion removes artifacts only when the stored path is exactly
   `data/artifacts/exp-<id>`; region profile deletion applies the same rule to
-  `data/region-profiles/profile-<id>`. Dataset deletion composes those directories with exact image-id
+  `data/region-profiles/profile-<id>`, every size's build beneath it. Dataset deletion composes those directories with exact image-id
   thumbnail keys and its accepted `data/manifests/dataset-<id>-*.json`; a corrupt or edited path, or a
   symlink, is refused with 409. Neither preview nor cleanup follows symlinks, and API tests keep an external
   synthetic source sentinel intact across the full row-and-storage cascade.

@@ -117,6 +117,19 @@ class DinoLinearDetModel(AnomalyModel):
         return DinoLinearDetConfig
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """The segmentation head's frame: the VisA detection gate ran at 448x448."""
+        if not isinstance(config, DinoLinearDetConfig):
+            raise TypeError(f"expected DinoLinearDetConfig, got {type(config).__name__}")
+        return DinoLinearSegModel.native_size(config)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, DinoLinearDetConfig):
+            raise TypeError(f"expected DinoLinearDetConfig, got {type(config).__name__}")
+        return DinoLinearSegModel.size_multiple(config)
+
+    @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
         if not isinstance(config, DinoLinearDetConfig):
             raise TypeError(f"expected DinoLinearDetConfig, got {type(config).__name__}")

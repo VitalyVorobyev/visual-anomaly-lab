@@ -47,21 +47,30 @@ const SPLIT = {
 const PROFILE = {
   id: 11,
   dataset_id: 7,
-  name: "full frame",
+  name: "Full frame",
   revision_no: 1,
   extractor_type: "identity",
   extractor_config: {},
-  prepared_width: 256,
-  prepared_height: 256,
   padding_fraction: 0,
   resample: "bilinear",
   created_at: "2026-09-01T00:00:00Z",
 };
 
+const OTHER_PROFILE = {
+  ...PROFILE,
+  id: 12,
+  name: "Dominant object",
+  extractor_type: "foreground_threshold",
+};
+
 function seed({
   splits = [SPLIT],
   methods = [METHOD],
-}: { splits?: unknown[]; methods?: unknown[] } = {}): [readonly unknown[], unknown][] {
+  profiles = [PROFILE],
+}: { splits?: unknown[]; methods?: unknown[]; profiles?: unknown[] } = {}): [
+  readonly unknown[],
+  unknown,
+][] {
   return [
     [
       queryKeys.modelTypes(),
@@ -74,8 +83,15 @@ function seed({
     [queryKeys.datasets(), [{ id: 7, name: "candle" }]],
     [queryKeys.dataset(7), { id: 7, name: "candle", channels: [] }],
     [queryKeys.splits(7), splits],
-    [queryKeys.regionProfiles(7), [PROFILE]],
-    [queryKeys.regionBuild(11), { profile_id: 11, dataset_id: 7, total: 10, succeeded: 10, failed: 0 }],
+    [queryKeys.regionProfiles(7), profiles],
+    [
+      queryKeys.inputSize("pixel_reference", {}),
+      { model_type: "pixel_reference", width: 256, height: 256, multiple: 1 },
+    ],
+    [
+      queryKeys.inputSize("dino_memory", {}),
+      { model_type: "dino_memory", width: 448, height: 448, multiple: 14 },
+    ],
     [
       queryKeys.annotationLabels(7),
       [
@@ -86,7 +102,7 @@ function seed({
   ];
 }
 
-function renderForm(splits?: unknown[], methods?: unknown[]) {
+function renderForm(splits?: unknown[], methods?: unknown[], profiles?: unknown[]) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={["/datasets/7/experiments/new"]}>
@@ -94,7 +110,11 @@ function renderForm(splits?: unknown[], methods?: unknown[]) {
           <Route path="datasets/:datasetId/experiments/new" element={<DatasetCreateExperimentRoute />} />
         </Routes>
       </MemoryRouter>,
-      seed({ ...(splits === undefined ? {} : { splits }), ...(methods === undefined ? {} : { methods }) }),
+      seed({
+        ...(splits === undefined ? {} : { splits }),
+        ...(methods === undefined ? {} : { methods }),
+        ...(profiles === undefined ? {} : { profiles }),
+      }),
     ),
   );
 }
@@ -102,12 +122,35 @@ function renderForm(splits?: unknown[], methods?: unknown[]) {
 afterEach(() => sessionStorage.clear());
 
 describe("the create-experiment form", () => {
-  it("selects the only split and the only prepared input on its own", () => {
-    renderForm();
+  it("selects the only split, and looks at the full frame unless told otherwise", () => {
+    renderForm(undefined, undefined, [OTHER_PROFILE, PROFILE]);
     expect(screen.getByRole("combobox", { name: "Split" }).textContent).toContain("published");
     expect(screen.getByRole("combobox", { name: "Region profile" }).textContent).toContain(
-      "full frame",
+      "Full frame",
     );
+    // No build is asked for: the run prepares its profile when it trains.
+    expect(screen.queryByText(/not built/)).toBeNull();
+  });
+
+  it("shows the method's own size beside empty size fields, and snaps a typed one", () => {
+    const memory = {
+      ...METHOD,
+      key: "dino_memory",
+      title: "DINO memory",
+    };
+    renderForm(undefined, [memory]);
+    expect(screen.getByText("448 × 448 · from dino_memory")).toBeTruthy();
+    const width = screen.getByRole("spinbutton", { name: "Input width" }) as HTMLInputElement;
+    expect(width.value).toBe("");
+    expect(width.getAttribute("placeholder")).toBe("448");
+
+    fireEvent.change(width, { target: { value: "450" } });
+    fireEvent.blur(width);
+    expect(width.value).toBe("448");
+    expect(screen.getByText(/Snaps to 14/)).toBeTruthy();
+    // One side alone is not a size.
+    fireEvent.click(screen.getByRole("button", { name: "Create experiment" }));
+    expect(screen.getByText(/Give both sides/)).toBeTruthy();
   });
 
   it("suggests a name instead of demanding one", () => {

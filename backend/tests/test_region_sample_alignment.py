@@ -31,6 +31,7 @@ from anomaly_lab.regions.preparation import (
     PREVIEW_LIMIT,
     RegionBuildSummary,
     _config_digest,
+    build_dir,
     preview_sample_indices,
     run_region_prepare_job,
 )
@@ -98,8 +99,6 @@ def _seed(
             name="dominant",
             extractor_type="foreground_threshold",
             extractor_config={},
-            prepared_width=32,
-            prepared_height=32,
             padding_fraction=0.0,
             sample_alignment=alignment,
         )
@@ -111,7 +110,13 @@ def _run(settings: Settings, dataset_id: int, profile_id: int, mode: str) -> dic
         JobContext(
             job_id=7,
             kind=JobKind.REGION_PREPARE,
-            params={"dataset_id": dataset_id, "profile_id": profile_id, "mode": mode},
+            params={
+                "dataset_id": dataset_id,
+                "profile_id": profile_id,
+                "mode": mode,
+                "width": 32,
+                "height": 32,
+            },
             settings=settings,
         )
     )
@@ -177,8 +182,6 @@ def test_a_sample_of_one_image_is_unchanged_by_union(settings: Settings, tmp_pat
             name="dominant",
             extractor_type="foreground_threshold",
             extractor_config={},
-            prepared_width=32,
-            prepared_height=32,
             padding_fraction=0.0,
             sample_alignment=SampleAlignment.UNION,
         )
@@ -218,7 +221,7 @@ def test_a_failed_sibling_fails_the_whole_sample(settings: Settings, tmp_path: P
     assert f"image {ids[0][1]} failed" in failures[ids[0][0]]
     assert "was not united" not in failures[ids[0][1]]
     # The manifest keeps the dataset's image order, as a per-image build's does.
-    manifest = settings.region_profile_dir(profile_id) / MANIFEST_FILENAME
+    manifest = build_dir(settings, profile_id, (32, 32)) / MANIFEST_FILENAME
     ordered = [
         json.loads(line)["image_id"] for line in manifest.read_text(encoding="utf-8").splitlines()
     ]
@@ -270,8 +273,6 @@ def test_the_config_digest_covers_every_configuration_field_and_nothing_else() -
             "center_x_fraction": 0.5,
             "center_y_fraction": 0.5,
         },
-        prepared_width=256,
-        prepared_height=256,
         padding_fraction=0.05,
         created_at="2026-01-01T00:00:00.000Z",
     )
@@ -281,8 +282,8 @@ def test_the_config_digest_covers_every_configuration_field_and_nothing_else() -
     assert _config_digest(renumbered) == _config_digest(profile)
     united = profile.model_copy(update={"sample_alignment": SampleAlignment.UNION})
     assert _config_digest(united) != _config_digest(profile)
-    wider = profile.model_copy(update={"prepared_width": 320})
-    assert _config_digest(wider) != _config_digest(profile)
+    padded = profile.model_copy(update={"padding_fraction": 0.1})
+    assert _config_digest(padded) != _config_digest(profile)
 
 
 def test_a_per_image_manifest_carries_no_new_field(settings: Settings, tmp_path: Path) -> None:
@@ -291,7 +292,7 @@ def test_a_per_image_manifest_carries_no_new_field(settings: Settings, tmp_path:
     )
     _run(settings, dataset_id, profile_id, "build")
 
-    manifest = settings.region_profile_dir(profile_id) / MANIFEST_FILENAME
+    manifest = build_dir(settings, profile_id, (32, 32)) / MANIFEST_FILENAME
     for line in manifest.read_text(encoding="utf-8").splitlines():
         assert "sample_alignment" not in line
 
@@ -308,8 +309,6 @@ def test_union_is_refused_for_an_extractor_that_does_not_crop_to_a_box(
         "name": "Warped",
         "extractor_type": "warp",
         "extractor_config": {},
-        "prepared_width": 64,
-        "prepared_height": 64,
     }
     url = f"/api/datasets/{catalog.dataset_id}/region-profiles"
 
@@ -328,8 +327,6 @@ def test_the_api_stores_a_union_profile(client: TestClient, catalog: SeededCatal
         json={
             "name": "Shared",
             "extractor_type": "foreground_threshold",
-            "prepared_width": 64,
-            "prepared_height": 64,
             "sample_alignment": "union",
         },
     )

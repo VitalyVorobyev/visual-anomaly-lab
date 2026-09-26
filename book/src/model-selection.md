@@ -103,7 +103,8 @@ has learned little from them.
 
 It is the heaviest entry in the table: a 1.42 GB checkpoint, fetched once into the app cache and checked by
 size and SHA-256 on every run, and about 0.6 s per image at 768 × 768 on the target Mac, the frame it was
-measured at. Prepare that frame for it; the patch size is 16, so any other frame must be a multiple of 16.
+measured at. That is its native size, so a run that names none reads it; the patch size is 16, so any
+other frame must be a multiple of 16.
 Its public promotion gate has not run yet, so it is experimental, and like every other method its scores
 are read only against its own run (ADR-0028).
 

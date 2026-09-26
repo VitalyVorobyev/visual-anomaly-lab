@@ -594,6 +594,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/input-size": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The input size a run of a method resolves to
+         * @description The method's own size for this configuration, and the multiple a named size snaps to.
+         *
+         *     What the create form shows beside an empty size field, so "leave it empty" has a
+         *     visible answer before the experiment exists.
+         */
+        post: operations["resolve_input_size_api_experiments_input_size_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments": {
         parameters: {
             query?: never;
@@ -1720,10 +1743,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The latest complete profile build report */
+        /** The completed build report of a profile at one size */
         get: operations["get_region_profile_build_api_region_profiles__profile_id__build_get"];
         put?: never;
-        /** Prepare a profile for every image */
+        /**
+         * Prepare a profile for every image at one size
+         * @description Build ahead of a run. A run whose size has no build prepares it in its own job.
+         */
         post: operations["build_region_profile_api_region_profiles__profile_id__build_post"];
         delete?: never;
         options?: never;
@@ -1740,6 +1766,23 @@ export interface paths {
         };
         /** Preview the app-owned records and prepared pixels a profile deletion removes */
         get: operations["preview_region_profile_deletion_api_region_profiles__profile_id__deletion_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every completed build of a profile, one per size */
+        get: operations["list_region_profile_builds_api_region_profiles__profile_id__builds_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2959,10 +3002,23 @@ export interface components {
             dataset_id: number;
             /** Split Id */
             split_id: number;
-            /** Region Profile Id */
-            region_profile_id: number;
+            /**
+             * Region Profile Id
+             * @description Where to look: a region profile revision of the dataset. Omitted means the dataset's implicit 'Full frame' profile.
+             */
+            region_profile_id?: number | null;
             /** Model Type */
             model_type: string;
+            /**
+             * Width
+             * @description Input width in pixels. Omitted with `height`, the method's own native size for this configuration.
+             */
+            width?: number | null;
+            /**
+             * Height
+             * @description Input height in pixels; given together with `width` or not at all.
+             */
+            height?: number | null;
             /**
              * @description What the run is asked to do. The method must list it in its capabilities.
              * @default anomaly
@@ -3520,8 +3576,11 @@ export interface components {
             split_id: number;
             /** Region Profile Id */
             region_profile_id: number;
-            /** Region Manifest Sha256 */
-            region_manifest_sha256: string;
+            /**
+             * Region Manifest Sha256
+             * @description The prepared-region build the run reads; null until its first train or infer job builds or adopts it, frozen from then on.
+             */
+            region_manifest_sha256: string | null;
             /** Model Type */
             model_type: string;
             /** @default anomaly */
@@ -3641,8 +3700,11 @@ export interface components {
             split_id: number;
             /** Region Profile Id */
             region_profile_id: number;
-            /** Region Manifest Sha256 */
-            region_manifest_sha256: string;
+            /**
+             * Region Manifest Sha256
+             * @description The prepared-region build the run reads; null until its first train or infer job builds or adopts it, frozen from then on.
+             */
+            region_manifest_sha256: string | null;
             /** Model Type */
             model_type: string;
             /** @default anomaly */
@@ -3923,6 +3985,35 @@ export interface components {
              * @description How many images keep per-image diagnostics, chosen evenly across the run. Each costs a few float32 maps on disk — measured at about half a megabyte for a two-branch method at 256x256.
              */
             diagnostic_images?: number;
+        };
+        /**
+         * InputSizeAnswer
+         * @description The size a run resolves to when the experiment names none.
+         */
+        InputSizeAnswer: {
+            /** Model Type */
+            model_type: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /**
+             * Multiple
+             * @description Both dimensions of a named size must be a multiple of this — the backbone's patch size; 1 when any size reads.
+             */
+            multiple: number;
+        };
+        /**
+         * InputSizeRequest
+         * @description A method and its configuration, to resolve the size a run of it would read.
+         */
+        InputSizeRequest: {
+            /** Model Type */
+            model_type: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
         };
         /** InstallModelAssetRequest */
         InstallModelAssetRequest: {
@@ -4616,6 +4707,22 @@ export interface components {
              */
             matched: boolean;
         };
+        /**
+         * PreparationSize
+         * @description The frame a preview or build is prepared at. A profile has no size of its own.
+         */
+        PreparationSize: {
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
         /** PreviewRequest */
         PreviewRequest: {
             /** Class Key */
@@ -4760,13 +4867,23 @@ export interface components {
         RegionBuildSummary: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             /** Profile Id */
             profile_id: number;
             /** Dataset Id */
             dataset_id: number;
+            /**
+             * Width
+             * @description Prepared frame width this build was made at.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height this build was made at.
+             */
+            height: number;
             /** Total */
             total: number;
             /** Succeeded */
@@ -4853,16 +4970,6 @@ export interface components {
                 [key: string]: unknown;
             };
             /**
-             * Prepared Width
-             * @default 256
-             */
-            prepared_width: number;
-            /**
-             * Prepared Height
-             * @default 256
-             */
-            prepared_height: number;
-            /**
              * Padding Fraction
              * @default 0.05
              */
@@ -4932,7 +5039,10 @@ export interface components {
         };
         /**
          * RegionProfileRevision
-         * @description One immutable dataset-owned spatial-input configuration (ADR-0033).
+         * @description One immutable dataset-owned spatial-input configuration: where to look (ADR-0033).
+         *
+         *     It carries no size. A run prepares its profile at the run's own input size, and a
+         *     build is keyed by `(revision, width, height)`.
          */
         RegionProfileRevision: {
             /** Id */
@@ -4949,10 +5059,6 @@ export interface components {
             extractor_config: {
                 [key: string]: unknown;
             };
-            /** Prepared Width */
-            prepared_width: number;
-            /** Prepared Height */
-            prepared_height: number;
             /**
              * Padding Fraction
              * @default 0.05
@@ -6972,6 +7078,39 @@ export interface operations {
             };
         };
     };
+    resolve_input_size_api_experiments_input_size_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputSizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputSizeAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_experiments_api_experiments_get: {
         parameters: {
             query?: {
@@ -8729,7 +8868,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationSize"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -8753,7 +8896,12 @@ export interface operations {
     };
     get_region_profile_build_api_region_profiles__profile_id__build_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Prepared frame width of the build. */
+                width: number;
+                /** @description Prepared frame height of the build. */
+                height: number;
+            };
             header?: never;
             path: {
                 profile_id: number;
@@ -8791,7 +8939,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationSize"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -8844,9 +8996,45 @@ export interface operations {
             };
         };
     };
-    get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get: {
+    list_region_profile_builds_api_region_profiles__profile_id__builds_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionBuildSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get: {
+        parameters: {
+            query: {
+                /** @description Prepared frame width of the build. */
+                width: number;
+                /** @description Prepared frame height of the build. */
+                height: number;
+            };
             header?: never;
             path: {
                 profile_id: number;

@@ -31,6 +31,11 @@ Read pixels only through `models.preprocessing.load_array` (or a helper built on
 per `ImageRecord`, with higher score meaning more anomalous. Write maps through the inference context. Never
 read labels or masks in the plugin.
 
+The input size belongs to the run, not to the region profile. Declare `native_size(config)` — the frame your
+method was measured at, which a run that names no size reads — and refuse in `check_input` any size the
+method cannot read. If the configuration decides a patch size, also declare `size_multiple(config)` so the
+create form snaps a typed size to it.
+
 ```python
 class ExampleModel(AnomalyModel):
     title = "Example"

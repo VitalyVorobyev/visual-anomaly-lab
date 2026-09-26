@@ -350,16 +350,8 @@ def seed_synthetic_split(
         params={"strategy": "imported"},
         assignments=assignments,
     )
-    profile = region_profiles.create_revision(
-        conn,
-        dataset_id=dataset.id,
-        name="full frame",
-        extractor_type="identity",
-        extractor_config={},
-        prepared_width=FIXTURE_SIZE,
-        prepared_height=FIXTURE_SIZE,
-        padding_fraction=0.0,
-    )
+    # The dataset's implicit "Full frame" profile, created with it.
+    profile = region_profiles.full_frame_profile(conn, dataset.id)
     return Fixture(
         dataset_id=dataset.id,
         split_id=split.id,
@@ -376,9 +368,32 @@ def seeded(client: TestClient, settings: Settings, tmp_path: Path) -> Iterator[F
         yield seed_synthetic_split(conn, root)
 
 
+def build_profile(
+    client: TestClient, seeded: Fixture, size: tuple[int, int] = FRAME, *, job_id: int = 96
+) -> int:
+    """Build the fixture's profile at `size` ahead of any run, as "Build all" does."""
+    settings: Settings = cast(Any, client.app).state.settings
+    if read_build_summary(settings, seeded.region_profile_id, size) is None:
+        run_region_prepare_job(
+            JobContext(
+                job_id=job_id,
+                kind=JobKind.REGION_PREPARE,
+                params={
+                    "dataset_id": seeded.dataset_id,
+                    "profile_id": seeded.region_profile_id,
+                    "mode": "build",
+                    "width": size[0],
+                    "height": size[1],
+                },
+                settings=settings,
+            )
+        )
+    return seeded.region_profile_id
+
+
 def create_experiment(client: TestClient, seeded: Fixture, **overrides: object) -> dict[str, Any]:
     settings: Settings = cast(Any, client.app).state.settings
-    if read_build_summary(settings, seeded.region_profile_id) is None:
+    if read_build_summary(settings, seeded.region_profile_id, FRAME) is None:
         run_region_prepare_job(
             JobContext(
                 job_id=97,
@@ -387,6 +402,8 @@ def create_experiment(client: TestClient, seeded: Fixture, **overrides: object) 
                     "dataset_id": seeded.dataset_id,
                     "profile_id": seeded.region_profile_id,
                     "mode": "build",
+                    "width": FIXTURE_SIZE,
+                    "height": FIXTURE_SIZE,
                 },
                 settings=settings,
             )
@@ -397,6 +414,8 @@ def create_experiment(client: TestClient, seeded: Fixture, **overrides: object) 
         "split_id": seeded.split_id,
         "region_profile_id": seeded.region_profile_id,
         "model_type": "pixel_reference",
+        "width": FIXTURE_SIZE,
+        "height": FIXTURE_SIZE,
         "config": {"smoothing_sigma": 1.0},
         "preprocessing": {},
         "evaluation": {},

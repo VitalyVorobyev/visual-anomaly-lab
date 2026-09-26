@@ -21,12 +21,17 @@ from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.db.repositories.images import SplitImage
 from anomaly_lab.domain.entities import Experiment
+from anomaly_lab.jobs.context import JobContext
 from anomaly_lab.models.base import AnomalyModel, ImageRecord, evenly_spaced
 from anomaly_lab.models.device import ResolvedDevice, resolve_device
 from anomaly_lab.models.diagnostics import DiagnosticWriter
 from anomaly_lab.models.preprocessing import PreprocessingConfig
 from anomaly_lab.models.registry import get_model_class
-from anomaly_lab.regions.preparation import PreparedRegionBuild, load_prepared_build
+from anomaly_lab.regions.preparation import (
+    PreparedRegionBuild,
+    ensure_run_build,
+    load_prepared_build,
+)
 
 
 class ExperimentJobError(Exception):
@@ -49,8 +54,16 @@ def load_experiment(
     conn: sqlite3.Connection,
     settings: Settings,
     experiment_id: int,
+    *,
+    job: JobContext | None = None,
 ) -> LoadedExperiment:
-    """Read an experiment and build its plugin, or fail with a readable reason."""
+    """Read an experiment and build its plugin, or fail with a readable reason.
+
+    With `job` — a train or infer job — a run that pins no region build yet gets one: the
+    build of its profile at its size is adopted, or prepared in-process when missing, and
+    pinned. Without it the run must already pin one; a diagnose or export reads only what
+    a job already fixed.
+    """
     experiment = experiments_repo.get_experiment(conn, experiment_id)
     if experiment is None:
         msg = f"no experiment with id {experiment_id}"
@@ -72,20 +85,38 @@ def load_experiment(
             f"experiment {experiment.id} references missing region profile "
             f"{experiment.region_profile_id}"
         )
+    preprocessing = PreprocessingConfig.model_validate(experiment.preprocessing_config)
     try:
-        region_build = load_prepared_build(
-            settings,
-            profile,
-            manifest_sha256=experiment.region_manifest_sha256,
-        )
+        if job is not None:
+            region_build = ensure_run_build(
+                job, profile, preprocessing.size, pinned=experiment.region_manifest_sha256
+            )
+        elif experiment.region_manifest_sha256 is None:
+            raise ExperimentJobError(
+                f"experiment {experiment.id} has no prepared input yet; train or score it first"
+            )
+        else:
+            region_build = load_prepared_build(
+                settings,
+                profile,
+                size=preprocessing.size,
+                manifest_sha256=experiment.region_manifest_sha256,
+            )
     except ValueError as exc:
         raise ExperimentJobError(str(exc)) from exc
+    if experiment.region_manifest_sha256 is None:
+        try:
+            experiment = experiments_repo.pin_region_build(
+                conn, experiment.id, region_build.summary.manifest_sha256
+            )
+        except ValueError as exc:
+            raise ExperimentJobError(str(exc)) from exc
 
     return LoadedExperiment(
         experiment=experiment,
         model=model_class.build(experiment.model_config_),
         model_class=model_class,
-        preprocessing=PreprocessingConfig.model_validate(experiment.preprocessing_config),
+        preprocessing=preprocessing,
         region_build=region_build,
         device=resolve_device(model_class.capabilities().preferred_device),
         artifact_dir=artifact_dir,

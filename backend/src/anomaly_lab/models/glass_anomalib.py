@@ -241,6 +241,11 @@ class GlassAnomalibModel(AnomalyModel):
         return GlassConfig
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """288 px square: the frame its public gate ran at (docs/measurements.md, "GLASS")."""
+        return (288, 288)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             requires_training=True,

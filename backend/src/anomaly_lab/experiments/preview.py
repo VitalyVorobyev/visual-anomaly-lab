@@ -120,17 +120,23 @@ def resolve(settings: Settings, spec: PreviewSpec) -> Resolved:
         profile = region_profiles_repo.get_profile(conn, spec.profile_id)
         if profile is None or profile.dataset_id != spec.dataset_id:
             raise PreviewError(f"no region profile {spec.profile_id} in dataset {spec.dataset_id}")
-        summary = read_build_summary(settings, profile.id)
-        if summary is None or summary.failed:
-            raise PreviewError(f"region profile {profile.id} has no complete build")
+        # The method at its defaults, so at its own size: the size a run frozen from these
+        # references with no size named would read.
+        defaults = model_class.config_model().model_validate({})
+        size = model_class.native_size(defaults)
         try:
-            model_class.check_input(
-                model_class.config_model().model_validate({}),
-                PreprocessingConfig(width=profile.prepared_width, height=profile.prepared_height),
-            )
+            model_class.check_input(defaults, PreprocessingConfig(width=size[0], height=size[1]))
         except ValueError as exc:
             raise PreviewError(str(exc)) from exc
-        build = load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+        summary = read_build_summary(settings, profile.id, size)
+        if summary is None or summary.failed:
+            raise PreviewError(
+                f"region profile {profile.id} has no complete build at {size[0]}x{size[1]}, "
+                f"the size {spec.method} reads; build it at that size on the Prepare screen"
+            )
+        build = load_prepared_build(
+            settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+        )
         images = _split_images(conn, sorted(set(spec.references)))
         truths = resolve_class_truth(
             conn, spec.dataset_id, [image.image_id for image in images], spec.class_key
@@ -160,8 +166,7 @@ class PreviewSession:
         self._directory = preview_dir(settings, resolved.generation)
         self._directory.mkdir(parents=True, exist_ok=True)
         self._preprocessing = PreprocessingConfig(
-            width=resolved.build.profile.prepared_width,
-            height=resolved.build.profile.prepared_height,
+            width=resolved.build.size[0], height=resolved.build.size[1]
         )
         device = resolve_device(model_class.capabilities().preferred_device)
         self.device = device.device.value

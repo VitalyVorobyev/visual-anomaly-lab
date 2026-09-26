@@ -106,19 +106,25 @@ def run_train_job(ctx: JobContext) -> dict[str, Any]:
     """Fit a method on what its task trains on (`experiments/policy.py`), and persist it."""
     params = TrainParams.model_validate(dict(ctx.params))
 
+    # What the run trains on is settled before its region build is resolved, so a split
+    # with nothing to fit is refused before a dataset's worth of pixels is prepared.
     with connection(ctx.settings.db_path) as conn:
-        loaded = load_experiment(conn, ctx.settings, params.experiment_id)
-        experiment = loaded.experiment
-
+        stored = experiments_repo.get_experiment(conn, params.experiment_id)
+        if stored is None:
+            raise ExperimentJobError(f"no experiment with id {params.experiment_id}")
         try:
-            chosen = training_set(conn, experiment)
+            chosen = training_set(conn, stored)
         except NoTrainingPolicyError as exc:
             raise ExperimentJobError(str(exc)) from exc
-        experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINING)
 
     train_images, val_images, excluded = chosen.train, chosen.val, chosen.excluded
     if not train_images:
         raise ExperimentJobError(chosen.empty_because)
+
+    with connection(ctx.settings.db_path) as conn:
+        loaded = load_experiment(conn, ctx.settings, params.experiment_id, job=ctx)
+        experiment = loaded.experiment
+        experiments_repo.set_status(conn, experiment.id, ExperimentStatus.TRAINING)
     if excluded:
         ctx.log(
             f"{excluded} image(s) in the train subset {chosen.excluded_because} and were "

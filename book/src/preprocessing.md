@@ -10,10 +10,19 @@ This separation is what makes method comparison meaningful.
 
 ## Region profiles
 
-A dataset owns versioned region profiles. A profile can use identity, a classical detector, or MobileSAM to
-produce source-frame geometry. The prepared-input build records, per image, the crop, optional mask, resize,
-padding, inverse transform, failure state, and hashes. An experiment pins the profile revision and build
-manifest.
+A dataset owns versioned region profiles. A profile says **where to look**: identity, a classical detector,
+or MobileSAM producing source-frame geometry. It has no size — the size is the run's. Every dataset starts
+with one, **Full frame** (identity), and a run that names no other reads it, so you never have to define or
+build a profile before training.
+
+A build is one profile prepared at one size. It records, per image, the crop, resize, padding, inverse
+transform, failure state, and hashes. A run's first **Train** (or, for a zero-shot method, its first
+**Score**) prepares the build at the run's size if it does not exist yet — the job's log says so — and pins
+its manifest; the run reads exactly those pixels for ever after. Two runs at the same size share one
+build.
+
+On **Prepare** you can preview a profile's crops and build it ahead of time. Preview and **Build all** name
+a size, 448 × 448 unless you change it; building there only saves the first run at that size the wait.
 
 On a grouped dataset a content-based localizer can find a slightly different box in each channel of one
 part, which misregisters any method that fuses channels position by position. A profile's **crop per
@@ -43,8 +52,11 @@ rules must not leak into shared preparation merely because they help one showcas
 
 ## Shared preparation
 
-`PreprocessingConfig` freezes width, height, colour mode, and interpolation. `load_array` reads the prepared
-artifact into a contiguous `[0,1]` array. Every method must use this bridge. The source map inverse projects
+`PreprocessingConfig` freezes the run's width, height and colour mode. Leave the size empty on the create
+form and the run reads its method's **native size** — the frame the method's recorded gate ran at, which
+the form shows beside the empty fields ("448 × 448 · from dino_memory"). A typed size snaps to the
+multiple the method reads, the patch of a DINO backbone. `load_array` reads the prepared artifact into a
+contiguous `[0,1]` array. Every method must use this bridge. The source map inverse projects
 the prepared anomaly map into source coordinates before pixel evaluation or overlay.
 
 ## Method-owned normalization

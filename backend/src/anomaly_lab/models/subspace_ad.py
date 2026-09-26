@@ -67,7 +67,9 @@ from anomaly_lab.models.dino_backbone import (
     LayerWindow,
     backbone_fingerprint,
     load_backbone,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import (
@@ -274,6 +276,22 @@ class SubspaceAdModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return SubspaceAdConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """672 px square: the shipped defaults are the sweep's leading arm, ViT-L/14 at 672 px.
+
+        16 divides 672 too (docs/measurements.md).
+        """
+        if not isinstance(config, SubspaceAdConfig):
+            raise TypeError(f"expected SubspaceAdConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 672)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, SubspaceAdConfig):
+            raise TypeError(f"expected SubspaceAdConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

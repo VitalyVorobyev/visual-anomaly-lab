@@ -436,6 +436,14 @@ class PatchcoreAnomalibModel(AnomalyModel):
         return PatchcoreConfig
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the frame it ran at as the DINO patch memory gate's control.
+
+        See docs/measurements.md.
+        """
+        return (448, 448)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             requires_training=True,
