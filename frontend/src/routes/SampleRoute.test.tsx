@@ -48,7 +48,9 @@ const PAGE = {
   ],
 };
 
-function renderViewer(over: { page?: unknown; sample?: unknown; dataset?: unknown } = {}) {
+function renderViewer(
+  over: { page?: unknown; sample?: unknown; dataset?: unknown; truth?: unknown } = {},
+) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={["/datasets/7/samples/12"]}>
@@ -60,6 +62,9 @@ function renderViewer(over: { page?: unknown; sample?: unknown; dataset?: unknow
         [queryKeys.sample(7, 12), over.sample ?? SAMPLE],
         [queryKeys.samples(7, { limit: 200, offset: 0 }), over.page ?? PAGE],
         ...(over.dataset ? [[queryKeys.dataset(7), over.dataset] as [readonly unknown[], unknown]] : []),
+        ...(over.truth
+          ? [[queryKeys.imageTruth(IMAGE.id), over.truth] as [readonly unknown[], unknown]]
+          : []),
       ],
     ),
   );
@@ -121,7 +126,7 @@ describe("the sample viewer", () => {
   it("offers the label rail on a dataset of classes rather than showing it", () => {
     renderViewer({
       sample: { ...SAMPLE, label: "unlabeled" },
-      dataset: { id: 7, name: "FSS-1000 panel", truth: ["classes"], class_counts: [] },
+      dataset: { id: 7, name: "FSS-1000", truth: ["classes"], class_counts: [] },
     });
 
     // ADR-0041: normal and defect are anomaly truth, which this dataset does not hold.
@@ -130,6 +135,33 @@ describe("the sample viewer", () => {
 
     fireEvent.click(optIn);
     expect(screen.getByRole("button", { name: /^normal/ })).toBeTruthy();
+  });
+
+  it("draws the image's truth by default, with a legend, and hides it on request", () => {
+    const { container } = renderViewer({
+      truth: {
+        image_id: IMAGE.id,
+        source: "revision",
+        revision_id: 4,
+        classes: [{ key: "missing_hole", name: "Missing hole", color: "#1c7ed6" }],
+        boxes: [
+          { label_key: "missing_hole", x: 10, y: 10, width: 40, height: 30 },
+          { label_key: "missing_hole", x: 200, y: 90, width: 40, height: 30 },
+        ],
+        regions_url: null,
+        outline: false,
+      },
+    });
+
+    const legend = screen.getByLabelText("Truth legend");
+    expect(legend.textContent).toContain("Missing hole");
+    expect(legend.textContent).toContain("2 boxes");
+    expect(container.querySelectorAll("[data-shape=box]")).toHaveLength(2);
+    expect(screen.getByLabelText("Truth opacity")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("switch", { name: /Truth/ }));
+    expect(container.querySelectorAll("[data-shape=box]")).toHaveLength(0);
+    expect(screen.queryByLabelText("Truth opacity")).toBeNull();
   });
 
   it("shows the label rail on an anomaly dataset", () => {

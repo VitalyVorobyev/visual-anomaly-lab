@@ -204,20 +204,29 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
   `dino_memory`'s default. The last image's `(32, 32, D)` grid is cached, as MobileSAM caches an
   embedding, so the first request on an image pays one forward pass and every later one on it is numpy
   (`explore/grid.py`, torch-free): **similar** is `max cos(positives) − max cos(negatives)` clipped to
-  [0, 1]; **clusters** is seeded k-means++ and Lloyd, K 2–12, largest cluster first; **pca** is
+  [0, 1], and is coloured from the covered cells' median to their 99th percentile (`display_range`,
+  never narrower than 0.1), which the answer reports as `value_low`/`value_high` — the clicked patch is
+  always 1, so its own extremes would change nothing; **clusters** is seeded k-means++ and Lloyd, K 2–12,
+  largest cluster first, stored as each cell's **soft assignment** — a softmax of the negative squared
+  distance to each centre, at the temperature of the typical squared distance between two centres — so
+  that rendering interpolates each cluster's plane bilinearly and takes the argmax per pixel: an edge
+  falls where two clusters are equally likely, between patch centres, rather than on the 32×32 grid's
+  squares, and the answer's `cells` are the argmax at the patch centres; **pca** is
   `feature_view.pca_to_rgb`. Clusters and false colour are fitted on the cells whose centres fall on the
-  image, never on the letterbox. A request writes one grid-resolution `.npz` (the grid, the transform, the
-  patch size) under `explore/`, bounded to the newest `MAX_STORED_MAPS` (24) (`explore/store.py`).
-  `GET /api/explore/maps/{id}.png` projects it to the source frame and renders it — similarity on the fixed
-  range [0, 1], or as a filled mask with `threshold`; clusters in the colours the client names, `cluster`
-  keeping one; false colour as opaque RGB. `POST /api/explore/maps/{id}/shape` turns a threshold or a cluster
+  image, never on the letterbox, which takes its nearest covered cell's assignment. A request writes one
+  grid-resolution `.npz` (the grid, the transform, the patch size, a similarity's display range) under
+  `explore/`, bounded to the newest `MAX_STORED_MAPS` (24) (`explore/store.py`).
+  `GET /api/explore/maps/{id}.png` projects it to the source frame and renders it, unoptimised since it is
+  drawn once — similarity over its display range, or as a filled mask with `threshold` in absolute cosine;
+  clusters in the colours the client names, `cluster` keeping one; false colour as opaque RGB. `POST /api/explore/maps/{id}/shape` turns a threshold or a cluster
   into a tight source-frame `BitmapShape`, the same form MobileSAM's candidates take; nothing is written.
   `GET /api/explore/capability` reports the `dl` extra and which encoders are usable: a gated DINOv3 entry
   is usable once `HF_TOKEN` is set or its weights are already cached, and otherwise carries its licence
   sentence and access URL. `POST /api/images/{id}/explore` validates every prompt in the API process —
   a point outside the image or a similarity with no positive is 400 — because a request the child refuses
   kills it, and with it the loaded encoder. On MPS a ViT-B/14 spawn is seconds, a new image's encode about
-  a tenth of a second, and a cached click a few milliseconds.
+  a tenth of a second, a cached click a few milliseconds, and its overlay PNG a few tens of milliseconds
+  on a VisA image.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no schema change. A
   browse click is not a unit of work anyone needs to cancel or resume.

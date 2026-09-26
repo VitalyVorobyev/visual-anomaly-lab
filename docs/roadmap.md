@@ -22,13 +22,16 @@ application.
   copied; the import is idempotent and leaves a reviewable manifest.
 - **Browse and label** the result as a catalogue that groups — a collection is a dataset's stored
   override or the reference pack it came from — with a virtualised grid, channel filters and an
-  image-first sample viewer. A dataset names the channel it is read in, and every screen that has
+  image-first sample viewer that draws each image's truth — class regions filled in their colours,
+  boxes tagged with their class, an imported defect mask outlined — beside a legend of the classes
+  it shows. A dataset names the channel it is read in, and every screen that has
   room for one photograph of a part opens on it. Truth is task-scoped (ADR-0041): a sample's
   normal/defect label is anomaly truth and a class lives in annotations, so a dataset of classes —
-  FSS-1000's panel, PKU-Market-PCB — is one dataset counted, filtered and covered by its classes, with
+  FSS-1000, PKU-Market-PCB — is one dataset counted, filtered and covered by its classes, with
   no verdicts it never asserted, and offered anomaly detection only once a sample carries one.
 - **Explore** what a frozen DINO encoder sees in any sample, by clicking: patch similarity with
-  positive and negative points, k-means clusters, a false-colour PCA, or MobileSAM masks — and send the
+  positive and negative points, k-means clusters whose edges follow the features rather than the patch
+  grid, a false-colour PCA, or MobileSAM masks — and send the
   mask to the annotation editor as a suggestion. Intuition, not a result: nothing is stored or scored.
 - **Annotate** at pixel level: polygon, box and brush with editable contour tracing, instance ids,
   class keys, undo/redo, autosave with conflict detection, and a keyboard queue. Completion records

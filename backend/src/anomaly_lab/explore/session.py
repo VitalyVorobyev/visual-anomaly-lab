@@ -36,8 +36,9 @@ from anomaly_lab.explore.grid import (
     MIN_CLUSTERS,
     CellWindow,
     ExploreMode,
-    cluster_grid,
+    cluster_affinity,
     covered_cells,
+    display_range,
     frame_side,
     frame_transform,
     pca_grid,
@@ -105,6 +106,7 @@ class ExploreSession:
 
         computed = time.perf_counter()
         extra: dict[str, object] = {}
+        value_range: tuple[float, float] | None = None
         if mode is ExploreMode.SIMILAR:
             positives = self._cells(encoded, request.get("points"))
             if not positives:
@@ -112,21 +114,25 @@ class ExploreSession:
             negatives = self._cells(encoded, request.get("negatives"))
             grid: np.ndarray = similarity(encoded.features, positives, negatives)
             kind = MapKind.VALUES
+            value_range = display_range(grid, encoded.window)
+            extra["value_low"], extra["value_high"] = value_range
         elif mode is ExploreMode.CLUSTERS:
             k = _integer(request, "k", DEFAULT_CLUSTERS)
             if not MIN_CLUSTERS <= k <= MAX_CLUSTERS:
                 raise ExploreError(f"k must be between {MIN_CLUSTERS} and {MAX_CLUSTERS}")
-            grid = cluster_grid(
+            grid, labels = cluster_affinity(
                 encoded.features, encoded.window, k, seed=_integer(request, "seed", 0)
             )
-            kind = MapKind.LABELS
-            extra["cells"] = [int(value) for value in grid.reshape(-1)]
-            extra["clusters"] = int(grid.max())
+            kind = MapKind.CLUSTERS
+            extra["cells"] = [int(value) for value in labels.reshape(-1)]
+            extra["clusters"] = int(grid.shape[-1])
         else:
             grid = pca_grid(encoded.features, encoded.window)
             kind = MapKind.RGB
 
-        map_id = write_grid(self.scratch, kind, grid, encoded.transform, self.patch)
+        map_id = write_grid(
+            self.scratch, kind, grid, encoded.transform, self.patch, value_range=value_range
+        )
         rows, cols, width = encoded.features.shape
         return {
             "image_id": image_id,

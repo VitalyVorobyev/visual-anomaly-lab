@@ -35,7 +35,8 @@ const MODES: { value: ExploreMode; label: string }[] = [
 
 const HINT: Record<ExploreMode, string> = {
   similar: "Click a patch to find what the encoder thinks is like it. Shift-click marks one it should not match.",
-  clusters: "The image's own patches, grouped by k-means. Click a region to pick its cluster.",
+  clusters:
+    "The image's own patches, grouped by k-means; edges fall where two groups are equally likely. Click a region to pick its cluster.",
   pca: "The three directions the features vary most, as false colour. The colours mean nothing between images.",
   sam: "Click an object for MobileSAM's masks. Shift-click marks background.",
 };
@@ -145,6 +146,14 @@ function EncoderControls({ session }: { session: ExploreSession }) {
             onValueChange={session.setThreshold}
             readout={`mask ≥ ${session.threshold.toFixed(2)}`}
           />
+          {answer && answer.value_low != null && answer.value_high != null && (
+            // The heatmap is stretched over this image's own range — its median to its top
+            // percent — so it is legible on any image; the mask cut above is absolute cosine.
+            <p className="font-mono text-[11px] leading-4 text-fg-muted tabular-nums">
+              colour scaled to this image · median {answer.value_low.toFixed(2)} → top 1%{" "}
+              {answer.value_high.toFixed(2)}
+            </p>
+          )}
           <PromptRow
             count={pointCount}
             label={`${prompt.points.length} like · ${prompt.negatives.length} unlike`}

@@ -140,7 +140,7 @@ describe("the dataset band", () => {
     const { container } = renderAt(
       "/datasets/7",
       detail({
-        name: "FSS-1000 panel",
+        name: "FSS-1000",
         samples: 200,
         images: 200,
         label_counts: { normal: 0, defect: 0, unlabeled: 200 },

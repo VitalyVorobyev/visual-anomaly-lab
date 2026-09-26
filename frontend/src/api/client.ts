@@ -77,6 +77,8 @@ export type ExploreRequest = Schemas["ExploreRequest"];
 export type ExploreResponse = Schemas["ExploreResponse"];
 export type ExploreShape = Schemas["ExploreShape"];
 export type ExploreShapeRequest = Schemas["ExploreShapeRequest"];
+export type ImageTruth = Schemas["ImageTruthResponse"];
+export type TruthClass = Schemas["TruthClass"];
 
 export type ModelAssetCatalog = Schemas["ModelAssetCatalog"];
 export type ModelAssetInfo = Schemas["ModelAssetInfo"];

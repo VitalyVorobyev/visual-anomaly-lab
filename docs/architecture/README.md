@@ -181,6 +181,7 @@ server-visible absolute path.
 | `compare` | `/api/compare` | compatible multi-run metrics, operating points and per-sample agreement |
 | `jobs` | `/api/jobs`, `/ws/jobs/{id}` | status, cancel, metrics, log tail and live progress for generic background work |
 | `images` | `/api/images` | thumb / preview / full pixel delivery, prepared previews and anomaly-map PNG rendering |
+| `image_truth` | `/api/images/…/truth` | an image's truth as the sample viewer draws it: its classes, drawn boxes and a region overlay in the classes' colours |
 | `model_assets` | `/api/model-assets` | licensed asset catalogue, verified install/external source and app-owned removal |
 | `health` / `ws` | `/api/health`, `/ws/echo` | liveness, version/database state and transport diagnostics |
 

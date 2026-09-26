@@ -68,6 +68,8 @@ export const queryKeys = {
   annotationSampleDraft: (sampleId: number) =>
     ["annotations", "sample", sampleId, "draft"] as const,
   annotationRevisions: (imageId: number) => ["annotations", imageId, "revisions"] as const,
+  /** What the sample view draws as an image's truth; moved by a completion or a recolour. */
+  imageTruth: (imageId: number) => ["annotations", imageId, "truth"] as const,
 
   regionExtractors: () => ["region-extractors"] as const,
   regionProfiles: (datasetId: number) =>

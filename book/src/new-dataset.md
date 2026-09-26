@@ -30,15 +30,20 @@ source files until it looks right; configure or extend the adapter so the interp
 
 ## 3. Verify labels and masks
 
-Browse a balanced selection of normal, defect, and unknown samples. Open several source masks over their
-images. Masks offset by a resize or crop are worse than absent because pixel metrics will still produce
+Browse a balanced selection of normal, defect, and unknown samples. The sample viewer draws each image's
+truth over it by default: a class region filled in its class's colour, a box as a rectangle tagged with its
+class, an imported defect mask as an outline. The **Truth** switch and its opacity slider sit in the rail's
+View section, with a legend of the classes the sample shows. Open several source masks over their
+images this way. Masks offset by a resize or crop are worse than absent because pixel metrics will still produce
 plausible numbers. Correct source metadata or create annotation revisions before training.
 
 To see what a frozen encoder makes of the data before training anything, switch on **Explore** in the
 sample viewer's rail. **Similar** marks every patch the encoder finds like the one clicked (shift-click
-one it should not match); **Clusters** groups the image's own patches, K from 2 to 12; **PCA** shows the
+one it should not match), coloured over this image's own range, which the rail states; **Clusters**
+groups the image's own patches, K from 2 to 12, with edges that follow the features rather than the patch
+grid; **PCA** shows the
 features' three main directions as false colour; **SAM** asks MobileSAM for masks. It is for intuition:
-nothing is stored or scored. The first click on an image loads and runs the encoder, which takes seconds;
+nothing is stored or scored, and it draws above the truth, which dims while Explore is on. The first click on an image loads and runs the encoder, which takes seconds;
 later clicks on it are immediate. **Send to editor** carries the current mask — the thresholded similarity,
 the picked cluster or the chosen SAM mask — into the annotation editor as a suggestion to accept or
 discard.
