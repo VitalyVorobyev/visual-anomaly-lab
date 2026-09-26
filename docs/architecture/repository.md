@@ -31,6 +31,7 @@ visual-anomaly-lab/
 │   │   ├── media/                  # decode, thumbnail/preview cache, map rendering, prewarm
 │   │   ├── models/                 # base.py (interface), registry.py, one module per method
 │   │   ├── model_assets/           # fixed catalogue, integrity checks, licensed downloads
+│   │   ├── explore/                # what a frozen encoder sees: grid arithmetic, scratch maps, session
 │   │   ├── deployment/             # ONNX bundle schema, export and parity
 │   │   ├── jobs/                   # queue, worker entrypoint, event protocol, resident worker
 │   │   └── eval/                   # metrics, channel→sample aggregation, thresholds
@@ -51,6 +52,7 @@ visual-anomaly-lab/
     ├── jobs/logs/                  # logs of jobs that belong to no experiment
     ├── annotations/image-<id>/     # revision-<n>.png, .classes.png, .instances.json — immutable truth
     ├── region-profiles/profile-<id>/<w>x<h>/  # one build per size: prepared PNGs + transforms
+    ├── explore/                    # Explore's scratch maps (newest 24 kept) and the last encoded frame
     └── model-cache/assets/         # verified shared weights + external-source metadata
 ```
 

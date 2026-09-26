@@ -164,6 +164,26 @@ the dataset default, else the first. Label editing with keyboard shortcuts where
 (above); full-resolution zoom; the label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
 `PATCH /api/datasets/{id}/samples/{sid}`, `GET /api/images/{id}/preview`, `…/full`.
 
+**Explore** — the sample viewer's rail section for *what a frozen encoder sees*, for intuition rather than
+truth (`routes/sample/`). Off until switched on; then a click on the picture — `SampleStage`'s `onPick`,
+a background click that did not become a pan, projected through the stage's own transform — asks one
+question. **Similar**: a click adds a positive patch, shift-click a negative, and the similarity heatmap
+and its thresholded mask are two raster layers. **Clusters**: K (2–12) is a slider committed on release;
+a click picks the cluster under it from the cells the answer carried (`api/explore.ts` replays the
+transform), and only that cluster is drawn. **PCA**: false colour. **SAM**: MobileSAM through the editor's
+own `POST /api/images/{id}/segment-assist`, its ranked candidates tinted as suggestions. Every overlay is
+a source-sized PNG in `layers` with the opacity slider's weight, and points are `MeasureOverlay` dots.
+The prompt belongs to one image: clicking another channel's pane moves Explore there, so no channel
+count is special. The encoder picker lists only the capability's usable encoders, defaulting to DINOv2
+ViT-B/14; the first request on an image names the encoder it is encoding with, a 409 says a job holds the
+device and offers to ask again, and a missing `dl` extra is said instead of offering controls.
+**Send to editor** turns the thresholded similarity, the picked cluster or the chosen SAM candidate into a
+`BitmapShape` (`POST /api/explore/maps/{id}/shape` for the first two) and navigates to the editor with it
+in the navigation's state; the editor's Contour assist shows it as a suggestion to accept — as a mask or
+an editable contour, in the class selected there — or discard, and consumes the state so a reload does
+not bring it back. `GET /api/explore/capability`, `POST /api/images/{id}/explore`,
+`GET /api/explore/maps/{id}.png`, `POST /api/explore/maps/{id}/shape`.
+
 **Annotation queue and editor** — see [annotations](annotations.md) for the behaviour. MobileSAM takes
 positive/negative points or a box and previews up to three ranked masks without mutating the draft; its
 checkpoint downloads from the model-asset catalogue only after explicit licence acceptance.

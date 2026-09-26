@@ -34,6 +34,15 @@ Browse a balanced selection of normal, defect, and unknown samples. Open several
 images. Masks offset by a resize or crop are worse than absent because pixel metrics will still produce
 plausible numbers. Correct source metadata or create annotation revisions before training.
 
+To see what a frozen encoder makes of the data before training anything, switch on **Explore** in the
+sample viewer's rail. **Similar** marks every patch the encoder finds like the one clicked (shift-click
+one it should not match); **Clusters** groups the image's own patches, K from 2 to 12; **PCA** shows the
+features' three main directions as false colour; **SAM** asks MobileSAM for masks. It is for intuition:
+nothing is stored or scored. The first click on an image loads and runs the encoder, which takes seconds;
+later clicks on it are immediate. **Send to editor** carries the current mask — the thresholded similarity,
+the picked cluster or the chosen SAM mask — into the annotation editor as a suggestion to accept or
+discard.
+
 For unannotated defects, use the canvas polygon or brush workflow. Automatic contour derivation may propose
 an edge-following contour from a manually marked region, but the user reviews and commits the resulting
 geometry; it is never silent ground truth.

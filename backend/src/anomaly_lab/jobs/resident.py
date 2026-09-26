@@ -6,7 +6,8 @@ image": the model load dominates, so a job per request would pay eleven seconds 
 to do a hundred milliseconds of work, and would queue behind whatever is training.
 
 So one process is kept alive for whichever interactive compute target is current: an
-experiment inspector or a promptable segmentation asset. Requests are written to its
+experiment inspector, a promptable segmentation asset, a few-shot preview or a frozen
+encoder for Explore. Requests are written to its
 stdin. It is the only long-lived compute state in this application, and everything below
 exists to keep that from becoming two competing device owners.
 
@@ -315,6 +316,38 @@ class ResidentWorker:
                 payload: dict[str, object] = (
                     {"image_ids": image_ids} if image_ids is not None else {"image_id": image_id}
                 )
+                result = await self._exchange(payload)
+            except ResidentError:
+                await self._kill()
+                raise
+
+            self._requests += 1
+            self._arm_idle_timer()
+            return result, warm
+
+    async def explore(
+        self, *, backbone: str, payload: dict[str, object]
+    ) -> tuple[dict[str, object], bool]:
+        """Ask a frozen encoder what it sees in one image (`explore/session.py`).
+
+        Keyed by the backbone alone: its weights come from the shared model cache and are
+        fingerprinted by the child, so there is no artifact directory whose generation could
+        move under it. The child caches the last image's patch grid, so the first request on
+        an image pays for a forward pass and the ones after it do not.
+        """
+        async with self._lock:
+            warm = self._matches("feature_explorer", backbone, backbone)
+            try:
+                if not warm:
+                    await self._kill()
+                    await self._spawn(
+                        kind="feature_explorer",
+                        key=backbone,
+                        generation=backbone,
+                        module="anomaly_lab.jobs.explorer",
+                        args=(backbone,),
+                        experiment_id=None,
+                    )
                 result = await self._exchange(payload)
             except ResidentError:
                 await self._kill()

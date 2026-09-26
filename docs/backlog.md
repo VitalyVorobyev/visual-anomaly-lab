@@ -22,6 +22,10 @@ until its output has been reviewed.
       inside a `<Link>` (catalogue header, dataset band, sample viewer, experiment catalogue), which
       the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
       `ButtonLink` there, release, and replace all five.
+- [ ] **Explore by text prompt** (M): a fifth Explore mode that takes a phrase ("scratch", "the
+      cap") and returns SAM 3's masks for it, as the SAM mode returns MobileSAM's for a click. It is
+      one more resident target beside `feature_explorer` and needs its checkpoint catalogued and
+      licence-gated like MobileSAM's; its masks go to the editor through the same Send to editor.
 
 ## Few-shot segmentation
 

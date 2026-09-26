@@ -70,6 +70,13 @@ export type SegmentAssistResponse = Schemas["SegmentAssistResponse"];
 export type SegmentCandidate = Schemas["SegmentCandidate"];
 export type SegmentAssistCapability = Schemas["SegmentAssistCapability"];
 
+export type ExploreCapability = Schemas["ExploreCapability"];
+export type ExploreBackbone = Schemas["ExploreBackbone"];
+export type ExploreRequest = Schemas["ExploreRequest"];
+export type ExploreResponse = Schemas["ExploreResponse"];
+export type ExploreShape = Schemas["ExploreShape"];
+export type ExploreShapeRequest = Schemas["ExploreShapeRequest"];
+
 export type ModelAssetCatalog = Schemas["ModelAssetCatalog"];
 export type ModelAssetInfo = Schemas["ModelAssetInfo"];
 

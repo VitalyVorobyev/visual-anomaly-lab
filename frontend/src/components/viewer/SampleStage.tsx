@@ -11,9 +11,9 @@
  * from a scale in real units.
  */
 
-import type { ReactNode } from "react";
+import { useLayoutEffect, useRef, type MutableRefObject, type ReactNode } from "react";
 
-import { ImageStage, StageToolbar, cn, type StageView } from "@vitavision/lab-ui";
+import { ImageStage, StageToolbar, cn, useStage, type StageView } from "@vitavision/lab-ui";
 
 import { imageUrl, tierFor } from "../../api/imageUrl";
 import { VectorLayer, type VectorShape } from "./VectorLayer";
@@ -22,7 +22,14 @@ export interface RasterLayer {
   key: string;
   src: string;
   className?: string;
+  /** 0–1, for a layer whose weight the reader sets (Explore's opacity slider). */
+  opacity?: number;
 }
+
+type Projection = (client: { x: number; y: number }) => { x: number; y: number };
+
+/** A click on the image that was not a pan, in image pixels, with the modifier it carried. */
+export type StagePick = (point: { x: number; y: number }, modifiers: { shiftKey: boolean }) => void;
 
 export function SampleStage({
   image,
@@ -37,6 +44,7 @@ export function SampleStage({
   readout,
   panKeys = true,
   banner,
+  onPick,
 }: {
   image: { id: number; width: number; height: number };
   alt: string;
@@ -55,7 +63,14 @@ export function SampleStage({
   panKeys?: boolean;
   /** Over the top-left, outside the transform: a pending or stale state. */
   banner?: ReactNode;
+  /**
+   * A click that landed on the picture and did not become a pan. The stage reports a
+   * background click in client coordinates; its own transform turns that into image pixels,
+   * so a screen asking "where did they click" never re-derives the view arithmetic.
+   */
+  onPick?: StagePick;
 }) {
+  const toImage = useRef<Projection | null>(null);
   return (
     <ImageStage
       image={{ width: image.width, height: image.height }}
@@ -67,6 +82,18 @@ export function SampleStage({
       toolbar={<StageToolbar />}
       readout={readout}
       banner={banner}
+      onBackgroundClick={
+        onPick
+          ? (event) => {
+              const project = toImage.current;
+              if (!project) return;
+              const point = project({ x: event.clientX, y: event.clientY });
+              const inside =
+                point.x >= 0 && point.y >= 0 && point.x < image.width && point.y < image.height;
+              if (inside) onPick(point, { shiftKey: event.shiftKey });
+            }
+          : undefined
+      }
     >
       <img
         src={imageUrl(image.id, tierFor(view))}
@@ -82,10 +109,24 @@ export function SampleStage({
           aria-hidden
           draggable={false}
           className={cn("pointer-events-none absolute inset-0 h-full w-full", layer.className)}
+          style={layer.opacity === undefined ? undefined : { opacity: layer.opacity }}
         />
       ))}
       <VectorLayer width={image.width} height={image.height} shapes={shapes} />
       {children}
+      {onPick && <StageProjection target={toImage} />}
     </ImageStage>
   );
+}
+
+/** Hands the stage's own client-to-image projection to `SampleStage`, which sits outside it. */
+function StageProjection({ target }: { target: MutableRefObject<Projection | null> }) {
+  const stage = useStage();
+  useLayoutEffect(() => {
+    target.current = stage.toImage;
+    return () => {
+      target.current = null;
+    };
+  }, [stage.toImage, target]);
+  return null;
 }

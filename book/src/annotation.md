@@ -27,6 +27,13 @@ from the marked region and returns editable geometry. This is an acceleration to
 the proposal remains a draft until reviewed and committed. Small islands and holes should be visible and
 configurable rather than silently discarded.
 
+## Suggestions from Explore
+
+The sample viewer's Explore section can send a mask to the editor: a thresholded similarity, one k-means
+cluster of a frozen encoder's patches, or a MobileSAM candidate. It opens under **Contour assist** as a
+suggestion, like MobileSAM's own; **Accept mask** or **Editable contour** adds it in the class selected in
+the editor, and **Discard suggestion** drops it. Nothing reaches the draft until it is accepted.
+
 ## Revision model
 
 An edit begins from one immutable annotation revision or an empty draft. Saving creates a new revision with

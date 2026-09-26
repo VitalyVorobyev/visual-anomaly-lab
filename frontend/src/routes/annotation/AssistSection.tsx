@@ -8,6 +8,7 @@ import { WandSparkles } from "lucide-react";
 import {
   Badge,
   Button,
+  Callout,
   ErrorBox,
   ProgressBar,
   SegmentedControl,
@@ -44,6 +45,22 @@ export function AssistSection({ assist }: { assist: SegmentAssistSession }) {
           {asset?.status ?? "checking"}
         </Badge>
       </div>
+
+      {assist.carried && !assist.assist.data && (
+        <div className="mb-3 flex flex-col gap-2">
+          <Callout tone="info" title="Suggested by Explore">
+            {assist.carried.source} · {assist.carried.area.toLocaleString()} px. Accepting it
+            adds it as <span className="font-mono">{assist.labelKey}</span>.
+          </Callout>
+          <div className="grid grid-cols-2 gap-2">
+            <Button onClick={() => void assist.acceptCandidate(false)}>Accept mask</Button>
+            <Button onClick={() => void assist.acceptCandidate(true)}>Editable contour</Button>
+          </div>
+          <Button size="sm" onClick={assist.clear}>
+            Discard suggestion
+          </Button>
+        </div>
+      )}
 
       {modelAssets.isPending || capability.isPending ? (
         <SkeletonRows rows={2} />

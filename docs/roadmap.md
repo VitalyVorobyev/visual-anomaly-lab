@@ -22,6 +22,9 @@ application.
   normal/defect label is anomaly truth and a class lives in annotations, so a dataset of classes —
   FSS-1000's panel, PKU-Market-PCB — is one dataset counted, filtered and covered by its classes, with
   no verdicts it never asserted, and offered anomaly detection only once a sample carries one.
+- **Explore** what a frozen DINO encoder sees in any sample, by clicking: patch similarity with
+  positive and negative points, k-means clusters, a false-colour PCA, or MobileSAM masks — and send the
+  mask to the annotation editor as a suggestion. Intuition, not a result: nothing is stored or scored.
 - **Annotate** at pixel level: polygon, box and brush with editable contour tracing, instance ids,
   class keys, undo/redo, autosave with conflict detection, and a keyboard queue. Completion records
   the object instances beside the masks. Truth is versioned and lives in the source frame.

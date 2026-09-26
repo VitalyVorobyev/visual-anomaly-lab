@@ -11,11 +11,12 @@
  * component beside them.
  */
 
-import { useCallback, useMemo, useRef, useState } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { paneFrame } from "../api/annotationPanes";
 import { labelNote } from "../api/annotationLabelNote";
+import { carriedFrom } from "../api/explore";
 import type { AnnotationLabel, Label, SampleSummary } from "../api/client";
 import {
   AnnotationCanvas,
@@ -229,6 +230,19 @@ function EditorReady({
     flash,
     accept: commands.acceptSuggestion,
   });
+
+  // A mask sent from the sample viewer's Explore arrives in the navigation's state and waits
+  // as an assist suggestion. The state is consumed once, so a reload does not bring it back.
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { carry } = assist;
+  useEffect(() => {
+    const carried = carriedFrom(location.state, imageId);
+    if (!carried) return;
+    carry(carried);
+    setTool("assist");
+    void navigate(`${location.pathname}${location.search}`, { replace: true, state: null });
+  }, [location.state, location.pathname, location.search, imageId, carry, setTool, navigate]);
 
   /**
    * The part's verdict, edited where it is discovered to be wrong.

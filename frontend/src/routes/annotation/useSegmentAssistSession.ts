@@ -8,7 +8,8 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import type { AssistBox, AssistPoint, BitmapShape } from "../../api/client";
+import type { AssistBox, AssistPoint, BitmapShape, SegmentCandidate } from "../../api/client";
+import type { CarriedCandidate } from "../../api/explore";
 import { useSegmentAssist, useSegmentAssistCapability } from "../../hooks/useAnnotations";
 import { useCancelJob } from "../../hooks/useExperiments";
 import { isTerminal, useJob } from "../../hooks/useJob";
@@ -50,13 +51,24 @@ export function useSegmentAssistSession({
   const followedAssetJobId = assetJobId ?? asset?.active_job?.id;
   const assetJob = useJob(followedAssetJobId);
   const cancelAssetJob = useCancelJob();
+  /**
+   * A mask carried from the sample viewer's Explore. It waits as the one candidate until it is
+   * accepted, cleared, or replaced by a prompt of the editor's own; it needs no MobileSAM
+   * checkpoint, because nothing here has to be inferred.
+   */
+  const [carried, setCarried] = useState<CarriedCandidate | null>(null);
   const candidates = assist.data?.candidates ?? [];
-  const candidate = candidates[candidateIndex] ?? null;
+  const candidate: SegmentCandidate | null = assist.data
+    ? (candidates[candidateIndex] ?? null)
+    : carried
+      ? { shape: carried.shape, area: carried.area, score: 0 }
+      : null;
 
   const clear = useCallback(() => {
     setPoints([]);
     setBoxState(null);
     setCandidateIndex(0);
+    setCarried(null);
     assist.reset();
   }, [assist]);
 
@@ -73,6 +85,7 @@ export function useSegmentAssistSession({
     (point: AssistPoint) => {
       assist.reset();
       setCandidateIndex(0);
+      setCarried(null);
       setPoints((current) => [...current, point].slice(-MAX_ASSIST_POINTS));
     },
     [assist],
@@ -82,6 +95,7 @@ export function useSegmentAssistSession({
     (next: AssistBox | null) => {
       assist.reset();
       setCandidateIndex(0);
+      setCarried(null);
       setBoxState(next);
     },
     [assist],
@@ -106,7 +120,11 @@ export function useSegmentAssistSession({
 
   const acceptCandidate = async (asContour: boolean) => {
     if (!candidate) return;
-    if (!(await accept(candidate.shape, asContour))) return;
+    // A carried mask was cut before anyone chose a class for it, so it takes the class and
+    // the operation the editor has selected now.
+    const shape =
+      !assist.data && carried ? { ...candidate.shape, label_key: labelKey, operation } : candidate.shape;
+    if (!(await accept(shape, asContour))) return;
     clear();
     flash(asContour ? "Editable suggested contour accepted" : "Suggested mask accepted");
   };
@@ -146,6 +164,9 @@ export function useSegmentAssistSession({
     candidateIndex,
     setCandidateIndex,
     acceptCandidate,
+    carried,
+    carry: setCarried,
+    labelKey,
     asset,
     capability,
     modelAssets,
