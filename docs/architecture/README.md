@@ -3,7 +3,7 @@
 **How `visual-anomaly-lab` works, now.** These pages carry no status and no date; they describe the system
 as it currently is and are edited whenever it changes. *Why* it is shaped this way is in
 [`docs/adr/`](../adr/) — when a page and a record disagree, **the page is right about what the code does and
-the record is right about what was chosen** (ADR-0030).
+the record is right about what was chosen** ([the index](../adr/README.md)).
 
 | Page | What it covers |
 |---|---|
@@ -61,7 +61,7 @@ scalability**.
 
 1. **Dataset-agnostic core.** The domain model, import layer, DL methods and evaluation layer assume
    nothing about a dataset's geometry, and the number of acquisition channels is per-dataset data, never
-   hard-coded (ADR-0005).
+   hard-coded (ADR-0041).
 2. **Grouped samples are first-class.** A logical sample (one physical part) may carry several images.
    Labels and split membership live on the *sample*, never on the image, so all views of a part share a
    subset.
@@ -145,6 +145,9 @@ back to `http://127.0.0.1:8000` so the same bundle runs in a browser.
   before the page loads, so the UI needs no retry-on-boot logic (ADR-0012);
 - **build the window anyway when the backend did not start**, injecting `startupError` — the cause, the
   paths searched and the backend's last lines of output — for the page to paint ([frontend](frontend.md)).
+  A backend that refuses to start says why in an `{"ev":"error","message":…}` line instead of the ready
+  line, and that sentence becomes the headline: a catalogue from another schema version is refused this
+  way, naming the database file to delete ([domain model](domain-model.md)).
   Nothing in the setup hook may return an error: on macOS it runs inside `did_finish_launching`, where a
   panic becomes `abort()` with no window;
 - **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the

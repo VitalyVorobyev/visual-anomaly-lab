@@ -177,7 +177,7 @@ def replace_sample_results(
                     row.sample_id,
                     row.agg_score,
                     row.aggregation.value,
-                    row.normalization.value if row.normalization else None,
+                    row.normalization.value,
                     _flag(row.localized),
                 )
                 for row in rows
@@ -191,9 +191,13 @@ def replace_metric_sets(
     experiment_id: int,
     metrics_by_subset: Mapping[Subset, Mapping[str, Any]],
     *,
-    ground_truth_digests: Mapping[Subset, str] | None = None,
+    ground_truth_digests: Mapping[Subset, str],
 ) -> int:
-    """Replace this experiment's metric sets. Subsets with no metrics are simply absent."""
+    """Replace this experiment's metric sets. Subsets with no metrics are simply absent.
+
+    Every stored subset records the ground-truth digest it measured (ADR-0032), so a
+    missing digest is a `KeyError` here rather than a set that can never be judged fresh.
+    """
     with transaction(conn):
         conn.execute("DELETE FROM metric_set WHERE experiment_id = ?", (experiment_id,))
         conn.executemany(
@@ -206,7 +210,7 @@ def replace_metric_sets(
                     experiment_id,
                     subset.value,
                     json.dumps(dict(metrics), sort_keys=True),
-                    ground_truth_digests.get(subset) if ground_truth_digests else None,
+                    ground_truth_digests[subset],
                 )
                 for subset, metrics in metrics_by_subset.items()
             ],

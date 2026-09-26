@@ -42,10 +42,7 @@ def test_profile_revisions_validate_schema_and_append(
         "name": "Dominant object",
         "extractor_type": "foreground_threshold",
         "extractor_config": {"min_contrast": 18},
-        "prepared_width": 256,
-        "prepared_height": 192,
         "padding_fraction": 0.05,
-        "seed": 91,
     }
     first = client.post(f"/api/datasets/{dataset_id}/region-profiles", json=body)
     second = client.post(
@@ -57,9 +54,14 @@ def test_profile_revisions_validate_schema_and_append(
     assert second.status_code == 200
     assert first.json()["revision_no"] == 1
     assert second.json()["revision_no"] == 2
-    assert first.json()["failure_policy"] == "fail"
+    assert "seed" not in first.json()
+    assert "prepared_width" not in first.json()
     listed = client.get(f"/api/datasets/{dataset_id}/region-profiles")
-    assert [item["revision_no"] for item in listed.json()] == [2, 1]
+    assert [(item["name"], item["revision_no"]) for item in listed.json()] == [
+        ("Dominant object", 2),
+        ("Dominant object", 1),
+        ("Full frame", 1),
+    ]
     fetched = client.get(f"/api/region-profiles/{first.json()['id']}")
     assert fetched.json() == first.json()
 
@@ -70,9 +72,6 @@ def test_profile_creation_rejects_unknown_or_invalid_extractor_config(
     dataset_id = catalog.dataset_id
     base = {
         "name": "Broken",
-        "prepared_width": 256,
-        "prepared_height": 256,
-        "seed": 17,
     }
 
     unknown = client.post(
@@ -112,32 +111,48 @@ def test_preview_and_build_routes_expose_a_persisted_visual_audit(
             "name": "full frame",
             "extractor_type": "identity",
             "extractor_config": {},
-            "prepared_width": 20,
-            "prepared_height": 18,
             "padding_fraction": 0.0,
             "resample": "bilinear",
-            "seed": 17,
         },
     )
     profile_id = int(created.json()["id"])
 
-    preview = client.post(f"/api/region-profiles/{profile_id}/preview")
+    size = {"width": 20, "height": 18}
+    at_size = "width=20&height=18"
+    assert client.post(f"/api/region-profiles/{profile_id}/preview").status_code == 422
+    preview = client.post(f"/api/region-profiles/{profile_id}/preview", json=size)
     preview_job = _wait_for_job(client, int(preview.json()["id"]))
     assert preview_job["status"] == "succeeded"
     assert preview_job["result"]["sampled"] == len(catalog.image_ids)
-    assert client.get(f"/api/region-profiles/{profile_id}/build").status_code == 404
+    assert (preview_job["result"]["width"], preview_job["result"]["height"]) == (20, 18)
+    assert client.get(f"/api/region-profiles/{profile_id}/build?{at_size}").status_code == 404
+    assert client.get(f"/api/region-profiles/{profile_id}/builds").json() == []
 
-    build = client.post(f"/api/region-profiles/{profile_id}/build")
+    build = client.post(f"/api/region-profiles/{profile_id}/build", json=size)
     build_job = _wait_for_job(client, int(build.json()["id"]))
     assert build_job["status"] == "succeeded"
+    again = client.post(f"/api/region-profiles/{profile_id}/build", json=size)
+    assert again.status_code == 409
 
-    report = client.get(f"/api/region-profiles/{profile_id}/build")
+    report = client.get(f"/api/region-profiles/{profile_id}/build?{at_size}")
     assert report.status_code == 200
     assert report.json()["succeeded"] == len(catalog.image_ids)
+    assert (report.json()["width"], report.json()["height"]) == (20, 18)
     assert len(report.json()["preview_entries"]) == len(catalog.image_ids)
-    prepared = client.get(f"/api/region-profiles/{profile_id}/prepared/{catalog.image_ids[0]}")
+    assert (
+        client.get(f"/api/region-profiles/{profile_id}/build?width=24&height=24").status_code == 404
+    )
+    listed = client.get(f"/api/region-profiles/{profile_id}/builds").json()
+    assert [(entry["width"], entry["height"]) for entry in listed] == [(20, 18)]
+    prepared = client.get(
+        f"/api/region-profiles/{profile_id}/prepared/{catalog.image_ids[0]}?{at_size}"
+    )
     assert prepared.status_code == 200
     assert prepared.headers["content-type"] == "image/png"
+    elsewhere = client.get(
+        f"/api/region-profiles/{profile_id}/prepared/{catalog.image_ids[0]}?width=24&height=24"
+    )
+    assert elsewhere.status_code == 404
 
 
 def test_deleting_a_profile_removes_its_row_and_its_prepared_pixels(
@@ -149,7 +164,13 @@ def test_deleting_a_profile_removes_its_row_and_its_prepared_pixels(
         JobContext(
             job_id=61,
             kind=JobKind.REGION_PREPARE,
-            params={"dataset_id": seeded.dataset_id, "profile_id": profile_id, "mode": "build"},
+            params={
+                "dataset_id": seeded.dataset_id,
+                "profile_id": profile_id,
+                "mode": "build",
+                "width": 16,
+                "height": 16,
+            },
             settings=settings,
         )
     )

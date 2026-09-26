@@ -24,6 +24,8 @@ type Schemas = components["schemas"];
 export type HealthResponse = Schemas["HealthResponse"];
 
 export type Label = Schemas["Label"];
+export type TruthKind = Schemas["TruthKind"];
+export type ClassCount = Schemas["ClassCount"];
 export type LabelSource = Schemas["LabelSource"];
 export type Subset = Schemas["Subset"];
 export type Channel = Schemas["Channel"];
@@ -84,7 +86,14 @@ export type RegionProfileRevision = Schemas["RegionProfileRevision"];
 export type RegionProfileDeletionPreview = Schemas["RegionProfileDeletionPreview"];
 export type RegionProfileDeletionResult = Schemas["RegionProfileDeletionResult"];
 export type RegionBuildSummary = Schemas["RegionBuildSummary"];
+export type InputSizeAnswer = Schemas["InputSizeAnswer"];
 export type RegionPreparationEntry = Schemas["RegionPreparationEntry"];
+export type RegionCheckRequest = Schemas["RegionCheckRequest"];
+/** A profile's configuration, saved or not: where to look and how to cut it out. No size. */
+export type RegionRecipe = Omit<RegionCheckRequest, "width" | "height">;
+export type RegionLivePreview = Schemas["RegionLivePreview"];
+export type RegionPreviewImage = Schemas["RegionPreviewImage"];
+export type RegionPreviewImages = Schemas["RegionPreviewImages"];
 export type SpatialTransform = Schemas["SpatialTransform"];
 export type SpatialResample = Schemas["SpatialResample"];
 export type SampleAlignment = Schemas["SampleAlignment"];
@@ -116,6 +125,10 @@ export type SplitDetail = Schemas["SplitDetail"];
 export type SplitParams = Schemas["SplitParams-Output"];
 export type SplitParamsInput = Schemas["SplitParams-Input"];
 export type SubsetComposition = Schemas["SubsetComposition"];
+export type SplitPreset = Schemas["SplitPreset"];
+export type SplitPreview = Schemas["SplitPreview"];
+export type SplitDeletionPreview = Schemas["SplitDeletionPreview"];
+export type SplitDeletionResult = Schemas["SplitDeletionResult"];
 
 export type ImageTier = Schemas["ImageTier"];
 

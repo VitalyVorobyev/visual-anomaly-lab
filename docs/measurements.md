@@ -15,7 +15,7 @@ The comparison ADR-0029 keeps honest. Protocol: VisA's **published** one-class t
 with the validation holdout carved from `train` only (810 normal train, 90 val, 100 + 100 test). The
 baseline leg is anomalib's EfficientAD wrapper, which is not in the registry, so it cannot be re-run in-app.
 
-**Teacher choice.** Two public EfficientAD teachers disagree on the same data (ADR-0031):
+**Teacher choice.** Two public EfficientAD teachers disagree on the same data (handbook `methods.md`):
 
 | Sample ROC-AUC by aggregation | `anomalib` teacher | `nelson1425` teacher |
 |---|---:|---:|
@@ -318,7 +318,7 @@ mean; MPS rejects the prompt grid's float64), 519 s in all.
 
 ## DINO patch memory — promoted
 
-Frozen DINO patch features are the model (ADR-0037); nothing is trained. The 15.4 MB checkpoint is a
+Frozen DINO patch features are the model (handbook `methods.md`); nothing is trained. The 15.4 MB checkpoint is a
 5 000-vector coreset over 50 000 bounded candidates; the encoder travels as a fingerprint. Paired public
 gate at 448 × 448 (divisible by both patch sizes, so every backbone saw identical pixels), `global_knn`,
 `last_two` layers, k = 1. The recorded leg is **DINOv2 ViT-S/14-reg4** (ungated weights):
@@ -700,9 +700,12 @@ a panel that differs. Two known upstream defects stay out: a stray `.jpeg` besid
 the panel.
 
 **Protocol.**
-- Each panel class is its own dataset, registered as the reference pack registers it
-  ([import](architecture/import.md#reference-packs)). Its ten images, with their masks, are the target
-  class `defect`; the other nineteen classes' 190 images are confirmed absences.
+- Each panel class is its own dataset. Its ten images, with their masks, are the target class `defect`;
+  the other nineteen classes' 190 images are confirmed absences, labelled `normal`. This is the shape the
+  figures below were measured on. The pack now registers the panel as one dataset whose masks are class
+  truth, and a run names its class ([import](architecture/import.md#reference-packs), ADR-0041): the same
+  references, queries and truth by construction, which `tests/test_truth_is_task_scoped.py` asserts on a
+  synthetic panel. Re-running the gate on that shape is in [backlog.md](backlog.md).
 - `few_shot` splits draw k ∈ {1, 2, 5} references among the ten under seeds {0, 1, 2}, and every other
   image is a query: 10 − k that show the class and 190 that do not. Ten shots would leave no image of the
   class to segment, so k = 10 is not run.

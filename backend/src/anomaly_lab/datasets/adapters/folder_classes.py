@@ -11,7 +11,7 @@ to name the directories, which is exactly the trade the simple case wants.
 
 **One image is one sample, with no channel.** That is the point of this adapter beyond
 convenience: the domain model has always allowed a sample with a single unchannelled image
-(ADR-0005), and until something exercised that path it was a claim rather than a fact.
+(ADR-0041), and until something exercised that path it was a claim rather than a fact.
 
 Covers GKN, MVTec-AD, BTAD and most single-view public sets. For a dataset that ships a
 published train/test split, prefer `csv_table`, which carries the split through instead of

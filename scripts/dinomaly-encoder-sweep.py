@@ -38,7 +38,7 @@ from typing import Any
 import m11_public_gate as gate
 
 from anomaly_lab.config import Settings
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.models.dino_backbone import BACKBONES, DinoBackbone
 
 REPOSITORY = Path(__file__).resolve().parent.parent
@@ -214,7 +214,7 @@ def _run(args: argparse.Namespace) -> int:
     gate._empty_destination(data_dir)
     settings = _settings(data_dir, args.datasets_dir)
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     arms = [ARMS[key] for key in (args.arms or tuple(ARMS))]
     categories = tuple(args.categories or DEFAULT_CATEGORIES)
     copied = _seed_weights(args.weights_cache, settings, arms) if args.weights_cache else []

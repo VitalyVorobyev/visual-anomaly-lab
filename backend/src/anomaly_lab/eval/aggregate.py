@@ -1,6 +1,6 @@
 """Channel to sample aggregation — the one substantive decision in this layer.
 
-Models emit per-image scores; labels and splits belong to the sample (ADR-0005). Three
+Models emit per-image scores; labels and splits belong to the sample (ADR-0041). Three
 views of one part therefore produce three numbers and one verdict is needed. That
 reduction is a detection decision, not a formatting step, so it lives here, applies
 identically to every method, and is recorded on every row it produces.
@@ -8,7 +8,7 @@ identically to every method, and is recorded on every row it produces.
 `max` is the default: a defect visible under any single illumination makes the part
 defective, and averaging dilutes exactly that evidence.
 
-**The comparability caveat ADR-0011 recorded is now a configured step rather than a
+**The comparability caveat of `max` is a configured step rather than a
 footnote.** `max` assumes a part's per-channel scores are on one scale, which is not
 automatic for a deep model: if the dark-field distribution simply sits higher than the
 bright-field one, every maximum comes from dark-field and the sample score measures which
@@ -179,7 +179,7 @@ def build_sample_results(
     """Sample rows ready to persist, with both decisions recorded on each one.
 
     Recorded per row rather than only in `eval_config` so that a stored result stays
-    self-describing after the default changes (ADR-0011).
+    self-describing after the default changes (handbook evaluation.md).
 
     The localization verdict is carried up here too, from `ScoredImage.localized` — so a
     caller that re-derives sample scores without re-reading a single map still writes a

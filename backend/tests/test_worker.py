@@ -19,7 +19,7 @@ import pytest
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.jobs import handlers, worker
@@ -28,7 +28,7 @@ from anomaly_lab.jobs.context import JobContext
 
 @pytest.fixture
 def job_id(settings: Settings) -> int:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     with connection(settings.db_path) as conn:
         return jobs_repo.create_job(conn, kind=JobKind.IMPORT, params={"n": 1}).id
 
@@ -126,7 +126,7 @@ def test_a_raising_handler_becomes_an_error_event_with_its_traceback(
 def test_a_job_that_does_not_exist_is_reported_not_crashed(
     settings: Settings, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
 
     exit_code = worker.run_job(9999, settings)
     error = _events(capsys)[-1]

@@ -29,7 +29,7 @@
  * before persistence. The browser therefore receives source-frame layers and never has to
  * reconstruct crop, resize or letterbox offsets.
  *
- * **The diagnostic panes are generic over the index (ADR-0018).** For
+ * **The diagnostic panes are generic over the index (handbook diagnostics.md).** For
  * `efficientad_custom` they happen to be the student-teacher and autoencoder errors,
  * which is the comparison that makes the method legible. Nothing here knows that: it draws
  * every image-scoped `map` the run recorded, so `pixel_reference` gets its unsmoothed

@@ -19,7 +19,7 @@ from fastapi.testclient import TestClient
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import Job, JobKind, JobStatus
 from anomaly_lab.jobs.handlers import supported_kinds
@@ -64,7 +64,7 @@ def _await_terminal(client: TestClient, job_id: int) -> dict[str, Any]:
 
 def test_enqueue_creates_a_visible_queued_job(settings: Settings) -> None:
     """A job is inspectable and cancellable before it starts (ADR-0009)."""
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     job = JobQueue(settings).enqueue(kind=JobKind.PREWARM, params={"dataset_id": 3})
 
     assert job.status is JobStatus.QUEUED
@@ -78,7 +78,7 @@ def test_region_prepare_is_a_supported_generic_job_kind() -> None:
 
 
 def test_the_queue_is_fifo(settings: Settings) -> None:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     queue = JobQueue(settings)
     first = queue.enqueue(kind=JobKind.IMPORT)
     queue.enqueue(kind=JobKind.IMPORT)
@@ -88,7 +88,7 @@ def test_the_queue_is_fifo(settings: Settings) -> None:
 
 
 def test_cancelling_a_queued_job_never_starts_it(settings: Settings) -> None:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     queue = JobQueue(settings)
     job = queue.enqueue(kind=JobKind.IMPORT)
 
@@ -102,7 +102,7 @@ def test_cancelling_a_queued_job_never_starts_it(settings: Settings) -> None:
 
 
 def test_cancelling_a_finished_job_reports_rather_than_pretends(settings: Settings) -> None:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     with connection(settings.db_path) as conn:
         job = jobs_repo.create_job(conn, kind=JobKind.IMPORT)
         jobs_repo.finish_job(conn, job.id, status=JobStatus.SUCCEEDED)
@@ -190,7 +190,7 @@ def test_every_declared_job_kind_has_a_handler() -> None:
 
 def test_a_running_job_left_by_a_previous_process_is_reconciled(settings: Settings) -> None:
     """The owner of a `running` row at startup is provably gone (ADR-0009)."""
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     with connection(settings.db_path) as conn:
         job = jobs_repo.create_job(conn, kind=JobKind.IMPORT)
         jobs_repo.mark_running(conn, job.id, log_path=str(settings.jobs_log_dir / "x.log"))
@@ -361,7 +361,7 @@ def test_a_worker_that_floods_stderr_still_reaches_a_terminal_state(client: Test
 
 def _finished_with(settings: Settings, returncode: int, result: dict[str, Any]) -> list[Job]:
     """Finish a job the way the runner does, and return what is queued afterwards."""
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     queue = JobQueue(settings)
     job = queue.enqueue(kind=JobKind.IMPORT)
     state = _JobRunState()

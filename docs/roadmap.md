@@ -18,7 +18,10 @@ application.
 - **Browse and label** the result as a catalogue that groups — a collection is a dataset's stored
   override or the reference pack it came from — with a virtualised grid, channel filters and an
   image-first sample viewer. A dataset names the channel it is read in, and every screen that has
-  room for one photograph of a part opens on it.
+  room for one photograph of a part opens on it. Truth is task-scoped (ADR-0041): a sample's
+  normal/defect label is anomaly truth and a class lives in annotations, so a dataset of classes —
+  FSS-1000's panel, PKU-Market-PCB — is one dataset counted, filtered and covered by its classes, with
+  no verdicts it never asserted, and offered anomaly detection only once a sample carries one.
 - **Explore** what a frozen DINO encoder sees in any sample, by clicking: patch similarity with
   positive and negative points, k-means clusters, a false-colour PCA, or MobileSAM masks — and send the
   mask to the annotation editor as a suggestion. Intuition, not a result: nothing is stored or scored.
@@ -27,12 +30,18 @@ application.
   the object instances beside the masks. Truth is versioned and lives in the source frame.
   One annotation covers every channel of a part, while revisions stay per image.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
-  immutable revision an experiment can reference, so a run's spatial input is reproducible. On a
+  immutable revision that says where a run looks, so its spatial input is reproducible. It is optional:
+  every dataset has a "Full frame" profile, a run's size is its own (its method's measured frame unless
+  named), and a run's first job prepares the profile at that size. A profile is tuned on a live
+  preview of one image at a time — every control re-prepares it, MobileSAM included — and checked on
+  24 before it is saved, so tuning leaves no revisions behind. On a
   grouped dataset the channels of one part can share one union crop, so they stay registered.
   MobileSAM can reject masks that wrap the frame border and unite the rest; that rule is opt-in, since
   on held-out public classes it localised the part but kept 0.92 of defect pixels, below the
   predeclared 0.98 ([measurements.md](measurements.md)).
-- **Split** a dataset at sample level, or adopt the split a benchmark published.
+- **Split** a dataset at sample level, or adopt the split a benchmark published — from a preset
+  card per task with its dry-run composition and one press to create it, or by hand under **Custom
+  split** with a live preview. A split no experiment ran on can be deleted.
 - **Train and score** through one plugin interface. Eight anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
   `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad` and `anomalyvfm_anomalib`. `dino_memory` is a frozen

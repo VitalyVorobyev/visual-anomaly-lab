@@ -27,7 +27,7 @@ router = APIRouter(prefix="/api/experiments", tags=["experiments"])
 
 @router.get("/{experiment_id}/diagnostics", summary="What this run recorded about itself")
 def get_diagnostics(request: Request, experiment_id: int) -> DiagnosticIndex:
-    """The self-describing index a model wrote (ADR-0018).
+    """The self-describing index a model wrote (handbook diagnostics.md).
 
     Returned verbatim. The UI renders by `kind` and never by method name, which is what
     makes a future method's diagnostics work here with no change.
@@ -46,7 +46,7 @@ async def diagnose(request: Request, experiment_id: int, body: DiagnoseRequest) 
     load, the rest do not.
 
     **It does not change this image's score, its map, or any metric.** Those come from a
-    job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+    job and stay the run's (handbook evaluation.md); what persists here is the diagnostics, marked
     `on_demand` in the index (handbook diagnostics.md).
 
     Refused with 409 while a job is running: one machine, one device, and a browse request
@@ -182,7 +182,7 @@ def read_diagnostic_payload(
     array = stored.load()
     if payload_format is PayloadFormat.RAW:
         # The same `(key, image_id)` resolution, so the per-branch panes inherit the hover
-        # readout with no code written per method — which is what ADR-0018 is for.
+        # readout with no code written per method — which is what the diagnostics index is for.
         return Response(
             content=encode_plane(stored.raw_plane(array, frame)),
             media_type="application/octet-stream",

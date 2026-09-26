@@ -25,7 +25,7 @@ visual-anomaly-lab/
 │   │   ├── experiments/            # service.py (create, preconditions, deletion); train/infer/diagnose work
 │   │   ├── errors.py               # domain refusals: NotFound, Conflict, StaleVersion, InvalidInput, …
 │   │   ├── domain/                 # pydantic entities and enums — no I/O
-│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection + transaction(), repositories
+│   │   ├── db/                     # the schema script (migrations/001_initial.sql), connection + transaction(), repositories
 │   │   ├── datasets/               # import adapters, manifest model, scan/commit/verify, reference packs
 │   │   ├── regions/                # region extractors, transforms, prepared-image builds
 │   │   ├── media/                  # decode, thumbnail/preview cache, map rendering, prewarm
@@ -43,7 +43,7 @@ visual-anomaly-lab/
 │   └── src-tauri/                  # Rust desktop shell: sidecar spawn, port handoff, teardown
 ├── deployment/runner/              # Rust reference runner for ONNX bundles
 │
-├── datasets/                       # GITIGNORED — public reference datasets (ADR-0015)
+├── datasets/                       # GITIGNORED — public reference datasets, credited in README.md
 └── data/                           # GITIGNORED — all app-managed state
     ├── app.sqlite3                 # metadata, scores, paths
     ├── manifests/                  # committed import manifests (dataset-<id>-*.json)
@@ -51,7 +51,7 @@ visual-anomaly-lab/
     ├── artifacts/exp-<id>/         # method state, maps/ (float32 .npz), logs/<job>.log, exports/
     ├── jobs/logs/                  # logs of jobs that belong to no experiment
     ├── annotations/image-<id>/     # revision-<n>.png, .classes.png, .instances.json — immutable truth
-    ├── region-profiles/profile-<id>/build/  # lossless prepared PNGs + transforms
+    ├── region-profiles/profile-<id>/<w>x<h>/  # one build per size: prepared PNGs + transforms
     ├── explore/                    # Explore's scratch maps (newest 24 kept) and the last encoded frame
     └── model-cache/assets/         # verified shared weights + external-source metadata
 ```
@@ -59,12 +59,21 @@ visual-anomaly-lab/
 Source images are not in this tree. They live outside the working directory and are reached by absolute
 path (ADR-0022), so `git add` cannot reach them.
 
-Monorepo layout (ADR-0002): one repository, two build systems, no shared build tooling — `uv` owns
-`backend/`, `bun` + `cargo` own `frontend/`. The two halves are coupled only by the HTTP contract.
+**One repository, no monorepo orchestration.** The Python service, the React app and the Rust shell are
+developed together, change together and ship as one desktop application, so a cross-cutting change (a
+route, its generated TypeScript type and the screen that reads it) lands in one commit. Each stack keeps
+its native tool — `uv` owns `backend/`, `bun` + `cargo` own `frontend/` and `deployment/runner/` — and
+`scripts/` glues them together; lockfiles are committed. There is no Nx, Turborepo, Bazel or Pants, so
+there is no single `build` or `test` command and CI re-runs whole-stack checks rather than only what
+changed. The two halves are coupled only by the HTTP contract, which the generated client checks
+(ADR-0012). `src-tauri/` sits inside `frontend/` because the Tauri CLI expects it beside the web app it
+wraps, and the shell is a delivery mechanism for the frontend rather than a peer component.
 
 ## Data directory
 
-`data/` is repo-local by default so a fresh clone works with zero configuration. `ANOMALY_LAB_DATA_DIR`
+`data/` is repo-local by default so a fresh clone works with zero configuration, and a research tool's
+state can be listed with `ls` and reset with `rm -rf`. The cost is that an aggressive `git clean -xdf`
+deletes experiment results. `ANOMALY_LAB_DATA_DIR`
 overrides it — for tests (a temp dir each), packaged builds (which have no checkout to infer a root from
 and must set it) and external disks. All backend code resolves paths through the one `Settings` object; no
 module builds a path from `__file__` or the working directory.
@@ -83,8 +92,8 @@ exception, then runs the rollback callbacks registered on it. `immediate=True` t
 front, which a read-check-write needs (a draft's version check, a deletion's blocker check). Because the
 filesystem cannot join a transaction, a file written inside one (a completed annotation's mask, an accepted
 manifest) is registered with `tx.remove_on_rollback(path)` and removed with the rows that would have
-referenced it. Nothing else issues `BEGIN`, `COMMIT` or `ROLLBACK`, except the migration runner, whose
-`executescript` carries its own transaction.
+referenced it. Nothing else issues `BEGIN`, `COMMIT` or `ROLLBACK`, except `db/migrate.py`, which applies
+the schema script to an empty database inside one `executescript` that carries its own transaction.
 
 ## Model assets
 

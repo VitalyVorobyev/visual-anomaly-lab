@@ -38,7 +38,7 @@ gitignored for size.
 | how a subsystem works                              | its page in `docs/architecture/` in the **same** commit              |
 | something that shipped from `docs/backlog.md`      | delete the item; the handbook describes it now                       |
 | a measured verdict                                 | `docs/measurements.md`, cited rather than restated elsewhere          |
-| the database schema                                | a **new** numbered migration — schema v1 is frozen (ADR-0004)         |
+| the database schema                                | edit `001_initial.sql` in place and bump `SCHEMA_VERSION` (ADR-0004)  |
 
 Check the twins with `diff <(tail -n +4 CLAUDE.md) <(tail -n +4 AGENTS.md)` — it must print nothing.
 

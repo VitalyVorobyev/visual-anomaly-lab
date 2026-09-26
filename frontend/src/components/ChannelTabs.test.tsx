@@ -1,5 +1,5 @@
 /**
- * "Channel count is data, never schema" (ADR-0005), tested where a screen could break it.
+ * "Channel count is data, never schema" (ADR-0041), tested where a screen could break it.
  *
  * A dataset in the reference data has one capture group with two illuminations rather
  * than three. If any of these cases needed a special case in the component, that rule

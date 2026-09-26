@@ -39,7 +39,7 @@ from anomaly_lab.datasets.splitting import (
     plan_imported_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -116,7 +116,7 @@ CANDIDATES = {
     ),
     # The wrapper's exact protocol row — 392 px, its pinned encoder, 5000 steps, the shared
     # seed — so the custom implementation's gate reads directly against the wrapper's
-    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0008/0029).
+    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0029).
     "dinomaly_custom": CandidateSpec(
         key="dinomaly_custom",
         label="Dinomaly (ours)",
@@ -312,10 +312,7 @@ def _identity_profile(
             name=f"M11 identity {frame}",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=prepared_size,
-            prepared_height=height,
             padding_fraction=0.0,
-            seed=SEED,
         )
     print(f"Preparing {category} at {frame}px...", file=sys.stderr)
     with contextlib.redirect_stdout(log):
@@ -327,17 +324,22 @@ def _identity_profile(
                     "dataset_id": dataset_id,
                     "profile_id": profile.id,
                     "mode": "build",
+                    "width": prepared_size,
+                    "height": height,
                 },
                 settings=settings,
             )
         )
-    summary = read_build_summary(settings, profile.id)
+    size = (prepared_size, height)
+    summary = read_build_summary(settings, profile.id, size)
     if summary is None or summary.failed:
         raise RuntimeError(
             f"identity build for {category} failed "
             f"({None if summary is None else summary.failed} images)"
         )
-    return load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+    return load_prepared_build(
+        settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+    )
 
 
 def _create_experiment(
@@ -355,8 +357,8 @@ def _create_experiment(
         get_model_class(method).config_model().model_validate(method_config).model_dump(mode="json")
     )
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width,
-        height=build.profile.prepared_height,
+        width=build.size[0],
+        height=build.size[1],
     ).model_dump(mode="json")
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(
@@ -389,7 +391,7 @@ def _peak_rss_bytes() -> int:
 
 def _child(data_dir: Path, experiment_id: int) -> int:
     settings = _settings(data_dir)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     log_path = data_dir / "gate.log"
     started = time.perf_counter()
     with log_path.open("a", encoding="utf-8") as log, contextlib.redirect_stdout(log):
@@ -518,7 +520,7 @@ def _run(
     _empty_destination(data_dir)
     settings = _settings(data_dir)
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     candidate_config = dict(candidate_spec.config)
     if steps is not None:
         if candidate_spec.step_field is None:

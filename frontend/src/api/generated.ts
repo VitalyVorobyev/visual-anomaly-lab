@@ -70,9 +70,8 @@ export interface paths {
          * The draft in progress, or the document a new one would start from
          * @description Read-or-seed, and never a write.
          *
-         *     This used to 404, and the editor reached for the POST instead -- from a query function, so
-         *     opening an image persisted a row and completing one resurrected it. Every such row then
-         *     counted as unsaved work forever (see migration 016).
+         *     A read that created the draft would persist a row every time an image was opened, and
+         *     every such row would count as unsaved work forever. The first save creates it.
          */
         get: operations["get_annotation_draft_api_images__image_id__annotations_draft_get"];
         /** Save a draft if the caller still owns the version it read */
@@ -595,6 +594,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/experiments/input-size": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * The input size a run of a method resolves to
+         * @description The method's own size for this configuration, and the multiple a named size snaps to.
+         *
+         *     What the create form shows beside an empty size field, so "leave it empty" has a
+         *     visible answer before the experiment exists.
+         */
+        post: operations["resolve_input_size_api_experiments_input_size_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/experiments": {
         parameters: {
             query?: never;
@@ -725,7 +747,7 @@ export interface paths {
          * Recompute metrics from stored scores
          * @description Re-read the results without re-running inference.
          *
-         *     Cheap because nothing about evaluation depends on a model (ADR-0011), and useful
+         *     Cheap because nothing about evaluation depends on a model (handbook evaluation.md), and useful
          *     because it is how a changed aggregation mode is applied to a finished experiment.
          */
         post: operations["reevaluate_api_experiments__experiment_id__reevaluate_post"];
@@ -1007,7 +1029,7 @@ export interface paths {
          *
          *     Recomputed from the stored scores on every request — the same read the threshold
          *     endpoint does, over a few hundred floats — rather than persisted. Nothing here is
-         *     threshold-dependent and nothing is written (ADR-0011).
+         *     threshold-dependent and nothing is written (handbook evaluation.md).
          *
          *     Pixel-level curves are deliberately absent. The pixel accumulator streams its
          *     histograms and discards them by design (handbook evaluation.md), so drawing that
@@ -1052,7 +1074,7 @@ export interface paths {
         };
         /**
          * What this run recorded about itself
-         * @description The self-describing index a model wrote (ADR-0018).
+         * @description The self-describing index a model wrote (handbook diagnostics.md).
          *
          *     Returned verbatim. The UI renders by `kind` and never by method name, which is what
          *     makes a future method's diagnostics work here with no change.
@@ -1099,7 +1121,7 @@ export interface paths {
          *     load, the rest do not.
          *
          *     **It does not change this image's score, its map, or any metric.** Those come from a
-         *     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+         *     job and stay the run's (handbook evaluation.md); what persists here is the diagnostics, marked
          *     `on_demand` in the index (handbook diagnostics.md).
          *
          *     Refused with 409 while a job is running: one machine, one device, and a browse request
@@ -1713,6 +1735,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/region-preview/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Images to step through on the live Prepare stage, evenly spaced over the dataset */
+        get: operations["region_preview_images_api_datasets__dataset_id__region_preview_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-preview/random": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One image of the dataset, chosen at random, for the live Prepare stage */
+        get: operations["region_preview_random_api_datasets__dataset_id__region_preview_random_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare one image under an unsaved region profile, synchronously */
+        post: operations["region_preview_api_datasets__dataset_id__region_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue the sampled preview of an unsaved region profile */
+        post: operations["region_check_api_datasets__dataset_id__region_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/region-extractors": {
         parameters: {
             query?: never;
@@ -1801,10 +1891,13 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** The latest complete profile build report */
+        /** The completed build report of a profile at one size */
         get: operations["get_region_profile_build_api_region_profiles__profile_id__build_get"];
         put?: never;
-        /** Prepare a profile for every image */
+        /**
+         * Prepare a profile for every image at one size
+         * @description Build ahead of a run. A run whose size has no build prepares it in its own job.
+         */
         post: operations["build_region_profile_api_region_profiles__profile_id__build_post"];
         delete?: never;
         options?: never;
@@ -1821,6 +1914,23 @@ export interface paths {
         };
         /** Preview the app-owned records and prepared pixels a profile deletion removes */
         get: operations["preview_region_profile_deletion_api_region_profiles__profile_id__deletion_preview_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/region-profiles/{profile_id}/builds": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Every completed build of a profile, one per size */
+        get: operations["list_region_profile_builds_api_region_profiles__profile_id__builds_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -1899,7 +2009,7 @@ export interface paths {
          *
          *     A seeded split is per sample, so no two views of one part can straddle the boundary;
          *     training gets normals only; and the draw is stratified by capture group so an
-         *     acquisition-batch effect cannot land entirely on one side (ADR-0011).
+         *     acquisition-batch effect cannot land entirely on one side (handbook evaluation.md).
          *
          *     The `imported` strategy instead reads the partition out of the manifest the dataset
          *     was committed from, because a benchmark's published number is only comparable against
@@ -1909,6 +2019,52 @@ export interface paths {
          *     classes each shows, for a supervised task (ADR-0039).
          */
         post: operations["create_split_api_splits_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/split-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The zero-configuration splits this dataset can serve, with dry-run compositions
+         * @description Presets per task, each with the composition Create would produce. Writes nothing.
+         *
+         *     Anomaly presets need anomaly verdicts; class presets need class truth (ADR-0041). A
+         *     preset whose dry run fails on this dataset is left out.
+         */
+        get: operations["list_split_presets_api_datasets__dataset_id__split_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/splits/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What a split with these params would contain, without creating it
+         * @description The dry run the custom form shows as it is edited.
+         *
+         *     A request that cannot be drawn answers 200 with `error` set, because an unfinished form
+         *     is an ordinary state, not a failed call.
+         */
+        post: operations["preview_split_api_datasets__dataset_id__splits_preview_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1927,6 +2083,32 @@ export interface paths {
          * @description One split and its exact composition.
          */
         get: operations["get_split_api_splits__split_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a split no experiment ran on
+         * @description Remove a split and its assignments; refuse while an experiment holds it.
+         *
+         *     `experiment.split_id` is `ON DELETE RESTRICT` and nothing cascades: an experiment's
+         *     results are only meaningful against the partition it ran on, so the experiments are
+         *     deleted first, deliberately, or the split stays. The check and the delete share one
+         *     write transaction, so an experiment cannot be created on the split in between.
+         */
+        delete: operations["delete_split_api_splits__split_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/splits/{split_id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What deleting a split removes, and the experiments that block it */
+        get: operations["preview_split_deletion_api_splits__split_id__deletion_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2261,7 +2443,7 @@ export interface components {
          *     `IMAGE` is the original and the default: every photograph carries its own document.
          *     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
          *     part -- one document is edited once and materialised onto every image of the sample.
-         *     Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+         *     Truth stays image-keyed in both cases; only the editing scope moves (handbook annotations.md).
          * @enum {string}
          */
         AnnotationScope: "image" | "sample";
@@ -2596,6 +2778,11 @@ export interface components {
             split_id?: number | null;
             /** @description Only meaningful together with `split_id`. */
             subset?: components["schemas"]["Subset"] | null;
+            /**
+             * Class Key
+             * @description Samples whose completed annotation shows this class (ADR-0041).
+             */
+            class_key?: string | null;
         };
         /**
          * BulkLabelRequest
@@ -2700,6 +2887,20 @@ export interface components {
             matched_by: string;
         };
         /**
+         * ClassCount
+         * @description One class the dataset's completed annotations show, and how many samples show it.
+         */
+        ClassCount: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Color */
+            color: string;
+            /** Samples */
+            samples: number;
+        };
+        /**
          * ClassCoverage
          * @description How much truth one class has, in samples — what a targeted task can draw on (ADR-0040).
          *
@@ -2725,6 +2926,16 @@ export interface components {
          * @enum {string}
          */
         ClassPresence: "present" | "absent" | "unlabeled";
+        /**
+         * ClassShare
+         * @description How many samples of a subset show one class.
+         */
+        ClassShare: {
+            /** Key */
+            key: string;
+            /** Samples */
+            samples: number;
+        };
         /**
          * ClassTableEntry
          * @description One class as a completed revision pinned it: its index in the class mask, and its area.
@@ -3040,10 +3251,23 @@ export interface components {
             dataset_id: number;
             /** Split Id */
             split_id: number;
-            /** Region Profile Id */
-            region_profile_id: number;
+            /**
+             * Region Profile Id
+             * @description Where to look: a region profile revision of the dataset. Omitted means the dataset's implicit 'Full frame' profile.
+             */
+            region_profile_id?: number | null;
             /** Model Type */
             model_type: string;
+            /**
+             * Width
+             * @description Input width in pixels. Omitted with `height`, the method's own native size for this configuration.
+             */
+            width?: number | null;
+            /**
+             * Height
+             * @description Input height in pixels; given together with `width` or not at all.
+             */
+            height?: number | null;
             /**
              * @description What the run is asked to do. The method must list it in its capabilities.
              * @default anomaly
@@ -3078,14 +3302,16 @@ export interface components {
         CreateSplitRequest: {
             /** Dataset Id */
             dataset_id: number;
-            /** Name */
-            name: string;
+            /**
+             * Name
+             * @description Leave empty for `<label> · seed <n>`, derived from the params.
+             */
+            name?: string | null;
             /**
              * Seed
-             * @description Same seed and params reproduce this split.
-             * @default 0
+             * @description Same seed and params reproduce this split. Leave empty for the first seed no split of the same params has used, so a repeated request is a new draw.
              */
-            seed: number;
+            seed?: number | null;
             params?: components["schemas"]["SplitParams-Input"];
         };
         /**
@@ -3217,6 +3443,16 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /**
+             * Truth
+             * @description Which truth the dataset holds, derived (ADR-0041): `labels` when a sample has an anomaly verdict, `classes` when a completed annotation shows a class. Both, or neither.
+             */
+            truth: components["schemas"]["TruthKind"][];
+            /**
+             * Class Counts
+             * @description The classes completed annotations show, in class order, with sample counts.
+             */
+            class_counts: components["schemas"]["ClassCount"][];
             /** Collection */
             collection: string | null;
             /** Description */
@@ -3261,6 +3497,16 @@ export interface components {
             label_counts: {
                 [key: string]: number;
             };
+            /**
+             * Truth
+             * @description Which truth the dataset holds, derived (ADR-0041): `labels` when a sample has an anomaly verdict, `classes` when a completed annotation shows a class. Both, or neither.
+             */
+            truth: components["schemas"]["TruthKind"][];
+            /**
+             * Class Counts
+             * @description The classes completed annotations show, in class order, with sample counts.
+             */
+            class_counts: components["schemas"]["ClassCount"][];
             /** Collection */
             collection: string | null;
             /** Description */
@@ -3626,8 +3872,11 @@ export interface components {
             split_id: number;
             /** Region Profile Id */
             region_profile_id: number;
-            /** Region Manifest Sha256 */
-            region_manifest_sha256: string;
+            /**
+             * Region Manifest Sha256
+             * @description The prepared-region build the run reads; null until its first train or infer job builds or adopts it, frozen from then on.
+             */
+            region_manifest_sha256: string | null;
             /** Model Type */
             model_type: string;
             /** @default anomaly */
@@ -3747,8 +3996,11 @@ export interface components {
             split_id: number;
             /** Region Profile Id */
             region_profile_id: number;
-            /** Region Manifest Sha256 */
-            region_manifest_sha256: string;
+            /**
+             * Region Manifest Sha256
+             * @description The prepared-region build the run reads; null until its first train or infer job builds or adopts it, frozen from then on.
+             */
+            region_manifest_sha256: string | null;
             /** Model Type */
             model_type: string;
             /** @default anomaly */
@@ -4184,6 +4436,35 @@ export interface components {
              */
             diagnostic_images?: number;
         };
+        /**
+         * InputSizeAnswer
+         * @description The size a run resolves to when the experiment names none.
+         */
+        InputSizeAnswer: {
+            /** Model Type */
+            model_type: string;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+            /**
+             * Multiple
+             * @description Both dimensions of a named size must be a multiple of this — the backbone's patch size; 1 when any size reads.
+             */
+            multiple: number;
+        };
+        /**
+         * InputSizeRequest
+         * @description A method and its configuration, to resolve the size a run of it would read.
+         */
+        InputSizeRequest: {
+            /** Model Type */
+            model_type: string;
+            /** Config */
+            config?: {
+                [key: string]: unknown;
+            };
+        };
         /** InstallModelAssetRequest */
         InstallModelAssetRequest: {
             /**
@@ -4268,6 +4549,10 @@ export interface components {
         };
         /**
          * Label
+         * @description A sample's anomaly truth (ADR-0041). `UNLABELED` is no verdict, not a third verdict.
+         *
+         *     It says nothing about classes: a dataset whose truth is class annotations leaves every
+         *     sample `UNLABELED`.
          * @enum {string}
          */
         Label: "normal" | "defect" | "unlabeled";
@@ -4661,6 +4946,17 @@ export interface components {
             };
         };
         /**
+         * MethodStatus
+         * @description Where a method stands by this workbench's own evidence (`docs/measurements.md`).
+         *
+         *     `supported` cleared its public gate; `experimental` has not, or has not run one; `floor`
+         *     is a task's numpy baseline, which every other method of the task has to beat and which
+         *     is never promoted, whatever it scores. A verdict, not a capability: the registry records
+         *     it, because a gate decides it and the plugin does not.
+         * @enum {string}
+         */
+        MethodStatus: "supported" | "experimental" | "floor";
+        /**
          * MetricPoint
          * @description One `metric` event, reduced to what a chart plots.
          */
@@ -4701,7 +4997,7 @@ export interface components {
             /** Computed At */
             computed_at: string;
             /** Ground Truth Digest */
-            ground_truth_digest: string | null;
+            ground_truth_digest: string;
             /**
              * Ground Truth Stale
              * @default false
@@ -4764,6 +5060,12 @@ export interface components {
             summary: string;
             capabilities: components["schemas"]["Capabilities"];
             availability: components["schemas"]["Availability"];
+            status: components["schemas"]["MethodStatus"];
+            /**
+             * Recommended For
+             * @description The tasks this method is the default for: what a new experiment picks first.
+             */
+            recommended_for: components["schemas"]["Task"][];
             /** Config Schema */
             config_schema: {
                 [key: string]: unknown;
@@ -4795,6 +5097,20 @@ export interface components {
          * @enum {string}
          */
         PayloadFormat: "png" | "raw";
+        /**
+         * PixelBounds
+         * @description A half-open rectangle in source pixel-edge coordinates.
+         */
+        PixelBounds: {
+            /** Left */
+            left: number;
+            /** Top */
+            top: number;
+            /** Right */
+            right: number;
+            /** Bottom */
+            bottom: number;
+        };
         /** PolygonShape */
         "PolygonShape-Input": {
             /** Id */
@@ -4880,6 +5196,34 @@ export interface components {
              * @description Kept, and matched to a truth box of its class at IoU 0.5.
              */
             matched: boolean;
+        };
+        /**
+         * PreparationSize
+         * @description The frame a preview or build is prepared at. A profile has no size of its own.
+         */
+        PreparationSize: {
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
+        /**
+         * PresetClass
+         * @description A class a few-shot preset can draw references of, and how many samples show it.
+         */
+        PresetClass: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Samples */
+            samples: number;
         };
         /** PreviewRequest */
         PreviewRequest: {
@@ -5025,13 +5369,23 @@ export interface components {
         RegionBuildSummary: {
             /**
              * Schema Version
-             * @default 1
+             * @default 2
              */
             schema_version: number;
             /** Profile Id */
             profile_id: number;
             /** Dataset Id */
             dataset_id: number;
+            /**
+             * Width
+             * @description Prepared frame width this build was made at.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height this build was made at.
+             */
+            height: number;
             /** Total */
             total: number;
             /** Succeeded */
@@ -5053,6 +5407,40 @@ export interface components {
             /** Failure Examples */
             failure_examples: components["schemas"]["RegionPreparationEntry"][];
         };
+        /**
+         * RegionCheckRequest
+         * @description An unsaved profile to run over the sampled images, at one size.
+         */
+        RegionCheckRequest: {
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
+            /**
+             * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
+             * @default per_image
+             */
+            sample_alignment: components["schemas"]["SampleAlignment"];
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
         /** RegionExtractorDescription */
         RegionExtractorDescription: {
             /** Key */
@@ -5070,11 +5458,59 @@ export interface components {
             };
         };
         /**
-         * RegionFailurePolicy
-         * @description A localisation failure is visible; it never silently becomes full-frame input.
-         * @enum {string}
+         * RegionLivePreview
+         * @description What one image becomes under an unsaved recipe at one size.
          */
-        RegionFailurePolicy: "fail";
+        RegionLivePreview: {
+            /** Image Id */
+            image_id: number;
+            /** Sample Id */
+            sample_id: number;
+            /** Source Width */
+            source_width: number;
+            /** Source Height */
+            source_height: number;
+            /**
+             * Width
+             * @description Prepared frame width.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height.
+             */
+            height: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "failed";
+            /** Error */
+            error: string | null;
+            /** @description The extractor's own box for this image, before padding. */
+            region: components["schemas"]["PixelBounds"] | null;
+            /** @description The crop, resize and pad actually applied. */
+            transform: components["schemas"]["SpatialTransform"] | null;
+            /** Extractor Confidence */
+            extractor_confidence: number | null;
+            /** Extractor Metadata */
+            extractor_metadata: {
+                [key: string]: unknown;
+            };
+            /**
+             * United
+             * @description How many images of the sample the crop was united over.
+             * @default 1
+             */
+            united: number;
+            /**
+             * Prepared Png
+             * @description The prepared frame as a PNG data URL, exactly as a build writes it.
+             */
+            prepared_png: string | null;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+        };
         /** RegionOutcome */
         RegionOutcome: {
             /** Image Id */
@@ -5113,26 +5549,47 @@ export interface components {
             /** Elapsed Ms */
             elapsed_ms: number | null;
         };
-        /** RegionProfileCreate */
-        RegionProfileCreate: {
-            /** Name */
-            name: string;
+        /**
+         * RegionPreviewImage
+         * @description One image the live stage can step to, named the way the browser names it.
+         */
+        RegionPreviewImage: {
+            /** Image Id */
+            image_id: number;
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            /** Channel */
+            channel: string | null;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /** RegionPreviewImages */
+        RegionPreviewImages: {
+            /**
+             * Total
+             * @description Images in the dataset; the list is spread evenly across them.
+             */
+            total: number;
+            /** Images */
+            images: components["schemas"]["RegionPreviewImage"][];
+        };
+        /**
+         * RegionPreviewRequest
+         * @description An unsaved profile, one image of the dataset, and the size to prepare it at.
+         */
+        RegionPreviewRequest: {
             /** Extractor Type */
             extractor_type: string;
             /** Extractor Config */
             extractor_config?: {
                 [key: string]: unknown;
             };
-            /**
-             * Prepared Width
-             * @default 256
-             */
-            prepared_width: number;
-            /**
-             * Prepared Height
-             * @default 256
-             */
-            prepared_height: number;
             /**
              * Padding Fraction
              * @default 0.05
@@ -5141,15 +5598,45 @@ export interface components {
             /** @default bilinear */
             resample: components["schemas"]["SpatialResample"];
             /**
-             * Seed
-             * @default 17
+             * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
+             * @default per_image
              */
-            seed: number;
+            sample_alignment: components["schemas"]["SampleAlignment"];
+            /** Image Id */
+            image_id: number;
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
+        /** RegionProfileCreate */
+        RegionProfileCreate: {
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
             /**
              * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
              * @default per_image
              */
             sample_alignment: components["schemas"]["SampleAlignment"];
+            /** Name */
+            name: string;
         };
         /**
          * RegionProfileDeletionPreview
@@ -5208,7 +5695,10 @@ export interface components {
         };
         /**
          * RegionProfileRevision
-         * @description One immutable dataset-owned spatial-input configuration (ADR-0033).
+         * @description One immutable dataset-owned spatial-input configuration: where to look (ADR-0033).
+         *
+         *     It carries no size. A run prepares its profile at the run's own input size, and a
+         *     build is keyed by `(revision, width, height)`.
          */
         RegionProfileRevision: {
             /** Id */
@@ -5225,10 +5715,6 @@ export interface components {
             extractor_config: {
                 [key: string]: unknown;
             };
-            /** Prepared Width */
-            prepared_width: number;
-            /** Prepared Height */
-            prepared_height: number;
             /**
              * Padding Fraction
              * @default 0.05
@@ -5236,10 +5722,6 @@ export interface components {
             padding_fraction: number;
             /** @default bilinear */
             resample: components["schemas"]["SpatialResample"];
-            /** @default fail */
-            failure_policy: components["schemas"]["RegionFailurePolicy"];
-            /** Seed */
-            seed: number;
             /** Created At */
             created_at: string;
             /** @default per_image */
@@ -5615,6 +6097,31 @@ export interface components {
             /** Pad Bottom */
             pad_bottom: number;
         };
+        /**
+         * SplitDeletionPreview
+         * @description What deleting a split removes, and what blocks it.
+         */
+        SplitDeletionPreview: {
+            /** Split Id */
+            split_id: number;
+            /** Name */
+            name: string;
+            /** Assignments */
+            assignments: number;
+            /** Experiments */
+            experiments: components["schemas"]["SplitHolder"][];
+            /** Can Delete */
+            can_delete: boolean;
+            /** Blocker */
+            blocker: string | null;
+        };
+        /** SplitDeletionResult */
+        SplitDeletionResult: {
+            /** Deleted */
+            deleted: boolean;
+            /** Assignments Removed */
+            assignments_removed: number;
+        };
         /** SplitDetail */
         SplitDetail: {
             /** Id */
@@ -5629,9 +6136,29 @@ export interface components {
             seed: number;
             /** Created At */
             created_at: string;
+            /**
+             * Tasks
+             * @description The tasks this split trains.
+             */
+            tasks: components["schemas"]["Task"][];
             /** Composition */
             composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Experiments
+             * @description The experiments that ran on this split, newest first.
+             */
+            experiments: components["schemas"]["SplitHolder"][];
             params: components["schemas"]["SplitParams-Output"];
+        };
+        /**
+         * SplitHolder
+         * @description An experiment that ran on a split, and so holds it.
+         */
+        SplitHolder: {
+            /** Experiment Id */
+            experiment_id: number;
+            /** Name */
+            name: string;
         };
         /**
          * SplitParams
@@ -5770,6 +6297,69 @@ export interface components {
             classes: string[];
         };
         /**
+         * SplitPreset
+         * @description A zero-configuration split that works on this dataset, with its dry-run composition.
+         */
+        SplitPreset: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Meaning
+             * @description One line saying what the split is for.
+             */
+            meaning: string;
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
+            params: components["schemas"]["SplitParams-Output"];
+            /**
+             * Seed
+             * @description The seed Create would draw with: the first one not yet used.
+             */
+            seed: number;
+            /**
+             * Name
+             * @description The name Create would give the split.
+             */
+            name: string;
+            /** Composition */
+            composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Classes
+             * @description For a few-shot preset: the classes with enough samples to draw from, most frequent first. `params.label_key` is the first of them.
+             */
+            classes: components["schemas"]["PresetClass"][];
+        };
+        /**
+         * SplitPreview
+         * @description What a create call with these params would produce, computed without writing it.
+         */
+        SplitPreview: {
+            /** Seed */
+            seed: number;
+            /** Name */
+            name: string;
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
+            /** Composition */
+            composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Error
+             * @description Why the request cannot be drawn on this dataset; composition is then empty.
+             */
+            error: string | null;
+        };
+        /** SplitPreviewRequest */
+        SplitPreviewRequest: {
+            /**
+             * Seed
+             * @description As on create.
+             */
+            seed?: number | null;
+            params?: components["schemas"]["SplitParams-Input"];
+        };
+        /**
          * SplitStrategy
          * @enum {string}
          */
@@ -5782,6 +6372,9 @@ export interface components {
         /**
          * SubsetComposition
          * @description What a subset actually contains, so a split can report itself honestly.
+         *
+         *     `normal`, `defect` and `unlabeled` count anomaly verdicts; `classes` counts the samples
+         *     whose completed annotation shows each class, for a dataset with class truth (ADR-0041).
          */
         SubsetComposition: {
             subset: components["schemas"]["Subset"];
@@ -5793,6 +6386,8 @@ export interface components {
             defect: number;
             /** Unlabeled */
             unlabeled: number;
+            /** Classes */
+            classes: components["schemas"]["ClassShare"][];
         };
         /**
          * Task
@@ -5924,6 +6519,12 @@ export interface components {
              */
             found: boolean;
         };
+        /**
+         * TruthKind
+         * @description Which truth a dataset holds, derived from it and never stored (ADR-0041).
+         * @enum {string}
+         */
+        TruthKind: "labels" | "classes";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -7248,6 +7849,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MethodCatalog"];
+                };
+            };
+        };
+    };
+    resolve_input_size_api_experiments_input_size_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InputSizeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InputSizeAnswer"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -8978,6 +9612,143 @@ export interface operations {
             };
         };
     };
+    region_preview_images_api_datasets__dataset_id__region_preview_images_get: {
+        parameters: {
+            query?: {
+                /** @description Spread over whole samples (union) or over images and channels. */
+                alignment?: components["schemas"]["SampleAlignment"];
+                /** @description How many images to return. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionPreviewImages"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_preview_random_api_datasets__dataset_id__region_preview_random_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionPreviewImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_preview_api_datasets__dataset_id__region_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionLivePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_check_api_datasets__dataset_id__region_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionCheckRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_region_extractors_api_region_extractors_get: {
         parameters: {
             query?: never;
@@ -9135,7 +9906,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationSize"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -9159,7 +9934,12 @@ export interface operations {
     };
     get_region_profile_build_api_region_profiles__profile_id__build_get: {
         parameters: {
-            query?: never;
+            query: {
+                /** @description Prepared frame width of the build. */
+                width: number;
+                /** @description Prepared frame height of the build. */
+                height: number;
+            };
             header?: never;
             path: {
                 profile_id: number;
@@ -9197,7 +9977,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PreparationSize"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -9250,9 +10034,45 @@ export interface operations {
             };
         };
     };
-    get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get: {
+    list_region_profile_builds_api_region_profiles__profile_id__builds_get: {
         parameters: {
             query?: never;
+            header?: never;
+            path: {
+                profile_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionBuildSummary"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_prepared_image_api_region_profiles__profile_id__prepared__image_id__get: {
+        parameters: {
+            query: {
+                /** @description Prepared frame width of the build. */
+                width: number;
+                /** @description Prepared frame height of the build. */
+                height: number;
+            };
             header?: never;
             path: {
                 profile_id: number;
@@ -9400,6 +10220,72 @@ export interface operations {
             };
         };
     };
+    list_split_presets_api_datasets__dataset_id__split_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitPreset"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_split_api_datasets__dataset_id__splits_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_split_api_splits__split_id__get: {
         parameters: {
             query?: never;
@@ -9418,6 +10304,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SplitDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_split_api_splits__split_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                split_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitDeletionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_split_deletion_api_splits__split_id__deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                split_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitDeletionPreview"];
                 };
             };
             /** @description Validation Error */

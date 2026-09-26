@@ -10,9 +10,9 @@ It **detects drift and never repairs it**. Deciding that a file which changed sh
 re-hashed into the catalog, or that a missing one should be dropped, is the operator's
 call, and the honest failure of an unmounted disk is a report rather than a deletion.
 
-Masks are walked too. Migration 005 added a nullable digest: masks that have been pinned
-as annotation provenance get a byte-for-byte check, while older rows still receive an
-explicit presence-only check. The report separates that coverage so it never implies a
+Masks are walked too. A mask's digest is recorded when it is pinned as annotation
+provenance: those masks get a byte-for-byte check, while the rest receive an explicit
+presence-only check. The report separates that coverage so it never implies a
 hash comparison it did not perform.
 """
 

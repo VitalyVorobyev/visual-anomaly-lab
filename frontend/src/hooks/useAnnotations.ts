@@ -5,7 +5,7 @@
  * the value beside the typed body. A save can never silently overwrite another window:
  * the backend rejects a stale token and this hook surfaces that conflict as an error.
  *
- * A dataset annotates either each image or each whole sample (ADR-0036), and the two use
+ * A dataset annotates either each image or each whole sample (handbook annotations.md), and the two use
  * different routes, different ETag namespaces and different cache keys. That branch lives
  * *here*, in one `DraftTarget`, rather than in the editor: the screen is the same screen
  * either way, and duplicating the fork through every call site is how the two halves drift.
@@ -413,9 +413,8 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
     onSuccess: (revisions) => {
       // Written, not invalidated. Invalidating refetched the draft while this screen's observer
       // was still mounted, and while that query function was a POST the refetch *recreated* the
-      // draft completion had just consumed — one orphan per unit of finished work, and the
-      // single largest source of the rows migration 016 had to clear. A completed target seeds
-      // from the revision just written, which is exactly what the server would now return.
+      // draft completion had just consumed — one orphan per unit of finished work. A completed
+      // target seeds from the revision just written, which is exactly what the server would now return.
       const completed = revisions[0];
       if (completed) {
         queryClient.setQueryData<DraftEnvelope>(targetKey(target), {
@@ -428,6 +427,11 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
         void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(imageId) });
       }
       void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverageAll() });
+      // A dataset's truth and class counts are derived from completed annotations (ADR-0041),
+      // so the catalogue and every dataset detail — not their sample pages — go stale too.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "datasets" && query.queryKey.length <= 2,
+      });
     },
   });
 }

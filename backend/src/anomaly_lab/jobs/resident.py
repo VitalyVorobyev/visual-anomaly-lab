@@ -232,6 +232,38 @@ class ResidentWorker:
         The asset path is used only to fingerprint the resident. The child resolves the
         catalogued key independently, so the request channel cannot choose a checkpoint.
         """
+        return await self._ask_segmenter(
+            asset_key,
+            asset_path,
+            {
+                "image_id": image_id,
+                "points": points,
+                "box": box,
+                "label_key": label_key,
+                "operation": operation,
+            },
+        )
+
+    async def region(
+        self,
+        *,
+        asset_key: str,
+        asset_path: Path,
+        image_id: int,
+        config: dict[str, object],
+    ) -> tuple[dict[str, object], bool]:
+        """Ask the MobileSAM resident for one image's automatic region (the Prepare screen).
+
+        The same process `segment` talks to — keyed identically, so the annotation editor's
+        assistant and the live Prepare stage share one warm model — and the same lock.
+        """
+        return await self._ask_segmenter(
+            asset_key, asset_path, {"op": "region", "image_id": image_id, "config": config}
+        )
+
+    async def _ask_segmenter(
+        self, asset_key: str, asset_path: Path, payload: dict[str, object]
+    ) -> tuple[dict[str, object], bool]:
         async with self._lock:
             generation = await asyncio.to_thread(generation_of_file, asset_path)
             warm = self._matches("model_assist", asset_key, generation)
@@ -246,15 +278,7 @@ class ResidentWorker:
                         args=(asset_key,),
                         experiment_id=None,
                     )
-                result = await self._exchange(
-                    {
-                        "image_id": image_id,
-                        "points": points,
-                        "box": box,
-                        "label_key": label_key,
-                        "operation": operation,
-                    }
-                )
+                result = await self._exchange(payload)
             except ResidentError:
                 await self._kill()
                 raise

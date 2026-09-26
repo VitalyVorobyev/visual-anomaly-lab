@@ -29,6 +29,7 @@ from anomaly_lab.api.routers import (
     jobs,
     model_assets,
     reference_packs,
+    region_preview,
     region_profiles,
     segment_assist,
     splits,
@@ -37,7 +38,7 @@ from anomaly_lab.api.routers import (
 )
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations_to
+from anomaly_lab.db.migrate import apply_schema_to
 from anomaly_lab.db.repositories.experiments import fail_stale_training_experiments
 from anomaly_lab.db.repositories.jobs import fail_stale_running_jobs
 from anomaly_lab.jobs.queue import JobQueue
@@ -62,8 +63,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     with connection(settings.db_path) as conn:
         # Idempotent, and also run by `serve.py` before the port is announced — this call
-        # is what makes the plain `uv run uvicorn` path migrate as well.
-        schema_version = apply_migrations_to(conn)
+        # is what gives the plain `uv run uvicorn` path the schema as well. A catalogue from
+        # another schema version raises `SchemaVersionError` here, and uvicorn's startup
+        # failure prints its message.
+        schema_version = apply_schema_to(conn)
         stale_jobs = fail_stale_running_jobs(conn)
         stale_experiments = fail_stale_training_experiments(conn)
         live_experiment_ids = {
@@ -150,6 +153,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(jobs.ws_router)
     app.include_router(model_assets.router)
     app.include_router(reference_packs.router)
+    app.include_router(region_preview.router)
     app.include_router(region_profiles.router)
     app.include_router(segment_assist.router)
     app.include_router(splits.router)

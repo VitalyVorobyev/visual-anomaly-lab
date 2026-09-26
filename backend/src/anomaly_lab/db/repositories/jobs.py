@@ -35,7 +35,7 @@ def create_job(
 ) -> Job:
     """Enqueue a job. It becomes visible — and cancellable — before it starts.
 
-    `JobKind` is the only list of kinds (migration 020 dropped the schema's copy), so the
+    `JobKind` is the only list of kinds (the schema keeps no copy), so the
     kind is coerced through it here: a caller that slipped a bare string past the type
     checker gets a `ValueError` naming it, never a row no handler can run.
     """

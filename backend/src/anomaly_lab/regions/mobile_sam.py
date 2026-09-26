@@ -137,7 +137,7 @@ class MobileSamRegionExtractor(RegionExtractor):
         try:
             records: list[dict[str, Any]] = generator.generate(image)
         except (RuntimeError, TypeError) as exc:
-            if self._device != "mps" or not _can_retry_on_cpu(exc):
+            if self._device != "mps" or not can_retry_on_cpu(exc):
                 raise
             # The first real image is the only meaningful end-to-end smoke test. Rebuild
             # on CPU rather than move a generator that may retain failed device tensors.
@@ -253,7 +253,7 @@ def select_region(
     )
 
 
-def _can_retry_on_cpu(exc: RuntimeError | TypeError) -> bool:
+def can_retry_on_cpu(exc: RuntimeError | TypeError) -> bool:
     """Recognise accelerator execution failures without swallowing arbitrary type bugs."""
     if isinstance(exc, RuntimeError):
         return True

@@ -72,18 +72,30 @@ export const queryKeys = {
   regionExtractors: () => ["region-extractors"] as const,
   regionProfiles: (datasetId: number) =>
     ["datasets", datasetId, "region-profiles"] as const,
-  regionBuild: (profileId: number) =>
-    ["region-profiles", profileId, "build"] as const,
+  regionBuild: (profileId: number, width: number, height: number) =>
+    ["region-profiles", profileId, "build", width, height] as const,
+  regionBuilds: (profileId: number) => ["region-profiles", profileId, "builds"] as const,
+  regionPreviewImages: (datasetId: number, alignment: string) =>
+    ["datasets", datasetId, "region-preview", "images", alignment] as const,
+  regionLivePreview: (datasetId: number, request: unknown) =>
+    ["datasets", datasetId, "region-preview", "live", request] as const,
   regionProfileDeletion: (profileId: number) =>
     ["region-profiles", profileId, "deletion-preview"] as const,
 
   splits: (datasetId: number) => ["datasets", datasetId, "splits"] as const,
+  /** Under `splits`, so a created or deleted split refreshes the presets' next seed and name. */
+  splitPresets: (datasetId: number) => ["datasets", datasetId, "splits", "presets"] as const,
+  splitPreview: (datasetId: number, request: unknown) =>
+    ["datasets", datasetId, "splits", "preview", request] as const,
+  splitDeletion: (splitId: number) => ["splits", splitId, "deletion-preview"] as const,
 
   jobs: () => ["jobs"] as const,
   job: (jobId: number) => ["jobs", jobId] as const,
   jobMetrics: (jobId: number) => ["jobs", jobId, "metrics"] as const,
 
   modelTypes: () => ["experiments", "model-types"] as const,
+  inputSize: (modelType: string, config: Record<string, unknown>) =>
+    ["method-input-size", modelType, config] as const,
   experiments: (query: ExperimentListQuery = {}) => ["experiments", "list", query] as const,
   /**
    * Every experiment list, whichever dataset it was filtered to.

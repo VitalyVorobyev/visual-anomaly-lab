@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --project backend --extra dl python
 """Which device should an in-house DINO memory-bank method run each of its kernels on?
 
-ADR-0008 requires a standalone probe **run first**, before any wrapper is written against a
+ADR-0029 requires a standalone probe **run first**, before any wrapper is written against a
 new library. `scripts/mps-smoke-test.py` has already paid for itself once and
 `scripts/patchcore-smoke-test.py` produced the two caps that plugin is bounded by. This is
 the same discipline aimed at the method that comes next: a frozen DINO backbone whose patch
@@ -740,7 +740,7 @@ def main() -> int:
     import torch
 
     print(RULE)
-    print("DINO memory-bank smoke test — run before writing the method (ADR-0008)")
+    print("DINO memory-bank smoke test — run before writing the method (ADR-0029)")
     print(f"torch {torch.__version__} on {platform.machine()} / macOS {platform.mac_ver()[0]}")
     print(f"MPS available: {torch.backends.mps.is_available()}")
     print(RULE)

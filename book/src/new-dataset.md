@@ -49,15 +49,20 @@ geometry; it is never silent ground truth.
 
 ## 4. Establish the split
 
-Adopt an official imported split when one exists. Otherwise generate a seeded sample-level split and inspect
-class counts. Keep all images of a sample together. A normal-only training subset is conventional for
+Adopt an official imported split when one exists — the **Published** preset on the Splits tab. Otherwise
+start from a preset: **Standard · 60/20/20, normals only** for anomaly detection, **1-shot** or **5-shot**
+for few-shot segmentation, **70/30 by class** for segmentation and detection. Each card shows the
+composition its dry run produced; read the class counts before pressing **Create**. **Custom split** holds
+the strategy form for anything else, with the same preview as you change it. A split no experiment ran on
+can be deleted; one that holds runs cannot. Keep all images of a sample together. A normal-only training subset is conventional for
 one-class methods; validation and test need both classes for image ROC-AUC.
 
 Do not repeatedly redraw the split to improve a number. Create a new named split when the protocol changes.
 
 ## 5. Establish the image geometry
 
-Start with the identity region profile. If the object occupies a small or unstable portion of the frame,
+Start with the dataset's own **Full frame** profile — identity, created with the dataset, and what a run
+reads unless told otherwise. If the object occupies a small or unstable portion of the frame,
 create a second profile using a deterministic classical localizer or MobileSAM and review its overlays over
 the entire dataset. Measure missed defect pixels, not merely successful crops. Pin a new revision after each
 configuration change.

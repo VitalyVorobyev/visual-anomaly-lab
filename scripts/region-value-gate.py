@@ -37,7 +37,7 @@ from anomaly_lab.datasets.splitting import (
     plan_imported_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -202,10 +202,7 @@ def _build_profile(
             name=f"gate {label}",
             extractor_type=extractor_type,
             extractor_config=extractor_config,
-            prepared_width=PREPARED_SIZE,
-            prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
-            seed=SEED,
         )
     print(f"Preparing {category} / {label}...", file=sys.stderr)
     with contextlib.redirect_stdout(log):
@@ -217,11 +214,13 @@ def _build_profile(
                     "dataset_id": dataset_id,
                     "profile_id": profile.id,
                     "mode": "build",
+                    "width": PREPARED_SIZE,
+                    "height": PREPARED_SIZE,
                 },
                 settings=settings,
             )
         )
-    summary = read_build_summary(settings, profile.id)
+    summary = read_build_summary(settings, profile.id, (PREPARED_SIZE, PREPARED_SIZE))
     if summary is None:
         raise RuntimeError(f"profile {profile.id} did not publish a build summary")
     report: dict[str, Any] = {
@@ -243,7 +242,10 @@ def _build_profile(
         ]
         return None, report
     build = load_prepared_build(
-        settings, profile, manifest_sha256=summary.manifest_sha256
+        settings,
+        profile,
+        size=(PREPARED_SIZE, PREPARED_SIZE),
+        manifest_sha256=summary.manifest_sha256,
     )
     crop_fractions = [
         (entry.transform.crop_width * entry.transform.crop_height)
@@ -288,8 +290,8 @@ def _create_experiment(
         .model_dump(mode="json")
     )
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width,
-        height=build.profile.prepared_height,
+        width=build.size[0],
+        height=build.size[1],
     ).model_dump(mode="json")
     evaluation = EvalConfig().model_dump(mode="json")
     with connection(settings.db_path) as conn:
@@ -323,7 +325,7 @@ def _peak_rss_bytes() -> int:
 
 def _run_leg(data_dir: Path, experiment_id: int) -> int:
     settings = _settings(data_dir)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     log_path = data_dir / "gate.log"
     started = time.perf_counter()
     with log_path.open("a", encoding="utf-8") as log, contextlib.redirect_stdout(log):
@@ -516,7 +518,7 @@ def _run_gate(
         if localizer == "mobile_sam"
         else None
     )
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     report: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

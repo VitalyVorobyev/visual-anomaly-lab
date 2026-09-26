@@ -209,7 +209,7 @@ function ChannelStrip({
   onSelect: (index: number) => void;
 }) {
   // Position is the identity, not the name: two images of one sample may share a channel
-  // name and one may have none at all (ADR-0005).
+  // name and one may have none at all (ADR-0041).
   return (
     <Tabs
       label="Channels"

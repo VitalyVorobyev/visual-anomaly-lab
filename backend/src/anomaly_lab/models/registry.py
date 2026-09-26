@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from anomaly_lab.models.base import AnomalyModel, ModelDescription
+from anomaly_lab.domain.entities import Task
+from anomaly_lab.models.base import AnomalyModel, MethodStatus, ModelDescription
 
 
 class UnknownModelError(Exception):
@@ -116,13 +117,13 @@ def _subspace_ad() -> type[AnomalyModel]:
 # line of TypeScript — which is the prediction ADR-0007 made. It started as a second
 # implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
 # since been retired now that the in-house implementation is the one the workbench carries
-# forward (ADR-0008, ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
+# forward (ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
 # stronger test of the two: PatchCore trains nothing and holds a memory bank instead of
 # weights. `dinomaly_custom` adds reconstruction training and exact continuation without
 # changing the boundary — it started as a second implementation measured against the
 # anomalib-wrapped `dinomaly_anomalib`, which has since been retired the same way
 # `efficientad_anomalib` was, now that the in-house implementation reached VisA parity
-# (ADR-0008, ADR-0029) and is the one the workbench carries forward: a configurable encoder
+# (ADR-0029) and is the one the workbench carries forward: a configurable encoder
 # and a configurable decoder depth, neither of which the wrapper could offer. GLASS adds
 # learned anomaly synthesis and a bounded reference-frame pass under that same contract: each
 # method still costs one module and one entry here.
@@ -170,6 +171,36 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
 }
 
 
+# Where each method stands, by the verdicts recorded in `docs/measurements.md`. Kept here, beside
+# the loaders, rather than on the plugin: a gate decides it, not the module, and reading it must
+# not import one. A method missing from this table has no verdict, which is `experimental`.
+STATUS: dict[str, MethodStatus] = {
+    "pixel_reference": MethodStatus.FLOOR,
+    "efficientad_custom": MethodStatus.SUPPORTED,
+    "patchcore_anomalib": MethodStatus.SUPPORTED,
+    "dinomaly_custom": MethodStatus.SUPPORTED,
+    "glass_anomalib": MethodStatus.EXPERIMENTAL,
+    "dino_memory": MethodStatus.SUPPORTED,
+    "subspace_ad": MethodStatus.EXPERIMENTAL,
+    "anomalyvfm_anomalib": MethodStatus.SUPPORTED,
+    "color_prototype": MethodStatus.FLOOR,
+    "fss_dino": MethodStatus.EXPERIMENTAL,
+    "proto_seg": MethodStatus.SUPPORTED,
+    "color_classifier": MethodStatus.FLOOR,
+    "dino_linear_seg": MethodStatus.SUPPORTED,
+    "color_detector": MethodStatus.FLOOR,
+    "dino_linear_det": MethodStatus.EXPERIMENTAL,
+}
+
+# The method a new experiment of each task starts from — one per task, so the answer is never
+# a tie. A task with no entry starts from its first registered method.
+RECOMMENDED: dict[Task, str] = {
+    Task.ANOMALY: "dino_memory",
+    Task.FEW_SHOT_SEGMENTATION: "proto_seg",
+    Task.SEMANTIC_SEGMENTATION: "dino_linear_seg",
+}
+
+
 def registered_keys() -> tuple[str, ...]:
     return tuple(LOADERS)
 
@@ -192,6 +223,8 @@ def describe(key: str) -> ModelDescription:
         summary=model_class.summary,
         capabilities=model_class.capabilities(),
         availability=model_class.availability(),
+        status=STATUS.get(key, MethodStatus.EXPERIMENTAL),
+        recommended_for=[task for task, method in RECOMMENDED.items() if method == key],
         config_schema=model_class.config_model().model_json_schema(),
     )
 

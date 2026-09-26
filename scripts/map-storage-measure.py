@@ -57,7 +57,7 @@ from anomaly_lab.datasets.commit import commit_manifest
 from anomaly_lab.datasets.reference_packs import pack_specs, scan_spec
 from anomaly_lab.datasets.splitting import SplitParams, SplitStrategy, plan_imported_split
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
@@ -181,23 +181,29 @@ def _build_profile(
             name=f"map storage {label}",
             extractor_type=extractor,
             extractor_config={},
-            prepared_width=PREPARED_SIZE,
-            prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
-            seed=SEED,
         )
     run_region_prepare_job(
         JobContext(
             job_id=job_id,
             kind=JobKind.REGION_PREPARE,
-            params={"dataset_id": dataset_id, "profile_id": profile.id, "mode": "build"},
+            params={
+                "dataset_id": dataset_id,
+                "profile_id": profile.id,
+                "mode": "build",
+                "width": PREPARED_SIZE,
+                "height": PREPARED_SIZE,
+            },
             settings=settings,
         )
     )
-    summary = read_build_summary(settings, profile.id)
+    size = (PREPARED_SIZE, PREPARED_SIZE)
+    summary = read_build_summary(settings, profile.id, size)
     if summary is None or summary.failed:
         raise RuntimeError(f"profile {label} did not build cleanly")
-    return load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+    return load_prepared_build(
+        settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+    )
 
 
 def _create_experiment(
@@ -487,7 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
     settings = _settings(data_dir, args.datasets)
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
 
     report: dict[str, Any] = {
         "category": args.category,

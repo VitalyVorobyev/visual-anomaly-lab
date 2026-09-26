@@ -1,4 +1,4 @@
-"""Building a seeded, sample-level split (ADR-0011).
+"""Building a seeded, sample-level split (handbook evaluation.md).
 
 Three properties make a split worth trusting, and all three are structural rather than
 conventions someone has to remember:

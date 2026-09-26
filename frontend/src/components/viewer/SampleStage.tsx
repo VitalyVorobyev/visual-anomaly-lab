@@ -43,6 +43,7 @@ export function SampleStage({
   onHover,
   readout,
   panKeys = true,
+  banner,
   onPick,
 }: {
   image: { id: number; width: number; height: number };
@@ -60,6 +61,8 @@ export function SampleStage({
   readout?: ReactNode;
   /** False where the arrow keys belong to the screen (a sample list), not to panning. */
   panKeys?: boolean;
+  /** Over the top-left, outside the transform: a pending or stale state. */
+  banner?: ReactNode;
   /**
    * A click that landed on the picture and did not become a pan. The stage reports a
    * background click in client coordinates; its own transform turns that into image pixels,
@@ -78,6 +81,7 @@ export function SampleStage({
       label={label}
       toolbar={<StageToolbar />}
       readout={readout}
+      banner={banner}
       onBackgroundClick={
         onPick
           ? (event) => {

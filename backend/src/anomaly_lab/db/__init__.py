@@ -1,1 +1,1 @@
-"""SQLite persistence: connections, migrations, repositories (ADR-0004)."""
+"""SQLite persistence: connections, the schema, repositories (ADR-0004)."""

@@ -25,10 +25,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import type { ExperimentSummary, ModelDescription, Task } from "../api/client";
-import {
-  useRegionBuild,
-  useRegionProfiles,
-} from "../hooks/useRegionProfiles";
+import { useRegionProfiles } from "../hooks/useRegionProfiles";
 import {
   activeFilterCount,
   EMPTY_EXPERIMENT_CATALOG,
@@ -37,9 +34,10 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, NumberInput, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { useAnnotationLabels } from "../hooks/useAnnotations";
+import { useCreateSplit, useSplitPresets } from "../hooks/useSplitPresets";
 import { TabScroll } from "./dataset/TabScroll";
 import {
   CATALOGUE_PAGE,
@@ -47,18 +45,18 @@ import {
   useDeleteExperiment,
   useExperimentDeletionPreview,
   useExperimentPages,
+  useInputSize,
   useModelTypes,
 } from "../hooks/useExperiments";
 import { refusalReason, toggleRun } from "../api/compareState";
 import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
 import { formatHeadline } from "../api/headline";
-import {
-  isUsableBuild,
-  splitServesTask,
-  SUPERVISED_TASKS,
-} from "../hooks/useDatasetReadiness";
+import { truthServesTask } from "../api/truth";
+import { splitServesTask, SUPERVISED_TASKS } from "../hooks/useDatasetReadiness";
+import { fullFrameProfile, inputSizeState, snapToMultiple } from "../api/inputSize";
 import { experimentStatusTone } from "../api/statusTone";
+import { defaultMethod, isRecommended, orderMethods, schemaForTask } from "../api/methodChoice";
 
 type ExperimentRow = ExperimentSummary;
 
@@ -580,6 +578,9 @@ function CreateExperiment({
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
   const [channels, setChannels] = useState<string[]>(draft?.channels ?? []);
+  // Empty means "the method's own size" — the empty-means-unset contract every option keeps.
+  const [inputWidth, setInputWidth] = useState(draft?.width ?? "");
+  const [inputHeight, setInputHeight] = useState(draft?.height ?? "");
   const [tab, setTab] = useState<ConfigTab>("method");
   // Field-level errors wait for the first press of Create: a form that opens covered in
   // red for fields nobody has reached yet is shouting, not helping.
@@ -589,7 +590,6 @@ function CreateExperiment({
   const dataset = useDataset(datasetId);
   const datasetChannels = dataset.data?.channels ?? [];
   const regionProfiles = useRegionProfiles(datasetId);
-  const regionBuild = useRegionBuild(regionProfileId);
   const labels = useAnnotationLabels(datasetId);
   // A targeted task segments one class (ADR-0040); a `few_shot` split was drawn for one, so
   // it names the class unless the reader has chosen.
@@ -601,11 +601,26 @@ function CreateExperiment({
   const effectiveTarget = targetLabel || splitClass;
   // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker
   // appears only when there are two — the same rule the channel chips follow.
-  const tasks = TASK_ORDER.filter((entry) =>
-    (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)),
+  // A dataset of classes alone is not offered anomaly detection (ADR-0041).
+  const tasks = TASK_ORDER.filter(
+    (entry) =>
+      (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)) &&
+      truthServesTask(dataset.data?.truth, entry),
   );
+  // The task starts at the first one the dataset serves: `anomaly` for an anomaly dataset,
+  // few-shot segmentation for a dataset of classes.
+  const [firstTask] = tasks;
+  useEffect(() => {
+    if (firstTask !== undefined && !tasks.includes(task)) setTask(firstTask);
+  }, [firstTask, tasks, task]);
+
+  // In the order a reader should weigh them: the task's default first, the floor last.
   const methodsForTask = useMemo(
-    () => (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
+    () =>
+      orderMethods(
+        (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
+        task,
+      ),
     [catalog.data, task],
   );
   // A task trains on its own kind of split: an anomaly run on a drawn or adopted partition,
@@ -627,18 +642,32 @@ function CreateExperiment({
     () => (catalog.data ? describeFields(catalog.data.preprocessing_schema) : []),
     [catalog.data],
   );
+  // Only the options this task's evaluator reads: a field that would change nothing is not
+  // a question to put to the reader.
   const evaluationFields = useMemo(
-    () => (catalog.data ? describeFields(catalog.data.evaluation_schema) : []),
-    [catalog.data],
+    () =>
+      catalog.data ? describeFields(schemaForTask(catalog.data.evaluation_schema, task)) : [],
+    [catalog.data, task],
   );
+  // The size a run of this method with this configuration reads when none is typed: a DINO
+  // backbone's patch decides it, so it follows the config rather than the method alone.
+  const methodOptions = useMemo(
+    () =>
+      jsonErrors(configFields, configValues).length === 0
+        ? toOptions(configFields, configValues)
+        : {},
+    [configFields, configValues],
+  );
+  const inputSize = useInputSize(method?.key, methodOptions);
+  const size = inputSizeState(inputWidth, inputHeight, inputSize.data);
 
-  // Default to the first method the moment the catalog lands, so the form is never a
-  // blank screen waiting for a choice nobody knew they had to make.
+  // Default to the task's recommended method the moment the catalog lands, so the form is
+  // never a blank screen waiting for a choice nobody knew they had to make.
   useEffect(() => {
     if (methodsForTask.length > 0 && !methodsForTask.some((entry) => entry.key === methodKey)) {
-      setMethodKey(methodsForTask[0]?.key);
+      setMethodKey(defaultMethod(methodsForTask, task)?.key);
     }
-  }, [methodsForTask, methodKey]);
+  }, [methodsForTask, methodKey, task]);
 
   // Each group starts from its schema's defaults, with the draft laid over it once — and the
   // method's values only for the method they were typed for.
@@ -666,10 +695,12 @@ function CreateExperiment({
     [evaluationFields],
   );
 
-  // When there is exactly one answer, the question answers itself.
+  // Where to look defaults to the dataset's own "Full frame" — or the only profile there is.
   useEffect(() => {
-    const only = regionProfiles.data?.length === 1 ? regionProfiles.data[0] : undefined;
-    if (regionProfileId === undefined && only) setRegionProfileId(only.id);
+    if (regionProfileId !== undefined || regionProfiles.data === undefined) return;
+    const only = regionProfiles.data.length === 1 ? regionProfiles.data[0] : undefined;
+    const fallback = fullFrameProfile(regionProfiles.data) ?? only;
+    if (fallback) setRegionProfileId(fallback.id);
   }, [regionProfiles.data, regionProfileId]);
   useEffect(() => {
     if (splits.data === undefined) return;
@@ -693,6 +724,8 @@ function CreateExperiment({
       preprocessingValues,
       evaluationValues,
       channels,
+      width: inputWidth,
+      height: inputHeight,
     });
   }, [
     storageKey,
@@ -705,6 +738,8 @@ function CreateExperiment({
     preprocessingValues,
     evaluationValues,
     channels,
+    inputWidth,
+    inputHeight,
   ]);
 
   const datasetName = datasets.data?.find((entry) => entry.id === datasetId)?.name;
@@ -725,7 +760,7 @@ function CreateExperiment({
   // Said out loud rather than left to a greyed-out button. "Why can't I press this" is a
   // question the screen has to answer without anyone reading the source.
   const missing: string[] = [];
-  const fieldError: { name?: string; dataset?: string; profile?: string; split?: string } = {};
+  const fieldError: { name?: string; dataset?: string; size?: string; split?: string } = {};
   if (effectiveName === "") {
     missing.push("a name");
     fieldError.name = "Name the run.";
@@ -738,12 +773,9 @@ function CreateExperiment({
     missing.push("a split");
     fieldError.split = "Choose which samples train and which are scored.";
   }
-  if (regionProfileId === undefined) {
-    missing.push("a region profile");
-    fieldError.profile = "Choose the region profile the method reads.";
-  } else if (!isUsableBuild(regionBuild.data)) {
-    missing.push("a built region profile");
-    fieldError.profile = "This revision has no complete build yet.";
+  if (size.error !== undefined) {
+    missing.push("an input size the method reads");
+    fieldError.size = size.error;
   }
   if (targeted && effectiveTarget === "") missing.push("a target class");
   if (method && !method.availability.available) missing.push("a method you can run");
@@ -757,8 +789,7 @@ function CreateExperiment({
       !ready ||
       methodKey === undefined ||
       datasetId === undefined ||
-      splitId === undefined ||
-      regionProfileId === undefined
+      splitId === undefined
     ) {
       return;
     }
@@ -767,7 +798,10 @@ function CreateExperiment({
         name: effectiveName,
         dataset_id: datasetId,
         split_id: splitId,
-        region_profile_id: regionProfileId,
+        // Omitted, the dataset's "Full frame" — the same default the field shows.
+        ...(regionProfileId === undefined ? {} : { region_profile_id: regionProfileId }),
+        // Omitted, the method's own size for this configuration.
+        ...(size.named === undefined ? {} : size.named),
         model_type: methodKey,
         task,
         target_label: targeted ? effectiveTarget : null,
@@ -786,6 +820,15 @@ function CreateExperiment({
   };
 
   const noSplits = datasetId !== undefined && splits.data !== undefined && taskSplits.length === 0;
+  // With no split for the task, its default preset is offered in place: one press creates
+  // it, and the split effect above selects it once the list refetches.
+  const presets = useSplitPresets(noSplits ? datasetId : undefined);
+  const createSplit = useCreateSplit(datasetId ?? -1);
+  const preset = presets.data?.find((entry) => entry.tasks.includes(task));
+  const presetParams =
+    preset && targeted && preset.classes.some((entry) => entry.key === effectiveTarget)
+      ? { ...preset.params, label_key: effectiveTarget }
+      : preset?.params;
   // With one task there is nothing to choose, and the form starts at its inputs.
   const offset = tasks.length > 1 ? 1 : 0;
 
@@ -847,49 +890,65 @@ function CreateExperiment({
             <Field
               as="group"
               label="Region profile"
-              error={attempted ? fieldError.profile : undefined}
               description={
-                datasetId !== undefined && regionProfiles.data?.length === 0 ? (
+                datasetId === undefined ? undefined : (
                   <>
-                    No region profiles yet.{" "}
+                    Where to look. The run prepares it at its own size when it trains.{" "}
                     <Link
                       className="text-signal underline underline-offset-2"
                       to={`/datasets/${datasetId}/prepare`}
                     >
-                      Prepare the dataset
+                      Define another
                     </Link>
                     .
                   </>
-                ) : regionProfileId !== undefined && regionBuild.error ? (
-                  <>
-                    This revision is not built.{" "}
-                    <Link
-                      className="text-signal underline underline-offset-2"
-                      to={`/datasets/${datasetId}/prepare`}
-                    >
-                      Build it
-                    </Link>
-                    .
-                  </>
-                ) : regionBuild.data?.failed ? (
-                  `${regionBuild.data.failed} images failed preparation; create a corrected revision.`
-                ) : undefined
+                )
               }
             >
               <Select
                 aria-label="Region profile"
                 value={regionProfileId === undefined ? "" : String(regionProfileId)}
-                placeholder={datasetId === undefined ? "Pick a dataset first" : "Choose a revision…"}
+                placeholder={datasetId === undefined ? "Pick a dataset first" : "Full frame"}
                 disabled={datasetId === undefined}
                 options={(regionProfiles.data ?? []).map((profile) => ({
                   value: String(profile.id),
                   label: `${profile.name} · r${profile.revision_no}`,
-                  note: `${profile.prepared_width}×${profile.prepared_height}`,
+                  note: profile.extractor_type,
                 }))}
                 onValueChange={(value) =>
                   setRegionProfileId(value === "" ? undefined : Number(value))
                 }
               />
+            </Field>
+
+            <Field
+              as="group"
+              label="Input size"
+              error={attempted ? fieldError.size : undefined}
+              description={size.caption}
+            >
+              <div className="grid grid-cols-2 gap-2">
+                <NumberInput
+                  aria-label="Input width"
+                  min={8}
+                  max={2048}
+                  step={size.multiple}
+                  value={inputWidth}
+                  placeholder={inputSize.data ? String(inputSize.data.width) : "auto"}
+                  onChange={(event) => setInputWidth(event.target.value)}
+                  onBlur={() => setInputWidth(snapToMultiple(inputWidth, size.multiple))}
+                />
+                <NumberInput
+                  aria-label="Input height"
+                  min={8}
+                  max={2048}
+                  step={size.multiple}
+                  value={inputHeight}
+                  placeholder={inputSize.data ? String(inputSize.data.height) : "auto"}
+                  onChange={(event) => setInputHeight(event.target.value)}
+                  onBlur={() => setInputHeight(snapToMultiple(inputHeight, size.multiple))}
+                />
+              </div>
             </Field>
 
             <Field
@@ -904,6 +963,23 @@ function CreateExperiment({
                       : supervised
                         ? "No split of annotated samples yet."
                         : "This dataset has no splits."}{" "}
+                    {preset && presetParams && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={createSplit.isPending}
+                          onClick={() => createSplit.mutate({ params: presetParams })}
+                        >
+                          Use {preset.label}
+                          {presetParams.label_key ? ` · ${presetParams.label_key}` : ""} — create it
+                        </Button>
+                        {createSplit.error && (
+                          <span className="block text-defect">{createSplit.error.message}</span>
+                        )}{" "}
+                        or{" "}
+                      </>
+                    )}
                     <Link
                       className="text-signal underline underline-offset-2"
                       to={`/datasets/${datasetId}/splits${
@@ -914,7 +990,13 @@ function CreateExperiment({
                             : ""
                       }`}
                     >
-                      {targeted ? "Choose references" : supervised ? "Draw one by class" : "Create one"}
+                      {preset
+                        ? "tune one on Splits"
+                        : targeted
+                          ? "Choose references"
+                          : supervised
+                            ? "Draw one by class"
+                            : "Create one"}
                     </Link>
                     .
                   </>
@@ -993,6 +1075,7 @@ function CreateExperiment({
               <MethodCard
                 key={entry.key}
                 method={entry}
+                recommended={isRecommended(entry, task)}
                 selected={entry.key === methodKey}
                 onSelect={() => setMethodKey(entry.key)}
               />
@@ -1021,11 +1104,16 @@ function CreateExperiment({
                   label: "Colour",
                   count: overrideCount(preprocessingFields, preprocessingValues),
                 },
-                {
-                  id: "evaluation",
-                  label: "Evaluation",
-                  count: overrideCount(evaluationFields, evaluationValues),
-                },
+                // Absent when this task's evaluator reads none of the options.
+                ...(evaluationFields.length > 0
+                  ? [
+                      {
+                        id: "evaluation" as const,
+                        label: "Evaluation",
+                        count: overrideCount(evaluationFields, evaluationValues),
+                      },
+                    ]
+                  : []),
               ]}
             />
 
@@ -1046,7 +1134,7 @@ function CreateExperiment({
                 onChange={setPreprocessingValues}
               />
             )}
-            {tab === "evaluation" && (
+            {tab === "evaluation" && evaluationFields.length > 0 && (
               <SchemaForm
                 fields={evaluationFields}
                 values={evaluationValues}
@@ -1103,10 +1191,13 @@ function joinWords(words: string[]): string {
  */
 function MethodCard({
   method,
+  recommended,
   selected,
   onSelect,
 }: {
   method: ModelDescription;
+  /** The registry's default for the task being configured. */
+  recommended: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -1140,6 +1231,11 @@ function MethodCard({
       <p className="text-xs leading-snug text-fg-muted">{method.summary}</p>
 
       <div className="flex flex-wrap gap-1.5">
+        {/* The registry's verdict, first on the card: a gate decided it, and it is what a
+            reader choosing between methods needs before any capability. */}
+        {recommended && <Badge tone="normal">recommended</Badge>}
+        {method.status === "experimental" && <Badge tone="warning">experimental</Badge>}
+        {method.status === "floor" && <Badge tone="neutral">floor</Badge>}
         {capabilities.dataset_specific && <Badge tone="warning">dataset-specific</Badge>}
         {/* A segmenter's map is a foreground probability, not an anomaly map. */}
         {capabilities.produces_anomaly_map && (

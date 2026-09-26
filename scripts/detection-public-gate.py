@@ -41,14 +41,14 @@ import m11_public_gate as harness
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.commit import commit_manifest
-from anomaly_lab.datasets.reference_packs import pack_specs, register_box_truth, scan_spec
+from anomaly_lab.datasets.reference_packs import pack_specs, register_class_truth, scan_spec
 from anomaly_lab.datasets.splitting import (
     SplitParams,
     SplitStrategy,
     plan_class_stratified_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -97,8 +97,8 @@ def _pcb_dataset(settings: Settings, log: Any) -> int:
     manifest = scan_spec(spec, lambda _fraction, _message: None)
     with connection(settings.db_path) as conn:
         committed = commit_manifest(conn, settings, manifest)
-    print("Entering its box truth...", file=sys.stderr)
-    entered = register_box_truth(settings, spec, committed.dataset_id)
+    print("Entering its class truth...", file=sys.stderr)
+    entered = register_class_truth(settings, spec, committed.dataset_id)
     log.write(
         json.dumps(
             {
@@ -108,7 +108,7 @@ def _pcb_dataset(settings: Settings, log: Any) -> int:
                 "samples": len(manifest.samples),
                 "box_truth": {
                     "images": entered.images,
-                    "boxes": entered.boxes,
+                    "boxes": entered.regions,
                     "clipped": entered.clipped,
                     "reshaped": entered.reshaped,
                     "without_file": entered.without_file,
@@ -160,7 +160,7 @@ def _experiment(
     overrides: dict[str, Any] = {"seed": seed} if "seed" in config_model.model_fields else {}
     config = config_model.model_validate(overrides).model_dump(mode="json")
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width, height=build.profile.prepared_height
+        width=build.size[0], height=build.size[1]
     )
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(
@@ -385,7 +385,7 @@ def main() -> int:
     settings = Settings(
         data_dir=data_dir, reference_datasets_dir=args.datasets_dir.resolve(), dev_cors=False
     )
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     started = time.perf_counter()
     runs: list[dict[str, Any]] = []
     result_path = data_dir / "result.json"

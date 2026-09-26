@@ -1,19 +1,27 @@
 # Domain data model
 
-Persistence is **plain SQL migrations plus a thin repository layer — no ORM** (ADR-0004). Migrations are
-numbered files `backend/src/anomaly_lab/db/migrations/NNN_description.sql`, applied in order at startup and
-tracked by `PRAGMA user_version`; schema v1 is frozen and every change is a new migration. Repositories are
-small modules of functions returning pydantic domain objects; they contain the SQL and nothing else.
+Persistence is **one plain SQL schema script plus a thin repository layer — no ORM** (ADR-0004). The
+script is `backend/src/anomaly_lab/db/migrations/001_initial.sql`, and `db/migrate.py` names it with one
+constant, `SCHEMA_VERSION`, stamped into `PRAGMA user_version`. At startup an empty database gets the
+script; a database at `SCHEMA_VERSION` is opened as it is; anything else — an older or newer stamp, or an
+unstamped file that already holds tables — is refused with `SchemaVersionError`, whose message names the
+database file to delete. Nothing is ever migrated. Changing the script means bumping `SCHEMA_VERSION`, and a
+value is never reused. Repositories are small modules of functions returning pydantic domain objects; they
+contain the SQL and nothing else.
 `foreign_keys` and WAL journaling are enabled on every connection.
 
-The model is defined by ADR-0005. Two rules carry most of its weight:
+The model is defined by ADR-0041. Three rules carry most of its weight:
 
-> **The Sample owns the label and the split assignment.** An `Image` is a file; a `Sample` is a physical
-> object. Labels and split membership attach to samples, which structurally prevents putting two views of
-> one part in different subsets.
+> **The Sample owns its anomaly label and the split assignment.** An `Image` is a file; a `Sample` is a
+> physical object. Verdicts and split membership attach to samples, which structurally prevents putting two
+> views of one part in different subsets.
+
+> **Truth is task-scoped.** A sample's `normal`/`defect` label is anomaly truth. A class — a region or a
+> box of an `AnnotationLabel` — is class truth, and lives only in completed annotation revisions. A
+> dataset whose truth is its classes leaves every sample `unlabeled`.
 
 > **Channel is data, not schema.** Channels are rows in a per-dataset dictionary table, not columns and not
-> an enum. A dataset with two channels, three, or none is representable without a migration.
+> an enum. A dataset with two channels, three, or none is representable without a schema change.
 
 ```mermaid
 erDiagram
@@ -53,7 +61,7 @@ produced ([import](import.md)). One capture tree holding several products is the
 each with its own `dataset_root`. `name` and `root_path` are identity and not editable.
 
 `annotation_scope ∈ {image, sample}` decides whether annotation truth is *edited* per photograph or per
-part; it is stored per image either way (ADR-0036). Only `PUT /api/datasets/{id}/annotation-scope` writes
+part; it is stored per image either way. Only `PUT /api/datasets/{id}/annotation-scope` writes
 it, and it refuses while the dataset has imported source masks, samples whose images differ in size, or an
 open draft ([annotations](annotations.md)).
 
@@ -71,7 +79,18 @@ three are **overrides**: null means something derived answers instead.
   name survives a re-import that renumbers the dictionary. The API returns the **raw** value and the client
   resolves it per sample, falling back to the first image when a part lacks that channel. **Validated on
   write, forgiving on read**: `PATCH` refuses a name the dataset has no channel for and lists the ones it
-  has. The catalogue cover (`cover_image_id`) prefers the default channel, then a normal sample.
+  has. The catalogue cover (`cover_image_id`) prefers the default channel, then follows the dataset's
+  truth: a normal sample for a dataset with labels, and for a dataset of classes alone an image whose
+  completed annotation shows the class most samples show (the first such class in class order).
+
+**What truth a dataset holds is derived on every read, never stored** (ADR-0041), and the API reports it
+on `DatasetSummary`:
+
+- `truth` lists `labels` when some sample's label is `normal` or `defect`, and `classes` when some image's
+  newest completed revision pins a class with pixels in its class table. Both, or neither, are ordinary.
+- `class_counts` lists each class that some sample shows — `key`, `name`, `color`, and `samples`, the
+  samples any of whose images' newest revision shows it — in class order. An imported ground-truth mask is
+  anomaly truth and is not counted here.
 
 ### Channel
 
@@ -85,7 +104,9 @@ samples. Unique on `(dataset_id, name)`.
 `id`, `dataset_id`, `group_key`, `external_id`, `label`, `label_source`, `notes`. One physical part.
 `group_key` identifies the source group (e.g. a batch folder) and `external_id` the part within it; the
 pair is unique per dataset, because numeric ids collide across groups. `label ∈ {normal, defect,
-unlabeled}`; `label_source` is `import` (inferred from folder structure) or `manual` (edited in the UI).
+unlabeled}` is the part's **anomaly** verdict, and `unlabeled` means there is none; it is never null, and it
+says nothing about classes (ADR-0041). An adapter sets a verdict only where its source asserts one;
+`label_source` is `import` (inferred from folder structure) or `manual` (edited in the UI).
 
 ### Image
 
@@ -100,7 +121,7 @@ makes files immutable identities, which is what allows caching by `image_id` ([m
 ### Mask
 
 `id`, `image_id`, `path`, `kind`, `sha256` (nullable). Source pixel-level ground truth, referenced in place
-like its image (ADR-0015). Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
+like its image. Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
 one; a mask the manifest no longer mentions is left alone, as a missing image is reported rather than
 deleted. `sha256` pins source-mask provenance (ADR-0032) and stays `NULL` until the file first becomes an
 annotation base — nothing claims to have verified bytes it did not read. `verify` reports existence
@@ -109,8 +130,11 @@ separately from digest coverage.
 ### Annotation truth
 
 - **`AnnotationLabel`** — `id`, `dataset_id`, `key`, `name`, `color`, `position`, `created_at`. The
-  dataset's defect taxonomy; `key` is the stable identity stored in shapes, so presentation fields change
-  without rewriting documents.
+  dataset's class taxonomy — defect kinds on an anomaly dataset, object classes on a class dataset;
+  `key` is the stable identity stored in shapes, so presentation fields change without rewriting
+  documents. Every dataset has the default class `defect`, the one class anomaly truth also answers
+  for: an imported ground-truth mask is its region, and a sample labelled `normal` is its absence
+  (ADR-0041).
 - **`AnnotationDraft`** — `image_id`, `base_revision_id`, `document` (JSON), `version`, source-mask
   provenance, `updated_at`. At most one mutable source-frame document per image; `version` is the
   optimistic-concurrency token exposed as an ETag.
@@ -118,8 +142,9 @@ separately from digest coverage.
   `mask_path`, source-mask provenance, `class_mask_path`, `class_mask_sha256`, `class_table` (JSON),
   `instances_path`, `instances_sha256`, `completed_at`. Completion materialises an app-owned binary PNG,
   a class-index PNG and an instances JSON and appends this row; a trigger makes rows immutable, and they
-  are deleted only with their dataset. The three class columns are null on a revision completed before
-  migration 023, the two instance columns on one completed before migration 024.
+  are deleted only with their dataset. Completion always writes the class and instance columns; the
+  schema leaves them nullable, and a resolver reading a revision without them falls back to its
+  document.
 
 A document's shape list holds `PolygonShape`, `BoxShape` and `BitmapShape`, all with stable ids, taxonomy
 keys, an optional `instance_id` and ordered `add` / `subtract` composition. A bitmap is a cropped binary PNG positioned in source pixels — the
@@ -148,6 +173,16 @@ be regenerated exactly — a seed alone reproduces nothing without its fractions
   sample of another class; a class one sample shows goes where its stratum's draw puts it
   (`datasets/splitting.draw_class_stratified`).
 
+A split's `name` is optional on creation: left empty it is derived from the params and seed as
+`<label> · seed <n>` (`Standard · 60/20/20, normals only · seed 0`, `5-shot · bucket · seed 2`,
+`70/30 by class · seed 0`, or `Published`, whose seed means nothing), with ` (2)` appended if taken.
+Left empty too, the seed is the first one no split of the same label has used, so asking for the same
+split twice draws a second one rather than colliding (`datasets/split_presets.py`).
+
+A split is deleted with its assignments (`ON DELETE CASCADE`) only when no `Experiment` ran on it:
+`experiment.split_id` is `ON DELETE RESTRICT`, and `DELETE /api/splits/{id}` refuses with 409 and names
+the runs, since a run's numbers mean something only against its split. Nothing cascades to experiments.
+
 ### SplitAssignment
 
 `(split_id, sample_id, subset)`, `subset ∈ {train, val, test}`, primary key `(split_id, sample_id)`.
@@ -156,14 +191,22 @@ a subset.
 
 ### RegionProfileRevision
 
-`id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `prepared_width`,
-`prepared_height`, `padding_fraction`, `resample`, `failure_policy`, `seed`, `created_at`,
-`sample_alignment`. One immutable
-dataset-owned configuration for localising and preparing input (ADR-0033); the database rejects updates, so
-changing any value appends a revision. `failure_policy` is `fail`: an extractor failure may reduce build
-coverage but never silently substitutes the full frame. A completed build lives under
-`data/region-profiles/profile-<id>/` as one lossless PNG per source image, a deterministic JSON-lines
-transform manifest and a bounded summary whose digests make configuration and materialisation auditable.
+`id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `padding_fraction`,
+`resample`, `created_at`, `sample_alignment`. One immutable dataset-owned configuration for **where to
+look** (ADR-0033); the database rejects updates, so changing any value appends a revision. It carries no
+size: the size is the experiment's. An extractor failure may reduce build coverage but never silently
+substitutes the full frame.
+
+Every dataset has one implicit revision, **"Full frame"** — `identity`, no padding, bilinear, per image —
+created with the dataset (`region_profiles.full_frame_profile`, called by `datasets.create_dataset`, which
+both the import commit and reference-pack registration go through). An experiment that names no profile
+reads it; if someone deleted it, asking for it creates it again.
+
+A **build** is one revision prepared at one size, `(revision, width, height)`, published under
+`data/region-profiles/profile-<id>/<width>x<height>/` as one lossless PNG per source image, a deterministic
+JSON-lines transform manifest and a bounded summary (which records its `width` and `height`) whose digests
+make configuration and materialisation auditable. A published build is immutable; a revision can hold one
+per size, and deleting the revision removes them all.
 Transforms (`regions/transform.py`) name points in pixel-centre coordinates and crops in half-open
 pixel-edge coordinates, matching numpy and Pillow, so a contained resize projects back without half-pixel
 drift.
@@ -195,7 +238,7 @@ experiment, so every result row is attributable to one immutable configuration.
   (ADR-0040). Creation refuses a class the dataset does not have, a `few_shot` split drawn for another
   class, and a reference in `train` that does not show the class.
 - `classes` is the JSON list of annotation class keys a `semantic_segmentation` or `object_detection` run
-  learns, pinned at creation as every class of the dataset in taxonomy order (ADR-0039, migration 026).
+  learns, pinned at creation as every class of the dataset in taxonomy order (ADR-0039).
   `classes[i]` is label index `i + 1` in the run's targets, label maps and confusion matrices; 0 is
   background. `[]` for every other task. At most 254, because label maps are 8-bit and 255 means "no pinned class answers".
 - `channels` is a JSON array of channel **names** this run reads; `[]` means every channel. Names, because a
@@ -203,8 +246,15 @@ experiment, so every result row is attributable to one immutable configuration.
   `ImageRecord.channel` at the plugin boundary is a name too. An unknown name is refused at creation (422),
   and the selection is stored in `Channel.position` order, not the order the client sent.
 - `status ∈ {draft, training, trained, failed}`.
-- The pinned region profile must belong to the dataset and its manifest must be a complete immutable build.
-  `preprocessing_config` stores the resolved prepared dimensions plus colour policy, not a second resize.
+- `region_profile_id` must belong to the dataset; omitted at creation, it is the dataset's "Full frame".
+  **No build is needed to create a run.** `preprocessing_config` stores the run's input size — the
+  `width` and `height` the request named, or the method's `native_size` for its configuration when it
+  named neither ([methods](methods.md#native-size)) — plus the colour policy; creation refuses a size the
+  method's `check_input` cannot read.
+- `region_manifest_sha256` is the digest of the build the run reads, the profile at the run's size. It is
+  **null at creation** and set by the run's first train or infer job, which adopts that build or prepares
+  it ([jobs](jobs.md#preparing-a-runs-input)). Once set it never changes: `experiments.pin_region_build`
+  refuses a different value, and a trigger refuses any update of a set pin beneath it.
 - `artifact_dir` is `data/artifacts/exp-<id>/`. Startup removes only exact app-owned `exp-<id>`
   directories whose row no longer exists, never traversing a dataset source path.
 

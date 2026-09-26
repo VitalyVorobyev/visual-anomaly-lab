@@ -1,6 +1,6 @@
 # Evaluation
 
-The evaluation layer is **model-independent by construction** (ADR-0011). Its only inputs are:
+The evaluation layer is **model-independent by construction**. Its only inputs are:
 
 - `ImageResult.score` rows for an experiment,
 - `Sample.label`,
@@ -29,12 +29,22 @@ Split, labels and region build are shared by every run over one multi-channel da
 between "one channel" and "all channels" is the channel, not two imports. An image whose `channel_id` is
 `NULL` is **excluded by a non-empty selection**; a single-view dataset is only read unfiltered.
 
+The selection is the experiment's and not the split's: a split decides *which samples* and exists to
+prevent leakage, and a selection on it would make "one channel" and "all channels" incomparable by
+construction. Importing each channel as a dataset of its own is the other thing it replaces — separate
+datasets have independent splits, so one view of a part could train while another is tested. A valid name
+that no sample in the split carries yields a legal, empty run; the unknown-name check catches typos only.
+Wherever runs with different selections are shown side by side, images align by channel name, never by
+position.
+
 ## Channel → sample aggregation
 
 A part is scored from its per-image scores. The **default aggregation is `max`**: a defect visible under any
 single illumination makes the part defective, while `mean` dilutes single-channel evidence with
 uninformative views. `mean` is an option. The method is recorded in `SampleResult.aggregation` and
-`Experiment.eval_config`.
+`Experiment.eval_config`. The reduction lives here and not in the methods, so no method's number is partly
+a measure of its own fusion; a learned fusion would need labels the workbench cannot assume. `max` is the
+least robust choice — one noisy view, a specular flare or a registration failure, sets the part's score.
 
 **`max` assumes per-channel scores share a scale.** If one illumination's scores simply sit higher, every
 maximum comes from that channel and the sample score measures which view the method finds noisiest.
@@ -51,7 +61,7 @@ is recorded on `SampleResult.normalization` beside the aggregation.
 labels would make the metric a function of the answer. It is transductive, the same cost the pixel metrics
 accept by adapting their bins to a run's range.
 
-**Image-level ROC-AUC stays on raw scores** (ADR-0011): it isolates model quality from how channels were
+**Image-level ROC-AUC stays on raw scores**: it isolates model quality from how channels were
 combined.
 
 ## Metrics
@@ -212,11 +222,26 @@ Splits are assigned at **sample** level, so a part's channels never straddle sub
 
 A few-shot task's split holds its references in `train` and its queries in `test`: `manual` lists them,
 and `few_shot` draws them from the samples that show the target class ([domain model](domain-model.md)).
+Every other sample of the dataset is a query, so on a dataset of many classes the other classes' images
+are the target's negatives — confirmed absent by their own completed annotations, not by a label
+(ADR-0041).
 A semantic segmentation or detection run fits on the annotated images of whatever `train` holds, so it is offered
 `class_stratified` — annotated samples drawn under the seed, stratified by the set of classes each
 shows, with the rest parked in `test` where they are scored but measured against nothing — and
 `manual`. The anomaly strategies put normals alone in `train`, and a supervised run cannot learn a
 class from them.
+
+**Presets are the zero-configuration way in.** `GET /api/datasets/{id}/split-presets` returns the
+requests that work on this dataset, per task, each with its params, the tasks it serves, the name and
+seed Create would use, and its **dry-run composition** — per subset, counts by verdict and by class,
+computed by the same `plan_*` functions as creation and written nowhere
+(`datasets/split_presets.py`). A dataset with anomaly verdicts gets **Standard · 60/20/20, normals
+only** (`normal_only_train` at its defaults) and, only when its committed manifest publishes a
+partition, **Published** (`imported`). A dataset with class truth (ADR-0041) gets **1-shot** and
+**5-shot** (`few_shot`), each once with the classes that have enough samples to draw from, most
+frequent first, and **70/30 by class** (`class_stratified`) for segmentation and detection. A preset
+whose dry run fails is not offered. `POST /api/datasets/{id}/splits/preview` is the same dry run for
+arbitrary params, answering 200 with `error` set when they cannot be drawn.
 
 **A missing `val` subset is normal.** VisA's official protocol has train and test only, so every layer
 tolerates an empty subset:
@@ -237,6 +262,12 @@ facts: each image's presence `score`, its map or written mask, and the class tru
 - **Per image.** No sample-level rule for a class on a multi-channel part has been decided, so every count
   is of images and every rate is named `image_*`. The sample rows are still rebuilt from presence scores,
   so the ranked list and the gallery work unchanged.
+- **Present, absent and unlabelled come from class truth** (`class_truth.resolve_class_truth`, the
+  presence rule of [annotations](annotations.md)): an image whose newest completed revision shows the
+  target is present, one whose revision answers for the target without showing it is absent, whatever
+  other class it shows. A sample's anomaly label is read only for the default class `defect`, where a
+  `normal` sample without a revision is absent (ADR-0041). One multi-class dataset therefore measures
+  exactly what a dataset per class, its other classes labelled normal, would.
 - **Unlabelled images are excluded and counted** in `images.unlabeled`. A scored image with neither a map
   nor a mask is counted in `images.without_prediction`, not scored as empty.
 - **The prediction** is the method's own mask (`maps/<id>.mask.png`) when it wrote one. Otherwise it is

@@ -9,12 +9,22 @@ registration action per dataset/class. Registration still uses ordinary adapters
 credited options. This avoids a parallel “special benchmark” data model.
 
 VisA uses `csv_table`, preserves official one-class assignments and mask paths, and registers each object
-class as a dataset. GKN uses `folder_classes`, with `Good` normal and `Nick`/`Scratch` defective. FSS-1000
-uses `folder_classes` too, one dataset per class of a twenty-class panel: the class's images and masks are
-the few-shot target (`defect`), and the other nineteen classes are images that do not show it.
-PKU-Market-PCB uses `folder_classes` for its images, and its Pascal VOC boxes become each image's first
-annotation revision: one box per defect, of one of six classes, which the editor opens and a detection run
-reads. These are provider mappings, not global label conventions.
+class as a dataset. GKN uses `folder_classes`, with `Good` normal and `Nick`/`Scratch` defective. Both
+are anomaly datasets: their samples carry normal and defect labels.
+
+FSS-1000 and PKU-Market-PCB are **class datasets**. Their truth is annotation classes, not verdicts, so
+their samples stay unlabelled and each image's truth becomes its first completed annotation revision,
+which the editor opens like any drawn truth:
+
+- FSS-1000 registers as **one** dataset of a twenty-class panel, 200 images, each mask a region of the
+  class its directory names. A few-shot run picks one of the twenty classes; the other nineteen classes'
+  images are the images that do not show it.
+- PKU-Market-PCB registers its 693 boards with their Pascal VOC boxes: one box per defect, of one of six
+  classes, which a detection run reads.
+
+The catalogue, the dataset band and the browser follow the truth a dataset holds: a class dataset is
+counted and filtered by class, and offers anomaly labelling only when asked (*Label for anomaly
+detection*, on a sample). These are provider mappings, not global label conventions.
 
 ## General scan
 

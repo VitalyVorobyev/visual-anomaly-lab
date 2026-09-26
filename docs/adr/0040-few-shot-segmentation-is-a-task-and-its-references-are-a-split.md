@@ -18,7 +18,10 @@ questions were still open:
   splits. Another was to reuse the planned supervised `semantic_segmentation` task, which trains on
   every annotated sample of the train subset.
 - **How many classes one run segments.**
-- **What an image without the object means.**
+- **What an image without the object means**, and where that answer is read from. A few-shot
+  benchmark such as FSS-1000 is many classes of a few images each. One option was a dataset per
+  target class, its other classes' images marked as confirmed absences through the sample label;
+  the other was one dataset whose annotations carry every class.
 
 ## Decision
 
@@ -29,17 +32,22 @@ questions were still open:
 - **One experiment segments one class.** The class is an `AnnotationLabel` key frozen on the
   experiment, and the output is foreground against background. Several classes are several runs.
   Merging them into one label map is a later, separate choice.
-- **The references are a split.**
+- **The references are a split of one class of one dataset.**
   - Two split strategies are added: `manual`, whose `train` subset is an explicit list of sample
-    ids, and `few_shot`, which draws `shots` samples containing the class under a seed.
-  - `train` holds the references and `test` holds the queries.
+    ids, and `few_shot`, which draws `shots` samples showing the class under a seed.
+  - `train` holds the references and `test` holds every other sample as a query.
   - Splits are already immutable and per sample, which is exactly the property a frozen reference
     set needs. So there is no new entity and no `Subset` migration.
-- **Absence is truth, not a gap.**
+  - **A multi-class source is one dataset**, and the run names its class. There are no per-class
+    panel datasets: the other classes' images are queries of the same dataset, and their own
+    annotations say they do not show the target.
+- **Absence is truth, not a gap, and it is class truth** (ADR-0041).
   - A completed annotation revision with a region of the class is a positive.
-  - A completed revision without one is a confirmed absence.
+  - A completed revision without one is a confirmed absence — whatever else it shows.
   - An image with no completed revision is unlabelled. It is excluded from metrics, and the number
     excluded is shown.
+  - A sample's anomaly label is not read, with the one bridge ADR-0041 names: for the default
+    `defect` class, an imported mask is a positive and a sample labelled `normal` an absence.
 - **ADR-0039 applies unchanged.**
   - The masks reach `fit` only through `TrainContext.targets`.
   - A prediction's image-level `score` is presence confidence, and its map is the foreground
@@ -54,7 +62,8 @@ questions were still open:
 ## Consequences
 
 - One catalogue, one annotation store and one viewer serve both tasks. A benchmark with pixel masks
-  (VisA) is a few-shot benchmark with no second import.
+  (VisA) is a few-shot benchmark with no second import, and a many-class benchmark (FSS-1000) is
+  one dataset whose every class is a target.
 - **Support sensitivity is measurable by construction.** The same `few_shot` split with three
   seeds gives three reference draws.
 - An interactive "try references, look, fix" loop does not fit a frozen experiment. It lives in a
@@ -65,3 +74,7 @@ questions were still open:
   are needed today.
 - A dataset whose images are mostly unannotated yields small test sets. The excluded count is shown
   rather than hidden, but the metrics will be noisy until absences are confirmed.
+- **A run's negatives are every other class of the dataset.** On a panel of twenty classes, a
+  five-shot run has five present queries against 190 absent ones, so pooled pixel metrics are
+  dominated by absences; the few-shot gates choose their primary metric with that in mind
+  ([measurements](../measurements.md)).

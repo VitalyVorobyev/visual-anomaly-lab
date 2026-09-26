@@ -4,7 +4,7 @@ EfficientAD's teacher is a 2.7M-parameter PDN taught to reproduce the local feat
 network. The paper distils a WideResNet-101 on ImageNet; every published teacher is somebody's run of that
 procedure, and **the runs differ** — swapping one published teacher for another is the largest single effect
 measured in this project ([measurements](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/measurements.md),
-ADR-0031). Distillation turns the teacher from an input you are handed into one you can measure.
+and the [methods handbook](https://github.com/VitalyVorobyev/visual-anomaly-lab/blob/main/docs/architecture/methods.md)). Distillation turns the teacher from an input you are handed into one you can measure.
 
 **Inference cost does not change.** The source model is training-only; what ships is the same PDN.
 

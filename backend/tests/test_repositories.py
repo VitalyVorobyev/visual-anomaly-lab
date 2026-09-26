@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from anomaly_lab.datasets.split_presets import compose, read_truth
 from anomaly_lab.db.repositories import (
     datasets,
     experiments,
@@ -44,7 +45,7 @@ def test_two_datasets_cannot_share_a_root(migrated_db: sqlite3.Connection) -> No
 def test_channel_dictionary_is_per_dataset_and_ordered(
     migrated_db: sqlite3.Connection, catalog: SeededCatalog
 ) -> None:
-    """Channels are rows in a per-dataset dictionary, never a shared enum (ADR-0005)."""
+    """Channels are rows in a per-dataset dictionary, never a shared enum (ADR-0041)."""
     other = datasets.create_dataset(migrated_db, name="other", root_path="/roots/other")
     datasets.upsert_channel(migrated_db, other.id, name="dome", position=0)
 
@@ -262,7 +263,9 @@ def test_split_composition_reports_every_subset(
         },
     )
 
-    by_subset = {c.subset: c for c in splits.composition(migrated_db, split.id)}
+    truth = read_truth(migrated_db, catalog.dataset_id)
+    placed = splits.assignments(migrated_db, split.id)
+    by_subset = {c.subset: c for c in compose(placed, truth)}
 
     assert split.params == {"ratios": {"train": 0.5}}
     assert by_subset[Subset.TRAIN].normal == 1
@@ -384,10 +387,7 @@ def _experiment_over(migrated_db: sqlite3.Connection, catalog: SeededCatalog) ->
         name="full frame",
         extractor_type="identity",
         extractor_config={},
-        prepared_width=8,
-        prepared_height=8,
         padding_fraction=0.0,
-        seed=17,
     )
     experiment = experiments.create_experiment(
         migrated_db,

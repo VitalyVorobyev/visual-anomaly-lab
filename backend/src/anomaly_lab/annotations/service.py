@@ -4,9 +4,10 @@ The routes in `api/routers/annotations.py` read headers, call one function here 
 response headers; every check, transaction and file write is in this module. Refusals are
 `anomaly_lab.errors` categories, so nothing here knows it is behind HTTP.
 
-**One draft lifecycle, two editing units (ADR-0036).** A dataset annotates either single
-images or whole samples, and both units go through the same steps — read-or-seed, create
-only if absent, save only at the version read, discard, complete. `DraftUnit` writes those
+**One draft lifecycle, two editing units (handbook annotations.md).** A dataset annotates
+either single images or whole samples, and both units go through the same steps —
+read-or-seed, create only if absent, save only at the version read, discard, complete.
+`DraftUnit` writes those
 steps once; `ImageDrafts` and `SampleDrafts` supply what genuinely differs: how a unit is
 found, what its seed is, which frame a document must match, and which rows hold it.
 Completion differs in substance (one image and its imported-mask provenance, versus one
@@ -705,7 +706,7 @@ def _with_fresh_ids(shapes: Sequence[AnnotationShape]) -> list[AnnotationShape]:
     return [shape.model_copy(update={"id": uuid4().hex}) for shape in shapes]
 
 
-# --- Sample scope (ADR-0036) ---------------------------------------------------------------
+# --- Sample scope (handbook annotations.md) -------------------------------------------------
 #
 # One document, edited once, materialised onto every image of the sample. Truth below this
 # boundary stays image-keyed: `resolve_ground_truth_masks`, pixel metrics, `has_mask`, the

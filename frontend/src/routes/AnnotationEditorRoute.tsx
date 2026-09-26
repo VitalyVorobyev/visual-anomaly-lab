@@ -247,7 +247,7 @@ function EditorReady({
   /**
    * The part's verdict, edited where it is discovered to be wrong.
    *
-   * **The label belongs to the sample, not the photograph** (ADR-0005), so this covers every
+   * **The label belongs to the sample, not the photograph** (ADR-0041), so this covers every
    * channel of the part however many times it was shot — which is why it sits beside the
    * sample's identity in the header rather than beside the channel strip.
    *

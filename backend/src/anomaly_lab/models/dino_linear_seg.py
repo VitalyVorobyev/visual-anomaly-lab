@@ -88,7 +88,9 @@ from anomaly_lab.models.dino_backbone import (
     FeatureLayers,
     FrozenEncoder,
     image_patch_features,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig, load_array
@@ -140,6 +142,7 @@ class DinoLinearSegConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder. The DINOv3 entries are licence-gated (an approved HF_TOKEN must "
@@ -180,7 +183,11 @@ class DinoLinearSegConfig(BaseModel):
         ),
     )
     epochs: int = Field(
-        default=10, ge=1, le=500, description="Passes of the head over the sampled pixels."
+        json_schema_extra={"x-primary": True},
+        default=10,
+        ge=1,
+        le=500,
+        description="Passes of the head over the sampled pixels.",
     )
     batch_size: int = Field(
         default=1024, ge=16, le=65_536, description="Pixels per optimisation step."
@@ -511,6 +518,19 @@ class DinoLinearSegModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return DinoLinearSegConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the supervised-segmentation gates ran at 448x448 (measurements.md)."""
+        if not isinstance(config, DinoLinearSegConfig):
+            raise TypeError(f"expected DinoLinearSegConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, DinoLinearSegConfig):
+            raise TypeError(f"expected DinoLinearSegConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

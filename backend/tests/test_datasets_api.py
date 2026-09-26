@@ -26,7 +26,7 @@ def dataset_id(client: TestClient, settings: Settings) -> int:
     """A dataset with two capture groups, three channels, and one two-channel sample.
 
     The odd sample is deliberate: every list, filter and detail response below has to
-    handle it without a special case (ADR-0005).
+    handle it without a special case (ADR-0041).
     """
     with connection(settings.db_path) as conn:
         dataset = datasets_repo.create_dataset(
@@ -255,10 +255,7 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
             name="delete-me",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=256,
-            prepared_height=256,
             padding_fraction=0.05,
-            seed=17,
         )
         experiment = experiments_repo.create_experiment(
             conn,
@@ -313,7 +310,7 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         "splits": 1,
         "experiments": 1,
         "jobs": 1,
-        "region_profiles": 1,
+        "region_profiles": 2,  # its own and the implicit "Full frame"
         "manual_labels": 1,
         "generated_files": 6,
         "generated_bytes": 25,

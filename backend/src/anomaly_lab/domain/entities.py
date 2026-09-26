@@ -1,10 +1,9 @@
-"""Domain entities (ADR-0005).
+"""Domain entities (ADR-0041).
 
-Entities are added as the milestones that use them arrive. The numbered SQL migrations
-remain the authoritative description of the data model (ADR-0004); these models are how
-the rest of the application reads it.
+The schema script `db/migrations/001_initial.sql` is the authoritative description of
+the data model (ADR-0004); these models are how the rest of the application reads it.
 
-Two invariants from ADR-0005 are visible in the shapes below and must stay that way:
+Two invariants from ADR-0041 are visible in the shapes below and must stay that way:
 
   * `Sample` owns `label` and, through `SplitAssignment`, subset membership. There is no
     image-level label and no image-level assignment, so every view of a part necessarily
@@ -57,9 +56,24 @@ class JobStatus(StrEnum):
 
 
 class Label(StrEnum):
+    """A sample's anomaly truth (ADR-0041). `UNLABELED` is no verdict, not a third verdict.
+
+    It says nothing about classes: a dataset whose truth is class annotations leaves every
+    sample `UNLABELED`.
+    """
+
     NORMAL = "normal"
     DEFECT = "defect"
     UNLABELED = "unlabeled"
+
+
+class TruthKind(StrEnum):
+    """Which truth a dataset holds, derived from it and never stored (ADR-0041)."""
+
+    LABELS = "labels"
+    """Some sample carries an anomaly verdict, normal or defect."""
+    CLASSES = "classes"
+    """Some completed annotation shows a class."""
 
 
 class LabelSource(StrEnum):
@@ -119,7 +133,7 @@ class AnnotationScope(StrEnum):
     `IMAGE` is the original and the default: every photograph carries its own document.
     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
     part -- one document is edited once and materialised onto every image of the sample.
-    Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+    Truth stays image-keyed in both cases; only the editing scope moves (handbook annotations.md).
     """
 
     IMAGE = "image"
@@ -205,9 +219,9 @@ class Mask(BaseModel):
     annotated in one view and not another, and because the mask has to align with a
     specific image's pixel grid to mean anything.
 
-    Imported masks remain source provenance. Migration 005 added an optional digest:
-    old rows are hashed when first used as an annotation base, while newly discovered
-    masks may carry one immediately.
+    Imported masks remain source provenance. The digest is optional: a mask is hashed
+    when first used as an annotation base, while a newly discovered one may carry it
+    immediately.
     """
 
     model_config = API_MODEL_CONFIG
@@ -248,12 +262,6 @@ class SplitAssignment(BaseModel):
     subset: Subset
 
 
-class RegionFailurePolicy(StrEnum):
-    """A localisation failure is visible; it never silently becomes full-frame input."""
-
-    FAIL = "fail"
-
-
 class SpatialResample(StrEnum):
     NEAREST = "nearest"
     BILINEAR = "bilinear"
@@ -274,7 +282,11 @@ class SampleAlignment(StrEnum):
 
 
 class RegionProfileRevision(BaseModel):
-    """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
+    """One immutable dataset-owned spatial-input configuration: where to look (ADR-0033).
+
+    It carries no size. A run prepares its profile at the run's own input size, and a
+    build is keyed by `(revision, width, height)`.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -284,12 +296,8 @@ class RegionProfileRevision(BaseModel):
     revision_no: int
     extractor_type: str
     extractor_config: dict[str, Any] = Field(default_factory=dict)
-    prepared_width: int
-    prepared_height: int
     padding_fraction: float = 0.05
     resample: SpatialResample = SpatialResample.BILINEAR
-    failure_policy: RegionFailurePolicy = RegionFailurePolicy.FAIL
-    seed: int
     created_at: str
     sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE
 
@@ -338,16 +346,16 @@ class ExperimentStatus(StrEnum):
 
 
 class Aggregation(StrEnum):
-    """How a sample's per-image scores become one number (ADR-0011)."""
+    """How a sample's per-image scores become one number (handbook evaluation.md)."""
 
     MAX = "max"
     MEAN = "mean"
 
 
 class ChannelNormalization(StrEnum):
-    """How per-channel scores are put on one scale before they are reduced (ADR-0011).
+    """How per-channel scores are put on one scale before they are reduced (handbook evaluation.md).
 
-    ADR-0011 chose `max` and recorded the caveat in the same breath: `max` assumes a
+    Evaluation chose `max` and states the caveat in the same breath: `max` assumes a
     part's per-channel scores are comparable, and for a deep method they are not — one
     illumination's distribution simply sits higher and wins every maximum, so the sample
     score measures which channel the model finds noisiest rather than which part is
@@ -384,7 +392,13 @@ class Experiment(BaseModel):
     dataset_id: int
     split_id: int
     region_profile_id: int
-    region_manifest_sha256: str
+    region_manifest_sha256: str | None = Field(
+        default=None,
+        description=(
+            "The prepared-region build the run reads, pinned by its first train or infer "
+            "job; null until then, and frozen once set."
+        ),
+    )
     model_type: str
     task: Task = Task.ANOMALY
     target_label: str | None = Field(
@@ -475,13 +489,12 @@ class SampleResult(BaseModel):
     sample_id: int
     agg_score: float
     aggregation: Aggregation
-    normalization: ChannelNormalization | None = Field(
-        default=None,
+    normalization: ChannelNormalization = Field(
+        default=ChannelNormalization.NONE,
         description=(
             "How per-channel scores were put on one scale before the reduce. Recorded per "
             "row beside the aggregation, for the same reason: a stored result must stay "
-            "self-describing after the default changes. `null` on rows written before the "
-            "step existed, which meant `none`."
+            "self-describing after the default changes."
         ),
     )
     localized: bool | None = Field(
@@ -498,14 +511,14 @@ class SampleResult(BaseModel):
 
 
 class MetricSet(BaseModel):
-    """Threshold-independent metrics for one subset of one experiment (ADR-0011)."""
+    """Threshold-independent metrics for one subset of one experiment (handbook evaluation.md)."""
 
     model_config = API_MODEL_CONFIG
 
     experiment_id: int
     subset: Subset
     metrics: dict[str, Any] = Field(default_factory=dict)
-    ground_truth_digest: str | None = None
+    ground_truth_digest: str
     computed_at: str
 
     @field_validator("metrics", mode="before")

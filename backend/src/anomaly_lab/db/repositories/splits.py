@@ -1,7 +1,7 @@
 """Split repository.
 
 Assignments are sample-level and nothing here offers an image-level equivalent — that
-absence is the mechanism that makes cross-channel leakage impossible (ADR-0005).
+absence is the mechanism that makes cross-channel leakage impossible (ADR-0041).
 """
 
 from __future__ import annotations
@@ -9,26 +9,14 @@ from __future__ import annotations
 import json
 import sqlite3
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import Any
 
 from anomaly_lab.db.connection import transaction
-from anomaly_lab.domain.entities import Label, Split, Subset
+from anomaly_lab.domain.entities import Split, Subset
 
 
 def _to_split(row: sqlite3.Row) -> Split:
     return Split.model_validate(dict(row))
-
-
-@dataclass(frozen=True)
-class SubsetComposition:
-    """What a subset actually contains, so a split can report itself honestly."""
-
-    subset: Subset
-    total: int
-    normal: int
-    defect: int
-    unlabeled: int
 
 
 def list_splits(conn: sqlite3.Connection, dataset_id: int) -> list[Split]:
@@ -80,34 +68,33 @@ def create_split(
     return created
 
 
-def composition(conn: sqlite3.Connection, split_id: int) -> list[SubsetComposition]:
-    """Per-subset counts by label, with every subset present even when empty."""
-    counts: dict[Subset, dict[Label, int]] = {subset: dict.fromkeys(Label, 0) for subset in Subset}
+def assignments(conn: sqlite3.Connection, split_id: int) -> dict[int, Subset]:
+    """Every sample's subset in this split, keyed by sample id."""
     rows = conn.execute(
-        """
-        SELECT split_assignment.subset AS subset,
-               sample.label            AS label,
-               COUNT(*)                AS n
-          FROM split_assignment
-          JOIN sample ON sample.id = split_assignment.sample_id
-         WHERE split_assignment.split_id = ?
-         GROUP BY split_assignment.subset, sample.label
-        """,
+        "SELECT sample_id, subset FROM split_assignment WHERE split_id = ?",
         (split_id,),
     ).fetchall()
-    for row in rows:
-        counts[Subset(row["subset"])][Label(row["label"])] = int(row["n"])
+    return {int(row["sample_id"]): Subset(row["subset"]) for row in rows}
 
-    return [
-        SubsetComposition(
-            subset=subset,
-            total=sum(by_label.values()),
-            normal=by_label[Label.NORMAL],
-            defect=by_label[Label.DEFECT],
-            unlabeled=by_label[Label.UNLABELED],
-        )
-        for subset, by_label in counts.items()
-    ]
+
+def experiments_using(conn: sqlite3.Connection, split_id: int) -> list[tuple[int, str]]:
+    """The experiments that ran on this split, newest first.
+
+    `experiment.split_id` is `ON DELETE RESTRICT`, so SQLite would refuse the delete on its
+    own — but as an `IntegrityError` naming a constraint. Asking first turns it into a
+    message naming the runs that hold the split.
+    """
+    rows = conn.execute(
+        "SELECT id, name FROM experiment WHERE split_id = ? ORDER BY id DESC",
+        (split_id,),
+    ).fetchall()
+    return [(int(row["id"]), str(row["name"])) for row in rows]
+
+
+def delete_split(conn: sqlite3.Connection, split_id: int) -> bool:
+    """Delete a split; its assignments go with it (`ON DELETE CASCADE`)."""
+    cursor = conn.execute("DELETE FROM split WHERE id = ?", (split_id,))
+    return cursor.rowcount > 0
 
 
 def list_sample_ids(

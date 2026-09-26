@@ -28,7 +28,7 @@ from anomaly_lab.domain.entities import Label
 from tests.conftest import write_image
 
 # The adapter ships no channel vocabulary: what a dataset's channels are called is data,
-# not something the application gets to assume (ADR-0005). These tests exercise the
+# not something the application gets to assume (ADR-0041). These tests exercise the
 # matcher, so they bring the vocabulary the fixture trees are built with.
 FIXTURE_CHANNELS = ["bright", "dark", "dome"]
 
@@ -176,7 +176,7 @@ def test_colliding_stems_under_different_labels_stay_separate(tmp_path: Path) ->
 
 
 def test_a_variable_channel_count_is_a_warning_never_an_error(tmp_path: Path) -> None:
-    """Variable channel counts are legitimate data (ADR-0005)."""
+    """Variable channel counts are legitimate data (ADR-0041)."""
     for channel in ("Bright", "Dark", "Dome"):
         write_image(tmp_path / "g" / channel / "1.png")
     for channel in ("Bright", "Dark"):

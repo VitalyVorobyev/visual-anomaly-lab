@@ -26,6 +26,8 @@ function dataset(over: Partial<DatasetSummary> & { id: number; name: string }): 
     samples: 1100,
     images: 1100,
     label_counts: { normal: 1000, defect: 100, unlabeled: 0 },
+    truth: ["labels"],
+    class_counts: [],
     collection: null,
     description: null,
     cover_image_id: 42,
@@ -107,18 +109,48 @@ describe("the datasets catalogue", () => {
     expect(screen.getByRole("heading", { level: 3, name: "CanEndsBright" })).toBeTruthy();
   });
 
-  it("says what a dataset is, not how many rows it has", () => {
+  it("says what a dataset is, and counts it in the unit of its truth", () => {
     renderCatalogue([VISA[0]!]);
 
     const card = screen.getByRole("heading", { level: 3, name: "candle" }).closest("li")!;
 
     expect(card.textContent).toContain("The candle class.");
-    // Everything the card used to spend three lines on. The counts live in the band, one
-    // click away, where they are being used rather than skimmed.
-    expect(card.textContent).not.toContain("samples");
+    // One line of counts, in verdicts for an anomaly dataset; the adapter and the path
+    // stay behind the band's provenance mark.
+    expect(card.textContent).toContain("1100 samples · 1000 normal · 100 defect");
     expect(card.textContent).not.toContain("csv_table");
     expect(card.textContent).not.toContain("/roots/");
-    expect(card.textContent).not.toContain("1000");
+  });
+
+  it("counts a dataset of classes in classes, with no verdicts", () => {
+    renderCatalogue([
+      dataset({
+        id: 5,
+        name: "FSS-1000 panel",
+        samples: 200,
+        label_counts: { normal: 0, defect: 0, unlabeled: 200 },
+        truth: ["classes"],
+        class_counts: Array.from({ length: 20 }, (_, index) => ({
+          key: `class${index}`,
+          name: `Class ${index}`,
+          color: "#1c7ed6",
+          samples: 10,
+        })),
+      }),
+    ]);
+
+    const card = screen
+      .getByRole("heading", { level: 3, name: "FSS-1000 panel" })
+      .closest("li")!;
+    expect(card.textContent).toContain("200 samples · 20 classes");
+    expect(card.textContent).not.toContain("defect");
+  });
+
+  it("puts a collection's count beside its name, not in it", () => {
+    renderCatalogue([...VISA, MINE]);
+    const heading = screen.getByRole("heading", { level: 2, name: "VisA" });
+    expect(heading.textContent).toBe("VisA");
+    expect(foldToggle("VisA").textContent).toContain("3 datasets");
   });
 
   it("offers to make a collection, but only once there is something to file", () => {

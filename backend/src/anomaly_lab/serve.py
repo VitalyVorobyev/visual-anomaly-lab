@@ -31,7 +31,7 @@ import uvicorn
 
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings, get_settings
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import SchemaVersionError, apply_schema
 
 logger = logging.getLogger("anomaly_lab.serve")
 
@@ -83,13 +83,30 @@ def _start_orphan_watchdog(server: uvicorn.Server, parent_pid: int) -> None:
     threading.Thread(target=watch, name="orphan-watchdog", daemon=True).start()
 
 
+def _announce_fatal(message: str) -> None:
+    """Say why the sidecar will not start, on both streams.
+
+    stdout carries it as an `error` event in the ADR-0009 envelope, which the desktop shell
+    shows as the headline of its startup-failure page; stderr carries the same sentence for
+    a terminal, without a traceback, because the sentence is the whole explanation.
+    """
+    sys.stdout.write(json.dumps({"ev": "error", "message": message}) + "\n")
+    sys.stdout.flush()
+    sys.stderr.write(message + "\n")
+    sys.stderr.flush()
+
+
 def main() -> int:
     settings: Settings = get_settings()
     settings.ensure_directories()
 
-    # Migrate before announcing readiness. A shell waiting on the ready line should see
-    # this process exit with a message rather than hang until its timeout.
-    apply_migrations(settings.db_path)
+    # Open the catalogue before announcing readiness. A shell waiting on the ready line
+    # should see this process exit with a message rather than hang until its timeout.
+    try:
+        apply_schema(settings.db_path)
+    except SchemaVersionError as exc:
+        _announce_fatal(str(exc))
+        return 1
 
     config = uvicorn.Config(
         create_app(settings),

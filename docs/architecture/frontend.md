@@ -80,7 +80,7 @@ the backend's last output.
 - **`ReadingLayout`** — one outer vertical scroller, for catalogues, forms and tables.
 - **`DatasetLayout`** (`routes/dataset/`) — owns the viewport without scrolling and renders the dataset's
   identity band and section strip **once, above all five tabs**. Facts are counted in **samples**, never
-  images (ADR-0005); a channel count appears only when a sample has more than one image; root path, adapter
+  images (ADR-0041); a channel count appears only when a sample has more than one image; root path, adapter
   and import date sit behind an information mark. A tab renders no heading, strip or back link, and gives
   its main surface the single scroller through `TabScroll` or its own full-bleed surface (the browser).
 - **`CanvasLayout`** — no page scroll; an image canvas fills the viewport and supporting panes scroll only
@@ -107,22 +107,40 @@ of the work, in the order it is done: **Data** (`Browse`, `Prepare`) · **Truth*
 between the links, folded away below `md`, and each stage is a `role="group"`. The links are underlined
 because pills mark in-page state.
 
-**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. Every
-run needs a built profile; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
+**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. No
+region profile is asked for — a run reads the dataset's "Full frame" unless it names another, and its
+first job prepares it at its size; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
 class with a reference and something to test on (from the coverage read) and a split of references;
 `semantic_segmentation` (named *Segment*) and `object_detection` (named *Detect*) each need the same
 annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence rule
-serving both. With one task the band is a checklist. With more, the shared first
-step comes first, then each task shows a check or the link to its next step.
+serving both. With one task the band is a checklist. With more, a first step every task
+shares comes alone; otherwise each task shows a check or the link to its next step. A task is named only when the
+dataset's truth can serve it (`truthServesTask`, `api/truth.ts`): a dataset of classes alone is not
+offered `anomaly`, and the create form opens on the first task it is offered.
 
-**Vocabulary.** A *region profile* is the crop-and-resize recipe built on Prepare; *Colour* is the
+**Screens follow the dataset's truth** (ADR-0041). `DatasetSummary.truth` says whether a dataset holds
+anomaly labels, classes, both or neither, and `api/truth.ts` turns that into one question per surface:
+
+- **Counts** (`components/DatasetTruth.tsx`) — a dataset with labels is counted in verdicts
+  (`1000 normal · 100 defect`); one with classes in classes (`20 classes`), each class with the samples
+  that show it behind an information mark. A dataset of classes never shows a run of zero defects.
+- **Anomaly labelling** (`labelsApply`) — the label rail, its `n`/`d`/`u` keys, the verdict badges and bulk
+  labelling are there for a dataset with labels and for one with no truth yet, since labelling is how an
+  import becomes an anomaly dataset. A dataset of classes alone hides them; the sample viewer offers
+  *Label for anomaly detection* instead, which brings the rail back for the visit, and one verdict makes
+  it a dataset with labels.
+
+**Vocabulary.** A *region profile* is where a run looks — the crop recipe defined on Prepare, with no size
+of its own; the *input size* is the run's; *Colour* is the
 experiment's colour option; the *threshold* is a run's image-score cut; the *map cut* is the fraction of a
 run's map range that draws its segmentation; the *threshold rule* is how Compare picks each run's
 threshold. A method is shown by its title, its registry key as secondary text.
 
 ## Screens
 
-**Dataset catalogue and import** — a grid of covers grouped by collection. Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
+**Dataset catalogue and import** — a grid of covers grouped by collection, each group headed by its name
+and a muted `N datasets` badge, so a count never reads as part of the name. A card is its cover, its name,
+its description and one quiet line of counts in the unit of its truth (`200 samples · 20 classes`). Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
 in one job; a folder is scanned, its manifest reviewed (channel mapping, labels, warnings) and committed.
 The scan job and manifest are in the URL (`scan=`, `manifest=`). A collection is a string on each dataset
 ([domain model](domain-model.md)), so `CollectionDialog` names and fills it in one form via
@@ -132,15 +150,18 @@ the cascade; source images and masks are never touched.
 `POST /api/import/commit`, `GET /api/datasets`, `PATCH /api/datasets/{id}`,
 `GET /api/datasets/{id}/deletion-preview`, `DELETE /api/datasets/{id}`.
 
-**Browser** — label/channel/split/subset filters in a 256 px rail; the virtual image grid is the only
-vertical scroller. A channel filter selects whole samples having that channel and previews it on each
+**Browser** — class/label/channel/split/subset filters in a 256 px rail; the virtual image grid is the only
+vertical scroller. The class filter is offered for a dataset with classes and lists each with its sample
+count (`class=` in the URL, sent as `class_key` with `presence=present`, and carried into bulk labelling
+as `class_key`); the label filter only for a dataset with labels. A filter already in the URL stays on
+screen so it can be cleared. A channel filter selects whole samples having that channel and previews it on each
 tile; a sample lacking it falls back to its first image. A dataset's default display channel (set in its
 edit dialog when it has more than one) answers wherever one image stands for a part, with the rail's filter
 winning over it. `GET /api/datasets/{id}/samples`, `GET /api/images/{id}/thumb`.
 
 **Sample viewer** — one part, every channel, count driven by data, opening on the filtered channel, else
-the dataset default, else the first. Label editing with keyboard shortcuts; full-resolution zoom; the
-label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
+the dataset default, else the first. Label editing with keyboard shortcuts where anomaly labelling applies
+(above); full-resolution zoom; the label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
 `PATCH /api/datasets/{id}/samples/{sid}`, `GET /api/images/{id}/preview`, `…/full`.
 
 **Explore** — the sample viewer's rail section for *what a frozen encoder sees*, for intuition rather than
@@ -170,22 +191,50 @@ checkpoint downloads from the model-asset catalogue only after explicit licence 
 `/api/images/{id}/annotations/*`, `/api/samples/{id}/annotations/*`, `GET /api/segment-assist`,
 `POST /api/images/{id}/segment-assist`, `GET /api/model-assets`.
 
-**Region preparation** — immutable profile configuration in a sticky rail, the crop audit central.
-Revision and followed job are in the URL (`profile`, `job`, `mode`, `jobProfile`). Preview samples 24
-images without writing (whole samples under a shared crop); Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a
-revision names the experiments pinning it. `GET /api/region-extractors`,
-`GET/POST /api/datasets/{id}/region-profiles`, `POST /api/region-profiles/{id}/preview`,
-`POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}`,
-`GET/DELETE /api/region-profiles/{id}`.
+**Region preparation** — preview first. The profile form sits in a sticky rail; the main column is a
+**live stage**: the source image with the extractor's own box dashed and the padded crop solid, beside the
+prepared frame exactly as a build writes it (the resized crop outlined, so the contain-pad bands show).
+Every control change re-runs a synchronous preview of the *unsaved* form on the image on the stage,
+debounced 250 ms (`useDebounced` holds back the request, not the controls); the last answer stays up,
+dimmed and marked "Preparing…", until the next lands, and an extractor failure or a refused request is an
+`ErrorBox` with its message. A filmstrip of 24 images spread over the dataset and every channel
+(`preview_selection`, one per sample under a shared crop) is stepped with ←/→ through `useHotkeys`, and
+**Random** puts any image of the dataset on the stage. The form opens on a saved revision (the newest
+until one is chosen); **Save profile** appears only when the form differs from it — each option compared
+at its effective value, typed or default — under an editable name made from the form ("Foreground
+threshold · pad 5%"). **Check 24** runs the sampled `region_prepare` preview job on the unsaved form and
+lists the crops failures first, each opening on the stage; a check whose form has since changed says so.
+**Build all** prepares the *saved* revision and says why it is disabled (unsaved edits, or a size already
+built). The preview size is a width and height pair, 448 × 448 until changed — the frame every DINO method
+and most measured gates read — with a line saying a run prepares its own size when it trains, so building
+only saves that run the wait; built sizes are buttons that select one. Revision and followed job are in
+the URL (`profile`, `job`, `mode`, `jobProfile`). Deleting a revision names the experiments pinning it.
+`GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`,
+`POST /api/datasets/{id}/region-preview`, `GET /api/datasets/{id}/region-preview/images?alignment=`,
+`GET /api/datasets/{id}/region-preview/random`, `POST /api/datasets/{id}/region-check`,
+`POST /api/region-profiles/{id}/build` (body `{width, height}`), `GET /api/region-profiles/{id}/builds`,
+`GET /api/region-profiles/{id}/prepared/{image_id}?width=&height=`, `GET/DELETE /api/region-profiles/{id}`.
 
-**Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a
-class** (`few_shot`: a class that some sample shows, a shot count and a seed, with the class's coverage
-beside the picker), or **draw annotated samples by class** (`class_stratified`: a seed and the
-annotated share that trains, with what happens to unannotated samples and small classes said under
-the form). `?strategy=` opens the form on a strategy, which is how a prerequisite link lands on the
-one its task needs. Per-subset counts by label; the train-defect tick appears only for a strategy
-whose train is normals. Immutable once created. `POST /api/splits`,
-`GET /api/splits?dataset_id=`, `GET /api/datasets/{id}/annotation-labels/coverage`.
+**Splits** — presets first, tuning optional. The top is a card per preset the dataset can serve
+(`GET /api/datasets/{id}/split-presets`, [evaluation](evaluation.md#splits)): its task badges, a
+one-line meaning, a composition bar with counts from the dry run, the name Create will give, and one
+**Create** press; a few-shot card adds a class `Select` on the most frequent class, and another class
+is a fresh dry run. `components/SplitComposition.tsx` draws every composition on the screen: the bar
+divided by subset and within it by what the task reads — verdicts for an anomaly split, the drawn class
+against the rest for `few_shot`, class colours for `class_stratified` (a range past eight classes).
+**Custom split** is a `Disclosure` holding the strategy form, offering only the strategies the
+dataset's truth can feed, each labelled with its task — the seeded draw, the published partition
+(only with a published preset), **draw references for a class** (`few_shot`, defaulting to the most
+frequent class, coverage beside the picker) and **draw annotated samples by class**
+(`class_stratified`). Name and seed are optional and their placeholders are what the server will
+derive; a debounced `POST /api/datasets/{id}/splits/preview` shows the composition as the form
+changes. `?strategy=` opens the disclosure on a strategy, which is how a prerequisite link lands on
+the one its task needs. Each existing split shows its tasks, its composition with a `browse` link per
+subset, the experiments that ran on it, and **Delete**, whose `ConfirmDialog` reads the deletion
+preview and is disabled, naming the runs, while any experiment holds it. With no split the empty
+state points at the presets; with no preset a `Callout` points at labelling and annotation.
+`POST /api/splits`, `GET /api/splits?dataset_id=`, `GET /api/splits/{id}/deletion-preview`,
+`DELETE /api/splits/{id}`, `GET /api/datasets/{id}/annotation-labels/coverage`.
 
 **Experiment catalogue** — dataset-scoped history first, a global view second. Filters and ordering live
 in the URL and are applied in SQLite: a search that also matches a run's number (`12`, `#12`), any set of
@@ -206,14 +255,31 @@ previews files, bytes, active-work blockers and resident eviction.
 (ADR-0039), step 1 is the task, because it decides everything after it: the split list offers only the
 task's kind of split (`splitServesTask`), method cards are those whose `capabilities.tasks` include it,
 and a targeted task adds a **Target class** select beside the split, defaulting to the class a `few_shot`
-split was drawn for (ADR-0040). With no split its task can use, the Split field links to the Splits tab
+split was drawn for (ADR-0040). With no split its task can use, the Split field offers the task's
+first preset in place — "Use Standard · 60/20/20, normals only — create it", with the target class for
+a few-shot preset — which creates it in one press and is then preselected, and links to the Splits tab
 opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation
 and detection.
 With one task the form starts at its inputs. The band lists what is
-missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
-`sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes
-`<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.
-`GET /api/experiments/model-types`, `POST /api/experiments`.
+missing as links in order; the unsent form is kept in `sessionStorage` (`api/experimentDraft.ts`). The
+region profile defaults to the dataset's "Full frame" (`api/inputSize.fullFrameProfile`) and needs no
+build. **Input size** is an optional width and height pair (`api/inputSize.ts`): empty means the method's
+own, and the caption says what that resolves to for the current configuration — "448 × 448 · from
+dino_memory", from `POST /api/experiments/input-size` — which follows the configured backbone. A typed
+size snaps on blur to the multiple the method reads (a DINO backbone's patch) and the caption says why;
+one side alone, or a size the multiple does not divide, is refused beside the fields. A lone split is
+preselected; an empty name becomes `<method> on <dataset>`. Method, colour and evaluation forms are
+**generated from JSON Schema**.
+Method cards come in the registry's order of standing (`api/methodChoice.ts`): the task's recommended
+method first, then `supported`, `experimental`, and the `floor` last, registry order within each; the form
+starts on the first of them, so a task with a recommended method starts there. A card badges
+`recommended`, `experimental` and `floor` from the listing's `status` and `recommended_for` — the verdicts
+live in the registry ([methods](methods.md#status-and-the-task-default)), never here. Every method's
+schema marks its decisions `x-primary`; the method tab puts them in front and folds the rest from lab-ui
+0.5.0 on, and the 0.3 release this app is on renders the key inert. The evaluation tab shows only the
+fields the task's evaluator reads: a field carrying `x-tasks` is dropped for any other task
+(`schemaForTask`), and the tab is absent when none remains.
+`GET /api/experiments/model-types`, `POST /api/experiments/input-size`, `POST /api/experiments`.
 
 **Run bar** — a draft's primary action is **Train & score** (`then_score`, [jobs](jobs.md)), with **Train
 only** beside it; a trained run offers Retrain (confirmed), Continue for a resumable method, Score &
@@ -305,7 +371,9 @@ class in the class manager and from the Splits tab's reference draw.
 - **Centre:** the focused sample on `SampleStage`, with that class's outline
   (`GET /api/images/{id}/mask?class_key=`).
 - **Right rail:** the references (one to ten), the method (the few-shot methods that are available,
-  `proto_seg` first, the gate's default), the region profile, and **Freeze as experiment**. Freezing makes a `manual` split of
+  `proto_seg` first, the gate's default), the region profile ("Full frame" by default), and **Freeze as
+  experiment**. The preview reads the method's own size and needs the profile built at it; when it is
+  not, the blocker names the size to build on Prepare. Freezing makes a `manual` split of
   the references, a `few_shot_segmentation` run on the class and its Train & score
   (`hooks/useStudio.ts`), then lands on the run. Why it cannot freeze yet is said in words beside the
   button.
@@ -333,7 +401,7 @@ The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studi
 run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
 sample viewer.
 
-**Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an
+**Diagnostics** — rendered by `kind`, never by method name ([diagnostics](diagnostics.md)): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
 beside the combined map on the sample page. Diagnostic panes are in the prepared frame
 ([diagnostics](diagnostics.md)), so their outline is fetched with `frame=prepared`.
@@ -377,9 +445,12 @@ them by class, and `refusalReason` refuses another task or another class by name
    **An empty control means unset:** `toOptions` sends nothing for an untouched field, so a default is
    defined in Python alone. A segmented control highlights the effective value and stores `""` when it is
    the schema default; a select carries an explicit `Default · <value>` entry. Do not pre-fill.
+   **The schema also says which fields matter:** `"x-primary": true` on a property shows it in front,
+   `false` folds it, and an unmarked field keeps the default rule — folded when it is optional with a
+   working default (lab-ui 0.5.0; earlier releases ignore the key).
 3. **Opacity is client state; the threshold is a server read.** Opacity is CSS over a fetched PNG. The
    rule `score >= threshold` lives in Python only, so the threshold endpoint returns counts **and**
-   classified rows together (ADR-0011).
+   classified rows together ([evaluation](evaluation.md)).
 4. **Layer registration is structural.** `ImageStage` lays out at the image's own pixel size and carries
    the whole transform, so a layer at `inset-0` covers exactly the source frame. All sample viewers are
    `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, raster layers in order, then

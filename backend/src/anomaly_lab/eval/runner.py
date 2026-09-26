@@ -1,13 +1,14 @@
 """Computing an experiment's metrics from what is already stored.
 
-The evaluation layer is **model-independent by construction** (ADR-0011): its inputs are
+The evaluation layer is **model-independent by construction** (handbook evaluation.md): its
+inputs are
 `ImageResult.score`, `Sample.label`, `SplitAssignment.subset` and — new in M3 — the
 `Mask` rows and the float32 maps on disk. It never imports a model module and never
 re-runs inference, which is the precondition for the comparison view to mean anything.
 
-It writes three things back: the sample rows, the metric sets, and — since migration 019 —
-each image's map peak and localization verdict. All three are threshold-free, so persisting
-them leaves ADR-0011's line where it was: what moves with the slider is still computed on
+It writes three things back: the sample rows, the metric sets, and each image's map peak
+and localization verdict. All three are threshold-free, so persisting them leaves the
+evaluation layer's line where it was: what moves with the slider is still computed on
 demand and still stored nowhere.
 
 Re-running this on a finished experiment is safe and cheap: it reads persisted scores and
@@ -26,6 +27,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
+from pydantic.config import JsonDict
 
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.annotations import GroundTruthMask
@@ -36,6 +38,7 @@ from anomaly_lab.domain.entities import (
     Experiment,
     Label,
     Subset,
+    Task,
 )
 from anomaly_lab.eval.aggregate import build_sample_results
 from anomaly_lab.eval.ground_truth import digest as ground_truth_digest
@@ -48,9 +51,18 @@ from anomaly_lab.media.decode import UnreadableImageError
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
+# A field only the anomaly evaluator reads (see `EvalConfig`).
+_ANOMALY_ONLY: JsonDict = {"x-tasks": [Task.ANOMALY.value]}
+
 
 class EvalConfig(BaseModel):
-    """How an experiment's stored scores are read. The only config that may be revisited."""
+    """How an experiment's stored scores are read. The only config that may be revisited.
+
+    Every task's sample rows are aggregated here (`rebuild_sample_results`), so the two
+    aggregation fields apply to all of them; the rest are read by the anomaly evaluator
+    alone, and say so with `x-tasks`, which the create form reads to hide a field that
+    would change nothing.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -74,15 +86,18 @@ class EvalConfig(BaseModel):
     pixel_metrics: bool = Field(
         default=True,
         description="Compute pixel ROC-AUC and AU-PRO where ground-truth masks exist.",
+        json_schema_extra=_ANOMALY_ONLY,
     )
     pixel_bins: int = Field(
         default=DEFAULT_BINS,
+        json_schema_extra=_ANOMALY_ONLY,
         ge=256,
         le=1 << 20,
         description="Score-histogram resolution for the pixel curves.",
     )
     localization_tolerance: float = Field(
         default=0.02,
+        json_schema_extra=_ANOMALY_ONLY,
         ge=0.0,
         le=0.25,
         description=(
@@ -205,9 +220,9 @@ def ensure_peaks(
 ) -> dict[int, tuple[int, int]]:
     """Every scored map's peak, computing and persisting the ones not recorded yet.
 
-    A run written after migration 019 records its peaks as it writes each map, so this is a
-    no-op for it. A run from before has none, and re-evaluating is the backfill path — one
-    `read_map` per map, once, after which the column is filled forever. Idempotent by
+    A run records its peaks as it writes each map, so this is usually a no-op. A row with no
+    peak beside a map gets one here — one `read_map` per map, once, after which the column
+    is filled for good. Idempotent by
     construction: a row that already has a peak is never re-read, so the cost of the second
     call is a dictionary comprehension.
 
@@ -343,7 +358,7 @@ def _subset_metrics(
         "aggregation": config.aggregation.value,
         # Beside the aggregation, because it is the other half of the same decision and a
         # sample-level number is uninterpretable without both. `image_roc_auc` below stays
-        # on **raw** scores deliberately: ADR-0011 keeps it as the measure that isolates
+        # on **raw** scores deliberately: evaluation keeps it as the measure that isolates
         # model quality from how the channels were combined, and normalization is part of
         # combining them.
         "channel_normalization": config.channel_normalization.value,
@@ -462,7 +477,7 @@ def evaluate_and_store(
     an intermediate state of its own inputs.
 
     Everything written here is threshold-free, which is why persisting it does not contradict
-    ADR-0011: the slider still recomputes every count it moves.
+    the evaluation layer: the slider still recomputes every count it moves.
     """
     config = EvalConfig.model_validate(experiment.eval_config)
     images, masks = _scored_with_truth(conn, experiment)

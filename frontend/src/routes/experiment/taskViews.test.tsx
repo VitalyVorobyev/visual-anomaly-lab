@@ -15,7 +15,7 @@ const METRICS = [
   {
     subset: "test" as const,
     computed_at: "2026-09-24T00:00:00Z",
-    ground_truth_digest: null,
+    ground_truth_digest: "digest",
     ground_truth_stale: false,
     metrics: {
       foreground_iou: 0.6123,
@@ -87,7 +87,7 @@ describe("the task views", () => {
       {
         subset: "test" as const,
         computed_at: "2026-09-25T00:00:00Z",
-        ground_truth_digest: null,
+        ground_truth_digest: "digest",
         ground_truth_stale: false,
         metrics: {
           classes: ["scratch", "stain"],
@@ -123,7 +123,7 @@ describe("the task views", () => {
     const entry = (subset: "val" | "test", stain: number | null, cut: number | null) => ({
       subset,
       computed_at: "2026-09-25T00:00:00Z",
-      ground_truth_digest: null,
+      ground_truth_digest: "digest",
       ground_truth_stale: false,
       metrics: {
         classes: ["scratch", "stain"],
@@ -175,7 +175,7 @@ describe("the task views", () => {
       {
         subset: "test" as const,
         computed_at: "2026-09-24T00:00:00Z",
-        ground_truth_digest: null,
+        ground_truth_digest: "digest",
         ground_truth_stale: false,
         metrics: {
           classes: ["scratch", "stain"],
@@ -213,7 +213,7 @@ describe("the task views", () => {
     const entry = (subset: "val" | "test", scratch: number | null) => ({
       subset,
       computed_at: "2026-09-24T00:00:00Z",
-      ground_truth_digest: null,
+      ground_truth_digest: "digest",
       ground_truth_stale: false,
       metrics: {
         classes: ["scratch", "stain"],

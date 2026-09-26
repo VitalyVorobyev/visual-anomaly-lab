@@ -1,6 +1,6 @@
 """Sample repository.
 
-The sample is the unit of identity, labelling and splitting (ADR-0005), so every filter
+The sample is the unit of identity, labelling and splitting (ADR-0041), so every filter
 this module offers is expressed over samples even when the user is thinking about images:
 filtering by channel means "samples having an image in this channel", never "these
 images".

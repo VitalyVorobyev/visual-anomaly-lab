@@ -16,14 +16,29 @@ to the whole image. Rewriting loses provenance. Per-method cropping destroys com
 mutable crop makes an old experiment unreproducible. Silent fallback mixes two input populations
 under one experiment configuration.
 
+A second choice sits inside the first: whether the input size belongs to the profile or to the run.
+The size a method can read is the method's business — a ViT reads only frames its patch divides, and
+each method's measured protocol ran at its own frame — while where to look is the dataset's. Putting
+the size on the profile made every method that could not read the profile's size refuse it, and
+recovering meant a new revision and a full rebuild for what is a property of the run.
+
 ## Decision
 
-**A dataset owns immutable `RegionProfileRevision`s; an experiment pins one revision and its
-completed build, and every spatial operation is a persisted, invertible source/prepared transform.**
+**A dataset owns immutable `RegionProfileRevision`s that say where to look; a run pins its own
+input size; a build is one revision prepared at one size, and every spatial operation is a
+persisted, invertible source/prepared transform.**
 
-- A profile revision freezes an extractor key and configuration, prepared size, padding, resampling
-  filter, failure policy and seed. A new setting creates a new revision; a completed build is
-  immutable, and a rebuild is a new revision.
+- A profile revision freezes an extractor key and configuration, padding, resampling filter and
+  sample alignment — never a size. A new setting creates a new revision.
+- The run's size is frozen into the experiment: named at creation, or the method's own native size
+  for its configuration. A method's native size is the frame its recorded measurement ran at, so a
+  run at its defaults reproduces a measured protocol.
+- A build is keyed by `(revision, width, height)` and is immutable once published; a rebuild is a new
+  revision. The run pins the manifest digest of the build it reads. The pin is set once — by the
+  run's first train or infer job, which adopts the build at its size or prepares it — and never
+  changes.
+- Every dataset has an implicit identity revision, "Full frame". A run that names no profile reads
+  it, so no run waits on a profile being defined or built.
 - Extractors return a region in source pixel-edge coordinates. `identity` returns the full frame and
   is the default; other extractors are explicit opt-ins. **Region failure is explicit** and fails
   that image; it never silently becomes identity.
@@ -40,6 +55,9 @@ completed build, and every spatial operation is a persisted, invertible source/p
 
 - A result overlay projects back to the source without reconstructing state from UI settings, and
   paired runs can prove they saw the same prepared pixels.
+- Two runs of one profile at different sizes read different builds; runs at the same size share
+  one. Preparation cost moves into the first job of each new `(revision, size)`, which says so in
+  its log.
 - A contained resize preserves aspect ratio but introduces padding. Models may learn padding edges;
   edge padding reduces the discontinuity without removing the risk.
 - Downsampling a binary mask is not invertible. Points round-trip to floating-point precision, masks

@@ -77,7 +77,7 @@ export function groupingNote(metrics: MetricValue): string | null {
 }
 
 /**
- * The headline rows, in the order ADR-0011 ranks them.
+ * The headline rows, in the order the evaluation handbook ranks them.
  *
  * Sample-level first: it is the unit that matters, a physical part. Image-level next,
  * because it isolates raw model quality from the aggregation choice — the two diverging

@@ -7,7 +7,7 @@
  * back to being a box inside a page.
  */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 import { describe, expect, it } from "vitest";
 
@@ -48,7 +48,7 @@ const PAGE = {
   ],
 };
 
-function renderViewer(over: { page?: unknown; sample?: unknown } = {}) {
+function renderViewer(over: { page?: unknown; sample?: unknown; dataset?: unknown } = {}) {
   return render(
     withProviders(
       <MemoryRouter initialEntries={["/datasets/7/samples/12"]}>
@@ -59,6 +59,7 @@ function renderViewer(over: { page?: unknown; sample?: unknown } = {}) {
       [
         [queryKeys.sample(7, 12), over.sample ?? SAMPLE],
         [queryKeys.samples(7, { limit: 200, offset: 0 }), over.page ?? PAGE],
+        ...(over.dataset ? [[queryKeys.dataset(7), over.dataset] as [readonly unknown[], unknown]] : []),
       ],
     ),
   );
@@ -115,5 +116,25 @@ describe("the sample viewer", () => {
     expect(screen.queryByRole("button", { name: /Side by side/ })).toBeNull();
 
     screen.getByRole("button", { name: /Reset view/ });
+  });
+
+  it("offers the label rail on a dataset of classes rather than showing it", () => {
+    renderViewer({
+      sample: { ...SAMPLE, label: "unlabeled" },
+      dataset: { id: 7, name: "FSS-1000 panel", truth: ["classes"], class_counts: [] },
+    });
+
+    // ADR-0041: normal and defect are anomaly truth, which this dataset does not hold.
+    expect(screen.queryByRole("button", { name: /^normal/ })).toBeNull();
+    const optIn = screen.getByRole("button", { name: "Label for anomaly detection" });
+
+    fireEvent.click(optIn);
+    expect(screen.getByRole("button", { name: /^normal/ })).toBeTruthy();
+  });
+
+  it("shows the label rail on an anomaly dataset", () => {
+    renderViewer({ dataset: { id: 7, name: "candle", truth: ["labels"], class_counts: [] } });
+    expect(screen.getByRole("button", { name: /^defect/ })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Label for anomaly detection" })).toBeNull();
   });
 });

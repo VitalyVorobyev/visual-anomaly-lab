@@ -45,6 +45,10 @@ class AnomalyModel(ABC):
     def availability(cls) -> Availability: ...   # available by default
     @classmethod
     def check_input(cls, config, preprocessing) -> None: ...   # any input by default
+    @classmethod
+    def native_size(cls, config) -> tuple[int, int]: ...      # (256, 256) by default
+    @classmethod
+    def size_multiple(cls, config) -> int: ...                # 1 by default
     def fit(self, train: Sequence[ImageRecord], ctx: TrainContext) -> None: ...
     def predict(self, images: Sequence[ImageRecord], ctx: InferContext) -> list[Prediction]: ...
     def save(self, artifact_dir: Path) -> None: ...
@@ -52,8 +56,33 @@ class AnomalyModel(ABC):
 ```
 
 **`check_input` refuses at creation what could only fail at fit.** `create_experiment` and the reference
-studio's preview call it with the frozen config and prepared size, and a `ValueError` becomes a 422 that
-names the reason. The frozen-DINO methods use it for a patch size the prepared frame does not divide.
+studio's preview call it with the frozen config and the run's input size, and a `ValueError` becomes a 422
+that names the reason. The frozen-DINO methods use it for a patch size the prepared frame does not divide.
+
+### Native size
+
+**The input size is the run's, and a method says what its own is.** An experiment that names no `width`
+and `height` is frozen at `native_size(config)`: the frame the method's recorded measurement ran at
+([measurements](../measurements.md)), so a run at its defaults reproduces a measured protocol. It follows
+the configuration where the configuration decides the patch — `dino_backbone.native_frame` keeps the
+measured side when the backbone's patch divides it and otherwise takes 448, the frame both patch sizes
+divide and the one every cross-encoder measurement ran at. `size_multiple(config)` is the patch a named
+size must be a multiple of, which the create form snaps to (`POST /api/experiments/input-size` answers
+both for a method and config). `tests/test_check_input.py` asserts, torch-free, that every registered
+method's native size passes its own `check_input` at its default config.
+
+| Method | Native size | Why (`docs/measurements.md`) |
+|---|---|---|
+| `pixel_reference`, `efficientad_custom` | 256 × 256 (the base default) | the anomaly-map storage measurement ran `pixel_reference` at 256; 256 is EfficientAD's architectural floor |
+| `patchcore_anomalib` | 448 × 448 | the frame it ran at as the DINO patch memory gate's control, its best-read frame (the region-profile gate ran it at 256) |
+| `dinomaly_custom` | 392 × 392 on a /14 encoder, 448 on /16 | the promotion and parity gates ran at 392; the encoder sweep ran every arm at 448 |
+| `glass_anomalib` | 288 × 288 | its public gate |
+| `dino_memory` | 448 × 448 | its promotion gate and its DINOv3 layer sweep |
+| `subspace_ad` | 672 × 672 | the sweep's leading arm, the shipped defaults (16 divides it too) |
+| `anomalyvfm_anomalib` | 768 × 768 | its resource gate kept it and its public gate ran at it |
+| `color_prototype`, `fss_dino`, `proto_seg` | 448 × 448 | the few-shot gates |
+| `color_classifier`, `dino_linear_seg` | 448 × 448 | the supervised-segmentation gates |
+| `color_detector`, `dino_linear_det` | 448 × 448 | the VisA detection gate |
 
 Two optional structural protocols sit beside the ABC rather than on it, so no method carries a stub it
 cannot honestly implement:
@@ -76,12 +105,41 @@ A method whose optional dependencies (the `dl` extra) are missing reports `avail
 with the command that installs them, and is **listed, not hidden**, so "why can't I pick this method" is
 answerable from the screen.
 
+### Status and the task default
+
+Where a method stands is a verdict, not a capability, so the registry records it rather than the plugin:
+`STATUS` maps every key to a `MethodStatus` — `supported` (cleared its public gate), `experimental` (missed
+one, or has not run one) or `floor` (the task's numpy baseline, never promoted whatever it scores) — and
+`RECOMMENDED` maps each task to at most one method, the one a new experiment of that task starts from.
+Both follow the verdicts in [measurements](../measurements.md) and change with them; a key missing from
+`STATUS` reads as `experimental`. `describe` carries them to the listing as `status` and
+`recommended_for`, and the book's method table is generated from the same fields.
+
+| task | recommended | supported | experimental | floor |
+| --- | --- | --- | --- | --- |
+| `anomaly` | `dino_memory` | `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `anomalyvfm_anomalib` | `glass_anomalib`, `subspace_ad` | `pixel_reference` |
+| `few_shot_segmentation` | `proto_seg` | — | `fss_dino` | `color_prototype` |
+| `semantic_segmentation` | `dino_linear_seg` | — | — | `color_classifier` |
+| `object_detection` | — | — | `dino_linear_det` | `color_detector` |
+
+A recommended method is always `supported`. No detection method is recommended: none has cleared its
+gate, so the form starts from the first method in its order ([frontend](frontend.md)).
+
 ### Schema-driven configuration
 
 `config_model()` returns a pydantic model exposed as JSON Schema at `GET /api/experiments/model-types`.
 The experiment form is rendered from that schema — types, defaults, bounds, descriptions — so a new
 hyperparameter needs no frontend change ([frontend](frontend.md)). A default lives in Python alone: an
 untouched field is sent as unset.
+
+**A plugin marks the fields a person decides.** `json_schema_extra={"x-primary": True}` on the pydantic
+`Field` puts it in front of the form and an unmarked field keeps lab-ui's default rule, folded behind a
+disclosure when it is optional with a working default (`SchemaForm` from lab-ui 0.5.0; an older release
+ignores the key). Each method
+marks between one and four — its encoder or backbone, its scoring rule, its training length, the axes a
+gate or sweep actually varied — and `tests/test_method_decisions.py` holds every registered method to that
+range. A field that would fold anyway needs no mark; `"x-primary": False` folds one that would otherwise
+be shown.
 
 ### Contexts
 
@@ -94,7 +152,7 @@ untouched field is sent as unset.
 - `progress(fraction, message)`, `metric(name, value, step)`, `log` — become job events
   ([jobs](jobs.md));
 - `should_cancel()` / `raise_if_cancelled()` — cooperative cancellation, polled at batch boundaries;
-- `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract (ADR-0018);
+- `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract;
 - `TrainContext.val` — held-out normals, empty when the split has no `val` subset;
 - `TrainContext.targets` — the only path ground truth takes into a plugin (ADR-0039). It is `None` for
   `anomaly`, so an anomaly method cannot see a defect mask by construction. For a targeted task it is a
@@ -144,11 +202,14 @@ Models never touch SQLite, never read application settings, and never write outs
 **Spatial input is configuration of the experiment, not of the model.** A comparison means something only
 if both methods saw the same pixels.
 
-Every `Experiment` pins a complete `RegionProfileRevision` build by profile id and manifest digest.
+Every `Experiment` names a `RegionProfileRevision` — where to look, the dataset's "Full frame" unless it
+names another — and freezes its own input size. Its first train or infer job adopts or prepares that
+profile's build at that size and pins it by manifest digest ([jobs](jobs.md#preparing-a-runs-input)).
 `SpatialTransform` records a clipped half-open source crop, an integer contain-resize and symmetric edge
 padding. Every plugin receives the build's lossless prepared PNG paths and decodes them through
 `models/preprocessing.load_array`, which applies the colour policy and verifies the frozen size but never
-resizes. A model that opens another path is a bug.
+resizes. A model that opens another path is a bug. `preprocessing` in a context is that frozen size and
+colour, and equals the pinned build's transforms' prepared size by construction.
 
 Plugins emit maps in prepared coordinates; every read of a stored map projects it through the image's
 recorded transform, so maps as read, source masks and overlays share source coordinates. Pixels outside the
@@ -189,12 +250,23 @@ failure; its pydantic schema drives the client as model schemas do.
   MobileSAM pass. It tries MPS and falls back to CPU after an MPS runtime failure, reporting the chosen
   device as extractor metadata.
 
-Extractor confidence is method-specific and not comparable between entries. Preview samples at most 24
-images evenly and writes no pixels. A full build is one cancellable `region_prepare` job that writes to a
-job-specific staging directory, records successes and failures in a deterministic JSON-lines manifest, and
-publishes atomically. A build is immutable; rebuilding needs a new profile revision. Each entry pins the
+Extractor confidence is method-specific and not comparable between entries. A profile has no size: a
+preview or build names one. **The live preview** (`regions/live.py`, `POST
+/api/datasets/{id}/region-preview`) takes an *unsaved* recipe — the create request's fields, validated by
+the extractor's own schema — one image and a size, and answers synchronously with the extractor's box, the
+resolved transform, its confidence and metadata, and the prepared frame as an inline PNG. It resolves
+through the same `locate` and `unite_sample` a build runs, so what it shows is what a build writes; under a
+shared crop it locates every image of the sample. The classical extractors run in a worker thread of the
+API process, refusing a source over 40 megapixels; MobileSAM answers through the resident worker
+([jobs](jobs.md#the-resident-worker)). An extraction failure is an answer (`status = failed`, with the
+extractor's message), never a fallback. The sampled check samples at most 24 images evenly and writes no
+pixels, on a saved revision or an unsaved recipe (`POST /api/datasets/{id}/region-check`). A full build of
+one size is a cancellable `region_prepare` job — or part of the first train or infer job of a run at that
+size — that writes to a job-specific staging directory, records successes and failures in a deterministic
+JSON-lines manifest, and publishes atomically. A build is immutable; rebuilding needs a new profile
+revision, while another size is simply another build of the same revision. Each entry pins the
 source digest, realised transform, extractor metadata and prepared-image digest. The dataset's
-**Prepare** screen overlays each crop and can switch to the prepared pixels. The default-profile verdict
+**Prepare** screen previews one image live and overlays each checked crop. The default-profile verdict
 is in [measurements](../measurements.md).
 
 ## Seeding
@@ -227,13 +299,13 @@ figures are in [measurements](../measurements.md).
 ## Device policy
 
 `preferred_device` is where the tensor work goes: `mps` for the deep methods, `cpu` for `pixel_reference`
-(ADR-0008). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
+(ADR-0029). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
 missing, and is recorded in the job log. A stage inside a method may be placed elsewhere when a smoke
 test (`scripts/mps-smoke-test.py`, `scripts/patchcore-smoke-test.py`,
 `scripts/dino-memory-smoke-test.py`, `scripts/anomalyvfm-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
 because the run finishes with correct numbers either way.
 
-**A probe runs before a plugin is written** (ADR-0008). Before wrapper or method code targets a new
+**A probe runs before a plugin is written** (ADR-0029). Before wrapper or method code targets a new
 library, or a new stage targets the accelerator, a standalone `scripts/<name>-smoke-test.py` exercises it;
 what it finds (an operator missing on MPS, a stage faster on CPU, a footprint) becomes the plugin's
 defaults, device placement and caps.
@@ -379,7 +451,14 @@ becomes a z-map, smoothed, and scored by a percentile.
 
 EfficientAD, implemented in-house (`efficientad_custom.py` for config, loop and checkpoint;
 `efficientad_nets.py` for modules). A PDN student distils a frozen pretrained teacher, plus an autoencoder
-branch; defaults reproduce the published algorithm, and each departure is a field (ADR-0028).
+branch; defaults reproduce the published algorithm, and each departure is a field (ADR-0029).
+
+**The teacher is configuration of the experiment, not part of the method.** Two published teachers share
+an architecture and tensor shapes and differ element by element, and swapping one for the other moves the
+metrics by more than the seed range ([measurements](../measurements.md)). So the teacher is a field, a
+`distill` job can produce one, and a head-to-head against another EfficientAD implementation has to pin the
+same teacher or it measures two teachers. The source model a teacher is distilled from is training-only:
+what ships is the same PDN at the same inference cost.
 
 - `model_size` (`small`/`medium`), `max_steps`, `learning_rate`, `weight_decay`, `seed`.
 - `teacher_source` — `nelson1425` (default), `distilled` (a teacher produced by a `distill` job, named in
@@ -456,7 +535,15 @@ projection and discriminator train. **Experimental**: it missed its image-level 
 ### `dino_memory`
 
 A frozen DINOv2/DINOv3 encoder whose L2-normalized patch features for the training normals become a
-memory; a test patch scores by its distance to it (ADR-0037). Nothing is trained.
+memory; a test patch scores by its distance to it. Nothing is trained. It is ours (ADR-0029): the encoder
+comes from the shared backbone table in `models/dino_backbone.py`, never from a library's model, so every
+frozen-feature method measures the same encoders. Three published rules over the same frozen features —
+AnomalyDINO's global bank, PatchCore's coreset bank and PaDiM's per-position Gaussian — differ only in what
+the memory is, so they are one `scoring` field rather than three plugins that would copy the encoder path,
+fusion, plan, checkpoint and diagnostics. They report different distances and meet only through
+threshold-free metrics (ADR-0028). `local_knn` cannot be proven on public data: VisA is unregistered, so the
+mode whose premise is that position matters looks like a weaker global bank there, and a synthetic test is
+what demonstrates the property.
 
 - `backbone` (default ungated DINOv2 ViT-S/14-reg4), `layers` (`last_two`), `pretrained_backbone`,
   `allow_downloads`, `blur_sigma`, `score_percentile`, `feature_batch_size`, `seed`.
