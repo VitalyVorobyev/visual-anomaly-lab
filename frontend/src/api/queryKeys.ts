@@ -74,6 +74,10 @@ export const queryKeys = {
   regionBuild: (profileId: number, width: number, height: number) =>
     ["region-profiles", profileId, "build", width, height] as const,
   regionBuilds: (profileId: number) => ["region-profiles", profileId, "builds"] as const,
+  regionPreviewImages: (datasetId: number, alignment: string) =>
+    ["datasets", datasetId, "region-preview", "images", alignment] as const,
+  regionLivePreview: (datasetId: number, request: unknown) =>
+    ["datasets", datasetId, "region-preview", "live", request] as const,
   regionProfileDeletion: (profileId: number) =>
     ["region-profiles", profileId, "deletion-preview"] as const,
 

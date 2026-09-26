@@ -152,17 +152,28 @@ checkpoint downloads from the model-asset catalogue only after explicit licence 
 `/api/images/{id}/annotations/*`, `/api/samples/{id}/annotations/*`, `GET /api/segment-assist`,
 `POST /api/images/{id}/segment-assist`, `GET /api/model-assets`.
 
-**Region preparation** — immutable profile configuration in a sticky rail, the crop audit central.
-Revision and followed job are in the URL (`profile`, `job`, `mode`, `jobProfile`). The revision form asks
-where to look and never a size. **Preview and Build all name a size**: a width and height pair in the
-inspect panel, 448 × 448 until changed — the frame every DINO method and most measured gates read — with
-a line saying a run prepares its own size when it trains, so building here only saves that run the wait.
-The sizes the revision is already built at are listed as buttons that select one, and Build all is
-disabled at a size that is built. Preview samples 24 images without writing (whole samples under a shared
-crop); Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a revision names
-the experiments pinning it. `GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`,
-`POST /api/region-profiles/{id}/preview` and `POST /api/region-profiles/{id}/build` (body `{width,
-height}`), `GET /api/region-profiles/{id}/build?width=&height=`, `GET /api/region-profiles/{id}/builds`,
+**Region preparation** — preview first. The profile form sits in a sticky rail; the main column is a
+**live stage**: the source image with the extractor's own box dashed and the padded crop solid, beside the
+prepared frame exactly as a build writes it (the resized crop outlined, so the contain-pad bands show).
+Every control change re-runs a synchronous preview of the *unsaved* form on the image on the stage,
+debounced 250 ms (`useDebounced` holds back the request, not the controls); the last answer stays up,
+dimmed and marked "Preparing…", until the next lands, and an extractor failure or a refused request is an
+`ErrorBox` with its message. A filmstrip of 24 images spread over the dataset and every channel
+(`preview_selection`, one per sample under a shared crop) is stepped with ←/→ through `useHotkeys`, and
+**Random** puts any image of the dataset on the stage. The form opens on a saved revision (the newest
+until one is chosen); **Save profile** appears only when the form differs from it — each option compared
+at its effective value, typed or default — under an editable name made from the form ("Foreground
+threshold · pad 5%"). **Check 24** runs the sampled `region_prepare` preview job on the unsaved form and
+lists the crops failures first, each opening on the stage; a check whose form has since changed says so.
+**Build all** prepares the *saved* revision and says why it is disabled (unsaved edits, or a size already
+built). The preview size is a width and height pair, 448 × 448 until changed — the frame every DINO method
+and most measured gates read — with a line saying a run prepares its own size when it trains, so building
+only saves that run the wait; built sizes are buttons that select one. Revision and followed job are in
+the URL (`profile`, `job`, `mode`, `jobProfile`). Deleting a revision names the experiments pinning it.
+`GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`,
+`POST /api/datasets/{id}/region-preview`, `GET /api/datasets/{id}/region-preview/images?alignment=`,
+`GET /api/datasets/{id}/region-preview/random`, `POST /api/datasets/{id}/region-check`,
+`POST /api/region-profiles/{id}/build` (body `{width, height}`), `GET /api/region-profiles/{id}/builds`,
 `GET /api/region-profiles/{id}/prepared/{image_id}?width=&height=`, `GET/DELETE /api/region-profiles/{id}`.
 
 **Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a

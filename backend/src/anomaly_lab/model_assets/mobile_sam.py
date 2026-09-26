@@ -39,6 +39,9 @@ class MobileSamSession:
         self.model, self.predictor = _load_predictor(self.asset_path, self.device)
         self.image_id: int | None = None
         self.image_array: np.ndarray | None = None
+        # The automatic-mask generator's own model, once it has had to leave the device.
+        self.auto_model: Any | None = None
+        self.auto_device = self.device
 
     def segment(self, request: dict[str, Any]) -> dict[str, object]:
         image_id = _integer(request, "image_id")
@@ -93,6 +96,65 @@ class MobileSamSession:
             if len(candidates) == 3:
                 break
         return {"image_id": image_id, "device": self.device, "candidates": candidates}
+
+    def region(self, request: dict[str, Any]) -> dict[str, object]:
+        """Run the automatic-mask region extractor on one image, for the Prepare screen.
+
+        The same selection `MobileSamRegionExtractor` applies in a build, over this
+        session's already loaded model, so a live preview and a build agree. A region that
+        cannot be found is an answer, not a protocol failure: it comes back as `error`
+        rather than as an error frame, which would cost the resident its loaded model.
+        """
+        from anomaly_lab.regions.base import RegionExtractionError
+        from anomaly_lab.regions.mobile_sam import (
+            MobileSamRegionConfig,
+            can_retry_on_cpu,
+            select_region,
+        )
+
+        image_id = _integer(request, "image_id")
+        try:
+            config = MobileSamRegionConfig.model_validate(request.get("config") or {})
+        except ValueError as exc:
+            raise MobileSamError(f"malformed region config: {exc}") from exc
+        image = self._load_image(image_id)
+        try:
+            records = self._generate(image, config)
+        except (RuntimeError, TypeError) as exc:
+            if self.auto_device != "mps" or not can_retry_on_cpu(exc):
+                raise
+            # The automatic generator emits float64 on the way, which MPS refuses; a build
+            # falls back to CPU the same way. Only the generator moves: the prompt predictor
+            # the annotation editor uses stays on the accelerator.
+            self.auto_model = _load_predictor(self.asset_path, "cpu")[0]
+            self.auto_device = "cpu"
+            records = self._generate(image, config)
+        height, width = image.shape[:2]
+        try:
+            extraction = select_region(records, height, width, config)
+        except RegionExtractionError as exc:
+            return {"image_id": image_id, "device": self.auto_device, "error": str(exc)}
+        extraction.metadata["device"] = self.auto_device
+        return {
+            "image_id": image_id,
+            "device": self.auto_device,
+            "extraction": extraction.model_dump(mode="json"),
+        }
+
+    def _generate(self, image: np.ndarray, config: Any) -> list[dict[str, Any]]:
+        package = importlib.import_module("mobile_sam")
+        generator = package.SamAutomaticMaskGenerator(
+            self.auto_model if self.auto_model is not None else self.model,
+            points_per_side=config.points_per_side,
+            points_per_batch=config.points_per_batch,
+            pred_iou_thresh=config.predicted_iou_threshold,
+            stability_score_thresh=config.stability_threshold,
+            crop_n_layers=0,
+            min_mask_region_area=0,
+            output_mode="binary_mask",
+        )
+        records: list[dict[str, Any]] = generator.generate(image)
+        return records
 
     def _predict(
         self,

@@ -1655,6 +1655,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/region-preview/images": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Images to step through on the live Prepare stage, evenly spaced over the dataset */
+        get: operations["region_preview_images_api_datasets__dataset_id__region_preview_images_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-preview/random": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** One image of the dataset, chosen at random, for the live Prepare stage */
+        get: operations["region_preview_random_api_datasets__dataset_id__region_preview_random_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Prepare one image under an unsaved region profile, synchronously */
+        post: operations["region_preview_api_datasets__dataset_id__region_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/region-check": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Queue the sampled preview of an unsaved region profile */
+        post: operations["region_check_api_datasets__dataset_id__region_check_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/region-extractors": {
         parameters: {
             query?: never;
@@ -4621,6 +4689,20 @@ export interface components {
          * @enum {string}
          */
         PayloadFormat: "png" | "raw";
+        /**
+         * PixelBounds
+         * @description A half-open rectangle in source pixel-edge coordinates.
+         */
+        PixelBounds: {
+            /** Left */
+            left: number;
+            /** Top */
+            top: number;
+            /** Right */
+            right: number;
+            /** Bottom */
+            bottom: number;
+        };
         /** PolygonShape */
         "PolygonShape-Input": {
             /** Id */
@@ -4905,6 +4987,40 @@ export interface components {
             /** Failure Examples */
             failure_examples: components["schemas"]["RegionPreparationEntry"][];
         };
+        /**
+         * RegionCheckRequest
+         * @description An unsaved profile to run over the sampled images, at one size.
+         */
+        RegionCheckRequest: {
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
+            /**
+             * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
+             * @default per_image
+             */
+            sample_alignment: components["schemas"]["SampleAlignment"];
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
         /** RegionExtractorDescription */
         RegionExtractorDescription: {
             /** Key */
@@ -4920,6 +5036,60 @@ export interface components {
             config_schema: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * RegionLivePreview
+         * @description What one image becomes under an unsaved recipe at one size.
+         */
+        RegionLivePreview: {
+            /** Image Id */
+            image_id: number;
+            /** Sample Id */
+            sample_id: number;
+            /** Source Width */
+            source_width: number;
+            /** Source Height */
+            source_height: number;
+            /**
+             * Width
+             * @description Prepared frame width.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height.
+             */
+            height: number;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "succeeded" | "failed";
+            /** Error */
+            error: string | null;
+            /** @description The extractor's own box for this image, before padding. */
+            region: components["schemas"]["PixelBounds"] | null;
+            /** @description The crop, resize and pad actually applied. */
+            transform: components["schemas"]["SpatialTransform"] | null;
+            /** Extractor Confidence */
+            extractor_confidence: number | null;
+            /** Extractor Metadata */
+            extractor_metadata: {
+                [key: string]: unknown;
+            };
+            /**
+             * United
+             * @description How many images of the sample the crop was united over.
+             * @default 1
+             */
+            united: number;
+            /**
+             * Prepared Png
+             * @description The prepared frame as a PNG data URL, exactly as a build writes it.
+             */
+            prepared_png: string | null;
+            /** Elapsed Ms */
+            elapsed_ms: number;
         };
         /** RegionOutcome */
         RegionOutcome: {
@@ -4959,10 +5129,41 @@ export interface components {
             /** Elapsed Ms */
             elapsed_ms: number | null;
         };
-        /** RegionProfileCreate */
-        RegionProfileCreate: {
-            /** Name */
-            name: string;
+        /**
+         * RegionPreviewImage
+         * @description One image the live stage can step to, named the way the browser names it.
+         */
+        RegionPreviewImage: {
+            /** Image Id */
+            image_id: number;
+            /** Sample Id */
+            sample_id: number;
+            /** Group Key */
+            group_key: string;
+            /** External Id */
+            external_id: string;
+            /** Channel */
+            channel: string | null;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /** RegionPreviewImages */
+        RegionPreviewImages: {
+            /**
+             * Total
+             * @description Images in the dataset; the list is spread evenly across them.
+             */
+            total: number;
+            /** Images */
+            images: components["schemas"]["RegionPreviewImage"][];
+        };
+        /**
+         * RegionPreviewRequest
+         * @description An unsaved profile, one image of the dataset, and the size to prepare it at.
+         */
+        RegionPreviewRequest: {
             /** Extractor Type */
             extractor_type: string;
             /** Extractor Config */
@@ -4981,6 +5182,41 @@ export interface components {
              * @default per_image
              */
             sample_alignment: components["schemas"]["SampleAlignment"];
+            /** Image Id */
+            image_id: number;
+            /**
+             * Width
+             * @description Prepared frame width in pixels.
+             */
+            width: number;
+            /**
+             * Height
+             * @description Prepared frame height in pixels.
+             */
+            height: number;
+        };
+        /** RegionProfileCreate */
+        RegionProfileCreate: {
+            /** Extractor Type */
+            extractor_type: string;
+            /** Extractor Config */
+            extractor_config?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Padding Fraction
+             * @default 0.05
+             */
+            padding_fraction: number;
+            /** @default bilinear */
+            resample: components["schemas"]["SpatialResample"];
+            /**
+             * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
+             * @default per_image
+             */
+            sample_alignment: components["schemas"]["SampleAlignment"];
+            /** Name */
+            name: string;
         };
         /**
          * RegionProfileDeletionPreview
@@ -8688,6 +8924,143 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RegisterReferencePacksParams"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JobSummary"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_preview_images_api_datasets__dataset_id__region_preview_images_get: {
+        parameters: {
+            query?: {
+                /** @description Spread over whole samples (union) or over images and channels. */
+                alignment?: components["schemas"]["SampleAlignment"];
+                /** @description How many images to return. */
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionPreviewImages"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_preview_random_api_datasets__dataset_id__region_preview_random_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionPreviewImage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_preview_api_datasets__dataset_id__region_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RegionLivePreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    region_check_api_datasets__dataset_id__region_check_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RegionCheckRequest"];
             };
         };
         responses: {

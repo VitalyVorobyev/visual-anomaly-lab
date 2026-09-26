@@ -42,7 +42,8 @@ parameters.
   digest verification; cancellation or failure removes the partial.
 - **`region_prepare`** — one profile revision at one size: `params` carry `profile_id`, `width` and
   `height`, because a profile has no size of its own ([domain model](domain-model.md#regionprofilerevision)).
-  Two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
+  A preview may carry an unsaved `recipe` in place of `profile_id` (the Prepare screen's Check 24), its
+  extractor config validated and filled in before enqueue; a build never can. Two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
   each (one stride over an interleaved list can miss a channel), and returns transforms
   without writing pixels. Under `sample_alignment = union` a crop depends on every image of its sample, so
   the preview spends the budget on whole samples instead — as many as fit in 24 images, evenly spaced over
@@ -170,7 +171,13 @@ it.
 An interactive request is a hundred milliseconds of work behind seconds of setup, and the queue is a single
 FIFO, so a job per click would mean a model load per click and a wait behind training. There is instead
 **one resident compute worker**, keyed by `(kind, target key, artifact generation)` (ADR-0026), holding
-one of three things at a time: an experiment inspector, MobileSAM, or a few-shot preview.
+one of three things at a time: an experiment inspector, MobileSAM, or a few-shot preview. MobileSAM
+answers two requests over one loaded checkpoint: prompt candidates for the annotation editor, and
+(`op = region`) the automatic-mask region of one image for the Prepare screen's live stage — the same
+`select_region` a build applies. A region that cannot be found comes back as an `error` field, not an error
+frame, so the loaded model survives it; the automatic generator alone moves to CPU when MPS refuses its
+float64, as a build's does, and the prompt predictor stays on the device. Like every resident request it is
+refused (409) while a job runs.
 
 It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py`,
 `jobs/segmenter.py` and `jobs/previewer.py` are thin entrypoints; `experiments/diagnose.py`,
