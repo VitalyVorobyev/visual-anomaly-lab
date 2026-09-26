@@ -442,10 +442,10 @@ ROC-AUC under `last_two` and `last` while trailing on AU-PRO by 0.09 or more, an
 both. Deeper fusion (`mid_late`, `last_four`) moves AU-PRO up a little and image ROC-AUC down a lot, the
 trade the rule was written to refuse.
 
-## SubspaceAD — defaults from a sweep, gate open
+## SubspaceAD — defaults from a sweep
 
-**Not a gate**: a parameter search run outside the application by its own harness (ADR-0038). The promotion
-gate is in [backlog.md](backlog.md); the method ships `experimental` until it runs.
+**Not a gate**: a parameter search run outside the application by its own harness (ADR-0038). The in-app
+promotion gate is the next section.
 
 **Protocol.** VisA's twelve categories under the official one-class split for three tuning phases, MVTec-AD's
 fifteen held out as a fourth. The category is the unit of evidence: seeds fold inside a category, categories
@@ -523,11 +523,11 @@ Identical patch counts, ranks inside the campaign's range, image AUROC within it
 shipped defaults a four-image fit is 120 s and inference 649 ms/image on MPS (upper bounds; measured under
 load).
 
-**Open.** No paired control on shared prepared pixels. Held fixed throughout: per-layer L2 before pooling,
+**Open.** Held fixed throughout: per-layer L2 before pooling,
 `concat` instead of `mean`, `final_norm=False`; `rotation_fill=masked` never measured. All four are in
 [backlog.md](backlog.md).
 
-## SubspaceAD promotion gate — predeclared
+## SubspaceAD promotion gate — supported; `dino_memory` stays recommended
 
 The in-application control the sweep above could not provide. Predeclared here before any run;
 `scripts/subspace-ad-public-gate.py`.
@@ -545,6 +545,28 @@ that same-day row is the one compared, not the recorded one.
 - **Recommended for anomaly detection**, replacing `dino_memory`, if it is supported *and* beats
   `dino_memory` by at least 0.02 on image ROC-AUC while trailing it by no more than 0.01 on pixel
   ROC-AUC and on AU-PRO. Otherwise `dino_memory` stays the recommended method.
+
+**Result.** One batch on MPS (torch 2.13.0, timm 1.0.28, numpy 2.5.1, Pillow 12.3.0). PatchCore and
+`dino_memory` each gave their recorded rows to four decimals, so the controls are the recorded ones.
+
+| | `subspace_ad` | `dino_memory` | PatchCore | Floor |
+|---|---:|---:|---:|---:|
+| Image ROC-AUC | **0.9171** | 0.9000 | 0.8565 | 0.80 |
+| Pixel ROC-AUC | **0.9944** | 0.9921 | 0.9889 | 0.85 |
+| AU-PRO | **0.9628** | 0.9315 | 0.9246 | 0.60 |
+| `candle` image / AU-PRO | 0.937 / 0.967 | 0.909 / 0.938 | 0.938 / 0.951 | |
+| `pcb1` image / AU-PRO | 0.898 / 0.959 | 0.891 / 0.925 | 0.775 / 0.899 | |
+| Fit, s | 100–200 | 14–25 | 16–74 | |
+| Inference, ms/image | 222–253 | 65–75 | 74–76 | |
+| Peak RSS, GB | 2.8–4.0 | 1.0 | 1.8 | |
+
+Timings are upper bounds: the `candle` leg shared the device with another process.
+
+**Verdict, by the rule.** `subspace_ad` clears the three floors and leads PatchCore by 0.061 on image
+ROC-AUC, so it is **supported**. It leads `dino_memory` by 0.017 on image ROC-AUC, short of the 0.02 the
+rule asks, so **`dino_memory` stays the recommended anomaly method**. Beyond the rule, `subspace_ad` has the
+best localisation of the three (AU-PRO +0.031 over `dino_memory`, ahead on both classes), at about three
+times the inference time and three to four times the memory.
 
 ## Few-shot segmentation — `proto_seg` is the default; no method yet draws a usable mask
 
