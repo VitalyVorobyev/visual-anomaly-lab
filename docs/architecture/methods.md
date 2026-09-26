@@ -302,7 +302,7 @@ figures are in [measurements](../measurements.md).
 (ADR-0029). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
 missing, and is recorded in the job log. A stage inside a method may be placed elsewhere when a smoke
 test (`scripts/mps-smoke-test.py`, `scripts/patchcore-smoke-test.py`,
-`scripts/dino-memory-smoke-test.py`, `scripts/anomalyvfm-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
+`scripts/dino-memory-smoke-test.py`, `scripts/anomalyvfm-smoke-test.py`, `scripts/sam3-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
 because the run finishes with correct numbers either way.
 
 **A probe runs before a plugin is written** (ADR-0029). Before wrapper or method code targets a new

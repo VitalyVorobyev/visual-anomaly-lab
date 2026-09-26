@@ -31,7 +31,7 @@ visual-anomaly-lab/
 │   │   ├── media/                  # decode, thumbnail/preview cache, map rendering, prewarm
 │   │   ├── models/                 # base.py (interface), registry.py, one module per method
 │   │   ├── model_assets/           # fixed catalogue, integrity checks, licensed downloads
-│   │   ├── explore/                # what a frozen encoder sees: grid arithmetic, scratch maps, session
+│   │   ├── explore/                # what a frozen encoder sees, and SAM 3 by phrase: grid arithmetic, scratch maps, sessions
 │   │   ├── deployment/             # ONNX bundle schema, export and parity
 │   │   ├── jobs/                   # queue, worker entrypoint, event protocol, resident worker
 │   │   └── eval/                   # metrics, channel→sample aggregation, thresholds
@@ -100,9 +100,15 @@ the schema script to an empty database inside one `executescript` that carries i
 Model assets are executable inputs, not casual downloads. `model_assets/catalog.py` pins every accepted
 asset to an immutable upstream revision, exact byte count, SHA-256 and licence. Acquisition streams to a
 job-specific partial file, reports progress, honours cancellation, verifies size and digest, then
-atomically renames into `model-cache/assets/`. A user may instead select an external file; it passes the
-same checks, is recorded by absolute path, and is never copied or deleted by the application. Listing the
-catalogue hashes each distinct `(path, size, mtime)` state once, so the UI can poll cheaply.
+atomically renames into `model-cache/assets/`. An asset may carry **companions** — the configuration and
+tokenizer files a Hugging Face checkpoint cannot load without — each pinned by size and SHA-256 and kept
+beside the main file; a directory missing one is not ready, and says which. An asset with a `hub` pin (a
+repository at a commit, and an access URL when it is gated) is fetched through `huggingface_hub` rather
+than a plain URL; SAM 3 is one, gated under the SAM License. A user may instead select an external file; it
+passes the same checks, its companions are looked for beside it, it is recorded by absolute path with
+symlinks kept — so a Hugging Face snapshot, a directory of links into content-addressed blobs, works — and
+it is never copied or deleted by the application. Listing the catalogue hashes each distinct
+`(path, size, mtime)` state once, so the UI can poll cheaply.
 
 ---
 

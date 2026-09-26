@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 from enum import StrEnum
 from pathlib import Path
 
@@ -18,6 +19,7 @@ from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentWorker
 from anomaly_lab.model_assets.catalog import SPECS, ModelAssetSpec, get_spec
 from anomaly_lab.model_assets.store import (
+    asset_files,
     clear_external_source,
     managed_path,
     resolve_asset,
@@ -55,6 +57,14 @@ class ModelAssetInfo(BaseModel):
     license_name: str
     license_url: str
     project_url: str
+    access_url: str | None = Field(
+        default=None,
+        description=(
+            "Where an account requests access to gated weights; the download then needs "
+            "that account's HF_TOKEN. `None` for an open asset."
+        ),
+    )
+    total_size: int = Field(description="Bytes of the main file and every companion file.")
     active_job: JobSummary | None = None
 
 
@@ -119,6 +129,8 @@ def _info(settings: Settings, spec: ModelAssetSpec, active: JobSummary | None) -
         license_name=spec.license_name,
         license_url=spec.license_url,
         project_url=spec.project_url,
+        access_url=spec.hub.access_url if spec.hub is not None else None,
+        total_size=spec.total_size,
         active_job=active,
     )
 
@@ -145,6 +157,10 @@ def install_model_asset(
         raise HTTPException(status_code=409, detail="model asset is already installed")
     if spec.key in _active_downloads(settings):
         raise HTTPException(status_code=409, detail="model asset download is already running")
+    if spec.hub is not None and importlib.util.find_spec("huggingface_hub") is None:
+        raise HTTPException(
+            status_code=409, detail=f"Install the backend's 'dl' extra to download {spec.title}."
+        )
     queue: JobQueue = request.app.state.job_queue
     return summary_of(
         queue.enqueue(kind=JobKind.MODEL_ASSET_DOWNLOAD, params={"asset_key": spec.key})
@@ -187,5 +203,11 @@ async def remove_model_asset(request: Request, asset_key: str) -> ModelAssetInfo
         )
     resident: ResidentWorker = request.app.state.resident
     async with resident.eviction_guard():
-        await asyncio.to_thread(managed_path(settings, spec).unlink, missing_ok=True)
+        await asyncio.to_thread(_remove_managed, managed_path(settings, spec), spec)
     return _info(settings, spec, None)
+
+
+def _remove_managed(path: Path, spec: ModelAssetSpec) -> None:
+    """The main file first, so a removal interrupted halfway never reads as ready."""
+    for target, _, _ in asset_files(spec, path):
+        target.unlink(missing_ok=True)

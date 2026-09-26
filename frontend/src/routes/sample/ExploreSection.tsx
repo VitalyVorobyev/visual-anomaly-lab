@@ -8,29 +8,38 @@
  * all fail.
  */
 
-import { Eraser, PenLine } from "lucide-react";
+import { Download, Eraser, PenLine, Search } from "lucide-react";
 
 import {
   Button,
   Callout,
   ErrorBox,
   InfoHint,
+  Input,
+  ProgressBar,
   SegmentedControl,
   Select,
   SkeletonRows,
   Slider,
   Switch,
+  ToggleChip,
+  cn,
+  focusRing,
 } from "@vitavision/lab-ui";
 
 import { ApiError } from "../../api/client";
+import { clusterColour } from "../../api/explore";
 import { RailSection } from "../../components/viewer/RailSection";
+import { isTerminal } from "../../hooks/useJob";
 import type { ExploreMode, ExploreSession } from "./useExploreSession";
+import type { ExploreTextSession } from "./useExploreTextSession";
 
 const MODES: { value: ExploreMode; label: string }[] = [
   { value: "similar", label: "Similar" },
   { value: "clusters", label: "Clusters" },
   { value: "pca", label: "PCA" },
   { value: "sam", label: "SAM" },
+  { value: "text", label: "Text" },
 ];
 
 const HINT: Record<ExploreMode, string> = {
@@ -39,16 +48,22 @@ const HINT: Record<ExploreMode, string> = {
     "The image's own patches, grouped by k-means; edges fall where two groups are equally likely. Click a region to pick its cluster.",
   pca: "The three directions the features vary most, as false colour. The colours mean nothing between images.",
   sam: "Click an object for MobileSAM's masks. Shift-click marks background.",
+  text: "Name a thing — “candle”, “the cap” — for SAM 3's masks of every instance of it. It finds objects and parts well and defects by their name rarely: ask for the thing, not the flaw.",
 };
+
+/** The rail's subtitle: what is answering in this mode. */
+function answeredBy(session: ExploreSession): string {
+  if (!session.on) return "";
+  if (session.mode === "text") return "SAM 3";
+  if (session.mode === "sam") return "";
+  return session.backbone?.title ?? "";
+}
 
 export function ExploreSection({ session }: { session: ExploreSession }) {
   const { capability, on, mode } = session;
 
   return (
-    <RailSection
-      title="Explore"
-      hint={on && mode !== "sam" && session.backbone ? session.backbone.title : ""}
-    >
+    <RailSection title="Explore" hint={answeredBy(session)}>
       {capability.isPending ? (
         <SkeletonRows rows={2} />
       ) : capability.error ? (
@@ -71,12 +86,19 @@ export function ExploreSection({ session }: { session: ExploreSession }) {
             <>
               <SegmentedControl
                 aria-label="Explore mode"
+                className="flex-wrap"
                 value={mode}
                 options={MODES}
                 onValueChange={(value) => session.setMode(value as ExploreMode)}
               />
               <p className="text-xs leading-5 text-fg-subtle">{HINT[mode]}</p>
-              {mode === "sam" ? <SamControls session={session} /> : <EncoderControls session={session} />}
+              {mode === "sam" ? (
+                <SamControls session={session} />
+              ) : mode === "text" ? (
+                <TextControls text={session.text} />
+              ) : (
+                <EncoderControls session={session} />
+              )}
               <Slider
                 aria-label="Overlay opacity"
                 value={session.opacity}
@@ -232,6 +254,145 @@ function SamControls({ session }: { session: ExploreSession }) {
   );
 }
 
+function TextControls({ text }: { text: ExploreTextSession }) {
+  const { capability, request, answer } = text;
+  if (!capability) return null;
+  if (!capability.available) {
+    return capability.installable ? (
+      <TextInstall text={text} />
+    ) : (
+      <Callout tone="info" title="SAM 3 is unavailable">
+        {capability.reason ?? "SAM 3 cannot be loaded."}
+      </Callout>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-3">
+      <form
+        className="flex items-center gap-1.5"
+        onSubmit={(event) => {
+          event.preventDefault();
+          text.ask();
+        }}
+      >
+        <Input
+          aria-label="Phrase"
+          className="min-w-0 flex-1"
+          placeholder="candle, the cap…"
+          maxLength={capability.max_phrase_length}
+          value={text.phrase}
+          onChange={(event) => text.setPhrase(event.target.value)}
+        />
+        <Button type="submit" icon={<Search />} disabled={!text.canAsk} loading={request.isPending}>
+          Find
+        </Button>
+      </form>
+
+      {text.encoding ? (
+        // The first phrase on an image runs SAM 3's image encoder; the first after SAM 3 was
+        // idle also loads 3.4 GB of weights. Every later phrase on this image reuses both.
+        <p className="text-xs leading-5 text-fg-muted" role="status">
+          Encoding this image with SAM 3… If SAM 3 was not loaded, this first phrase also loads its
+          weights and can take a minute.
+        </p>
+      ) : request.isPending ? (
+        <p className="text-xs text-fg-muted" role="status">
+          Asking SAM 3…
+        </p>
+      ) : null}
+      <RequestError error={request.error} onRetry={text.retry} />
+
+      {answer && answer.instances.length === 0 && (
+        <p className="text-xs leading-5 text-fg-muted">
+          Nothing scored ≥ {answer.threshold.toFixed(2)} for “{answer.phrase}”.
+        </p>
+      )}
+      {answer && answer.instances.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-xs text-fg-muted">
+            {answer.instances.length} instance{answer.instances.length === 1 ? "" : "s"} of “
+            {answer.phrase}”{answer.dropped > 0 ? ` · ${answer.dropped} weaker not shown` : ""} · pick
+            one to send it
+          </p>
+          <div className="flex flex-wrap gap-1.5" role="group" aria-label="Instances">
+            {answer.instances.map((item) => (
+              <ToggleChip
+                key={item.index}
+                checked={text.instance === item.index}
+                onCheckedChange={(checked) => text.setInstance(checked ? item.index : null)}
+                swatch={clusterColour(item.index)}
+              >
+                <span className="font-mono tabular-nums">
+                  #{item.index} · {item.score.toFixed(2)}
+                </span>
+              </ToggleChip>
+            ))}
+          </div>
+          <p className="text-[10px] leading-4 text-fg-subtle">
+            Scores are SAM 3's own, not calibrated probabilities.
+          </p>
+        </div>
+      )}
+      {answer && !request.isPending && (
+        <p className="font-mono text-[11px] leading-4 text-fg-subtle tabular-nums">
+          {answer.device.toUpperCase()} ·{" "}
+          {answer.cached ? "image cached" : `encoded ${Math.round(answer.encode_ms)} ms`} ·{" "}
+          {Math.round(answer.elapsed_ms)} ms
+        </p>
+      )}
+    </div>
+  );
+}
+
+/** The one-time, licence-gated checkpoint download, followed as an ordinary job. */
+function TextInstall({ text }: { text: ExploreTextSession }) {
+  const { asset, capability, assetJob, followedAssetJobId, installAsset, cancelAssetJob } = text;
+  if (followedAssetJobId && !isTerminal(assetJob.job?.status)) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between gap-2 text-xs text-fg-muted">
+          <span role="status">{assetJob.job?.message ?? "Downloading SAM 3…"}</span>
+          <Button
+            size="sm"
+            variant="danger"
+            loading={cancelAssetJob.isPending}
+            onClick={() => cancelAssetJob.mutate(followedAssetJobId)}
+          >
+            Cancel
+          </Button>
+        </div>
+        <ProgressBar fraction={assetJob.job?.progress ?? 0} />
+      </div>
+    );
+  }
+  const link = cn("w-fit text-signal underline-offset-2 hover:underline", focusRing);
+  return (
+    <div className="flex flex-col gap-2 text-xs leading-5 text-fg-muted">
+      <p>{capability?.reason}</p>
+      <p>
+        It is verified file by file and kept in app-managed storage, shared by every dataset.
+      </p>
+      <div className="flex flex-wrap gap-x-3">
+        {asset && (
+          <a href={asset.license_url} target="_blank" rel="noreferrer" className={link}>
+            {asset.license_name}
+          </a>
+        )}
+        {capability?.access_url && (
+          <a href={capability.access_url} target="_blank" rel="noreferrer" className={link}>
+            Request access
+          </a>
+        )}
+      </div>
+      <Button icon={<Download />} loading={installAsset.isPending} disabled={!asset} onClick={text.install}>
+        Accept licence & download
+      </Button>
+      {installAsset.error && <ErrorBox>{installAsset.error.message}</ErrorBox>}
+      {assetJob.job?.error && <ErrorBox>{assetJob.job.error}</ErrorBox>}
+    </div>
+  );
+}
+
 function PromptRow({
   count,
   label,
@@ -283,7 +444,9 @@ function SendToEditor({ session }: { session: ExploreSession }) {
         ? "Pick a cluster to send it."
         : session.mode === "sam"
           ? "Click an object to get a mask to send."
-          : "Click a patch to get a mask to send.";
+          : session.mode === "text"
+            ? "Find a phrase and pick an instance to send it."
+            : "Click a patch to get a mask to send.";
   return (
     <div className="flex flex-col gap-1.5">
       <Button

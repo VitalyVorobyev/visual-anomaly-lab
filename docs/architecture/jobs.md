@@ -39,7 +39,11 @@ parameters.
 - **`model_asset_download`** — the handler knows only an asset key; the fixed catalogue supplies the URL,
   byte count and SHA-256, so the sidecar cannot become an arbitrary downloader. The licence is accepted
   before enqueue. Bytes go to a job-specific partial file and reach the managed path only after size and
-  digest verification; cancellation or failure removes the partial.
+  digest verification; cancellation or failure removes the partial. An asset pinned to a Hugging Face
+  revision (SAM 3) is fetched file by file through `huggingface_hub`, which carries the account token a
+  gated repository needs, into a job-specific staging directory; every file is verified before any is
+  moved in, the main file last. A 401 or a gated-repository refusal fails the job with the licence, the
+  access URL and the `HF_TOKEN` instruction rather than the library's traceback.
 - **`region_prepare`** — one profile revision at one size: `params` carry `profile_id`, `width` and
   `height`, because a profile has no size of its own ([domain model](domain-model.md#regionprofilerevision)).
   A preview may carry an unsaved `recipe` in place of `profile_id` (the Prepare screen's Check 24), its
@@ -171,8 +175,8 @@ it.
 An interactive request is a hundred milliseconds of work behind seconds of setup, and the queue is a single
 FIFO, so a job per click would mean a model load per click and a wait behind training. There is instead
 **one resident compute worker**, keyed by `(kind, target key, artifact generation)` (ADR-0026), holding
-one of four things at a time: an experiment inspector, MobileSAM, a few-shot preview, or a frozen encoder
-for Explore. MobileSAM
+one of five things at a time: an experiment inspector, MobileSAM, a few-shot preview, a frozen encoder
+for Explore, or SAM 3 for Explore's text prompts. MobileSAM
 answers two requests over one loaded checkpoint: prompt candidates for the annotation editor, and
 (`op = region`) the automatic-mask region of one image for the Prepare screen's live stage — the same
 `select_region` a build applies. A region that cannot be found comes back as an `error` field, not an error
@@ -181,9 +185,10 @@ float64, as a build's does, and the prompt predictor stays on the device. Like e
 refused (409) while a job runs.
 
 It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py`,
-`jobs/segmenter.py`, `jobs/previewer.py` and `jobs/explorer.py` are thin entrypoints;
-`experiments/diagnose.py`, `model_assets/mobile_sam.py`, `experiments/preview.py` and
-`explore/session.py` do the work — as `jobs/queue.py`, `jobs/worker.py` and a job handler do.
+`jobs/segmenter.py`, `jobs/previewer.py`, `jobs/explorer.py` and `jobs/text_segmenter.py` are thin
+entrypoints; `experiments/diagnose.py`, `model_assets/mobile_sam.py`, `experiments/preview.py`,
+`explore/session.py` and `explore/text.py` do the work — as `jobs/queue.py`, `jobs/worker.py` and a job
+handler do.
 
 - **A few-shot preview** (`few_shot_preview`, ADR-0040) is one method at its defaults, fitted on the
   reference studio's current references through the same `PreparedClassTargets` a run uses. Its spec
@@ -227,6 +232,30 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
   kills it, and with it the loaded encoder. On MPS a ViT-B/14 spawn is seconds, a new image's encode about
   a tenth of a second, a cached click a few milliseconds, and its overlay PNG a few tens of milliseconds
   on a VisA image.
+
+- **Explore by text** (`text_segmenter`) is SAM 3 — transformers' `Sam3Model` and `Sam3Processor` —
+  loaded from the catalogued `sam3` model asset, keyed like MobileSAM by the asset key and a fingerprint
+  of its verified file; the child resolves and verifies the asset by key itself, so the request channel
+  cannot choose a checkpoint. A request is `{image_id, phrase, threshold}`. The child reads the **source**
+  image (RGB, no region profile) and caches the last image's **vision features**
+  (`get_vision_features`), so the first phrase on an image runs the image encoder and every later phrase
+  on it runs only the text encoder and the decoder (`model(vision_embeds=…, input_ids=…)`). Instances
+  scoring at least `threshold` (SAM 3's own score, default 0.5) are ranked best first, empty masks
+  dropped, and bounded to `MAX_INSTANCES` (24) with the rest counted as `dropped`
+  (`explore/text.rank_instances`, torch-free). Their masks, already at the source size, are written as
+  one bit-packed `instances` map with an identity transform (`explore/store.py`); the answer carries
+  scores, boxes and areas only, so it does not grow with the image. `GET /api/explore/maps/{id}.png`
+  draws the stack as a label map in the colours the client names, the better-scoring instance on top
+  where two overlap, and `instance` draws one instance's whole mask; `POST /api/explore/maps/{id}/shape`
+  takes `instance` too. Nothing found is an answer with no map. `GET /api/explore/capability` carries a
+  `text` entry: available, or why not — no `dl` extra; the checkpoint not downloaded (`installable`),
+  with the gated message when no Hugging Face token is present; a checkpoint that fails verification.
+  `POST /api/images/{id}/explore/text` refuses a blank phrase (400) and one past 80 characters (422) in
+  the API process, and answers 409 while a job runs or while the capability says no. MPS runs SAM 3 with
+  no CPU fallback and matches the CPU's masks (`scripts/sam3-smoke-test.py`); a load from local files is
+  seconds, a new image's encode about two seconds, and a further phrase on a cached image about two
+  tenths of a second. It finds the objects and parts a phrase names and rarely finds a defect by its
+  name, which the mode's caption says.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no schema change. A
   browse click is not a unit of work anyone needs to cancel or resume.

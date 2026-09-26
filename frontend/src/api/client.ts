@@ -77,6 +77,10 @@ export type ExploreRequest = Schemas["ExploreRequest"];
 export type ExploreResponse = Schemas["ExploreResponse"];
 export type ExploreShape = Schemas["ExploreShape"];
 export type ExploreShapeRequest = Schemas["ExploreShapeRequest"];
+export type ExploreTextCapability = Schemas["ExploreTextCapability"];
+export type ExploreTextRequest = Schemas["ExploreTextRequest"];
+export type ExploreTextResponse = Schemas["ExploreTextResponse"];
+export type ExploreInstance = Schemas["ExploreInstance"];
 export type ImageTruth = Schemas["ImageTruthResponse"];
 export type TruthClass = Schemas["TruthClass"];
 

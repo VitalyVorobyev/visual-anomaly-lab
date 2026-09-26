@@ -245,18 +245,28 @@ the rail prints it (*colour scaled to this image · median → top 1%*), while t
 absolute cosine. **Clusters**: K (2–12) is a slider committed on release;
 a click picks the cluster under it from the cells the answer carried (`api/explore.ts` replays the
 transform), and only that cluster is drawn. **PCA**: false colour. **SAM**: MobileSAM through the editor's
-own `POST /api/images/{id}/segment-assist`, its ranked candidates tinted as suggestions. Every overlay is
+own `POST /api/images/{id}/segment-assist`, its ranked candidates tinted as suggestions. **Text**: a
+phrase submitted from an `Input` asks SAM 3 (`routes/sample/useExploreTextSession.ts`); its instances are
+one label-map layer, one series colour each, listed as `ToggleChip`s with their scores and swatches, and
+picking one draws its whole mask alone, as picking a cluster does. The first phrase on an image says it is
+encoding the image and may be loading SAM 3; the answer prints whether the image was cached and how many
+weaker instances were not kept; nothing found says so. Until the checkpoint is installed the mode is where
+it is installed: the capability's reason (the gated message when no Hugging Face token is present), the
+licence and access links, *Accept licence & download*, then the download job's progress with a cancel.
+Every overlay is
 a source-sized PNG in `layers` with the opacity slider's weight, and points are `MeasureOverlay` dots.
 The prompt belongs to one image: clicking another channel's pane moves Explore there, so no channel
 count is special. The encoder picker lists only the capability's usable encoders, defaulting to DINOv2
 ViT-B/14; the first request on an image names the encoder it is encoding with, a 409 says a job holds the
 device and offers to ask again, and a missing `dl` extra is said instead of offering controls.
-**Send to editor** turns the thresholded similarity, the picked cluster or the chosen SAM candidate into a
-`BitmapShape` (`POST /api/explore/maps/{id}/shape` for the first two) and navigates to the editor with it
+**Send to editor** turns the thresholded similarity, the picked cluster, the chosen SAM candidate or the
+picked SAM 3 instance into a `BitmapShape` (`POST /api/explore/maps/{id}/shape` for all but MobileSAM's)
+and navigates to the editor with it
 in the navigation's state; the editor's Contour assist shows it as a suggestion to accept — as a mask or
 an editable contour, in the class selected there — or discard, and consumes the state so a reload does
 not bring it back. `GET /api/explore/capability`, `POST /api/images/{id}/explore`,
-`GET /api/explore/maps/{id}.png`, `POST /api/explore/maps/{id}/shape`.
+`POST /api/images/{id}/explore/text`, `GET /api/explore/maps/{id}.png`,
+`POST /api/explore/maps/{id}/shape`, `GET /api/model-assets`.
 
 **Annotation queue and editor** — see [annotations](annotations.md) for the behaviour. MobileSAM takes
 positive/negative points or a box and previews up to three ranked masks without mutating the draft; its

@@ -1,7 +1,7 @@
 /**
  * Explore on the sample viewer: what a frozen encoder sees, asked by clicking.
  *
- * The purpose is intuition, not truth. Four questions share one prompt model:
+ * The purpose is intuition, not truth. Five questions share one target image:
  *
  * - **Similar** — a click is a patch the encoder should find again; shift-click one it
  *   should not. Every change of prompt is one request.
@@ -9,6 +9,7 @@
  *   it, answered on the client from the cells the response carried.
  * - **PCA** — the three leading directions of the features as false colour.
  * - **SAM** — MobileSAM through the editor's own contour-assist endpoint.
+ * - **Text** — a phrase, answered with SAM 3's instances (`useExploreTextSession`).
  *
  * The prompt belongs to one image. Clicking a different channel's pane moves Explore there
  * and starts a fresh prompt, so a multi-channel sample needs no special case: whichever pane
@@ -28,8 +29,9 @@ import {
 import type { RasterLayer } from "../../components/viewer/SampleStage";
 import { useAnnotationLabels, useSegmentAssist, useSegmentAssistCapability } from "../../hooks/useAnnotations";
 import { useExploreCapability, useExploreRequest, useExploreShape } from "../../hooks/useExplore";
+import { useExploreTextSession } from "./useExploreTextSession";
 
-export type ExploreMode = "similar" | "clusters" | "pca" | "sam";
+export type ExploreMode = "similar" | "clusters" | "pca" | "sam" | "text";
 
 /** More points than this is somebody clicking, not somebody asking. */
 const MAX_POINTS = 32;
@@ -89,12 +91,13 @@ export function useExploreSession({
   const explore = useExploreRequest();
   const toShape = useExploreShape();
   const sam = useSegmentAssist(target ?? 0);
+  const text = useExploreTextSession({ target, sampleId });
   const labelKey = labels.data?.[0]?.key ?? "defect";
 
   // One request per distinct question. The signature is what the question *is*; an effect
   // keyed on it asks once per change and never again for a re-render.
   const body: ExploreRequest | null =
-    on && backbone && target !== undefined && mode !== "sam"
+    on && backbone && target !== undefined && mode !== "sam" && mode !== "text"
       ? mode === "similar"
         ? prompt.points.length > 0
           ? {
@@ -206,6 +209,17 @@ export function useExploreSession({
   }, [mode, on, target, stored, sam.variables, sam.isPending, askSam, labelKey]);
 
   const layers: RasterLayer[] = [];
+  const found = mode === "text" ? text.answer : undefined;
+  if (on && found?.map_url) {
+    layers.push({
+      key: "explore-instances",
+      src: exploreMapUrl(found.map_url, {
+        instances: found.instances.length,
+        instance: text.instance,
+      }),
+      opacity,
+    });
+  }
   if (on && answer) {
     if (answer.map_kind === "values") {
       layers.push({ key: "explore-heat", src: exploreMapUrl(answer.map_url), opacity });
@@ -228,7 +242,9 @@ export function useExploreSession({
   const sendable =
     mode === "sam"
       ? candidate !== null
-      : mode === "similar"
+      : mode === "text"
+        ? found?.map_id != null && text.instance !== null
+        : mode === "similar"
         ? answer !== undefined
         : mode === "clusters"
           ? cluster !== null
@@ -245,7 +261,23 @@ export function useExploreSession({
         area: candidate.area,
         source: `MobileSAM · quality ${candidate.score.toFixed(3)}`,
       };
-    } else if (answer && (mode === "similar" || (mode === "clusters" && cluster !== null))) {
+    } else if (mode === "text" && found?.map_id && text.instance !== null) {
+      const picked = found.instances[text.instance - 1];
+      try {
+        const result = await toShape.mutateAsync({
+          mapId: found.map_id,
+          body: { instance: text.instance, label_key: labelKey },
+        });
+        carried = {
+          imageId: target,
+          shape: result.shape,
+          area: result.area,
+          source: `SAM 3 · “${found.phrase}” #${text.instance} · score ${picked?.score.toFixed(2) ?? "?"}`,
+        };
+      } catch {
+        return; // The mutation's error is shown beside the button.
+      }
+    } else if (answer &&(mode === "similar" || (mode === "clusters" && cluster !== null))) {
       try {
         const result = await toShape.mutateAsync({
           mapId: answer.map_id,
@@ -315,6 +347,7 @@ export function useExploreSession({
     candidate,
     candidateIndex,
     setCandidateIndex,
+    text,
     layers,
     sendable,
     send,

@@ -30,7 +30,7 @@ configurable rather than silently discarded.
 ## Suggestions from Explore
 
 The sample viewer's Explore section can send a mask to the editor: a thresholded similarity, one k-means
-cluster of a frozen encoder's patches, or a MobileSAM candidate. It opens under **Contour assist** as a
+cluster of a frozen encoder's patches, a MobileSAM candidate, or one SAM 3 instance found by a phrase. It opens under **Contour assist** as a
 suggestion, like MobileSAM's own; **Accept mask** or **Editable contour** adds it in the class selected in
 the editor, and **Discard suggestion** drops it. Nothing reaches the draft until it is accepted.
 

@@ -29,6 +29,7 @@ dl = [
     "timm>=1.0.24",
     "torch>=2.13",
     "torchvision>=0.28.0",
+    "transformers>=5.17",
 ]
 
 [dependency-groups]
@@ -124,6 +125,8 @@ module = [
     "torch",
     "torch.*",
     "torchvision.*",
+    "transformers",
+    "transformers.*",
 ]
 ignore_missing_imports = true
 follow_untyped_imports = true

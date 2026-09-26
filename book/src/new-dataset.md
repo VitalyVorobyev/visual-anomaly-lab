@@ -42,11 +42,18 @@ sample viewer's rail. **Similar** marks every patch the encoder finds like the o
 one it should not match), coloured over this image's own range, which the rail states; **Clusters**
 groups the image's own patches, K from 2 to 12, with edges that follow the features rather than the patch
 grid; **PCA** shows the
-features' three main directions as false colour; **SAM** asks MobileSAM for masks. It is for intuition:
+features' three main directions as false colour; **SAM** asks MobileSAM for masks; **Text** takes a
+phrase — "candle", "the cap" — and asks SAM 3 for a mask of every instance of it, each in its own colour
+and listed with SAM 3's score. SAM 3 finds objects and parts well and rarely finds a defect by the
+defect's name, so ask for the thing rather than the flaw. Its weights are gated: request access at
+[facebook/sam3](https://huggingface.co/facebook/sam3), set `HF_TOKEN` for the approved account (or sign
+in with `hf auth login`), then accept the SAM License and download the 3.4 GB checkpoint once from the
+Text mode itself. The first phrase after SAM 3 was idle loads it, which takes a while; a further phrase
+on the same image takes a fraction of a second. It is for intuition:
 nothing is stored or scored, and it draws above the truth, which dims while Explore is on. The first click on an image loads and runs the encoder, which takes seconds;
 later clicks on it are immediate. **Send to editor** carries the current mask — the thresholded similarity,
-the picked cluster or the chosen SAM mask — into the annotation editor as a suggestion to accept or
-discard.
+the picked cluster, the chosen SAM mask or the picked SAM 3 instance — into the annotation editor as a
+suggestion to accept or discard.
 
 For unannotated defects, use the canvas polygon or brush workflow. Automatic contour derivation may propose
 an edge-following contour from a manually marked region, but the user reviews and commits the resulting

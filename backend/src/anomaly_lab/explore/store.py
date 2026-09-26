@@ -6,6 +6,10 @@ into the explore frame and projects that into the source frame through the trans
 the PNG the stage stacks is at the source image's own size and registered with it by
 construction, exactly as a run's anomaly map is.
 
+Instance masks are the one exception to grid resolution: a text prompt's answer is a stack of
+binary masks already at the source image's size, stored bit-packed with an identity transform,
+and drawn as a label map whose label `i` is the `i`th instance by score.
+
 The directory is bounded (`MAX_STORED_MAPS`, oldest removed first): a map exists to be drawn
 once, and a session of clicking should not leave a thousand files behind it.
 
@@ -40,6 +44,8 @@ class MapKind(StrEnum):
     CLUSTERS = "clusters"
     """A `(rows, cols, k)` float grid, each cell's soft assignment to k clusters, drawn as
     the argmax of the interpolated planes (`grid.cluster_affinity`)."""
+    INSTANCES = "instances"
+    """An `(n, H, W)` boolean stack at the source size, best-scoring instance first."""
 
 
 @dataclass(frozen=True)
@@ -78,14 +84,21 @@ def write_grid(
     map_id = uuid.uuid4().hex
     target = map_path(directory, map_id)
     temporary = directory / f"{map_id}.tmp.npz"
+    stored = (
+        np.packbits(np.asarray(grid, dtype=np.bool_), axis=-1)
+        if kind is MapKind.INSTANCES
+        else np.ascontiguousarray(grid)
+    )
     arrays: dict[str, np.ndarray] = {
         "kind": np.frombuffer(kind.value.encode("utf-8"), dtype=np.uint8),
-        "grid": np.ascontiguousarray(grid),
+        "grid": stored,
         "transform": np.frombuffer(transform.model_dump_json().encode("utf-8"), dtype=np.uint8),
         "patch": np.asarray(patch, dtype=np.int32),
     }
     if value_range is not None:
         arrays["range"] = np.asarray(value_range, dtype=np.float64)
+    if kind is MapKind.INSTANCES:
+        arrays["shape"] = np.asarray(grid.shape, dtype=np.int64)
     try:
         np.savez_compressed(temporary, **arrays)  # type: ignore[arg-type]
         temporary.replace(target)
@@ -120,6 +133,10 @@ def read_grid(path: Path) -> StoredGrid:
                 if "range" in stored.files
                 else None
             )
+            if kind is MapKind.INSTANCES:
+                count, height, width = (int(value) for value in stored["shape"])
+                grid = np.unpackbits(grid, axis=-1, count=width).astype(np.bool_)
+                grid = grid.reshape(count, height, width)
     except (zipfile.BadZipFile, KeyError, EOFError) as exc:
         raise ValueError(f"{path.name} is not an explore map") from exc
     return StoredGrid(
@@ -144,6 +161,8 @@ def to_source(stored: StoredGrid) -> np.ndarray:
     0 for clusters and black for colour.
     """
     transform, patch = stored.transform, stored.patch
+    if stored.kind is MapKind.INSTANCES:
+        return instance_labels(stored.grid)
     if stored.kind is MapKind.CLUSTERS:
         affinity = np.stack(
             [
@@ -175,15 +194,49 @@ def to_source(stored: StoredGrid) -> np.ndarray:
     return np.asarray(np.nan_to_num(np.stack(planes, axis=-1), nan=0.0), dtype=np.float32)
 
 
+def instance_labels(masks: np.ndarray) -> np.ndarray:
+    """An `(n, H, W)` stack as one uint8 label map: `i` where instance `i` (1-based) lies.
+
+    Instances may overlap. The stack is best first, so it is painted in reverse and the
+    better-scoring instance is the one a shared pixel shows.
+    """
+    count = masks.shape[0]
+    labels = np.zeros(masks.shape[1:], dtype=np.uint8)
+    for index in range(count - 1, -1, -1):
+        labels[masks[index]] = index + 1
+    return labels
+
+
+def instance_mask(stored: StoredGrid, instance: int) -> np.ndarray:
+    """One instance's whole mask, including where a better instance overlaps it."""
+    if stored.kind is not MapKind.INSTANCES:
+        msg = "only an instance map has instances"
+        raise ValueError(msg)
+    if not 1 <= instance <= stored.grid.shape[0]:
+        msg = f"instance {instance} is not one of this map's {stored.grid.shape[0]}"
+        raise ValueError(msg)
+    return np.asarray(stored.grid[instance - 1], dtype=np.bool_)
+
+
 def mask_of(
-    stored: StoredGrid, *, threshold: float | None = None, cluster: int | None = None
+    stored: StoredGrid,
+    *,
+    threshold: float | None = None,
+    cluster: int | None = None,
+    instance: int | None = None,
 ) -> np.ndarray:
-    """A boolean source-frame mask: similarity at or above `threshold`, or one cluster."""
+    """A boolean source-frame mask: similarity at or above `threshold`, one cluster, or one
+    instance."""
+    if instance is not None:
+        return instance_mask(stored, instance)
     source = to_source(stored)
     if stored.kind is MapKind.VALUES and threshold is not None:
         with np.errstate(invalid="ignore"):
             return np.asarray(np.nan_to_num(source, nan=-1.0) >= threshold)
     if stored.kind is MapKind.CLUSTERS and cluster is not None:
         return np.asarray(source == cluster)
-    msg = "a mask needs a threshold on a similarity map or a cluster on a cluster map"
+    msg = (
+        "a mask needs a threshold on a similarity map, a cluster on a cluster map or an "
+        "instance on an instance map"
+    )
     raise ValueError(msg)
