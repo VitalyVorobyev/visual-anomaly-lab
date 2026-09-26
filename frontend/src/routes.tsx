@@ -27,6 +27,7 @@ import {
   DatasetExperimentsRoute,
   ExperimentsRoute,
 } from "./routes/ExperimentsRoute";
+import { GuidedRunRoute } from "./routes/GuidedRunRoute";
 import { HealthRoute } from "./routes/HealthRoute";
 import { ImportRoute } from "./routes/ImportRoute";
 import { NotFoundRoute } from "./routes/NotFoundRoute";
@@ -108,6 +109,9 @@ export function AppRoutes() {
           />
           {/* The same gesture, N runs wide: one sample under every compared method. */}
           <Route path="compare/samples/:sampleId" element={<CompareSampleRoute />} />
+          {/* The guided run: a band of steps, one scrolling step, a footer that stays. Not a
+              dataset tab, so it is declared here rather than under the dataset layout. */}
+          <Route path="datasets/:datasetId/run" element={<GuidedRunRoute />} />
         </Route>
       </Route>
     </Routes>

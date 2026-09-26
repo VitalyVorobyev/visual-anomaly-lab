@@ -11,8 +11,9 @@
  *
  * So the band belongs to the layout, not to the tabs. It carries the dataset's identity --
  * the only `<h1>` on any dataset screen, the facts, the counts its truth is kept in (verdicts
- * for labels, classes for class annotations, ADR-0041) -- one action that is
- * a property of the dataset rather than of the tab, and the strip. Its height is fixed by
+ * for labels, classes for class annotations, ADR-0041) -- the actions that are
+ * properties of the dataset rather than of the tab (Start a run, and the full form beside it),
+ * and the strip. Its height is fixed by
  * construction: the primary button sets the first row, `min-h-8` sets the second whether or
  * not the counts have anything to say, and the readout is held to one line. Nothing above
  * the strip moves, on any tab, in any state.
@@ -35,12 +36,12 @@
  * full-bleed, the virtual grid's own).
  */
 
-import { Info, Plus } from "lucide-react";
-import { Link, Outlet, useParams } from "react-router";
+import { Info, Play, Plus } from "lucide-react";
+import { Outlet, useParams } from "react-router";
 
 import { DatasetSectionNav } from "../../components/DatasetSectionNav";
 import {
-  Button,
+  ButtonLink,
   InfoHint,
   ReadoutStrip,
   Skeleton,
@@ -48,7 +49,6 @@ import {
 } from "@vitavision/lab-ui";
 import { ClassHint, LabelRun, classCountText } from "../../components/DatasetTruth";
 import { useDataset } from "../../hooks/useCatalog";
-import { DatasetReadiness } from "./DatasetReadiness";
 
 export function DatasetLayout() {
   const datasetId = Number(useParams()["datasetId"]);
@@ -107,15 +107,26 @@ export function DatasetLayout() {
               )}
             </div>
 
-            <div className="flex shrink-0 items-center gap-4">
-              <span className="hidden lg:block">
-                <DatasetReadiness datasetId={datasetId} />
-              </span>
-              <Link className="shrink-0" to={`/datasets/${datasetId}/experiments/new`}>
-                <Button variant="primary" icon={<Plus />}>
-                  New experiment
-                </Button>
-              </Link>
+            {/* The front door is the guided run, at every width: it asks for nothing in
+                advance, so there is no checklist to read before pressing it. The full form
+                stays one press away for a reader who knows what they want. */}
+            <div className="flex shrink-0 items-center gap-2">
+              <ButtonLink
+                className="shrink-0"
+                to={`/datasets/${datasetId}/experiments/new`}
+                variant="ghost"
+                icon={<Plus />}
+              >
+                New experiment
+              </ButtonLink>
+              <ButtonLink
+                className="shrink-0"
+                to={`/datasets/${datasetId}/run`}
+                variant="primary"
+                icon={<Play />}
+              >
+                Start a run
+              </ButtonLink>
             </div>
           </div>
 

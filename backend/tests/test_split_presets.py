@@ -58,6 +58,9 @@ def test_an_anomaly_dataset_is_offered_the_standard_draw_only(
     assert composition["train"]["normal"] > 0
     total = sum(row["total"] for row in standard["composition"])
     assert total == TRAIN_NORMALS + TEST_NORMALS + TEST_DEFECTS
+    # A few examples per subset to picture it, never its member list.
+    for row in standard["composition"]:
+        assert len(set(row["examples"])) == len(row["examples"]) == min(4, row["total"])
     # A dry run writes nothing.
     assert _split_count(settings, seeded.dataset_id) == before
 
@@ -77,6 +80,13 @@ def test_a_preset_creates_exactly_what_its_dry_run_showed(
     assert split["seed"] == preset["seed"]
     assert split["composition"] == preset["composition"]
     assert split["tasks"] == ["anomaly"]
+    # The examples are members of the subset they picture.
+    for row in split["composition"]:
+        members = client.get(
+            f"/api/datasets/{seeded.dataset_id}/samples",
+            params={"split_id": split["id"], "subset": row["subset"], "limit": 500},
+        ).json()["items"]
+        assert set(row["examples"]) <= {member["id"] for member in members}
 
 
 def test_pressing_create_twice_draws_the_next_seed(client: TestClient, seeded: Fixture) -> None:

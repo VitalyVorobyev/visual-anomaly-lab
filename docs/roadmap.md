@@ -12,6 +12,11 @@ and weekends.
 A dataset can be taken from a directory tree to a comparison between methods without leaving the
 application.
 
+- **Start a run** from any dataset, import or catalogue card through the guided run: five steps — goal,
+  look, split, method, run — each one decision made in front of the dataset's own images, each with a
+  default already chosen from its truth and the registry, so a first run is three presses from the
+  dataset page and nothing has to be prepared or split in advance. Prepare, Splits and the full create
+  form stay as the expert surface.
 - **Import** a directory tree through a pluggable adapter, or register a local copy of a public
   benchmark (VisA, GKN, FSS-1000, PKU-Market-PCB) in one atomic action. Source images are referenced in place and never
   copied; the import is idempotent and leaves a reviewable manifest.
@@ -72,11 +77,12 @@ application.
 
 ## Open
 
-- **The visual pass's last two findings, both upstream in lab-ui.** Every screen has been reviewed at rest
-  in both viewports and themes, and in its transient states — pending, error, a Tab walk and disabled
-  controls (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen
-  says what went wrong. What is left: five buttons nest inside links, waiting on a `ButtonLink`, and two
-  disabled tabs explain themselves only in a tooltip, waiting on `Tabs` (see [backlog.md](backlog.md)).
+- **The visual pass's last finding, upstream in lab-ui.** Every screen has been reviewed at rest in both
+  viewports and themes, and in its transient states — pending, error, a Tab walk and disabled controls
+  (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen says what
+  went wrong. What is left: two disabled tabs explain themselves only in a tooltip, waiting on `Tabs`
+  (see [backlog.md](backlog.md)). The guided run's pictures of truth are too small to read on a
+  small defect or a box ([backlog.md](backlog.md)).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).
 - **Few-shot segmentation as a peer task** (ADR-0040). One to ten references of a class define it, and a
   run segments that class in every other sample, with absence as a first-class answer. What stands:
@@ -88,7 +94,7 @@ application.
   - **Reading:** an evaluator for masks and presence, with the probability map's pixel AP read
     threshold-free beside the cut's IoU, result screens in the task's own terms, and Compare
     across reference draws.
-  - **Workflow:** the dataset workspace as Data · Truth · Runs with per-task readiness, a task-first create
+  - **Workflow:** the dataset workspace as Data · Truth · Runs with per-task readiness, a guided run and a task-first create
     screen, and the reference studio — choose references by eye, preview any image live, accept / fix /
     mark absent, and freeze into a run.
 
@@ -110,7 +116,7 @@ application.
   confusion matrix drawn, a per-sample verdict (`false_class` beside the few-shot outcomes), the label
   maps over the image on the sample page and on every gallery tile — prediction solid, truth dashed, one
   palette colour per pinned class — and the
-  task in the dataset's readiness band. `dino_linear_seg` is supported: sampling each class in its own
+  task among the guided run's goals. `dino_linear_seg` is supported: sampling each class in its own
   share and adding one constant per class, fitted for IoU on held-out folds of the training images
   (`logit_bias` `held_out_iou`), it beats the floor by the predeclared margin on both VisA classes, where
   the head's own argmax labelled a few percent of every image defect ([measurements.md](measurements.md)).
@@ -121,7 +127,7 @@ application.
   (AP@[.5:.95] as the headline, AP50, AP75, recall, AP per class). `color_detector` is the floor, the
   colour classifier's components boxed; `dino_linear_det` is the first deep detector, `dino_linear_seg`'s
   head fitted on painted box interiors and decoded by the floor's components (`dl` extra). It is offered segmentation's splits, `class_stratified` and
-  `manual`, and named in the dataset's readiness band. Its results read in its own terms: AP per class
+  `manual`, and offered as a guided run's goal — the suggestion for a dataset annotated in boxes. Its results read in its own terms: AP per class
   across subsets, a per-sample verdict and drawn boxes — truth dashed, predictions solid, toned by match,
   false positive or miss — at a confidence cut each subset resolves by one printed rule (the F1-optimal
   confidence at IoU 0.5), and Compare on the AP family alone. `dino_linear_det` is experimental: on the

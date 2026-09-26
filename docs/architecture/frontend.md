@@ -84,7 +84,8 @@ the backend's last output.
   and import date sit behind an information mark. A tab renders no heading, strip or back link, and gives
   its main surface the single scroller through `TabScroll` or its own full-bleed surface (the browser).
 - **`CanvasLayout`** — no page scroll; an image canvas fills the viewport and supporting panes scroll only
-  on their own content. The sample viewer and the annotation editor live here.
+  on their own content. The sample viewer, the annotation editor and the guided run live here; the
+  guided run's one scroller is its step (`data-scroll="step"`), between a band and a footer that stay.
 
 **A failed read shows its error promptly** (`api/retry.ts`). A 4xx is never retried, since it is the
 request's fault and says so. A 5xx or a dropped connection is retried once, in case the sidecar is
@@ -98,7 +99,9 @@ asserts it.
 
 **A control never nests inside a link.** Card actions and grid selection boxes are absolutely-positioned
 siblings of their `<Link>`: a control inside an anchor must cancel the click, and cancelling a checkbox's
-click makes the browser restore its old state after React writes the new one.
+click makes the browser restore its old state after React writes the new one. A navigation that looks
+like a button is lab-ui's `ButtonLink` — one anchor with the button's variants — never a `<Button>`
+inside a `<Link>`.
 
 **Navigation.** The main navigation is `Datasets`, `Experiments` and `Compare`; import is an action in the
 catalogue, and backend health stays visible in the shell. Inside a dataset the strip is grouped by the stage
@@ -107,16 +110,23 @@ of the work, in the order it is done: **Data** (`Browse`, `Prepare`) · **Truth*
 between the links, folded away below `md`, and each stage is a `role="group"`. The links are underlined
 because pills mark in-page state.
 
-**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. No
-region profile is asked for — a run reads the dataset's "Full frame" unless it names another, and its
-first job prepares it at its size; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
-class with a reference and something to test on (from the coverage read) and a split of references;
-`semantic_segmentation` (named *Segment*) and `object_detection` (named *Detect*) each need the same
-annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence rule
-serving both. With one task the band is a checklist. With more, a first step every task
-shares comes alone; otherwise each task shows a check or the link to its next step. A task is named only when the
-dataset's truth can serve it (`truthServesTask`, `api/truth.ts`): a dataset of classes alone is not
-offered `anomaly`, and the create form opens on the first task it is offered.
+**The front door is the guided run.** The band's primary action, at every width, is **Start a run**
+(`/datasets/{id}/run`, below): it asks for nothing in advance, so the band carries no checklist of what
+to do first. **New experiment**, the full form, sits beside it as a quiet link for a reader who knows
+what they want, and the Prepare and Splits tabs stay the expert surface. The import's finished screen,
+each dataset a reference-pack registration added, and a catalogue card's corner offer the same **Start
+a run** beside **Browse**.
+
+**Readiness** (`hooks/useDatasetReadiness.ts`) is still what decides whether a task can run, per task
+that some method declares. No region profile is asked for — a run reads the dataset's "Full frame"
+unless it names another, and its first job prepares it at its size; `anomaly` needs a split drawn or
+adopted for it; `few_shot_segmentation` needs a class with a reference and something to test on (from
+the coverage read) and a split of references; `semantic_segmentation` and `object_detection` each need
+the same annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence
+rule serving both. The guided run reads it to tell a task that needs annotation first from one a preset
+can start; a missing split is not a blocker there, since a preset is drawn when the run starts. A task is
+named only when the dataset's truth can serve it (`truthServesTask`, `api/truth.ts`): a dataset of
+classes alone is not offered `anomaly`, and the create form opens on the first task it is offered.
 
 **Screens follow the dataset's truth** (ADR-0041). `DatasetSummary.truth` says whether a dataset holds
 anomaly labels, classes, both or neither, and `api/truth.ts` turns that into one question per surface:
@@ -136,12 +146,60 @@ experiment's colour option; the *threshold* is a run's image-score cut; the *map
 run's map range that draws its segmentation; the *threshold rule* is how Compare picks each run's
 threshold. A method is shown by its title, its registry key as secondary text.
 
+## The guided run
+
+`/datasets/{id}/run` (`routes/GuidedRunRoute.tsx`, `routes/run/`) takes a dataset to a queued run as
+five decisions, each made in front of images and each with its default already chosen, so pressing
+Next through all of them starts a sensible run and **Review & run** jumps from any step to the last.
+`useGuidedRun` resolves every choice: what the reader picked, else the default the rest of the
+workbench already states.
+
+1. **Goal** — a card per task some method runs and the truth can serve, each with its meaning and a
+   strip of what it learns from: defect samples for anomaly detection, the target class for few-shot,
+   one sample of each class for segmentation and detection, each with its truth's outline from
+   `GET /api/images/{id}/mask`. The suggestion (`suggestedTask`, `api/guidedRun.ts`) follows the truth:
+   verdicts ask anomaly detection, classes drawn as boxes (`DatasetDetail.class_geometry`,
+   [domain model](domain-model.md)) ask detection, classes drawn as regions ask few-shot segmentation;
+   it comes first and is badged. A task that needs an annotated class says so and links to Annotate
+   instead of being offered. Few-shot adds the class beside its card, the most frequent by coverage.
+2. **Look** — "Full frame" or any saved region profile, as cards, over Prepare's own `LiveStage`: one
+   image, source and prepared frame, at the size the chosen method resolves to
+   (`POST /api/experiments/input-size`), prepared by `POST /api/datasets/{id}/region-preview`; ←/→ step
+   through Prepare's filmstrip images. **Adjust on Prepare** opens `…/prepare?profile=&return=run`, where
+   a banner leads back to `…/run?step=look&profile=<the saved revision open there>`, and the run takes it.
+3. **Split** — the task's presets first, the first chosen, then the dataset's own splits that serve the
+   task (a few-shot split only for the chosen class), each with its `SplitComposition` bar; the chosen
+   one adds a few thumbnails per subset from the composition's `examples`. A few-shot preset for another
+   class than its own is a fresh dry run, as on the Splits tab. Nothing is created here.
+4. **Method** — `MethodCard`s in the registry's order, with the methods this installation can run first:
+   a front door that opens on a method missing its dependencies has chosen a run that cannot start, and a
+   callout says so when the recommendation is the one missing. Beside the cards, held in view on a wide
+   window, the method's `SchemaForm` — `x-primary` fields in front, the rest under Advanced — and the
+   resolved input size.
+5. **Run** — every choice in a summary whose lines link back to their step, a name defaulting to
+   `<method> on <dataset>` (with the class for few-shot), and **Start run**: `hooks/useLaunchRun.ts`
+   creates the split if it is still a preset, creates the experiment and queues Train & score
+   (`then_score`, the run bar's first primary), then lands on the run page. A split made before a later
+   stage failed is kept in the state and reused by the next press. What is missing is said beside the
+   disabled button.
+
+A rail across the top shows each step with what it is set to; every step up to the furthest reached is
+a button, a later one is text. The step is in the URL (`?step=`), so the browser's Back walks the steps;
+the choices are in `sessionStorage` per dataset (`anomaly-lab:guided-run:<id>`), so a detour comes
+back to the same run, and they are cleared when the run starts. Enter continues and Shift+Enter goes
+back, through `useHotkeys`, except where a focused button or link answers Enter itself. A read that
+failed is one `ErrorBox` above the step, never "nothing fits". From the dataset page a first run is three
+presses — Start a run, Review & run, Start run — and six by Next alone.
+
 ## Screens
 
 **Dataset catalogue and import** — a grid of covers grouped by collection, each group headed by its name
 and a muted `N datasets` badge, so a count never reads as part of the name. A card is its cover, its name,
-its description and one quiet line of counts in the unit of its truth (`200 samples · 20 classes`). Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
-in one job; a folder is scanned, its manifest reviewed (channel mapping, labels, warnings) and committed.
+its description and one quiet line of counts in the unit of its truth (`200 samples · 20 classes`); its
+corner, revealed on hover and focus and a sibling of the card's link, holds Start a run, edit and delete. Local VisA/GKN/FSS-1000/PKU-Market-PCB packs register
+in one job, whose success stays on screen listing each dataset it added with Browse and Start a run
+(from the job's `dataset_ids`) until dismissed; a folder is scanned, its manifest reviewed (channel
+mapping, labels, warnings) and committed, and the finished screen offers Start a run beside Browse.
 The scan job and manifest are in the URL (`scan=`, `manifest=`). A collection is a string on each dataset
 ([domain model](domain-model.md)), so `CollectionDialog` names and fills it in one form via
 `PATCH /api/datasets/{id}`; unticking clears the override. Deletion requires the exact name and previews
@@ -224,7 +282,9 @@ lists the crops failures first, each opening on the stage; a check whose form ha
 built). The preview size is a width and height pair, 448 × 448 until changed — the frame every DINO method
 and most measured gates read — with a line saying a run prepares its own size when it trains, so building
 only saves that run the wait; built sizes are buttons that select one. Revision and followed job are in
-the URL (`profile`, `job`, `mode`, `jobProfile`). Deleting a revision names the experiments pinning it.
+the URL (`profile`, `job`, `mode`, `jobProfile`); opened from a guided run's Look step, `return=run`
+stays in it through every write and a banner leads back with the saved revision open. Deleting a
+revision names the experiments pinning it.
 `GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`,
 `POST /api/datasets/{id}/region-preview`, `GET /api/datasets/{id}/region-preview/images?alignment=`,
 `GET /api/datasets/{id}/region-preview/random`, `POST /api/datasets/{id}/region-check`,
@@ -276,8 +336,9 @@ first preset in place — "Use Standard · 60/20/20, normals only — create it"
 a few-shot preset — which creates it in one press and is then preselected, and links to the Splits tab
 opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation
 and detection.
-With one task the form starts at its inputs. The band lists what is
-missing as links in order; the unsent form is kept in `sessionStorage` (`api/experimentDraft.ts`). The
+With one task the form starts at its inputs. The unsent form — the task and the target class
+included, so a detour to Splits or the studio comes back to the same task — is kept in
+`sessionStorage` (`api/experimentDraft.ts`). The
 region profile defaults to the dataset's "Full frame" (`api/inputSize.fullFrameProfile`) and needs no
 build. **Input size** is an optional width and height pair (`api/inputSize.ts`): empty means the method's
 own, and the caption says what that resolves to for the current configuration — "448 × 448 · from
@@ -290,11 +351,13 @@ Method cards come in the registry's order of standing (`api/methodChoice.ts`): t
 method first, then `supported`, `experimental`, and the `floor` last, registry order within each; the form
 starts on the first of them, so a task with a recommended method starts there. A card badges
 `recommended`, `experimental` and `floor` from the listing's `status` and `recommended_for` — the verdicts
-live in the registry ([methods](methods.md#status-and-the-task-default)), never here. Every method's
-schema marks its decisions `x-primary`; the method tab puts them in front and folds the rest from lab-ui
-0.5.0 on, and the 0.3 release this app is on renders the key inert. The evaluation tab shows only the
-fields the task's evaluator reads: a field carrying `x-tasks` is dropped for any other task
-(`schemaForTask`), and the tab is absent when none remains.
+live in the registry ([methods](methods.md#status-and-the-task-default)), never here. The card is
+`components/MethodCard.tsx`, shared with the guided run. Every method's schema marks its decisions
+`x-primary`, and the method tab puts them in front and folds the rest under Advanced. The evaluation
+tab shows only the fields the task's evaluator reads: a field carrying `x-tasks` is dropped for any
+other task (`schemaForTask`), and the tab is absent when none remains. The primary is **Create & run**
+— create, queue Train & score and land on the run, through the guided run's `useLaunchRun` — with
+**Create only** beside it for a run that should wait as a draft.
 `GET /api/experiments/model-types`, `POST /api/experiments/input-size`, `POST /api/experiments`.
 
 **Run bar** — a draft's primary action is **Train & score** (`then_score`, [jobs](jobs.md)), with **Train
@@ -463,7 +526,7 @@ them by class, and `refusalReason` refuses another task or another class by name
    the schema default; a select carries an explicit `Default · <value>` entry. Do not pre-fill.
    **The schema also says which fields matter:** `"x-primary": true` on a property shows it in front,
    `false` folds it, and an unmarked field keeps the default rule — folded when it is optional with a
-   working default (lab-ui 0.5.0; earlier releases ignore the key).
+   working default.
 3. **Opacity is client state; the threshold is a server read.** Opacity is CSS over a fetched PNG. The
    rule `score >= threshold` lives in Python only, so the threshold endpoint returns counts **and**
    classified rows together ([evaluation](evaluation.md)).

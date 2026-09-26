@@ -234,7 +234,8 @@ class from them.
 **Presets are the zero-configuration way in.** `GET /api/datasets/{id}/split-presets` returns the
 requests that work on this dataset, per task, each with its params, the tasks it serves, the name and
 seed Create would use, and its **dry-run composition** — per subset, counts by verdict and by class,
-computed by the same `plan_*` functions as creation and written nowhere
+and up to four `examples`, sample ids spread evenly over the subset in browse order so a screen can
+picture it, computed by the same `plan_*` functions as creation and written nowhere
 (`datasets/split_presets.py`). A dataset with anomaly verdicts gets **Standard · 60/20/20, normals
 only** (`normal_only_train` at its defaults) and, only when its committed manifest publishes a
 partition, **Published** (`imported`). A dataset with class truth (ADR-0041) gets **1-shot** and

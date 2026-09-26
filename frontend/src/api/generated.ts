@@ -2960,6 +2960,12 @@ export interface components {
             unlabeled: number;
         };
         /**
+         * ClassGeometry
+         * @description How a dataset's class truth is drawn, derived from it and never stored.
+         * @enum {string}
+         */
+        ClassGeometry: "boxes" | "regions";
+        /**
          * ClassPresence
          * @description Whether a sample shows an annotation class, as far as its ground truth says (ADR-0040).
          *
@@ -3516,6 +3522,8 @@ export interface components {
             splits: number;
             /** @default image */
             annotation_scope: components["schemas"]["AnnotationScope"];
+            /** @description How the class truth is drawn: `boxes` when every shape of it is a box, `regions` otherwise, null without class truth. The guided run reads it to open on detection for a dataset annotated in boxes. */
+            class_geometry: components["schemas"]["ClassGeometry"] | null;
         };
         /** DatasetSummary */
         DatasetSummary: {
@@ -6474,6 +6482,11 @@ export interface components {
             unlabeled: number;
             /** Classes */
             classes: components["schemas"]["ClassShare"][];
+            /**
+             * Examples
+             * @description Up to 4 of the subset's sample ids, spread evenly over it in browse order: a picture of what it holds, never a list of its members.
+             */
+            examples: number[];
         };
         /**
          * Task

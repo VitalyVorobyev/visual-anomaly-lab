@@ -18,6 +18,7 @@ import { imageUrl } from "../api/imageUrl";
 import {
   Badge,
   Button,
+  ButtonLink,
   Callout,
   Empty,
   ErrorBox,
@@ -111,13 +112,13 @@ export function AnnotationQueueRoute() {
               />
             )}
             {first && (
-              <Link
+              <ButtonLink
                 to={`/datasets/${datasetId}/annotate/${first.sample.id}/${first.image.id}?${query}`}
+                variant="primary"
+                icon={<PenTool />}
               >
-                <Button variant="primary" icon={<PenTool />}>
-                  Start queue
-                </Button>
-              </Link>
+                Start queue
+              </ButtonLink>
             )}
           </span>
         </div>

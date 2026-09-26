@@ -30,6 +30,16 @@ def main() -> None:
         action="store_true",
         help="Also draw 5 `defect` references and score a `color_prototype` run (ADR-0040).",
     )
+    parser.add_argument(
+        "--packs",
+        nargs="*",
+        default=[],
+        help=(
+            "Reference packs to register as well (`fss1000`, `pku_pcb`), read from the backend's "
+            "ANOMALY_LAB_REFERENCE_DATASETS_DIR: a class dataset for the guided run's few-shot "
+            "and detection screens."
+        ),
+    )
     args = parser.parse_args()
     api: str = args.api.rstrip("/")
 
@@ -151,6 +161,24 @@ def main() -> None:
             wait(req("POST", f"/api/experiments/{run['id']}/infer"))
         few_shot_run = run["id"]
 
+    packs: dict[str, int] = {}
+    if args.packs:
+        catalog = req("GET", "/api/reference-packs")
+        pending = [
+            pack["key"]
+            for pack in catalog["packs"]
+            if pack["key"] in args.packs and pack["status"] == "available"
+        ]
+        if pending:
+            wait(req("POST", "/api/reference-packs/register", {"pack_keys": pending}))
+        names = {"fss1000": "FSS-1000 panel", "pku_pcb": "PKU-Market-PCB"}
+        by_name = {d["name"]: d["id"] for d in req("GET", "/api/datasets")}
+        packs = {
+            f"{key}_dataset_id": by_name[names[key]]
+            for key in args.packs
+            if names.get(key) in by_name
+        }
+
     results = req("GET", f"/api/experiments/{run_ids[0]}/results?subset=test")
     defect = next(s for s in results["samples"] if s["label"] == "defect")
     sample = req("GET", f"/api/datasets/{dataset_id}/samples/{defect['sample_id']}")
@@ -162,6 +190,7 @@ def main() -> None:
                 "defect_sample_id": defect["sample_id"],
                 "defect_image_id": sample["images"][0]["id"],
                 **({"few_shot_run": few_shot_run} if few_shot_run is not None else {}),
+                **packs,
             }
         )
     )

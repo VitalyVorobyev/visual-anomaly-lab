@@ -6,6 +6,7 @@ import re
 import sqlite3
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from anomaly_lab.annotations.class_truth import load_boxes, resolve_box_truth
@@ -15,6 +16,7 @@ from anomaly_lab.annotations.imported_truth import (
     ImportedClass,
     ensure_classes,
     write_box_truth,
+    write_mask_truth,
 )
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.voc import VocError, clamp_box, read_voc
@@ -22,7 +24,7 @@ from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import samples as samples_repo
-from anomaly_lab.domain.entities import Label
+from anomaly_lab.domain.entities import ClassGeometry, Label
 
 
 def _voc(
@@ -182,3 +184,25 @@ def test_an_image_with_no_boxes_answers_every_class_absent(
     labels = [label.key for label in annotations_repo.list_labels(migrated_db, dataset_id)]
     truth = resolve_box_truth(migrated_db, dataset_id, [image_id], labels)
     assert load_boxes(truth[image_id]) == []
+
+
+def test_class_truth_drawn_only_in_boxes_reads_as_boxes(
+    settings: Settings, migrated_db: sqlite3.Connection
+) -> None:
+    dataset_id, image_id = _image(migrated_db)
+    ensure_classes(settings, dataset_id, CLASSES)
+    assert datasets_repo.class_geometry(migrated_db, dataset_id) is None
+
+    write_box_truth(settings, image_id, 20, 10, [ImportedBox("spur", (2.0, 2.0, 4.0, 4.0))])
+    assert datasets_repo.class_geometry(migrated_db, dataset_id) is ClassGeometry.BOXES
+
+
+def test_one_mask_makes_class_truth_regions(
+    settings: Settings, migrated_db: sqlite3.Connection
+) -> None:
+    dataset_id, image_id = _image(migrated_db)
+    ensure_classes(settings, dataset_id, CLASSES)
+    mask = np.zeros((10, 20), dtype=bool)
+    mask[2:6, 3:9] = True
+    assert write_mask_truth(settings, image_id, 20, 10, "short", mask).written
+    assert datasets_repo.class_geometry(migrated_db, dataset_id) is ClassGeometry.REGIONS

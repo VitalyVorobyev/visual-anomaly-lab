@@ -163,7 +163,7 @@ describe("the create-experiment form", () => {
     expect(width.value).toBe("448");
     expect(screen.getByText(/Snaps to 14/)).toBeTruthy();
     // One side alone is not a size.
-    fireEvent.click(screen.getByRole("button", { name: "Create experiment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create & run" }));
     expect(screen.getByText(/Give both sides/)).toBeTruthy();
   });
 
@@ -178,7 +178,7 @@ describe("the create-experiment form", () => {
   it("puts what is missing beside the field once Create is pressed", () => {
     renderForm([]);
     expect(screen.queryByText("Choose which samples train and which are scored.")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: "Create experiment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create & run" }));
     expect(screen.getByText("Choose which samples train and which are scored.")).toBeTruthy();
   });
 
@@ -365,5 +365,38 @@ describe("the create-experiment form", () => {
     expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(
       "kept from before",
     );
+  });
+
+  it("comes back from a detour on the task and class it left on", () => {
+    const floor = {
+      ...METHOD,
+      key: "color_prototype",
+      title: "Colour prototype",
+      capabilities: { ...METHOD.capabilities, tasks: ["few_shot_segmentation"] },
+    };
+    const { unmount } = renderForm([SPLIT], [METHOD, floor]);
+    fireEvent.click(screen.getByRole("radio", { name: "Few-shot segmentation" }));
+    // The draft is written as the form changes; leaving is an unmount.
+    unmount();
+
+    const stored = JSON.parse(sessionStorage.getItem(draftKey(7)) ?? "{}") as { task?: string };
+    expect(stored.task).toBe("few_shot_segmentation");
+    sessionStorage.setItem(
+      draftKey(7),
+      JSON.stringify({ ...stored, targetLabel: "scratch" }),
+    );
+    renderForm([SPLIT], [METHOD, floor]);
+    expect(
+      (screen.getByRole("radio", { name: "Few-shot segmentation" }) as HTMLInputElement).checked,
+    ).toBe(true);
+    expect(screen.getByRole("combobox", { name: "Target class" }).textContent).toContain(
+      "Scratch",
+    );
+  });
+
+  it("creates and runs in one press, or stops at a draft", () => {
+    renderForm();
+    expect(screen.getByRole("button", { name: "Create & run" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Create only" })).toBeTruthy();
   });
 });

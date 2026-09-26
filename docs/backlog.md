@@ -18,10 +18,16 @@ until its output has been reviewed.
       header buttons, but `Table` cannot set `aria-sort` on the `<th>`, so a screen reader hears a
       button rather than a sorted column. Add a `sort` prop to `Column`, release, and move the
       catalogue's `SortHeader` onto it.
-- [ ] **A link that looks like a button, upstream in lab-ui** (S): five screens nest a `<Button>`
-      inside a `<Link>` (catalogue header, dataset band, sample viewer, experiment catalogue), which
-      the control-inside-a-link rule forbids. lab-ui has `react-router` as a peer already; add a
-      `ButtonLink` there, release, and replace all five.
+- [ ] **A thumbnail that shows its truth at thumbnail size** (S): the guided run's strips lay the
+      source-sized outline from `GET /api/images/{id}/mask` over each thumbnail, and at 112 px a VisA
+      defect is a speck and a PKU-Market-PCB box is a hairline nobody can find. Serve a thumbnail
+      cropped to the truth's region (padded, one per class) or an outline drawn at the thumbnail's
+      size, and use it in the Goal and Split strips.
+- [ ] **Few-shot presets from coverage, as readiness counts it** (S): on VisA the guided run and the
+      create form offer few-shot segmentation, because the imported defect masks give `defect`
+      coverage, but the split presets read `class_counts`, which counts class-table revisions only, so
+      no 1-shot or 5-shot preset is offered and the Split step can only point at Splits. One reading of
+      "a class a sample shows" should feed both.
 - [ ] **Explore by text prompt** (M): a fifth Explore mode that takes a phrase ("scratch", "the
       cap") and returns SAM 3's masks for it, as the SAM mode returns MobileSAM's for a click. It is
       one more resident target beside `feature_explorer` and needs its checkpoint catalogued and

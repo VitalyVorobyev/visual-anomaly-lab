@@ -12,14 +12,14 @@
  * both are one line. When every pack is registered this renders nothing.
  */
 
-import { ExternalLink, LibraryBig } from "lucide-react";
+import { ExternalLink, LibraryBig, Play } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
 
 import { queryKeys } from "../../api/queryKeys";
 import { JobProgress } from "../../components/JobProgress";
-import { Button, ErrorBox, Skeleton } from "@vitavision/lab-ui";
-import { useReferencePacks, useRegisterReferencePacks } from "../../hooks/useCatalog";
+import { Button, ButtonLink, ErrorBox, Skeleton } from "@vitavision/lab-ui";
+import { useDatasets, useReferencePacks, useRegisterReferencePacks } from "../../hooks/useCatalog";
 import { isTerminal, useJob } from "../../hooks/useJob";
 
 export function ReferencePackStrip() {
@@ -114,20 +114,49 @@ function ReferenceRegistrationJob({
     if (!job || !isTerminal(job.status)) return;
     void queryClient.invalidateQueries({ queryKey: queryKeys.datasets() });
     void queryClient.invalidateQueries({ queryKey: queryKeys.referencePacks() });
-    if (job.status === "succeeded") {
-      const timer = window.setTimeout(onFinished, 1800);
-      return () => window.clearTimeout(timer);
-    }
-  }, [job?.status, onFinished, queryClient]);
+  }, [job?.status, queryClient]);
+
+  // A success stays on screen with the way on — a run on what was just registered — until it
+  // is dismissed; it used to vanish after two seconds with nothing to press.
+  const registered =
+    job?.status === "succeeded" && Array.isArray(job.result["dataset_ids"])
+      ? (job.result["dataset_ids"] as unknown[]).filter(
+          (id): id is number => typeof id === "number",
+        )
+      : [];
 
   return (
     <div className="flex flex-col gap-3">
       <JobProgress jobId={jobId} job={job} lines={lines} error={error} />
-      {job && isTerminal(job.status) && job.status !== "succeeded" && (
+      {registered.length > 0 && <RegisteredDatasets ids={registered} />}
+      {job && isTerminal(job.status) && (
         <Button className="self-end" size="sm" variant="ghost" onClick={onFinished}>
           Dismiss
         </Button>
       )}
     </div>
+  );
+}
+
+/** Each dataset the registration added, with Start a run beside Browse. */
+function RegisteredDatasets({ ids }: { ids: number[] }) {
+  const datasets = useDatasets();
+  const named = new Map((datasets.data ?? []).map((dataset) => [dataset.id, dataset.name]));
+  return (
+    <ul aria-label="Registered datasets" className="grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+      {ids.map((id) => (
+        <li key={id} className="flex min-w-0 items-center justify-between gap-2 text-xs">
+          <span className="truncate text-fg">{named.get(id) ?? `Dataset ${id}`}</span>
+          <span className="flex shrink-0 items-center gap-1">
+            <ButtonLink to={`/datasets/${id}`} size="sm" variant="ghost">
+              Browse
+            </ButtonLink>
+            <ButtonLink to={`/datasets/${id}/run`} size="sm" variant="secondary" icon={<Play />}>
+              Start a run
+            </ButtonLink>
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }

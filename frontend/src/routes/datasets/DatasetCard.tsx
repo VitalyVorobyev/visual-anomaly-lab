@@ -11,18 +11,18 @@
  * So the card states what a catalogue entry is for: recognise it, and open it. One quiet line
  * of counts stays, in the unit its truth is kept in — verdicts for an anomaly dataset,
  * classes for a class dataset (ADR-0041) — because what kind of dataset it is belongs to
- * recognising it. The delete
- * and edit actions live in a corner that appears on hover or keyboard focus, so the resting
+ * recognising it. Start a run, edit
+ * and delete live in a corner that appears on hover or keyboard focus, so the resting
  * grid is a wall of pictures rather than a wall of buttons.
  */
 
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Play, Trash2 } from "lucide-react";
 import { ImageOff } from "lucide-react";
 import { Link } from "react-router";
 
 import type { DatasetSummary } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { Button, cn, focusRing } from "@vitavision/lab-ui";
+import { Button, ButtonLink, cn, focusRing, Tooltip } from "@vitavision/lab-ui";
 import { truthLine } from "../../components/DatasetTruth";
 
 export function DatasetCard({
@@ -70,6 +70,15 @@ export function DatasetCard({
           "opacity-0 transition-opacity group-hover:opacity-100 focus-within:opacity-100",
         )}
       >
+        <Tooltip content="Start a run">
+          <ButtonLink
+            to={`/datasets/${dataset.id}/run`}
+            variant="ghost"
+            size="sm"
+            aria-label={`Start a run on ${dataset.name}`}
+            icon={<Play />}
+          />
+        </Tooltip>
         <Button
           variant="ghost"
           size="sm"
