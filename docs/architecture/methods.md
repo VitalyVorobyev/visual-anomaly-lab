@@ -76,12 +76,41 @@ A method whose optional dependencies (the `dl` extra) are missing reports `avail
 with the command that installs them, and is **listed, not hidden**, so "why can't I pick this method" is
 answerable from the screen.
 
+### Status and the task default
+
+Where a method stands is a verdict, not a capability, so the registry records it rather than the plugin:
+`STATUS` maps every key to a `MethodStatus` — `supported` (cleared its public gate), `experimental` (missed
+one, or has not run one) or `floor` (the task's numpy baseline, never promoted whatever it scores) — and
+`RECOMMENDED` maps each task to at most one method, the one a new experiment of that task starts from.
+Both follow the verdicts in [measurements](../measurements.md) and change with them; a key missing from
+`STATUS` reads as `experimental`. `describe` carries them to the listing as `status` and
+`recommended_for`, and the book's method table is generated from the same fields.
+
+| task | recommended | supported | experimental | floor |
+| --- | --- | --- | --- | --- |
+| `anomaly` | `dino_memory` | `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `anomalyvfm_anomalib` | `glass_anomalib`, `subspace_ad` | `pixel_reference` |
+| `few_shot_segmentation` | `proto_seg` | — | `fss_dino` | `color_prototype` |
+| `semantic_segmentation` | `dino_linear_seg` | — | — | `color_classifier` |
+| `object_detection` | — | — | `dino_linear_det` | `color_detector` |
+
+A recommended method is always `supported`. No detection method is recommended: none has cleared its
+gate, so the form starts from the first method in its order ([frontend](frontend.md)).
+
 ### Schema-driven configuration
 
 `config_model()` returns a pydantic model exposed as JSON Schema at `GET /api/experiments/model-types`.
 The experiment form is rendered from that schema — types, defaults, bounds, descriptions — so a new
 hyperparameter needs no frontend change ([frontend](frontend.md)). A default lives in Python alone: an
 untouched field is sent as unset.
+
+**A plugin marks the fields a person decides.** `json_schema_extra={"x-primary": True}` on the pydantic
+`Field` puts it in front of the form and an unmarked field keeps lab-ui's default rule, folded behind a
+disclosure when it is optional with a working default (`SchemaForm` from lab-ui 0.5.0; an older release
+ignores the key). Each method
+marks between one and four — its encoder or backbone, its scoring rule, its training length, the axes a
+gate or sweep actually varied — and `tests/test_method_decisions.py` holds every registered method to that
+range. A field that would fold anyway needs no mark; `"x-primary": False` folds one that would otherwise
+be shown.
 
 ### Contexts
 

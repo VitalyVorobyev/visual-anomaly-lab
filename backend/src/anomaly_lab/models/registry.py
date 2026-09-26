@@ -15,7 +15,8 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from anomaly_lab.models.base import AnomalyModel, ModelDescription
+from anomaly_lab.domain.entities import Task
+from anomaly_lab.models.base import AnomalyModel, MethodStatus, ModelDescription
 
 
 class UnknownModelError(Exception):
@@ -170,6 +171,36 @@ LOADERS: dict[str, Callable[[], type[AnomalyModel]]] = {
 }
 
 
+# Where each method stands, by the verdicts recorded in `docs/measurements.md`. Kept here, beside
+# the loaders, rather than on the plugin: a gate decides it, not the module, and reading it must
+# not import one. A method missing from this table has no verdict, which is `experimental`.
+STATUS: dict[str, MethodStatus] = {
+    "pixel_reference": MethodStatus.FLOOR,
+    "efficientad_custom": MethodStatus.SUPPORTED,
+    "patchcore_anomalib": MethodStatus.SUPPORTED,
+    "dinomaly_custom": MethodStatus.SUPPORTED,
+    "glass_anomalib": MethodStatus.EXPERIMENTAL,
+    "dino_memory": MethodStatus.SUPPORTED,
+    "subspace_ad": MethodStatus.EXPERIMENTAL,
+    "anomalyvfm_anomalib": MethodStatus.SUPPORTED,
+    "color_prototype": MethodStatus.FLOOR,
+    "fss_dino": MethodStatus.EXPERIMENTAL,
+    "proto_seg": MethodStatus.SUPPORTED,
+    "color_classifier": MethodStatus.FLOOR,
+    "dino_linear_seg": MethodStatus.SUPPORTED,
+    "color_detector": MethodStatus.FLOOR,
+    "dino_linear_det": MethodStatus.EXPERIMENTAL,
+}
+
+# The method a new experiment of each task starts from — one per task, so the answer is never
+# a tie. A task with no entry starts from its first registered method.
+RECOMMENDED: dict[Task, str] = {
+    Task.ANOMALY: "dino_memory",
+    Task.FEW_SHOT_SEGMENTATION: "proto_seg",
+    Task.SEMANTIC_SEGMENTATION: "dino_linear_seg",
+}
+
+
 def registered_keys() -> tuple[str, ...]:
     return tuple(LOADERS)
 
@@ -192,6 +223,8 @@ def describe(key: str) -> ModelDescription:
         summary=model_class.summary,
         capabilities=model_class.capabilities(),
         availability=model_class.availability(),
+        status=STATUS.get(key, MethodStatus.EXPERIMENTAL),
+        recommended_for=[task for task, method in RECOMMENDED.items() if method == key],
         config_schema=model_class.config_model().model_json_schema(),
     )
 

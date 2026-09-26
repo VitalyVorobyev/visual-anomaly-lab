@@ -110,10 +110,12 @@ class EfficientAdCustomConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     model_size: Literal["small", "medium"] = Field(
+        json_schema_extra={"x-primary": True},
         default="small",
         description="PDN capacity. 'medium' is more accurate and roughly twice the cost.",
     )
     max_steps: int = Field(
+        json_schema_extra={"x-primary": True},
         default=DEFAULT_MAX_STEPS,
         ge=10,
         le=200_000,
@@ -140,6 +142,7 @@ class EfficientAdCustomConfig(BaseModel):
         ),
     )
     teacher_source: Literal["nelson1425", "distilled", "anomalib"] = Field(
+        json_schema_extra={"x-primary": True},
         default="nelson1425",
         description=(
             "Which teacher to distil the student against. The published ones are different "
@@ -152,6 +155,7 @@ class EfficientAdCustomConfig(BaseModel):
         ),
     )
     distilled_teacher: str = Field(
+        json_schema_extra={"x-primary": True},
         default="",
         description=(
             "Name of a teacher produced by a distill job, when teacher_source is "

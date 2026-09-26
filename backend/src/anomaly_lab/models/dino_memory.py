@@ -537,6 +537,7 @@ class DinoMemoryConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_S14_REG4,
         description=(
             "Frozen encoder the patch features come from. The default is deliberately an "
@@ -548,6 +549,7 @@ class DinoMemoryConfig(BaseModel):
         ),
     )
     layers: FeatureLayers = Field(
+        json_schema_extra={"x-primary": True},
         default=FeatureLayers.LAST_TWO,
         description=(
             "Which transformer blocks the patch features are read from; the chosen blocks "
@@ -574,6 +576,7 @@ class DinoMemoryConfig(BaseModel):
         ),
     )
     scoring: Scoring = Field(
+        json_schema_extra={"x-primary": True},
         default=Scoring.GLOBAL_KNN,
         description=(
             "What the memory is. 'global_knn' holds one coreset bank over every position of "

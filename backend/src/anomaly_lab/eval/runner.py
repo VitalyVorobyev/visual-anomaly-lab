@@ -26,6 +26,7 @@ from typing import Any
 import numpy as np
 from PIL import Image
 from pydantic import BaseModel, Field
+from pydantic.config import JsonDict
 
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.db.repositories.annotations import GroundTruthMask
@@ -36,6 +37,7 @@ from anomaly_lab.domain.entities import (
     Experiment,
     Label,
     Subset,
+    Task,
 )
 from anomaly_lab.eval.aggregate import build_sample_results
 from anomaly_lab.eval.ground_truth import digest as ground_truth_digest
@@ -48,9 +50,18 @@ from anomaly_lab.media.decode import UnreadableImageError
 from anomaly_lab.models.preprocessing import load_mask
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
+# A field only the anomaly evaluator reads (see `EvalConfig`).
+_ANOMALY_ONLY: JsonDict = {"x-tasks": [Task.ANOMALY.value]}
+
 
 class EvalConfig(BaseModel):
-    """How an experiment's stored scores are read. The only config that may be revisited."""
+    """How an experiment's stored scores are read. The only config that may be revisited.
+
+    Every task's sample rows are aggregated here (`rebuild_sample_results`), so the two
+    aggregation fields apply to all of them; the rest are read by the anomaly evaluator
+    alone, and say so with `x-tasks`, which the create form reads to hide a field that
+    would change nothing.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -74,15 +85,18 @@ class EvalConfig(BaseModel):
     pixel_metrics: bool = Field(
         default=True,
         description="Compute pixel ROC-AUC and AU-PRO where ground-truth masks exist.",
+        json_schema_extra=_ANOMALY_ONLY,
     )
     pixel_bins: int = Field(
         default=DEFAULT_BINS,
+        json_schema_extra=_ANOMALY_ONLY,
         ge=256,
         le=1 << 20,
         description="Score-histogram resolution for the pixel curves.",
     )
     localization_tolerance: float = Field(
         default=0.02,
+        json_schema_extra=_ANOMALY_ONLY,
         ge=0.0,
         le=0.25,
         description=(

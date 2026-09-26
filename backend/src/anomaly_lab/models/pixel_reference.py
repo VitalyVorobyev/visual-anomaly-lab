@@ -74,6 +74,7 @@ class PixelReferenceConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     reference_scope: ReferenceScope = Field(
+        json_schema_extra={"x-primary": True},
         default=ReferenceScope.CHANNEL,
         description=(
             "What each per-pixel reference is built over. On a dataset whose samples are "
@@ -94,6 +95,7 @@ class PixelReferenceConfig(BaseModel):
         ),
     )
     smoothing_sigma: float = Field(
+        json_schema_extra={"x-primary": True},
         default=4.0,
         ge=0.0,
         le=32.0,
