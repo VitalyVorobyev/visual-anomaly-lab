@@ -25,20 +25,23 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { PAGE_SIZE, readBrowseState, toSampleQuery, writeBrowseState } from "../api/browseState";
-import type { ImageSummary, Label, SampleSummary } from "../api/client";
+import type { ImageSummary, ImageTruth, Label, SampleSummary } from "../api/client";
 import { preferredImageIndex } from "../api/defaultChannel";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
-import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Switch, Tooltip, type StageView } from "@vitavision/lab-ui";
+import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Slider, Switch, Tooltip, type StageView } from "@vitavision/lab-ui";
 
 import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { labelsApply } from "../api/truth";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
+import { useSampleTruth } from "../hooks/useImageTruth";
 import { ExploreMarks } from "./sample/ExploreMarks";
 import { ExploreSection } from "./sample/ExploreSection";
 import { useExploreSession, type ExploreSession } from "./sample/useExploreSession";
+import { TruthLegend } from "./sample/TruthLegend";
+import { stackLayers, truthLayers, type TruthView } from "./sample/truthLayers";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
   normal: "normal",
@@ -88,6 +91,9 @@ export function SampleRoute() {
   const [sideBySide, setSideBySide] = useState(false);
   const [view, setView] = useState<StageView | null>(RESET);
   const [autoAdvance, setAutoAdvance] = useState(true);
+  /** The sample's truth is on by default: an image-first tool shows what is known about it. */
+  const [truthOn, setTruthOn] = useState(true);
+  const [truthOpacity, setTruthOpacity] = useState(0.9);
   /**
    * The label rail is anomaly truth (ADR-0041). A dataset of classes alone does not carry
    * it — FSS-1000's objects are not normal or defective — so it is offered, not shown, and
@@ -180,12 +186,19 @@ export function SampleRoute() {
       ? preferredImageIndex(images, dataset.data?.default_channel)
       : filteredChannel);
   const shown = images[Math.min(activeIndex, images.length - 1)];
+  const imageIds = images.map((image) => image.id);
   const explore = useExploreSession({
     datasetId,
     sampleId,
     shownImageId: shown?.id,
-    imageIds: images.map((image) => image.id),
+    imageIds,
   });
+  // One read per image, whatever the channel count: a sample-scoped annotation is
+  // materialised on every channel, and each image answers for itself.
+  const truthQueries = useSampleTruth(imageIds);
+  const truths = truthQueries.map((query) => query.data);
+  const truthOf = (imageId: number) => truths[imageIds.indexOf(imageId)];
+  const truthView: TruthView = { on: truthOn, opacity: truthOpacity, exploring: explore.on };
 
   /** The next preview, fetched before it is asked for, so paging feels instant. */
   useEffect(() => {
@@ -313,6 +326,8 @@ export function SampleRoute() {
                   view={view}
                   onView={setView}
                   explore={explore}
+                  truth={truthOf(image.id)}
+                  truthView={truthView}
                   marked={sideBySide && images.length > 1}
                 />
               ))}
@@ -390,6 +405,32 @@ export function SampleRoute() {
                   0
                 </span>
               </Button>
+              <Switch
+                checked={truthOn}
+                onCheckedChange={setTruthOn}
+                label="Truth"
+                description={
+                  truthOn && explore.on
+                    ? "Dimmed beneath Explore."
+                    : "Completed annotations and imported masks."
+                }
+              />
+              {truthOn && (
+                <Slider
+                  aria-label="Truth opacity"
+                  value={truthOpacity}
+                  min={0.1}
+                  max={1}
+                  step={0.05}
+                  onValueChange={setTruthOpacity}
+                  readout={`opacity ${Math.round(truthOpacity * 100)}%`}
+                />
+              )}
+              <TruthLegend
+                truths={truths}
+                pending={truthQueries.some((query) => query.isPending)}
+                error={truthQueries.find((query) => query.error)?.error ?? null}
+              />
             </RailSection>
           )}
 
@@ -453,12 +494,17 @@ function ChannelStage({
   view,
   onView,
   explore,
+  truth,
+  truthView,
   marked,
 }: {
   image: ImageSummary;
   view: StageView | null;
   onView: (view: StageView) => void;
   explore: ExploreSession;
+  /** This image's own truth: a sample-scoped annotation is one revision per channel. */
+  truth: ImageTruth | undefined;
+  truthView: TruthView;
   /** Side by side, the pane Explore is asking about carries a ring. */
   marked: boolean;
 }) {
@@ -469,6 +515,7 @@ function ChannelStage({
   // Points belong to the mode that places them; clusters and false colour draw none.
   const pointed = sam || explore.mode === "similar";
   const { prompt } = explore;
+  const drawn = truthLayers(truth, truthView);
   return (
     <div
       className={cn(
@@ -484,7 +531,8 @@ function ChannelStage({
         // The arrows page through the filtered set, as on both result viewers.
         panKeys={false}
         label={`${image.channel ?? "unassigned"} canvas`}
-        layers={targeted ? explore.layers : []}
+        layers={stackLayers(drawn.layers, targeted ? explore.layers : [])}
+        shapes={drawn.shapes}
         onPick={
           explore.on ? (point, { shiftKey }) => explore.pick(image.id, point, shiftKey) : undefined
         }

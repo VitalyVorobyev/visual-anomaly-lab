@@ -164,11 +164,27 @@ the dataset default, else the first. Label editing with keyboard shortcuts where
 (above); full-resolution zoom; the label, channel and file controls in a 288 px rail. `GET /api/datasets/{id}/samples/{sid}`,
 `PATCH /api/datasets/{id}/samples/{sid}`, `GET /api/images/{id}/preview`, `…/full`.
 
+The viewer **draws each image's truth**, on by default (the View section's *Truth* switch and its opacity
+slider). `GET /api/images/{id}/truth` answers per image by the presence rule every class read shares
+([annotations](annotations.md)) — the newest completed revision, else an imported mask, else a normal
+label, else nothing — so a sample-scoped annotation, materialised on every channel, draws on each pane
+with no channel count anywhere. A revision's drawn `add` boxes come back as rectangles and are drawn as
+tagged `VectorLayer` boxes in their class's colour; every other region is one raster,
+`GET /api/images/{id}/truth/regions.png`, rasterised without those boxes and filled in each class's colour,
+or — for an imported mask, which is anomaly truth — outlined. Colours and names are the dataset's own
+taxonomy (the editor's), so they travel as data and the legend beside the switch lists the classes any
+channel shows with their chips, and says where the truth comes from. Layer order is fixed
+(`routes/sample/truthLayers.ts`): truth, then Explore above it; while Explore is on, truth keeps
+`EXPLORE_DIM` of its weight and the switch still hides it. Completing an annotation or recolouring a class
+invalidates the image's truth.
+
 **Explore** — the sample viewer's rail section for *what a frozen encoder sees*, for intuition rather than
 truth (`routes/sample/`). Off until switched on; then a click on the picture — `SampleStage`'s `onPick`,
 a background click that did not become a pan, projected through the stage's own transform — asks one
 question. **Similar**: a click adds a positive patch, shift-click a negative, and the similarity heatmap
-and its thresholded mask are two raster layers. **Clusters**: K (2–12) is a slider committed on release;
+and its thresholded mask are two raster layers; the heatmap is coloured over this image's own range and
+the rail prints it (*colour scaled to this image · median → top 1%*), while the mask threshold stays in
+absolute cosine. **Clusters**: K (2–12) is a slider committed on release;
 a click picks the cluster under it from the cells the answer carried (`api/explore.ts` replays the
 transform), and only that cluster is drawn. **PCA**: false colour. **SAM**: MobileSAM through the editor's
 own `POST /api/images/{id}/segment-assist`, its ranked candidates tinted as suggestions. Every overlay is

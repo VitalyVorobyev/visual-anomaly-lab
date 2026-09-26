@@ -145,7 +145,7 @@ anomaly datasets, and their labels come from the source's own normal/defect spli
 the database changes, then every missing manifest commits in one transaction, so a failed class cannot
 leave half a benchmark registered. Repeating the action skips datasets already present.
 
-FSS-1000 becomes **one** `folder_classes` dataset, `FSS-1000 panel`: the 200 images of a fixed panel of
+FSS-1000 becomes **one** `folder_classes` dataset, `FSS-1000`: the 200 images of a fixed panel of
 twenty classes (`FSS_PANEL`, [measurements](../measurements.md)), scanned from `fewshot_data/` with the
 twenty class directories named as `unlabeled_dirs`. No sample gets a label — an FSS-1000 image shows an
 object, and is neither normal nor defective (ADR-0041). Each image's mask is its **class truth**, entered
