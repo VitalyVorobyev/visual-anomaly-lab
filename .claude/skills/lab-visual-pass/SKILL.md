@@ -38,7 +38,7 @@ python3 .claude/skills/lab-visual-pass/scripts/seed.py --api http://127.0.0.1:80
   --visa-root datasets/VisA_20220922 --category candle > $S/ids.json
 ```
 
-One VisA class, its published split, a full-frame region profile, and two trained and scored
+One VisA class, its published split, the implicit "Full frame" region profile, and two trained and scored
 `pixel_reference` runs (the only method that needs no torch, and fast). `--few-shot` adds a 5-shot
 `defect` reference split and a scored `color_prototype` run, and the shots then include screens
 19–22, a few-shot run's Overview, Samples, Benchmark and sample page. It prints the ids the next step

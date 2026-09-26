@@ -31,6 +31,9 @@ class ColorMode(StrEnum):
 
 _UINT8_MAX = 255.0
 
+DEFAULT_INPUT_SIZE = 256
+"""The side of the square frame a method with no measured frame of its own is prepared at."""
+
 IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 """The statistics every ImageNet-pretrained backbone was trained under.
@@ -69,18 +72,22 @@ class PreprocessingOptions(BaseModel):
 
 
 class PreprocessingConfig(PreprocessingOptions):
-    """Resolved prepared-image contract frozen into an experiment at creation."""
+    """Resolved prepared-image contract frozen into an experiment at creation.
+
+    The size is the run's: named on the experiment, or the method's `native_size` when it
+    is not. The run's region profile is prepared at exactly this size.
+    """
 
     model_config = API_MODEL_CONFIG
 
     width: int = Field(
-        default=256,
+        default=DEFAULT_INPUT_SIZE,
         ge=8,
         le=2048,
         description="Model input width in pixels. EfficientAD is designed around 256.",
     )
     height: int = Field(
-        default=256,
+        default=DEFAULT_INPUT_SIZE,
         ge=8,
         le=2048,
         description="Model input height in pixels.",

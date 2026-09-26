@@ -277,6 +277,7 @@ class PatchcoreConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: str = Field(
+        json_schema_extra={"x-primary": True},
         default="wide_resnet50_2",
         description=(
             "timm backbone the patch features come from. The paper uses wide_resnet50_2; "
@@ -285,6 +286,7 @@ class PatchcoreConfig(BaseModel):
         ),
     )
     layer_set: LayerSet = Field(
+        json_schema_extra={"x-primary": True},
         default=LayerSet.LAYER2_LAYER3,
         description=(
             "Which backbone layers are concatenated into each patch embedding. Shallower "
@@ -307,6 +309,7 @@ class PatchcoreConfig(BaseModel):
         ),
     )
     coreset_ratio: float = Field(
+        json_schema_extra={"x-primary": True},
         default=0.1,
         gt=0.0,
         le=1.0,
@@ -434,6 +437,14 @@ class PatchcoreAnomalibModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return PatchcoreConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the frame it ran at as the DINO patch memory gate's control.
+
+        See docs/measurements.md.
+        """
+        return (448, 448)
 
     @classmethod
     def capabilities(cls) -> Capabilities:

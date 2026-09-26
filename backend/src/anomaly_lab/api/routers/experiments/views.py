@@ -77,8 +77,30 @@ class CreateExperimentRequest(BaseModel):
     name: str
     dataset_id: int
     split_id: int
-    region_profile_id: int
+    region_profile_id: int | None = Field(
+        # A factory, so the generated client makes the property optional (see `TrainParams`).
+        default_factory=lambda: None,
+        description=(
+            "Where to look: a region profile revision of the dataset. Omitted means the "
+            "dataset's implicit 'Full frame' profile."
+        ),
+    )
     model_type: str
+    width: int | None = Field(
+        default_factory=lambda: None,
+        ge=8,
+        le=2048,
+        description=(
+            "Input width in pixels. Omitted with `height`, the method's own native size "
+            "for this configuration."
+        ),
+    )
+    height: int | None = Field(
+        default_factory=lambda: None,
+        ge=8,
+        le=2048,
+        description="Input height in pixels; given together with `width` or not at all.",
+    )
     task: Task = Field(
         default=Task.ANOMALY,
         description="What the run is asked to do. The method must list it in its capabilities.",
@@ -104,6 +126,31 @@ class CreateExperimentRequest(BaseModel):
     notes: str | None = None
 
 
+class InputSizeRequest(BaseModel):
+    """A method and its configuration, to resolve the size a run of it would read."""
+
+    model_config = API_MODEL_CONFIG
+
+    model_type: str
+    config: dict[str, Any] = Field(default_factory=dict)
+
+
+class InputSizeAnswer(BaseModel):
+    """The size a run resolves to when the experiment names none."""
+
+    model_config = API_MODEL_CONFIG
+
+    model_type: str
+    width: int
+    height: int
+    multiple: int = Field(
+        description=(
+            "Both dimensions of a named size must be a multiple of this — the backbone's "
+            "patch size; 1 when any size reads."
+        )
+    )
+
+
 class MetricSummary(BaseModel):
     model_config = API_MODEL_CONFIG
 
@@ -122,7 +169,12 @@ class ExperimentSummary(BaseModel):
     dataset_id: int
     split_id: int
     region_profile_id: int
-    region_manifest_sha256: str
+    region_manifest_sha256: str | None = Field(
+        description=(
+            "The prepared-region build the run reads; null until its first train or infer "
+            "job builds or adopts it, frozen from then on."
+        ),
+    )
     model_type: str
     task: Task = Task.ANOMALY
     target_label: str | None = None

@@ -134,12 +134,21 @@ this frame.
 
 ## Scope
 
-A dataset annotates either each image or each whole sample; `Dataset.annotation_scope` says which
-(ADR-0036). `image` is the default. `sample` is for a multi-shot rig whose channels are exposures of one
+A dataset annotates either each image or each whole sample; `Dataset.annotation_scope` says which.
+`image` is the default. `sample` is for a multi-shot rig whose channels are exposures of one
 registered part: one document is edited once and materialised as **one ordinary `AnnotationRevision` per
 image of the sample**. Below that boundary truth is image-keyed — `resolve_ground_truth_masks`, pixel
 metrics, `has_mask`, the `MetricSet` digest and all three interchange formats never learn that scope
 exists.
+
+**Only the editing unit moves up; truth stays per image.** A sample-level revision entity would save N−1
+PNGs per part and charge for it where churn is least affordable: every ground-truth consumer would need a
+second resolution path, the staleness digest would hash a mixture of identities, and a method still
+predicts per image ([methods](methods.md)), so sample-keyed truth would be joined back at every use.
+Completion renders once and writes the same bytes to each image's revision, so a shared mask digest makes
+"these channels carry the same truth" checkable. Registration is measured, not enforced: a badly
+registered dataset in sample scope gets a mask that is wrong on every channel but the one it was drawn on,
+and the import scan's offset report and the editor's channel blend are the whole defence.
 
 `GET`/`PUT /api/datasets/{id}/annotation-scope` reads and moves it. The read reports **every** reason
 sample scope is unavailable: imported source masks (pinned per image), samples whose images differ in

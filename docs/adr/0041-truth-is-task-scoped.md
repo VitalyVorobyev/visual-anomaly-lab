@@ -78,6 +78,6 @@ What ADR-0005 decided is kept:
 - Deriving the truth kind costs a query per dataset on every catalogue read. Only completed
   revisions with a class table count as class truth; an imported mask is anomaly truth and does not.
 - Kept from ADR-0005: sample-level splits cost data; there are no per-image verdicts, so a part
-  whose defect shows in one view is still a defective part (ADR-0011 aggregates); re-running
+  whose defect shows in one view is still a defective part (the evaluation layer aggregates, handbook evaluation.md); re-running
   multiplies experiments; `group_key` is import-derived and load-bearing; and nothing records
   whether two channels' scores share a scale.

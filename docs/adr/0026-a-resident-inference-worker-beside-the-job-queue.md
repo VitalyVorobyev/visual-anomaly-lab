@@ -9,12 +9,6 @@ did on this image" for a scored run, or a promptable segmentation model assistin
 model load dominates — seconds against a fraction of one. ADR-0009 gives every unit of work its own
 process and runs them one at a time through a single FIFO queue.
 
-Two designs were live. **A job per request** reuses the queue, its protocol, cancellation and log
-tee, and adds nothing architecturally; but every click pays a model load, and a request made while a
-model trains waits behind the training. **A resident worker** loads once and answers in
-milliseconds after that, at the cost of a long-lived compute process that is in neither the queue
-nor the `job` table and that, on this machine, holds the MPS device.
-
 ## Decision
 
 **Exactly one resident worker exists, keyed by `(kind, target key, artifact generation)`, and it is
@@ -31,16 +25,21 @@ kept off the device by a lock rather than by a check.**
   worker's stdin and answers reuse the job protocol's envelope and parser.
 - **The key includes a generation fingerprint** of the model directory or asset, so a retrain
   replaces the resident and stale weights cannot be served.
-- **A request changes no score, map or metric**; those come from jobs (ADR-0011). Only on-demand
-  diagnostics persist.
+- **A request changes no score, map or metric**; those come from jobs. Only on-demand diagnostics
+  persist.
 - **Any protocol deviation kills the process**; there is no supervision, and the next request
   spawns another. It is evicted when idle and torn down with the application.
 
-**Ruled out:** a job per request (a model load per click, queued behind training); a resident per
-experiment (N checkpoints, N claims on the device); a thread inside the API process (the process
-boundary is what makes a wedged native call survivable); and guarding coexistence with a status
-check (a check against state mutated on the event loop is a race, and losing it is an out-of-memory
-failure in an unrelated training job).
+## Alternatives considered
+
+- **A job per request.** Reuses the queue, its protocol, cancellation and log tee, and adds nothing
+  architecturally; but every click pays a model load, and a request made while a model trains waits
+  behind the training.
+- **A resident per experiment.** N checkpoints and N claims on the device.
+- **A thread inside the API process.** The process boundary is what makes a wedged native call
+  survivable.
+- **Guarding coexistence with a status check.** A check against state mutated on the event loop is
+  a race, and losing it is an out-of-memory failure in an unrelated training job.
 
 ## Consequences
 

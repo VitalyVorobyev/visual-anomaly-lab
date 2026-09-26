@@ -1,8 +1,9 @@
 """Several runs read against each other, under one protocol (ADR-0028).
 
 Nothing here recomputes a metric and nothing re-runs inference: the threshold-independent
-numbers are the ones a job already stored (ADR-0011), and the threshold-dependent ones are
-the same read over a few hundred floats the single-run threshold route does.
+numbers are the ones a job already stored (handbook evaluation.md), and the
+threshold-dependent ones are the same read over a few hundred floats the single-run
+threshold route does.
 
 The one thing this route decides that no other route does is **the operating point**. Score
 units do not survive a change of method, so a single numeric threshold across runs would

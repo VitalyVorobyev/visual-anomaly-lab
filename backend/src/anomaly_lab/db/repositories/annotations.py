@@ -490,7 +490,7 @@ class OpenDraft:
 
     A count on its own is a dead end. "2 images hold annotation work that has not been
     completed" is true, and leaves an operator with a dataset of several hundred images and no
-    way to find the two. A scope change needs an empty desk (ADR-0036), so the
+    way to find the two. A scope change needs an empty desk (handbook annotations.md), so the
     desk has to say what is on it.
 
     `image_id` is always present, including for a sample draft, where it is the sample's first

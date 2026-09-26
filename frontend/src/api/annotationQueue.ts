@@ -1,7 +1,7 @@
 /**
  * What one unit of annotation work is.
  *
- * A dataset annotates either each image or each whole sample (ADR-0036), and that decides
+ * A dataset annotates either each image or each whole sample (handbook annotations.md), and that decides
  * the shape of the queue, not just the shape of a save: under sample scope one completion
  * writes the same mask to every image of the part, so listing the part's three channels as
  * three cards would offer the same job three times and make "next" advance through a

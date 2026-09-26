@@ -61,7 +61,7 @@ produced ([import](import.md)). One capture tree holding several products is the
 each with its own `dataset_root`. `name` and `root_path` are identity and not editable.
 
 `annotation_scope ∈ {image, sample}` decides whether annotation truth is *edited* per photograph or per
-part; it is stored per image either way (ADR-0036). Only `PUT /api/datasets/{id}/annotation-scope` writes
+part; it is stored per image either way. Only `PUT /api/datasets/{id}/annotation-scope` writes
 it, and it refuses while the dataset has imported source masks, samples whose images differ in size, or an
 open draft ([annotations](annotations.md)).
 
@@ -121,7 +121,7 @@ makes files immutable identities, which is what allows caching by `image_id` ([m
 ### Mask
 
 `id`, `image_id`, `path`, `kind`, `sha256` (nullable). Source pixel-level ground truth, referenced in place
-like its image (ADR-0015). Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
+like its image. Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
 one; a mask the manifest no longer mentions is left alone, as a missing image is reported rather than
 deleted. `sha256` pins source-mask provenance (ADR-0032) and stays `NULL` until the file first becomes an
 annotation base — nothing claims to have verified bytes it did not read. `verify` reports existence
@@ -181,13 +181,22 @@ a subset.
 
 ### RegionProfileRevision
 
-`id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `prepared_width`,
-`prepared_height`, `padding_fraction`, `resample`, `created_at`, `sample_alignment`. One immutable
-dataset-owned configuration for localising and preparing input (ADR-0033); the database rejects updates, so
-changing any value appends a revision. An extractor failure may reduce build coverage but never silently
-substitutes the full frame. A completed build lives under
-`data/region-profiles/profile-<id>/` as one lossless PNG per source image, a deterministic JSON-lines
-transform manifest and a bounded summary whose digests make configuration and materialisation auditable.
+`id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `padding_fraction`,
+`resample`, `created_at`, `sample_alignment`. One immutable dataset-owned configuration for **where to
+look** (ADR-0033); the database rejects updates, so changing any value appends a revision. It carries no
+size: the size is the experiment's. An extractor failure may reduce build coverage but never silently
+substitutes the full frame.
+
+Every dataset has one implicit revision, **"Full frame"** — `identity`, no padding, bilinear, per image —
+created with the dataset (`region_profiles.full_frame_profile`, called by `datasets.create_dataset`, which
+both the import commit and reference-pack registration go through). An experiment that names no profile
+reads it; if someone deleted it, asking for it creates it again.
+
+A **build** is one revision prepared at one size, `(revision, width, height)`, published under
+`data/region-profiles/profile-<id>/<width>x<height>/` as one lossless PNG per source image, a deterministic
+JSON-lines transform manifest and a bounded summary (which records its `width` and `height`) whose digests
+make configuration and materialisation auditable. A published build is immutable; a revision can hold one
+per size, and deleting the revision removes them all.
 Transforms (`regions/transform.py`) name points in pixel-centre coordinates and crops in half-open
 pixel-edge coordinates, matching numpy and Pillow, so a contained resize projects back without half-pixel
 drift.
@@ -227,8 +236,15 @@ experiment, so every result row is attributable to one immutable configuration.
   `ImageRecord.channel` at the plugin boundary is a name too. An unknown name is refused at creation (422),
   and the selection is stored in `Channel.position` order, not the order the client sent.
 - `status ∈ {draft, training, trained, failed}`.
-- The pinned region profile must belong to the dataset and its manifest must be a complete immutable build.
-  `preprocessing_config` stores the resolved prepared dimensions plus colour policy, not a second resize.
+- `region_profile_id` must belong to the dataset; omitted at creation, it is the dataset's "Full frame".
+  **No build is needed to create a run.** `preprocessing_config` stores the run's input size — the
+  `width` and `height` the request named, or the method's `native_size` for its configuration when it
+  named neither ([methods](methods.md#native-size)) — plus the colour policy; creation refuses a size the
+  method's `check_input` cannot read.
+- `region_manifest_sha256` is the digest of the build the run reads, the profile at the run's size. It is
+  **null at creation** and set by the run's first train or infer job, which adopts that build or prepares
+  it ([jobs](jobs.md#preparing-a-runs-input)). Once set it never changes: `experiments.pin_region_build`
+  refuses a different value, and a trigger refuses any update of a set pin beneath it.
 - `artifact_dir` is `data/artifacts/exp-<id>/`. Startup removes only exact app-owned `exp-<id>`
   directories whose row no longer exists, never traversing a dataset source path.
 

@@ -28,6 +28,7 @@ from anomaly_lab.api.routers import (
     jobs,
     model_assets,
     reference_packs,
+    region_preview,
     region_profiles,
     segment_assist,
     splits,
@@ -150,6 +151,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(jobs.ws_router)
     app.include_router(model_assets.router)
     app.include_router(reference_packs.router)
+    app.include_router(region_preview.router)
     app.include_router(region_profiles.router)
     app.include_router(segment_assist.router)
     app.include_router(splits.router)

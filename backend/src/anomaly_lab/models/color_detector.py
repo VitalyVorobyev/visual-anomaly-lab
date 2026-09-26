@@ -54,6 +54,7 @@ CLASSES_FILENAME = "color_detector.json"
 
 class ColorDetectorConfig(ColorClassifierConfig):
     min_area: int = Field(
+        json_schema_extra={"x-primary": True},
         default=4,
         ge=1,
         le=1_000_000,
@@ -167,6 +168,11 @@ class ColorDetectorModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return ColorDetectorConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the frame the detection gate ran this floor at (docs/measurements.md)."""
+        return (448, 448)
 
     @classmethod
     def capabilities(cls) -> Capabilities:

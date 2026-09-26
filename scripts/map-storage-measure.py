@@ -181,22 +181,29 @@ def _build_profile(
             name=f"map storage {label}",
             extractor_type=extractor,
             extractor_config={},
-            prepared_width=PREPARED_SIZE,
-            prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
         )
     run_region_prepare_job(
         JobContext(
             job_id=job_id,
             kind=JobKind.REGION_PREPARE,
-            params={"dataset_id": dataset_id, "profile_id": profile.id, "mode": "build"},
+            params={
+                "dataset_id": dataset_id,
+                "profile_id": profile.id,
+                "mode": "build",
+                "width": PREPARED_SIZE,
+                "height": PREPARED_SIZE,
+            },
             settings=settings,
         )
     )
-    summary = read_build_summary(settings, profile.id)
+    size = (PREPARED_SIZE, PREPARED_SIZE)
+    summary = read_build_summary(settings, profile.id, size)
     if summary is None or summary.failed:
         raise RuntimeError(f"profile {label} did not build cleanly")
-    return load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+    return load_prepared_build(
+        settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+    )
 
 
 def _create_experiment(

@@ -124,6 +124,15 @@ reproducibility record — which files became which samples under which channel 
 
 ## Reference packs
 
+**The workbench is proved on public benchmarks, and they are downloaded, never committed.** They are large
+and freely obtainable, so vendoring them would add gigabytes and buy nothing. `/datasets/` is gitignored for
+size, not secrecy; the README says how to obtain each pack and credits it under its authors' licence, and
+`scripts/check-repo-safety.sh` fails if anything under it is staged. The cost is that a clone gets
+instructions rather than a runnable benchmark. A method is also checked against the paper's own number on
+the paper's own split, not only against its own regression baselines: a gap is acceptable where
+preprocessing or resolution explains it, an unexplained one is a bug no self-consistent test suite can
+find ([measurements](../measurements.md)).
+
 `GET /api/reference-packs` discovers public packs under the configured reference-data root (the gitignored
 `/datasets/` in development) from metadata alone — it knows the published layouts of VisA, GKN, FSS-1000 and
 PKU-Market-PCB and

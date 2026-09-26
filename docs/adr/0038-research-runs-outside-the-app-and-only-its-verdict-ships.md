@@ -4,10 +4,10 @@
 
 ## Context
 
-Adding [SubspaceAD][paper] leaves the implementer choices no reading can settle: encoder family and
-size, which band of transformer blocks to pool and whether the paper's band is relative or fixed,
-input resolution, the explained-variance threshold and the tail fraction. Each is a measurement, and
-they interact. That is a sweep of hundreds of configurations per benchmark category, across several
+A method taken from a paper — [SubspaceAD][paper] is the first — leaves the implementer choices no
+reading can settle: encoder family and size, which band of transformer blocks to pool, input
+resolution, an explained-variance threshold, a tail fraction. Each is a measurement, and they
+interact. That is a sweep of hundreds of configurations per benchmark category, across several
 benchmarks and encoders. The question is where it runs.
 
 **The workbench can already do this**, which is what makes it a real question. A script that created
@@ -20,9 +20,8 @@ out:
   computed, and nested k-shot draws share a pass. Only the backbone and the resolution cost a pass.
   A `Job` is one configuration over one split and cannot share a pass with its siblings, so through
   the app the sweep is orders of magnitude more expensive.
-- **The axes are not method options, and schema v1 is frozen.** Comparable across runs, each axis
-  would become a persisted column and, under ADR-0004, a numbered migration — for variables that
-  exist to be eliminated.
+- **The axes are not method options.** Comparable across runs, each axis would become a persisted
+  column in the schema (ADR-0004) — for variables that exist to be eliminated.
 - **The benchmarks' protocol is not the app's data model.** Per-category official splits and a
   k-shot draw with augmented copies are not `Split`s, and importing them would make the import layer
   part of the measurement.
@@ -45,6 +44,13 @@ so one `ruff`, `mypy` and `pytest` cover it, and outside `backend/src/` so it is
 - **Only the verdict ships:** one configurable plugin whose *defaults* are the winning configuration,
   one entry in `docs/measurements.md` recording protocol and number, and what the handbook needs.
   Losing arms become a sentence in the measurement record, not plugin options "in case".
+
+## Alternatives considered
+
+- **Drive the sweep through the app**, one `Experiment` and one `Job` per configuration. Rejected
+  for the three reasons above.
+- **Ship every arm as a plugin option.** The picker would carry variables whose only purpose was to
+  be eliminated, and every one of them would be a hypothesis nobody re-measures.
 
 ## Consequences
 

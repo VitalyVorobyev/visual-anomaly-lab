@@ -128,8 +128,8 @@ def read_metric_series(log_path: str | None, limit: int = SERIES_POINT_LIMIT) ->
     """Every `metric` event a job has written so far, grouped by name.
 
     The job log is already the tee'd source of truth for the event stream (ADR-0009), so
-    this needs no table, no migration and no second event channel — ADR-0018 declined one
-    for exactly this data and nothing here reintroduces it.
+    this needs no table, no migration and no second event channel —
+    the diagnostics design declines one for exactly this data and nothing here reintroduces it.
 
     Lines that are not JSON, or are JSON but not a metric, are skipped: the log
     deliberately carries third-party chatter and native crash messages verbatim, and a

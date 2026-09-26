@@ -18,12 +18,16 @@ from anomaly_lab.regions.preparation import (
     MANIFEST_FILENAME,
     PREVIEW_LIMIT,
     RegionBuildSummary,
+    build_dir,
+    list_build_summaries,
     load_prepared_build,
     preview_indices,
     read_build_summary,
     run_region_prepare_job,
 )
 from tests.conftest import Fixture, seed_synthetic_split
+
+SIZE = (24, 20)
 
 
 @pytest.fixture
@@ -37,8 +41,6 @@ def prepared_fixture(settings: Settings, tmp_path: Path) -> tuple[Fixture, int]:
             name="full frame",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=24,
-            prepared_height=20,
             padding_fraction=0.05,
         )
     return fixture, profile.id
@@ -51,11 +53,18 @@ def _context(
     *,
     mode: str,
     job_id: int = 41,
+    size: tuple[int, int] = SIZE,
 ) -> JobContext:
     return JobContext(
         job_id=job_id,
         kind=JobKind.REGION_PREPARE,
-        params={"dataset_id": fixture.dataset_id, "profile_id": profile_id, "mode": mode},
+        params={
+            "dataset_id": fixture.dataset_id,
+            "profile_id": profile_id,
+            "mode": mode,
+            "width": size[0],
+            "height": size[1],
+        },
         settings=settings,
     )
 
@@ -124,7 +133,7 @@ def test_build_is_immutable_and_records_every_source_transform(
     first = RegionBuildSummary.model_validate(
         run_region_prepare_job(_context(settings, fixture, profile_id, mode="build", job_id=42))
     )
-    root = settings.region_profile_dir(profile_id)
+    root = build_dir(settings, profile_id, SIZE)
     summary_path = root / "summary.json"
     original_summary = summary_path.read_bytes()
     first_manifest = (root / MANIFEST_FILENAME).read_bytes()
@@ -149,7 +158,8 @@ def test_build_is_immutable_and_records_every_source_transform(
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in sorted((root / "images").iterdir())
     }
-    assert read_build_summary(settings, profile_id) == first
+    assert read_build_summary(settings, profile_id, SIZE) == first
+    assert (first.width, first.height) == SIZE
     lines = [json.loads(line) for line in first_manifest.decode().splitlines()]
     assert len(lines) == 14
     assert [entry.image_id for entry in first.preview_entries] == [
@@ -162,13 +172,15 @@ def test_build_is_immutable_and_records_every_source_transform(
     with connection(settings.db_path) as conn:
         profile = profiles_repo.get_profile(conn, profile_id)
     assert profile is not None
-    loaded = load_prepared_build(settings, profile, manifest_sha256=first.manifest_sha256)
+    loaded = load_prepared_build(
+        settings, profile, size=SIZE, manifest_sha256=first.manifest_sha256
+    )
     summary_path.write_text(
         first.model_copy(update={"profile_id": profile_id + 100}).model_dump_json(indent=2),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="build identity"):
-        load_prepared_build(settings, profile, manifest_sha256=first.manifest_sha256)
+        load_prepared_build(settings, profile, size=SIZE, manifest_sha256=first.manifest_sha256)
     summary_path.write_bytes(original_summary)
 
     tampered_id = lines[0]["image_id"]
@@ -201,4 +213,36 @@ def test_a_missing_source_is_a_persisted_failure_not_identity_fallback(
     assert len(summary.failure_examples) == 1
     assert summary.failure_examples[0].transform is None
     assert summary.failure_examples[0].error
-    assert len(list((settings.region_profile_dir(profile_id) / "images").iterdir())) == 13
+    assert len(list((build_dir(settings, profile_id, SIZE) / "images").iterdir())) == 13
+
+
+def test_one_profile_holds_a_build_per_size_and_neither_touches_the_other(
+    settings: Settings,
+    prepared_fixture: tuple[Fixture, int],
+) -> None:
+    fixture, profile_id = prepared_fixture
+    small = RegionBuildSummary.model_validate(
+        run_region_prepare_job(_context(settings, fixture, profile_id, mode="build", job_id=45))
+    )
+    large = RegionBuildSummary.model_validate(
+        run_region_prepare_job(
+            _context(settings, fixture, profile_id, mode="build", job_id=46, size=(28, 28))
+        )
+    )
+
+    assert small.manifest_sha256 != large.manifest_sha256
+    assert list_build_summaries(settings, profile_id) == [small, large]
+    with connection(settings.db_path) as conn:
+        profile = profiles_repo.get_profile(conn, profile_id)
+    assert profile is not None
+    loaded = load_prepared_build(
+        settings, profile, size=(28, 28), manifest_sha256=large.manifest_sha256
+    )
+    assert all(
+        (entry.transform.prepared_width, entry.transform.prepared_height) == (28, 28)
+        for entry in loaded.entries.values()
+        if entry.transform is not None
+    )
+    # A pin names one build: the other size's manifest is not it.
+    with pytest.raises(ValueError, match="experiment pins"):
+        load_prepared_build(settings, profile, size=SIZE, manifest_sha256=large.manifest_sha256)

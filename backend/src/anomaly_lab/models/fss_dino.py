@@ -50,7 +50,9 @@ from anomaly_lab.models.dino_backbone import (
     DinoBackbone,
     FrozenEncoder,
     image_patch_features,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import PreprocessingConfig
@@ -76,6 +78,7 @@ class FssDinoConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder; its last block is read. FSSDINO used DINOv3 ViT-B/16, which is "
@@ -84,6 +87,7 @@ class FssDinoConfig(BaseModel):
         ),
     )
     prototypes_per_class: int = Field(
+        json_schema_extra={"x-primary": True},
         default=5,
         ge=1,
         le=64,
@@ -106,6 +110,7 @@ class FssDinoConfig(BaseModel):
         ),
     )
     calibration: Calibration = Field(
+        json_schema_extra={"x-primary": True},
         default=Calibration.NONE,
         description=(
             "'leave_one_out' rescales the foreground probability on the references: each is "
@@ -163,6 +168,19 @@ class FssDinoModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return FssDinoConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the few-shot gates ran at 448x448 (docs/measurements.md)."""
+        if not isinstance(config, FssDinoConfig):
+            raise TypeError(f"expected FssDinoConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, FssDinoConfig):
+            raise TypeError(f"expected FssDinoConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

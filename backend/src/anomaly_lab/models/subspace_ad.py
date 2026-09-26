@@ -67,7 +67,9 @@ from anomaly_lab.models.dino_backbone import (
     LayerWindow,
     backbone_fingerprint,
     load_backbone,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import (
@@ -108,6 +110,7 @@ class SubspaceAdConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_L14,
         description=(
             "Frozen encoder the patch features come from. ViT-L is the default because it "
@@ -121,6 +124,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     layers: LayerWindow = Field(
+        json_schema_extra={"x-primary": True},
         default=LayerWindow.UPPER_HALF,
         description=(
             "Which band of transformer blocks the patch features are pooled over, as a "
@@ -132,6 +136,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     variance: float = Field(
+        json_schema_extra={"x-primary": True},
         default=0.99,
         gt=0.0,
         le=1.0,
@@ -144,6 +149,7 @@ class SubspaceAdConfig(BaseModel):
         ),
     )
     tail_fraction: float = Field(
+        json_schema_extra={"x-primary": True},
         default=0.002,
         gt=0.0,
         le=1.0,
@@ -274,6 +280,22 @@ class SubspaceAdModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return SubspaceAdConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """672 px square: the shipped defaults are the sweep's leading arm, ViT-L/14 at 672 px.
+
+        16 divides 672 too (docs/measurements.md).
+        """
+        if not isinstance(config, SubspaceAdConfig):
+            raise TypeError(f"expected SubspaceAdConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 672)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, SubspaceAdConfig):
+            raise TypeError(f"expected SubspaceAdConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

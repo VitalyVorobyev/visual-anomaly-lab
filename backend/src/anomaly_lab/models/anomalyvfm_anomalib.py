@@ -123,6 +123,7 @@ class AnomalyVfmConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     allow_downloads: bool = Field(
+        json_schema_extra={"x-primary": True},
         default=True,
         description=(
             "Permit fetching the pinned 1.42 GB AnomalyVFM checkpoint into the app model "
@@ -364,6 +365,15 @@ class AnomalyVfmAnomalibModel(AnomalyModel):
     @classmethod
     def availability(cls) -> Availability:
         return module_available("anomalib", "dl", METHOD)
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """768 px square: the frame its resource gate kept and its public gate ran at."""
+        return (MEASURED_SIZE, MEASURED_SIZE)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        return PATCH_SIZE
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

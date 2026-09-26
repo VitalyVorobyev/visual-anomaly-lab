@@ -6,6 +6,7 @@ import sqlite3
 
 from anomaly_lab.db.connection import transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
+from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
 from anomaly_lab.domain.entities import AnnotationScope, Channel, Dataset, Label
 
 
@@ -54,6 +55,7 @@ def create_dataset(
         msg = "the dataset row vanished immediately after insertion"
         raise RuntimeError(msg)
     annotations_repo.ensure_default_label(conn, created.id)
+    region_profiles_repo.full_frame_profile(conn, created.id)
     return created
 
 

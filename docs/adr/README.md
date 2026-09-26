@@ -1,67 +1,62 @@
 # Architecture Decision Records
 
-This directory records **choices that had a live alternative** — what was decided, why, and what it
-cost. It is not the system's documentation. To learn how the workbench works, read
+These records hold **choices that had a live alternative** — what was decided, why, and what it
+cost. They are not the system's documentation: to learn how the workbench works, read
 [the handbook](../architecture/README.md); come here to find out why it is shaped that way.
-
-**The bar for a record** (ADR-0030): *would a competent engineer plausibly have chosen otherwise, and
-would changing it now cost more than a refactor?* Both must be yes. A contract detail, a helper, a
-read path for something already decided, or a new option on an existing seam is handbook material.
-
-**Records are edited in place.** A refined decision is rewritten so it reads as one coherent
-choice. Records carry no changelog: git history is the changelog, and measured numbers live in
-[measurements.md](../measurements.md). A **reversal** gets a new number and supersedes the old
-record explicitly.
-
-**A record that no longer settles anything is removed**, with every citation repointed at the
-handbook page that answers the question now. Numbers are never reused.
 
 ## Decisions
 
-| # | Title | Area |
-|---|---|---|
-| [0002](0002-monorepo-layout.md) | Monorepo layout | Structure |
-| [0003](0003-tauri-to-python-boundary-is-a-fastapi-sidecar.md) | Tauri-to-Python boundary is a FastAPI sidecar | Structure |
-| [0004](0004-persistence-with-sqlite-and-filesystem-artifacts.md) | Persistence with SQLite and filesystem artifacts | Storage |
-| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | Sample owns label and split; channel is data, not schema — superseded by 0041 | Domain |
-| [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import via pluggable adapters and a reviewable manifest | Import |
-| [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Common model plugin interface with capability flags | Methods |
-| [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — wrap a maintained library first, own a method later | Methods |
-| [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Job execution — subprocess per job, single FIFO queue | Jobs |
-| [0011](0011-evaluation-protocol-for-grouped-samples.md) | Evaluation protocol for grouped samples | Evaluation |
-| [0012](0012-frontend-stack-and-generated-api-client.md) | Frontend stack and a generated API client | Frontend |
-| [0015](0015-public-reference-datasets-and-a-dataset-agnostic-first-method.md) | Public reference datasets, and a dataset-agnostic method first | Steering |
-| [0018](0018-model-diagnostics-as-a-declarative-capability.md) | Model diagnostics as a declarative capability | Diagnostics |
-| [0021](0021-design-token-layer-and-primitive-set.md) | A design token layer, and primitives for the controls Tailwind does not have | Frontend |
-| [0022](0022-private-source-data-lives-outside-the-working-tree.md) | Private source data lives outside the repository working tree | Safety |
-| [0026](0026-a-resident-inference-worker-beside-the-job-queue.md) | A resident inference worker beside the job queue | Jobs |
-| [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Comparing runs whose scores are not in the same units | Evaluation |
-| [0029](0029-anomalib-is-the-baseline-not-the-specification.md) | `efficientad_custom` is our implementation; anomalib is the baseline it beats or does not | Methods |
-| [0030](0030-decisions-are-amendable-and-the-handbook-holds-current-truth.md) | Decisions are amendable, and the handbook holds current truth | Process |
-| [0031](0031-the-teacher-is-an-experiment-variable-and-we-produce-it.md) | The teacher is an experiment variable, and we produce it | Methods |
-| [0032](0032-annotation-truth-is-versioned-and-source-frame.md) | Annotation truth is versioned and source-frame | Annotation |
-| [0033](0033-region-profiles-pin-an-invertible-source-transform.md) | Region profiles pin an invertible source transform | Spatial input |
-| [0034](0034-portable-models-are-verified-deployment-bundles.md) | Portable models are verified deployment bundles | Deployment |
-| [0035](0035-an-experiment-selects-its-channels-by-name.md) | An experiment selects its channels, by name | Evaluation |
-| [0036](0036-annotation-is-edited-per-sample-and-stored-per-image.md) | Annotation is edited per sample and stored per image | Annotations |
-| [0037](0037-a-frozen-dino-memory-is-ours-and-its-scoring-rule-is-one-axis.md) | A frozen DINO memory is ours, and its scoring rule is one axis | Methods |
-| [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships | Process |
-| [0039](0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md) | A task is frozen on the experiment, and it chooses the evaluator | Tasks |
-| [0040](0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md) | Few-shot segmentation is a task, and its references are a split | Tasks |
-| [0041](0041-truth-is-task-scoped.md) | Truth is task-scoped — the sample owns its anomaly label, and classes live in annotations | Domain |
+| # | Decision |
+|---|---|
+| [0003](0003-tauri-to-python-boundary-is-a-fastapi-sidecar.md) | The Tauri-to-Python boundary is a FastAPI sidecar |
+| [0004](0004-persistence-with-sqlite-and-filesystem-artifacts.md) | SQLite for metadata, files for artifacts; one schema script until a catalogue is worth keeping |
+| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | The sample owns label and split; a channel is data, not schema — superseded by 0041 |
+| [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import goes through pluggable adapters and a reviewable manifest |
+| [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Every method is one plugin behind one interface, with capability flags |
+| [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Every job is its own subprocess, drawn from one FIFO queue |
+| [0012](0012-frontend-stack-and-generated-api-client.md) | Hash routing, TanStack Query, and an API client generated from OpenAPI |
+| [0021](0021-design-token-layer-and-primitive-set.md) | Semantic tokens and primitives live once, in the shared `lab-ui` package |
+| [0022](0022-private-source-data-lives-outside-the-working-tree.md) | Private source data lives outside the working tree |
+| [0026](0026-a-resident-inference-worker-beside-the-job-queue.md) | One resident inference worker beside the queue, kept off the device by a lock |
+| [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Nothing is compared in score units; runs share a rule, never a number |
+| [0029](0029-anomalib-is-the-baseline-not-the-specification.md) | We own the methods we keep; external libraries are baselines to measure against |
+| [0032](0032-annotation-truth-is-versioned-and-source-frame.md) | Annotation truth is versioned and in the source frame |
+| [0033](0033-region-profiles-pin-an-invertible-source-transform.md) | Region profiles pin an invertible source transform |
+| [0034](0034-portable-models-are-verified-deployment-bundles.md) | Portable models are verified deployment bundles |
+| [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships |
+| [0039](0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md) | A task is frozen on the experiment, and it chooses the evaluator |
+| [0040](0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md) | Few-shot segmentation is a task, and its references are a split |
+| [0041](0041-truth-is-task-scoped.md) | Truth is task-scoped: the sample owns its anomaly label, and classes live in annotations |
 
-## Conventions
+Missing numbers belong to records that were removed; numbers are never reused.
+
+## The rules of the record set
+
+- **The handbook says what the code does now; a record says why it was chosen.** When they
+  disagree, the handbook is right about *what* and the record about *why*.
+- **The bar for a record has two parts, and both must be yes:** would a competent engineer
+  plausibly have chosen otherwise, and would changing it now cost more than a refactor? A contract
+  detail, a helper, a read path or a new option on an existing seam is handbook material.
+- **A record is edited in place when its decision is refined**, so it reads as one coherent choice.
+  It carries no changelog, no narrative of what a change did, no milestone tags and no measured
+  numbers: git history is the changelog, and figures live in [measurements.md](../measurements.md).
+- **A reversal gets a new number** and supersedes the old record explicitly, restating whatever it
+  keeps from it.
+- **A record whose truth has moved into the handbook is removed**, and every citation of it — in
+  docs, the book, code comments, tests, skills, `CLAUDE.md` and `AGENTS.md` — is repointed in the
+  same change. `scripts/check-doc-links.py` fails on a citation of a removed number.
+
+Editing in place means a record can be rewritten to look prescient; what was believed at the time
+lives only in git history, and a removed argument that comes back is recovered from `git log`. That
+is taken knowingly.
+
+## Format
 
 - **Filename:** `NNNN-kebab-case-title.md`, `NNNN` the next unused number, zero-padded.
-- **Status:** `Accepted`, `Superseded by ADR-NNNN` or `Deprecated`, with the date it was reached.
-- **Length:** one page. If a record does not fit, the decision is probably two decisions.
-- **Cross-references:** cite related records inline as `(see ADR-0007)`.
-- **Consequences are honest.** Negative consequences are stated plainly. A record with only upsides
-  has not been thought through.
-- **No history.** No changelog, no "PR #N did X", no milestone narrative, no measured figures. Cite
-  `measurements.md` for a number and the handbook for a contract.
-
-## Template
+- **Status:** `Accepted`, or `Superseded by ADR-NNNN`, with the date it was reached.
+- **Sections:** Context, Decision, Alternatives considered, Consequences — each a page or less.
+- **Cross-references:** cite related records inline as `(see ADR-0007)`, and the handbook by page.
+- **Consequences are honest.** A record with only upsides has not been thought through.
 
 ```markdown
 # ADR-NNNN: Title in sentence case
@@ -70,19 +65,17 @@ handbook page that answers the question now. Numbers are never reused.
 
 ## Context
 
-The forces at play: the problem, the constraints, the facts about the domain or the dataset that
-make this a real question. Written so that a reader who was not in the room understands why a
-decision was needed. Name the alternatives that were seriously considered.
+The forces that make this a real question, for a reader who was not in the room.
 
 ## Decision
 
-What was decided, in the active voice and the present tense: "The boundary is a local FastAPI
-server", not "we will probably use HTTP". Be specific enough that the decision constrains code.
-State explicitly what is ruled out, and why the rejected options were rejected.
+What was decided, in the active voice and the present tense, specific enough to constrain code.
+
+## Alternatives considered
+
+Each option that was live, and why it lost.
 
 ## Consequences
 
-What becomes easier, and what becomes harder. State the negative consequences honestly — the costs
-accepted, the risks taken on, the work deferred to a backlog. This section is what makes the record
-worth re-reading later.
+What becomes easier and what becomes harder — the costs accepted and the risks taken on.
 ```

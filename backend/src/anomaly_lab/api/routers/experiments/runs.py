@@ -83,7 +83,7 @@ def start_export(
 def reevaluate(request: Request, experiment_id: int) -> list[MetricSummary]:
     """Re-read the results without re-running inference.
 
-    Cheap because nothing about evaluation depends on a model (ADR-0011), and useful
+    Cheap because nothing about evaluation depends on a model (handbook evaluation.md), and useful
     because it is how a changed aggregation mode is applied to a finished experiment.
     """
     experiment, settings = load(request, experiment_id)

@@ -25,9 +25,10 @@ result, and moving a display threshold must not rewrite either.
 ## Source frame and prepared frame
 
 Annotations belong to the immutable source image. Models consume a fixed prepared tensor. A region profile
-defines how source pixels are cropped, masked, resized, and padded into that tensor and how a resulting map
-is projected back. The experiment pins the exact profile revision and manifest hash; later region edits do
-not silently alter an old run.
+defines where to look — how source pixels are cropped — and the run defines the size; together they
+decide how the crop is resized and padded into that tensor and how a resulting map is projected back. The
+experiment pins the exact profile revision and, from its first job, the manifest hash of the build at its
+size; later region edits do not silently alter an old run.
 
 ## One-class training
 

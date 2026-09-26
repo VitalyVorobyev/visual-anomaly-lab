@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import sqlite3
 import time
 from typing import Literal
 
@@ -178,22 +179,31 @@ async def segment_assist(
         ) from exc
 
 
+def refuse_while_a_job_runs(request: Request, conn: sqlite3.Connection) -> None:
+    """A 409 while a job worker owns the device: the resident is not started beside it.
+
+    The lock in `ResidentWorker` is the guarantee (ADR-0026); this is the courtesy that
+    answers at once rather than holding the request until the job ends.
+    """
+    queue: JobQueue = request.app.state.job_queue
+    job = jobs_repo.running_job(conn)
+    if job is None and queue.current_job_id is not None:
+        job = jobs_repo.get_job(conn, queue.current_job_id)
+    if job is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=f"a {job.kind.value} job (id {job.id}) is running; try again when it ends",
+        )
+
+
 def _validate_request(
     request: Request,
     settings: Settings,
     image_id: int,
     body: SegmentAssistRequest,
 ) -> Image:
-    queue: JobQueue = request.app.state.job_queue
     with connection(settings.db_path) as conn:
-        job = jobs_repo.running_job(conn)
-        if job is None and queue.current_job_id is not None:
-            job = jobs_repo.get_job(conn, queue.current_job_id)
-        if job is not None:
-            raise HTTPException(
-                status_code=409,
-                detail=f"a {job.kind.value} job (id {job.id}) is running; try again when it ends",
-            )
+        refuse_while_a_job_runs(request, conn)
         image = images_repo.get_image(conn, image_id)
         if image is None:
             raise HTTPException(status_code=404, detail=f"no image with id {image_id}")

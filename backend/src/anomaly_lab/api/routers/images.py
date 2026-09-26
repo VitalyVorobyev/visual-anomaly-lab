@@ -47,7 +47,7 @@ from anomaly_lab.media.overlay import (
 )
 from anomaly_lab.media.prewarm import PrewarmParams
 from anomaly_lab.media.values import encode_plane
-from anomaly_lab.models.preprocessing import load_mask
+from anomaly_lab.models.preprocessing import PreprocessingConfig, load_mask
 from anomaly_lab.regions.preparation import load_prepared_build
 from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -422,14 +422,19 @@ def _pinned_transform(
                 f"{experiment.region_profile_id}"
             ),
         )
-    try:
-        build = load_prepared_build(
-            settings, profile, manifest_sha256=experiment.region_manifest_sha256
+    pinned = experiment.region_manifest_sha256
+    if pinned is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"experiment {experiment_id} has no prepared input yet; train or score it first",
         )
+    size = PreprocessingConfig.model_validate(experiment.preprocessing_config).size
+    try:
+        build = load_prepared_build(settings, profile, size=size, manifest_sha256=pinned)
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     try:
-        return build.transform_for(image_id), experiment.region_manifest_sha256
+        return build.transform_for(image_id), pinned
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 

@@ -49,10 +49,11 @@ self-contained record whose configuration cannot drift after results are attache
   independent items than splitting by image would. Correct, and statistically expensive.
 - **No per-image labels.** A part whose defect shows in one view only is still labelled defect as a
   whole, so a per-view model is trained against a label its input may not support. The problem is
-  pushed into aggregation (see ADR-0011) rather than solved.
+  pushed into aggregation (see the handbook's [evaluation](../architecture/evaluation.md) page)
+  rather than solved.
 - **"Re-run is a new experiment" multiplies rows.** Tuning a parameter ten times leaves ten
   experiments and ten artifact directories, with no built-in notion of "the same thing, retried".
 - **`group_key` is import-derived and load-bearing.** An adapter that derives it differently
   between imports silently changes sample identity.
 - **Channel comparability is not modelled.** Because channels are rows, nothing records whether two
-  channels' scores share a scale; ADR-0011 has to handle that explicitly.
+  channels' scores share a scale; evaluation has to handle that explicitly.

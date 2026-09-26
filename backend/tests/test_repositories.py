@@ -384,8 +384,6 @@ def _experiment_over(migrated_db: sqlite3.Connection, catalog: SeededCatalog) ->
         name="full frame",
         extractor_type="identity",
         extractor_config={},
-        prepared_width=8,
-        prepared_height=8,
         padding_fraction=0.0,
     )
     experiment = experiments.create_experiment(

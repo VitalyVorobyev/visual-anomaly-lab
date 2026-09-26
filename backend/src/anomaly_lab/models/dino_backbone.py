@@ -7,7 +7,7 @@ the methods that follow — a memory bank first, a Dinomaly port later — take 
 rather than owning one each.
 
 **Seven encoders, and the shape of the menu is the point.** Two families, at three widths,
-with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
+with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0029,
 ADR-0029) included so a comparison against its recorded numbers measures the method rather
 than the encoder. Four of the seven are ungated Apache-2.0 weights and are the default any new
 method should reach for; the three DINOv3 entries are behind Meta's DINOv3 licence and need an
@@ -363,10 +363,27 @@ def validate_prepared_size(backbone: DinoBackbone, width: int, height: int) -> N
         f"both be divisible by {patch}; got {width}x{height} "
         f"({' and '.join(offending)} {'do' if len(offending) > 1 else 'does'} not divide). "
         f"The nearest valid sizes are {_nearest_valid(width, patch)} wide and "
-        f"{_nearest_valid(height, patch)} high — set one of those in the experiment "
-        "preprocessing."
+        f"{_nearest_valid(height, patch)} high — set one of those as the experiment's "
+        "input size, or leave the size empty for the method's own."
     )
     raise ValueError(msg)
+
+
+SHARED_FRAME = 448
+"""The square side both patch sizes divide (32x14 and 28x16). Every measurement that
+compared encoders across patch sizes ran at it, so every arm saw identical pixels."""
+
+
+def native_frame(backbone: DinoBackbone, measured: int) -> tuple[int, int]:
+    """A method's native square frame on this backbone: its measured side, if the patch
+    divides it, else `SHARED_FRAME` — the frame the cross-encoder measurements ran at."""
+    side = measured if measured % BACKBONES[backbone].patch_size == 0 else SHARED_FRAME
+    return (side, side)
+
+
+def patch_multiple(backbone: DinoBackbone) -> int:
+    """What a prepared frame's width and height must both be a multiple of."""
+    return BACKBONES[backbone].patch_size
 
 
 def _nearest_valid(value: int, patch: int) -> str:

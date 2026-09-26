@@ -10,11 +10,6 @@ become a tensor, how an anomaly map becomes an image score, which operating poin
 the run, or how to project a prepared-frame map back onto the source image. Two consumers can load
 the same graph and produce different verdicts without either reporting an error.
 
-The serious alternatives were to export a bare graph, to serialize each Python implementation
-wholesale, or to keep deployment behind a Python inference service. A bare graph is incomplete.
-Python serialization is unsafe across environments and does not reach the Rust target. A service
-preserves semantics but not the required offline, dedicated-hardware boundary.
-
 Not every method is naturally one ONNX graph. A fitted memory bank, a normalization and a score
 reducer may live in different layers of an implementation. Claiming universal export before each
 method has numerical parity would turn a convenient button into a false contract.
@@ -40,6 +35,15 @@ semantics are verified against the fitted experiment.**
 - The reference Rust consumer validates hashes before loading a graph and runs on ONNX Runtime
   through a pinned `ort` release. The bundle contract is runtime-neutral; another runtime is valid
   once its operator coverage and parity are proven.
+
+## Alternatives considered
+
+- **Export a bare graph.** Incomplete: preparation, score reduction and thresholds are left for
+  each consumer to guess.
+- **Serialize each Python implementation wholesale.** Unsafe across environments, and it does not
+  reach the Rust target.
+- **Keep deployment behind a Python inference service.** Preserves semantics, but not the required
+  offline, dedicated-hardware boundary.
 
 ## Consequences
 
