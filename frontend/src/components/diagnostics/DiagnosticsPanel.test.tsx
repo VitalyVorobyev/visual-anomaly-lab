@@ -1,5 +1,5 @@
 /**
- * The ADR-0018 guarantee, pinned.
+ * The render-by-kind guarantee (handbook diagnostics.md), pinned.
  *
  * These are the tests M6 relies on: if the panel ever starts branching on `key` or on a
  * method name, one of them fails here rather than silently drawing the wrong picture for

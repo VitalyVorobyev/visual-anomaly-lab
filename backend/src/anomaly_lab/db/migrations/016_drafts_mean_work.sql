@@ -4,7 +4,7 @@
 -- so merely opening an image persisted a row -- and completing one resurrected it, because the
 -- completion invalidated the query while its observer was still mounted. Neither left anything
 -- a re-open would not reproduce, but `count_open_image_drafts` counts rows, so every image ever
--- looked at became a permanent blocker on `annotation_scope` (ADR-0036). Creation now happens
+-- looked at became a permanent blocker on `annotation_scope` (handbook annotations.md). Creation now happens
 -- on the first save.
 --
 -- This deletes the litter that write path left behind. `version` defaults to 1 and is

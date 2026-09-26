@@ -155,7 +155,7 @@ def test_two_runs_compare_on_the_subset_they_both_scored(
     assert payload["subset"] == "test"
     assert [run["id"] for run in payload["runs"]] == two_runs
     assert all(run["scored"] for run in payload["runs"])
-    # The stored metric set, verbatim — nothing here recomputes a metric (ADR-0011).
+    # The stored metric set, verbatim — nothing here recomputes a metric (handbook evaluation.md).
     for run in payload["runs"]:
         assert "sample_roc_auc" in run["metrics"]
 

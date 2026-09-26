@@ -7,7 +7,8 @@ stays a transport.
 
 **This scores an image and records nothing about the score.** `ImageResult`, the sample
 aggregation and every metric come from an inference job, and a browse request that quietly
-updated one row would put a number on the results screen that no run produced (ADR-0011).
+updated one row would put a number on the results screen that no run produced
+(handbook evaluation.md).
 What survives a request is the diagnostics the model emitted, in the index, marked
 `on_demand` (handbook diagnostics.md).
 """

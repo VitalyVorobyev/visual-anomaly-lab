@@ -107,7 +107,7 @@ CREATE TABLE split (
     strategy    TEXT    NOT NULL,
     seed        INTEGER NOT NULL,
     -- Ratios and stratification key as JSON. A seed alone does not reproduce a split;
-    -- the parameters it was drawn under are part of the record (ADR-0011).
+    -- the parameters it was drawn under are part of the record (handbook evaluation.md).
     params      TEXT    NOT NULL DEFAULT '{}',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Splits are immutable once created; changing one means creating a new one.
@@ -194,7 +194,7 @@ CREATE TABLE sample_result (
     experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
     sample_id     INTEGER NOT NULL REFERENCES sample (id) ON DELETE CASCADE,
     agg_score     REAL    NOT NULL,
-    -- Recorded per row so a stored result is self-describing (ADR-0011).
+    -- Recorded per row so a stored result is self-describing (handbook evaluation.md).
     aggregation   TEXT    NOT NULL CHECK (aggregation IN ('max', 'mean')),
     PRIMARY KEY (experiment_id, sample_id)
 );
@@ -206,7 +206,7 @@ CREATE TABLE metric_set (
     experiment_id INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
     subset        TEXT    NOT NULL CHECK (subset IN ('train', 'val', 'test')),
     -- Threshold-independent metrics only. Nothing that depends on a decision
-    -- threshold is persisted; those are computed on demand (ADR-0011).
+    -- threshold is persisted; those are computed on demand (handbook evaluation.md).
     metrics       TEXT    NOT NULL DEFAULT '{}',
     computed_at   TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     PRIMARY KEY (experiment_id, subset)

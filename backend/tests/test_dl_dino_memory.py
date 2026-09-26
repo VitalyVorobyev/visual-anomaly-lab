@@ -915,7 +915,7 @@ def test_a_prepared_frame_that_does_not_divide_is_refused_before_timm_sees_it(
 def test_every_m4_view_works_with_no_new_code(
     scoring: Scoring, fits: dict[Scoring, Fitted]
 ) -> None:
-    """ADR-0018's prediction, tested against a method that holds three different memories.
+    """The diagnostics contract's prediction, against a method holding three different memories.
 
     The per-mode diagnostic differs — a coverage map, a per-position count, a shrinkage map —
     and every one of them reaches the screen through the same self-describing index, rendered

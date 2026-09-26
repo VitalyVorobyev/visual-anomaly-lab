@@ -1,8 +1,7 @@
 """Pixel-level evaluation, at constant memory.
 
-ADR-0011 said image-level metrics only, on the honest ground that the dataset in hand had
-no masks. The public reference datasets do, so this exists — and the constraint it was
-built under is the interesting part.
+Pixel metrics exist wherever a dataset supplies masks (handbook evaluation.md), and the
+constraint they are built under is the interesting part.
 
 **A hundred test images at 1.5 MPix in float32 is ~600 MB if the maps are accumulated to
 compute a curve**, and a comparison view over several experiments would multiply that.

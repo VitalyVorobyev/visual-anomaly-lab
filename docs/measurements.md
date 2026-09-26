@@ -15,7 +15,7 @@ The comparison ADR-0029 keeps honest. Protocol: VisA's **published** one-class t
 with the validation holdout carved from `train` only (810 normal train, 90 val, 100 + 100 test). The
 baseline leg is anomalib's EfficientAD wrapper, which is not in the registry, so it cannot be re-run in-app.
 
-**Teacher choice.** Two public EfficientAD teachers disagree on the same data (ADR-0031):
+**Teacher choice.** Two public EfficientAD teachers disagree on the same data (handbook `methods.md`):
 
 | Sample ROC-AUC by aggregation | `anomalib` teacher | `nelson1425` teacher |
 |---|---:|---:|
@@ -318,7 +318,7 @@ mean; MPS rejects the prompt grid's float64), 519 s in all.
 
 ## DINO patch memory — promoted
 
-Frozen DINO patch features are the model (ADR-0037); nothing is trained. The 15.4 MB checkpoint is a
+Frozen DINO patch features are the model (handbook `methods.md`); nothing is trained. The 15.4 MB checkpoint is a
 5 000-vector coreset over 50 000 bounded candidates; the encoder travels as a fingerprint. Paired public
 gate at 448 × 448 (divisible by both patch sizes, so every backbone saw identical pixels), `global_knn`,
 `last_two` layers, k = 1. The recorded leg is **DINOv2 ViT-S/14-reg4** (ungated weights):

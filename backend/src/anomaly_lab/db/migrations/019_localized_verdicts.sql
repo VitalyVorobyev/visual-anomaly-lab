@@ -13,7 +13,7 @@
 -- is an orthogonal qualifier: a true positive that is `localized = 0` is still a true
 -- positive, and now says how it earned the label.
 --
--- Persisted rather than recomputed on demand, which is the opposite of what ADR-0011 does
+-- Persisted rather than recomputed on demand, which is the opposite of what evaluation does
 -- for the confusion matrix — and consistent with it. That record persists what is
 -- threshold-*independent* and recomputes what moves with the slider. This verdict never
 -- moves with the slider: it compares the map's own peak against the annotated region and

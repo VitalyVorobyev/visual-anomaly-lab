@@ -725,7 +725,7 @@ export interface paths {
          * Recompute metrics from stored scores
          * @description Re-read the results without re-running inference.
          *
-         *     Cheap because nothing about evaluation depends on a model (ADR-0011), and useful
+         *     Cheap because nothing about evaluation depends on a model (handbook evaluation.md), and useful
          *     because it is how a changed aggregation mode is applied to a finished experiment.
          */
         post: operations["reevaluate_api_experiments__experiment_id__reevaluate_post"];
@@ -1007,7 +1007,7 @@ export interface paths {
          *
          *     Recomputed from the stored scores on every request — the same read the threshold
          *     endpoint does, over a few hundred floats — rather than persisted. Nothing here is
-         *     threshold-dependent and nothing is written (ADR-0011).
+         *     threshold-dependent and nothing is written (handbook evaluation.md).
          *
          *     Pixel-level curves are deliberately absent. The pixel accumulator streams its
          *     histograms and discards them by design (handbook evaluation.md), so drawing that
@@ -1052,7 +1052,7 @@ export interface paths {
         };
         /**
          * What this run recorded about itself
-         * @description The self-describing index a model wrote (ADR-0018).
+         * @description The self-describing index a model wrote (handbook diagnostics.md).
          *
          *     Returned verbatim. The UI renders by `kind` and never by method name, which is what
          *     makes a future method's diagnostics work here with no change.
@@ -1099,7 +1099,7 @@ export interface paths {
          *     load, the rest do not.
          *
          *     **It does not change this image's score, its map, or any metric.** Those come from a
-         *     job and stay the run's (ADR-0011); what persists here is the diagnostics, marked
+         *     job and stay the run's (handbook evaluation.md); what persists here is the diagnostics, marked
          *     `on_demand` in the index (handbook diagnostics.md).
          *
          *     Refused with 409 while a job is running: one machine, one device, and a browse request
@@ -1819,7 +1819,7 @@ export interface paths {
          *
          *     A seeded split is per sample, so no two views of one part can straddle the boundary;
          *     training gets normals only; and the draw is stratified by capture group so an
-         *     acquisition-batch effect cannot land entirely on one side (ADR-0011).
+         *     acquisition-batch effect cannot land entirely on one side (handbook evaluation.md).
          *
          *     The `imported` strategy instead reads the partition out of the manifest the dataset
          *     was committed from, because a benchmark's published number is only comparable against
@@ -2181,7 +2181,7 @@ export interface components {
          *     `IMAGE` is the original and the default: every photograph carries its own document.
          *     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
          *     part -- one document is edited once and materialised onto every image of the sample.
-         *     Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+         *     Truth stays image-keyed in both cases; only the editing scope moves (handbook annotations.md).
          * @enum {string}
          */
         AnnotationScope: "image" | "sample";

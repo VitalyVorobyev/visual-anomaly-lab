@@ -34,7 +34,7 @@ backbone table times the number of layers read. The first real batch then verifi
 refuses a disagreement, so the announced footprint is a measurement rather than a hope. This
 is `patchcore_anomalib`'s discipline with the tension removed.
 
-**Device placement is measured, not assumed** (`scripts/dino-memory-smoke-test.py`, ADR-0008):
+**Device placement is measured, not assumed** (`scripts/dino-memory-smoke-test.py`, ADR-0029):
 
   * the encoder forward wants the accelerator — about 2x on MPS — so it runs on `ctx.device`;
   * `topk` over a 100 000-wide row is ~7x *slower* on MPS and breaks exact ties differently,
@@ -1324,7 +1324,7 @@ class DinoMemoryModel(AnomalyModel):
 
         The same `{columns, rows}` shape `patchcore_anomalib._emit_bank_table` emits, under a
         key the diagnostics index already renders — so this reaches M4's Architecture tab
-        with no new UI code at all, which is ADR-0018's whole claim.
+        with no new UI code at all, which is the whole claim of the diagnostics index.
         """
         spec = BACKBONES[self.config.backbone]
         rows: list[list[str]] = [

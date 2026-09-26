@@ -8,9 +8,9 @@ ask.
 
 So this walks `named_modules()` with forward hooks during one dry pass and records every
 module's real input and output shapes. **Nothing here is method-specific.** A plugin calls
-`collect()` and hands the result to `build_tree()`; `efficientad_custom` in M6 and
-`patchcore_anomalib` in M7 inherit the whole view by doing the same, which is the property
-ADR-0018 exists to protect.
+`collect()` and hands the result to `build_tree()`; every method that does the same
+inherits the whole view, which is the property the diagnostics index exists to protect
+(handbook diagnostics.md).
 
 The module is split deliberately:
 
@@ -85,7 +85,7 @@ def build_tree(
 ) -> dict[str, Any]:
     """Arrange records into the `graph` payload the architecture view renders.
 
-    Additive over what ADR-0018's `graph` kind already carried: every node keeps `id`,
+    Additive over what the `graph` kind already carried: every node keeps `id`,
     `label`, `type`, `parameters`, `input_shape` and `output_shape`, so an index written
     before this — and any payload with no hierarchy — renders exactly as it did. `parent`,
     `depth`, `order`, `parameters_own`, `executed`, `calls` and `leaf` are new, and a

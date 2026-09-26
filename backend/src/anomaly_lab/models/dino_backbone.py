@@ -7,7 +7,7 @@ the methods that follow — a memory bank first, a Dinomaly port later — take 
 rather than owning one each.
 
 **Seven encoders, and the shape of the menu is the point.** Two families, at three widths,
-with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0008,
+with the registered DINOv2 variant the retired anomalib Dinomaly wrapper pinned (ADR-0029,
 ADR-0029) included so a comparison against its recorded numbers measures the method rather
 than the encoder. Four of the seven are ungated Apache-2.0 weights and are the default any new
 method should reach for; the three DINOv3 entries are behind Meta's DINOv3 licence and need an

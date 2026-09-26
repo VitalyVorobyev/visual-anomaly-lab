@@ -2,7 +2,7 @@
 
 Persistence is **plain SQL migrations plus a thin repository layer — no ORM** (ADR-0004). Migrations are
 numbered files `backend/src/anomaly_lab/db/migrations/NNN_description.sql`, applied in order at startup and
-tracked by `PRAGMA user_version`; schema v1 is frozen and every change is a new migration. Repositories are
+tracked by `PRAGMA user_version`; how the schema may change is ADR-0004's rule. Repositories are
 small modules of functions returning pydantic domain objects; they contain the SQL and nothing else.
 `foreign_keys` and WAL journaling are enabled on every connection.
 
@@ -53,7 +53,7 @@ produced ([import](import.md)). One capture tree holding several products is the
 each with its own `dataset_root`. `name` and `root_path` are identity and not editable.
 
 `annotation_scope ∈ {image, sample}` decides whether annotation truth is *edited* per photograph or per
-part; it is stored per image either way (ADR-0036). Only `PUT /api/datasets/{id}/annotation-scope` writes
+part; it is stored per image either way. Only `PUT /api/datasets/{id}/annotation-scope` writes
 it, and it refuses while the dataset has imported source masks, samples whose images differ in size, or an
 open draft ([annotations](annotations.md)).
 
@@ -100,7 +100,7 @@ makes files immutable identities, which is what allows caching by `image_id` ([m
 ### Mask
 
 `id`, `image_id`, `path`, `kind`, `sha256` (nullable). Source pixel-level ground truth, referenced in place
-like its image (ADR-0015). Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
+like its image. Identity is `(image_id, kind)`, so a re-import repoints a mask rather than adding
 one; a mask the manifest no longer mentions is left alone, as a missing image is reported rather than
 deleted. `sha256` pins source-mask provenance (ADR-0032) and stays `NULL` until the file first becomes an
 annotation base — nothing claims to have verified bytes it did not read. `verify` reports existence

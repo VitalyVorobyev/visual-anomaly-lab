@@ -1,5 +1,5 @@
 /**
- * Reading the diagnostics index (ADR-0018).
+ * Reading the diagnostics index (handbook diagnostics.md).
  *
  * The one rule this file exists to enforce: **nothing selects a renderer by `key`**. A
  * key is a caption and a file name; `kind` is the instruction. `pixel_reference` proves
