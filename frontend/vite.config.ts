@@ -25,6 +25,8 @@ export default defineConfig({
     // meaningful once rendered, so the suite gets a document. happy-dom rather than
     // jsdom: same API surface for what is used here, considerably faster to start.
     environment: "happy-dom",
+    // `e2e/` is Playwright's (bun run test:screens), not Vitest's.
+    include: ["src/**/*.test.{ts,tsx}"],
     globals: false,
     setupFiles: ["./src/test-setup.ts"],
   },
