@@ -43,12 +43,6 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
       below a cut resolved on the references by one printed rule, predeclare a rerun of the FSS-1000
       and VisA protocols, and compare with the recorded verdicts.
 
-- [ ] **Re-run the FSS-1000 gate on the one-dataset shape** (M, about 3 h of MPS): the pack registers
-      the panel as one dataset whose masks are class truth (ADR-0041), while the recorded verdict was
-      measured with a dataset per class ([measurements.md](measurements.md)).
-      `scripts/few-shot-public-gate.py --benchmark fss1000` now runs on the new shape; confirm the
-      verdict reproduces and record the rerun beside it.
-
 Later, each behind a measured gate:
 - INSID3 upstream and FSS-SAM3 as quality references.
 - SAM-assisted pseudo-labelling at scale.
@@ -122,14 +116,6 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
       residual, sort for the tail mean, upsample, blur — with no data-dependent control flow and no
       per-channel branch once a channel's basis is chosen. `portable_formats` is empty today because
       nothing has been measured for parity, not because the graph is hard.
-
-## Persistence
-
-- [ ] **Collapse the numbered migrations into one initial script** (M) — ADR-0004. The schema is one
-      script rewritten in place until a catalogue is worth keeping, but `db/migrations/` still holds
-      the numbered files and `migrate.py` applies them in order. Fold them into one script, record
-      its version in `PRAGMA user_version`, and refuse any other version at startup with a message
-      telling the user to delete the catalogue; `test_migrations.py` pins the refusal.
 
 ## Evaluation
 

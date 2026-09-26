@@ -176,8 +176,7 @@ comparing them under one evaluation protocol.
 - **The schema is one initial script until a catalogue is worth keeping (ADR-0004).** A schema change
   rewrites that script in place; a catalogue written under another version is refused at startup with
   a message telling the user to delete it, never migrated. Numbered migrations begin only when the
-  owner declares a catalogue worth keeping. `db/migrations/` still holds numbered files until the
-  backlog item that collapses them lands.
+  owner declares a catalogue worth keeping.
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
   fails on a stale file.
 - **Take work from `docs/backlog.md`, and finish what is open before starting what is new.** The
