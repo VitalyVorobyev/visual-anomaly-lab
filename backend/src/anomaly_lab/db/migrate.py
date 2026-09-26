@@ -1,26 +1,37 @@
-"""Forward-only SQL migrations tracked by `PRAGMA user_version` (ADR-0004).
+"""The catalogue schema: one script, stamped into `PRAGMA user_version` (ADR-0004).
 
-Migrations are plain SQL files named `NNN_description.sql`, applied in numeric order.
-There are no down-migrations and no checksums; ADR-0004 accepts that cost explicitly.
+There is exactly one schema script, `migrations/001_initial.sql`, and one constant,
+`SCHEMA_VERSION`, that names it. Opening a catalogue does one of three things:
 
-`apply_migrations` is idempotent, so it can be called both from the serve entrypoint
-(before the port is announced) and from the application lifespan (so the `uv run uvicorn`
-development path migrates too).
+- an empty database (version 0, no tables) gets the script, and the version is stamped;
+- a database already at `SCHEMA_VERSION` is left alone;
+- anything else is refused with `SchemaVersionError`. Nothing is ever migrated: a catalogue
+  from another version of the schema is deleted and started fresh.
+
+Changing the script means bumping `SCHEMA_VERSION`, so that every catalogue written by the
+previous script is refused rather than opened against tables it does not have. A value is
+never reused.
+
+`apply_schema` is idempotent, so it can be called both from the serve entrypoint (before the
+port is announced) and from the application lifespan (so the `uv run uvicorn` development
+path gets the schema too).
 """
 
 from __future__ import annotations
 
 import re
 import sqlite3
-from dataclasses import dataclass
 from importlib.resources import files
 from pathlib import Path
 
 from anomaly_lab.db.connection import connection
 
-_MIGRATION_FILENAME = re.compile(r"^(\d{3})_[a-z0-9_]+\.sql$")
+#: The version the schema script stamps. Bump it whenever the script changes.
+SCHEMA_VERSION = 27
 
-# Transaction control is added by the runner, not by the migration file.
+SCHEMA_SCRIPT = "001_initial.sql"
+
+# Transaction control is added by `apply_schema_to`, not by the script.
 _TRANSACTION_CONTROL = re.compile(
     r"^\s*(BEGIN|COMMIT|ROLLBACK|END)\b", re.IGNORECASE | re.MULTILINE
 )
@@ -34,88 +45,90 @@ def contains_transaction_control(sql: str) -> bool:
     return _TRANSACTION_CONTROL.search(_TRIGGER_BLOCK.sub("", sql)) is not None
 
 
-class MigrationError(RuntimeError):
-    """A migration file is malformed, out of sequence, or failed to apply."""
+class SchemaError(RuntimeError):
+    """The schema script is malformed or failed to apply."""
 
 
-@dataclass(frozen=True)
-class Migration:
-    number: int
-    name: str
-    sql: str
+class SchemaVersionError(RuntimeError):
+    """The catalogue was written by a different schema and cannot be opened.
 
+    The message is meant for a person: it is what the desktop shell shows in place of the
+    workbench, so it names the file to delete.
+    """
 
-def discover_migrations() -> list[Migration]:
-    """Load migration files from package data, sorted by number."""
-    root = files("anomaly_lab.db").joinpath("migrations")
-    found: dict[int, Migration] = {}
-
-    for entry in root.iterdir():
-        if not entry.name.endswith(".sql"):
-            continue
-        match = _MIGRATION_FILENAME.match(entry.name)
-        if match is None:
-            msg = f"Migration {entry.name!r} does not match the NNN_description.sql convention"
-            raise MigrationError(msg)
-
-        number = int(match.group(1))
-        if number in found:
-            msg = f"Duplicate migration number {number:03d}: {found[number].name} and {entry.name}"
-            raise MigrationError(msg)
-
-        sql = entry.read_text(encoding="utf-8")
-        if contains_transaction_control(sql):
-            msg = (
-                f"Migration {entry.name!r} contains transaction control. The runner wraps each "
-                "file in BEGIN/COMMIT; an inner COMMIT would leave a partial migration applied."
+    def __init__(self, db_path: str, found: int) -> None:
+        self.db_path = db_path
+        self.found = found
+        if found > SCHEMA_VERSION:
+            message = (
+                "This catalogue was created by a newer version of anomaly lab and cannot be "
+                f"opened. Update the app, or delete {db_path} (and the app data directory "
+                "beside it) to start fresh."
             )
-            raise MigrationError(msg)
+        else:
+            message = (
+                "This catalogue was created by an older version of anomaly lab and cannot be "
+                f"opened. Delete {db_path} (and the app data directory beside it) to start "
+                "fresh."
+            )
+        super().__init__(message)
 
-        found[number] = Migration(number=number, name=entry.name, sql=sql)
 
-    return [found[number] for number in sorted(found)]
+def schema_sql() -> str:
+    """The schema script from package data."""
+    sql = files("anomaly_lab.db").joinpath("migrations", SCHEMA_SCRIPT).read_text("utf-8")
+    if contains_transaction_control(sql):
+        msg = (
+            f"{SCHEMA_SCRIPT} contains transaction control. The runner wraps the script in "
+            "BEGIN/COMMIT; an inner COMMIT would leave a partial schema applied."
+        )
+        raise SchemaError(msg)
+    return sql
 
 
 def current_schema_version(conn: sqlite3.Connection) -> int:
     return int(conn.execute("PRAGMA user_version").fetchone()[0])
 
 
-def apply_migrations_to(conn: sqlite3.Connection) -> int:
-    """Apply every pending migration in order. Returns the resulting schema version."""
+def _database_path(conn: sqlite3.Connection) -> str:
+    for row in conn.execute("PRAGMA database_list").fetchall():
+        if row[1] == "main":
+            return str(row[2]) or ":memory:"
+    return ":memory:"  # pragma: no cover - every connection has a main database
+
+
+def apply_schema_to(conn: sqlite3.Connection) -> int:
+    """Create the schema on an empty database, or confirm it is current. Returns the version.
+
+    Raises `SchemaVersionError` for a database stamped with any other version, including a
+    version-0 database that already holds tables.
+    """
     version = current_schema_version(conn)
+    if version == SCHEMA_VERSION:
+        return version
 
-    for migration in discover_migrations():
-        if migration.number <= version:
-            continue
-        if migration.number != version + 1:
-            msg = (
-                f"Migration sequence has a gap: database is at version {version}, "
-                f"next file on disk is {migration.name}"
-            )
-            raise MigrationError(msg)
+    has_tables = conn.execute("SELECT 1 FROM sqlite_master LIMIT 1").fetchone() is not None
+    if version != 0 or has_tables:
+        raise SchemaVersionError(_database_path(conn), version)
 
-        # `executescript` implicitly COMMITs any pending transaction before it runs, so an
-        # outer BEGIN issued via `execute` would be discarded. The transaction has to live
-        # inside the script itself for the migration to be atomic.
-        #
-        # `PRAGMA user_version = ?` cannot be parameterized; the value is an int parsed from
-        # a \d{3} filename match, so the interpolation below cannot carry anything else.
-        script = f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number:d};\nCOMMIT;"
-        try:
-            conn.executescript(script)
-        except sqlite3.Error as exc:
-            if conn.in_transaction:
-                conn.execute("ROLLBACK")
-            msg = f"Migration {migration.name} failed: {exc}"
-            raise MigrationError(msg) from exc
-
-        version = migration.number
-
-    return version
+    # `executescript` implicitly COMMITs any pending transaction before it runs, so an
+    # outer BEGIN issued via `execute` would be discarded. The transaction has to live
+    # inside the script itself for the schema to be applied atomically.
+    #
+    # `PRAGMA user_version = ?` cannot be parameterized; the value is an int constant.
+    script = f"BEGIN;\n{schema_sql()}\nPRAGMA user_version = {SCHEMA_VERSION:d};\nCOMMIT;"
+    try:
+        conn.executescript(script)
+    except sqlite3.Error as exc:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        msg = f"The schema script {SCHEMA_SCRIPT} failed: {exc}"
+        raise SchemaError(msg) from exc
+    return SCHEMA_VERSION
 
 
-def apply_migrations(db_path: Path) -> int:
-    """Open `db_path`, creating its parent directory, and bring it up to date."""
+def apply_schema(db_path: Path) -> int:
+    """Open `db_path`, creating its parent directory, and make sure it holds the schema."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
     with connection(db_path) as conn:
-        return apply_migrations_to(conn)
+        return apply_schema_to(conn)

@@ -91,7 +91,6 @@ class RegionProfileCreate(BaseModel):
     prepared_height: int = Field(default=256, ge=8, le=2048)
     padding_fraction: float = Field(default=0.05, ge=0.0, le=1.0)
     resample: SpatialResample = SpatialResample.BILINEAR
-    seed: int = 17
     sample_alignment: SampleAlignment = Field(
         default=SampleAlignment.PER_IMAGE,
         description=(
@@ -168,7 +167,6 @@ def create_region_profile(
                     prepared_height=body.prepared_height,
                     padding_fraction=body.padding_fraction,
                     resample=body.resample,
-                    seed=body.seed,
                     sample_alignment=body.sample_alignment,
                 )
         except sqlite3.IntegrityError as exc:

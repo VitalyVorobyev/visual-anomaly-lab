@@ -70,9 +70,8 @@ export interface paths {
          * The draft in progress, or the document a new one would start from
          * @description Read-or-seed, and never a write.
          *
-         *     This used to 404, and the editor reached for the POST instead -- from a query function, so
-         *     opening an image persisted a row and completing one resurrected it. Every such row then
-         *     counted as unsaved work forever (see migration 016).
+         *     A read that created the draft would persist a row every time an image was opened, and
+         *     every such row would count as unsaved work forever. The first save creates it.
          */
         get: operations["get_annotation_draft_api_images__image_id__annotations_draft_get"];
         /** Save a draft if the caller still owns the version it read */
@@ -4448,7 +4447,7 @@ export interface components {
             /** Computed At */
             computed_at: string;
             /** Ground Truth Digest */
-            ground_truth_digest: string | null;
+            ground_truth_digest: string;
             /**
              * Ground Truth Stale
              * @default false
@@ -4822,12 +4821,6 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        /**
-         * RegionFailurePolicy
-         * @description A localisation failure is visible; it never silently becomes full-frame input.
-         * @enum {string}
-         */
-        RegionFailurePolicy: "fail";
         /** RegionOutcome */
         RegionOutcome: {
             /** Image Id */
@@ -4893,11 +4886,6 @@ export interface components {
             padding_fraction: number;
             /** @default bilinear */
             resample: components["schemas"]["SpatialResample"];
-            /**
-             * Seed
-             * @default 17
-             */
-            seed: number;
             /**
              * @description Whether each image keeps its own crop (per_image) or every image of a sample gets the union of their crops (union), keeping the channels of one part registered. Union requires the sample's images to share a source size.
              * @default per_image
@@ -4989,10 +4977,6 @@ export interface components {
             padding_fraction: number;
             /** @default bilinear */
             resample: components["schemas"]["SpatialResample"];
-            /** @default fail */
-            failure_policy: components["schemas"]["RegionFailurePolicy"];
-            /** Seed */
-            seed: number;
             /** Created At */
             created_at: string;
             /** @default per_image */

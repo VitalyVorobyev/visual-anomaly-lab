@@ -311,7 +311,6 @@ def test_different_spatial_input_is_a_warning_and_not_a_refusal(
             prepared_width=8,
             prepared_height=8,
             padding_fraction=0.0,
-            seed=17,
         )
     run_region_prepare_job(
         JobContext(

@@ -1,16 +1,13 @@
 """Mask repository.
 
-Masks are pixel-level ground truth, one row per annotated image. The table has existed
-since schema v1 and went unpopulated for as long as the only dataset on hand had no
-annotations; a dataset that ships masks is what finally fills it, with no migration.
+Masks are imported pixel-level ground truth, one row per annotated image, filled by a
+dataset that ships masks.
 
-One thing differs from the image repository, forced by the original schema (ADR-0004):
+One thing differs from the image repository: there is no `UNIQUE (image_id, kind)`
+constraint, so the upsert reads before it writes rather than leaning on `ON CONFLICT`.
 
-  * There is no `UNIQUE (image_id, kind)` constraint, so the upsert reads before it
-    writes rather than leaning on `ON CONFLICT`.
-Migration 005 added a nullable digest without pretending old catalog rows had already
-been verified. Annotation draft creation fills it when that source mask becomes an
-explicit base.
+The digest is nullable: import does not read mask bytes, and annotation draft creation
+fills it when that source mask becomes an explicit base.
 """
 
 from __future__ import annotations

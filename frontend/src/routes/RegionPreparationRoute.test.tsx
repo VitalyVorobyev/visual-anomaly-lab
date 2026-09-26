@@ -28,9 +28,7 @@ const profile = {
   prepared_width: 256,
   prepared_height: 256,
   padding_fraction: 0.05,
-  failure_policy: "fail",
   resample: "bilinear",
-  seed: 17,
   created_at: "2026-01-01T00:00:00Z",
   sample_alignment: "per_image",
 } as RegionProfileRevision;

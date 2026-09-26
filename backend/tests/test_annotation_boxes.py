@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +19,6 @@ from pydantic import ValidationError
 
 from anomaly_lab.annotation_render import render_truth
 from anomaly_lab.config import Settings
-from anomaly_lab.db.migrate import apply_migrations_to, discover_migrations
 from anomaly_lab.domain.annotations import AnnotationDocument
 from anomaly_lab.media.decode import sha256_of
 
@@ -261,35 +259,3 @@ def test_a_sample_completion_fans_out_the_instances_file(
         path = Path(revision["instances_path"])
         assert sha256_of(path) == revision["instances_sha256"]
         assert json.loads(path.read_text())["instances"][0]["instance_id"] == "part"
-
-
-def test_migration_024_leaves_earlier_revisions_without_instances(tmp_path: Path) -> None:
-    conn = sqlite3.connect(tmp_path / "catalog.db")
-    conn.row_factory = sqlite3.Row
-    try:
-        for migration in discover_migrations():
-            if migration.number > 23:
-                break
-            conn.executescript(
-                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
-            )
-        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/d')")
-        conn.execute("INSERT INTO sample (dataset_id, group_key, external_id) VALUES (1, 'g', '1')")
-        conn.execute(
-            "INSERT INTO image (sample_id, path, width, height, bit_depth, file_size, sha256) "
-            "VALUES (1, '/d/1.png', 16, 12, 8, 64, 'h')"
-        )
-        conn.execute(
-            "INSERT INTO annotation_revision (image_id, revision_no, document, document_sha256, "
-            "mask_path, mask_sha256) VALUES (1, 1, ?, ?, '/m.png', 'm')",
-            (json.dumps(V1_DOCUMENT), V1_SHA256),
-        )
-        conn.commit()
-
-        assert apply_migrations_to(conn) >= 24
-
-        row = conn.execute("SELECT * FROM annotation_revision").fetchone()
-        assert row["instances_path"] is None
-        assert row["instances_sha256"] is None
-    finally:
-        conn.close()

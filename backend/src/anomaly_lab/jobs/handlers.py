@@ -83,9 +83,9 @@ def _export() -> JobHandler:
 # needed no change to carry a method that trains a neural network for minutes on a GPU,
 # which is the claim ADR-0009 made and this is the test of it.
 #
-# `distill` in M6 cost the same one entry, plus a migration for the `kind` CHECK — which
-# is the one place the queue's kind-agnosticism stops at the database. It belongs to no
-# experiment, exactly as `import` does, and produces an asset rather than a result row.
+# `distill` cost the same one entry; the schema keeps no list of kinds, so it needs nothing
+# from the database either. It belongs to no experiment, exactly as `import` does, and
+# produces an asset rather than a result row.
 LOADERS: dict[JobKind, Callable[[], JobHandler]] = {
     JobKind.IMPORT: _import_scan,
     JobKind.REFERENCE_IMPORT: _reference_import,

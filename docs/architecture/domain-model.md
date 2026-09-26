@@ -1,9 +1,13 @@
 # Domain data model
 
-Persistence is **plain SQL migrations plus a thin repository layer — no ORM** (ADR-0004). Migrations are
-numbered files `backend/src/anomaly_lab/db/migrations/NNN_description.sql`, applied in order at startup and
-tracked by `PRAGMA user_version`; how the schema may change is ADR-0004's rule. Repositories are
-small modules of functions returning pydantic domain objects; they contain the SQL and nothing else.
+Persistence is **one plain SQL schema script plus a thin repository layer — no ORM** (ADR-0004). The
+script is `backend/src/anomaly_lab/db/migrations/001_initial.sql`, and `db/migrate.py` names it with one
+constant, `SCHEMA_VERSION`, stamped into `PRAGMA user_version`. At startup an empty database gets the
+script; a database at `SCHEMA_VERSION` is opened as it is; anything else — an older or newer stamp, or an
+unstamped file that already holds tables — is refused with `SchemaVersionError`, whose message names the
+database file to delete. Nothing is ever migrated. Changing the script means bumping `SCHEMA_VERSION`, and a
+value is never reused. Repositories are small modules of functions returning pydantic domain objects; they
+contain the SQL and nothing else.
 `foreign_keys` and WAL journaling are enabled on every connection.
 
 The model is defined by ADR-0005. Two rules carry most of its weight:
@@ -13,7 +17,7 @@ The model is defined by ADR-0005. Two rules carry most of its weight:
 > one part in different subsets.
 
 > **Channel is data, not schema.** Channels are rows in a per-dataset dictionary table, not columns and not
-> an enum. A dataset with two channels, three, or none is representable without a migration.
+> an enum. A dataset with two channels, three, or none is representable without a schema change.
 
 ```mermaid
 erDiagram
@@ -118,8 +122,9 @@ separately from digest coverage.
   `mask_path`, source-mask provenance, `class_mask_path`, `class_mask_sha256`, `class_table` (JSON),
   `instances_path`, `instances_sha256`, `completed_at`. Completion materialises an app-owned binary PNG,
   a class-index PNG and an instances JSON and appends this row; a trigger makes rows immutable, and they
-  are deleted only with their dataset. The three class columns are null on a revision completed before
-  migration 023, the two instance columns on one completed before migration 024.
+  are deleted only with their dataset. Completion always writes the class and instance columns; the
+  schema leaves them nullable, and a resolver reading a revision without them falls back to its
+  document.
 
 A document's shape list holds `PolygonShape`, `BoxShape` and `BitmapShape`, all with stable ids, taxonomy
 keys, an optional `instance_id` and ordered `add` / `subtract` composition. A bitmap is a cropped binary PNG positioned in source pixels — the
@@ -157,11 +162,10 @@ a subset.
 ### RegionProfileRevision
 
 `id`, `dataset_id`, `name`, `revision_no`, `extractor_type`, `extractor_config` (JSON), `prepared_width`,
-`prepared_height`, `padding_fraction`, `resample`, `failure_policy`, `seed`, `created_at`,
-`sample_alignment`. One immutable
+`prepared_height`, `padding_fraction`, `resample`, `created_at`, `sample_alignment`. One immutable
 dataset-owned configuration for localising and preparing input (ADR-0033); the database rejects updates, so
-changing any value appends a revision. `failure_policy` is `fail`: an extractor failure may reduce build
-coverage but never silently substitutes the full frame. A completed build lives under
+changing any value appends a revision. An extractor failure may reduce build coverage but never silently
+substitutes the full frame. A completed build lives under
 `data/region-profiles/profile-<id>/` as one lossless PNG per source image, a deterministic JSON-lines
 transform manifest and a bounded summary whose digests make configuration and materialisation auditable.
 Transforms (`regions/transform.py`) name points in pixel-centre coordinates and crops in half-open
@@ -195,7 +199,7 @@ experiment, so every result row is attributable to one immutable configuration.
   (ADR-0040). Creation refuses a class the dataset does not have, a `few_shot` split drawn for another
   class, and a reference in `train` that does not show the class.
 - `classes` is the JSON list of annotation class keys a `semantic_segmentation` or `object_detection` run
-  learns, pinned at creation as every class of the dataset in taxonomy order (ADR-0039, migration 026).
+  learns, pinned at creation as every class of the dataset in taxonomy order (ADR-0039).
   `classes[i]` is label index `i + 1` in the run's targets, label maps and confusion matrices; 0 is
   background. `[]` for every other task. At most 254, because label maps are 8-bit and 255 means "no pinned class answers".
 - `channels` is a JSON array of channel **names** this run reads; `[]` means every channel. Names, because a

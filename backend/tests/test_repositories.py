@@ -387,7 +387,6 @@ def _experiment_over(migrated_db: sqlite3.Connection, catalog: SeededCatalog) ->
         prepared_width=8,
         prepared_height=8,
         padding_fraction=0.0,
-        seed=17,
     )
     experiment = experiments.create_experiment(
         migrated_db,

@@ -145,6 +145,9 @@ back to `http://127.0.0.1:8000` so the same bundle runs in a browser.
   before the page loads, so the UI needs no retry-on-boot logic (ADR-0012);
 - **build the window anyway when the backend did not start**, injecting `startupError` — the cause, the
   paths searched and the backend's last lines of output — for the page to paint ([frontend](frontend.md)).
+  A backend that refuses to start says why in an `{"ev":"error","message":…}` line instead of the ready
+  line, and that sentence becomes the headline: a catalogue from another schema version is refused this
+  way, naming the database file to delete ([domain model](domain-model.md)).
   Nothing in the setup hook may return an error: on macOS it runs inside `did_finish_launching`, where a
   panic becomes `abort()` with no window;
 - **tear down on exit** — `SIGTERM` to the child's process group, a grace period, then `SIGKILL`; the

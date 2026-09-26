@@ -99,7 +99,6 @@ def test_an_unbuilt_region_profile_cannot_become_experiment_input(
             prepared_width=SIZE,
             prepared_height=SIZE,
             padding_fraction=0.0,
-            seed=29,
         )
 
     response = client.post(
@@ -866,7 +865,6 @@ def test_model_input_values_are_projected_back_into_source_coordinates(
             prepared_width=SIZE // 2,
             prepared_height=SIZE // 2,
             padding_fraction=0.0,
-            seed=31,
         )
     run_region_prepare_job(
         JobContext(

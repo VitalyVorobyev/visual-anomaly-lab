@@ -46,7 +46,7 @@ from anomaly_lab.datasets.commit import commit_manifest
 from anomaly_lab.datasets.reference_packs import FSS_PANEL, pack_specs, scan_spec
 from anomaly_lab.datasets.splitting import SplitParams, SplitStrategy, plan_few_shot_split
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import splits as splits_repo
 from anomaly_lab.domain.entities import Task
@@ -410,7 +410,7 @@ def main() -> int:
     settings = Settings(
         data_dir=data_dir, reference_datasets_dir=args.datasets_dir.resolve(), dev_cors=False
     )
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     panel = _panel_check(args.datasets_dir.resolve()) if benchmark == "fss1000" else None
     started = time.perf_counter()
     runs: list[dict[str, Any]] = []

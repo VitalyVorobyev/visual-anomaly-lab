@@ -1,8 +1,7 @@
 """Domain entities (ADR-0005).
 
-Entities are added as the milestones that use them arrive. The numbered SQL migrations
-remain the authoritative description of the data model (ADR-0004); these models are how
-the rest of the application reads it.
+The schema script `db/migrations/001_initial.sql` is the authoritative description of
+the data model (ADR-0004); these models are how the rest of the application reads it.
 
 Two invariants from ADR-0005 are visible in the shapes below and must stay that way:
 
@@ -205,9 +204,9 @@ class Mask(BaseModel):
     annotated in one view and not another, and because the mask has to align with a
     specific image's pixel grid to mean anything.
 
-    Imported masks remain source provenance. Migration 005 added an optional digest:
-    old rows are hashed when first used as an annotation base, while newly discovered
-    masks may carry one immediately.
+    Imported masks remain source provenance. The digest is optional: a mask is hashed
+    when first used as an annotation base, while a newly discovered one may carry it
+    immediately.
     """
 
     model_config = API_MODEL_CONFIG
@@ -248,12 +247,6 @@ class SplitAssignment(BaseModel):
     subset: Subset
 
 
-class RegionFailurePolicy(StrEnum):
-    """A localisation failure is visible; it never silently becomes full-frame input."""
-
-    FAIL = "fail"
-
-
 class SpatialResample(StrEnum):
     NEAREST = "nearest"
     BILINEAR = "bilinear"
@@ -288,8 +281,6 @@ class RegionProfileRevision(BaseModel):
     prepared_height: int
     padding_fraction: float = 0.05
     resample: SpatialResample = SpatialResample.BILINEAR
-    failure_policy: RegionFailurePolicy = RegionFailurePolicy.FAIL
-    seed: int
     created_at: str
     sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE
 
@@ -475,13 +466,12 @@ class SampleResult(BaseModel):
     sample_id: int
     agg_score: float
     aggregation: Aggregation
-    normalization: ChannelNormalization | None = Field(
-        default=None,
+    normalization: ChannelNormalization = Field(
+        default=ChannelNormalization.NONE,
         description=(
             "How per-channel scores were put on one scale before the reduce. Recorded per "
             "row beside the aggregation, for the same reason: a stored result must stay "
-            "self-describing after the default changes. `null` on rows written before the "
-            "step existed, which meant `none`."
+            "self-describing after the default changes."
         ),
     )
     localized: bool | None = Field(
@@ -505,7 +495,7 @@ class MetricSet(BaseModel):
     experiment_id: int
     subset: Subset
     metrics: dict[str, Any] = Field(default_factory=dict)
-    ground_truth_digest: str | None = None
+    ground_truth_digest: str
     computed_at: str
 
     @field_validator("metrics", mode="before")

@@ -137,9 +137,8 @@ def get_annotation_draft(
 ) -> AnnotationDraftState:
     """Read-or-seed, and never a write.
 
-    This used to 404, and the editor reached for the POST instead -- from a query function, so
-    opening an image persisted a row and completing one resurrected it. Every such row then
-    counted as unsaved work forever (see migration 016).
+    A read that created the draft would persist a row every time an image was opened, and
+    every such row would count as unsaved work forever. The first save creates it.
     """
     state, etag = IMAGE_DRAFTS.read(_settings(request), image_id)
     if etag is not None:

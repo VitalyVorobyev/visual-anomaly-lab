@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import sqlite3
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any, ClassVar
@@ -15,7 +14,7 @@ from PIL import Image
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations, apply_migrations_to, discover_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import datasets, images, samples
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import (
@@ -59,7 +58,7 @@ def _seed(
     alignment: SampleAlignment,
 ) -> tuple[int, int, list[list[int]]]:
     """One sample per part, one image per channel; returns dataset, profile, image ids."""
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     with connection(settings.db_path) as conn:
         dataset = datasets.create_dataset(conn, name="grouped", root_path=str(root))
         channel_count = max(len(part) for part in parts)
@@ -102,7 +101,6 @@ def _seed(
             prepared_width=32,
             prepared_height=32,
             padding_fraction=0.0,
-            seed=17,
             sample_alignment=alignment,
         )
     return dataset.id, profile.id, ids
@@ -182,7 +180,6 @@ def test_a_sample_of_one_image_is_unchanged_by_union(settings: Settings, tmp_pat
             prepared_width=32,
             prepared_height=32,
             padding_fraction=0.0,
-            seed=17,
             sample_alignment=SampleAlignment.UNION,
         )
 
@@ -259,8 +256,8 @@ def test_preview_sample_indices_take_whole_samples_evenly() -> None:
     assert preview_sample_indices([]) == []
 
 
-def test_a_per_image_profile_keeps_the_digest_its_build_recorded() -> None:
-    """The digest a published build recorded before this field existed still matches."""
+def test_the_config_digest_covers_every_configuration_field_and_nothing_else() -> None:
+    """A build is matched to its revision by configuration, not by row identity."""
     profile = RegionProfileRevision(
         id=7,
         dataset_id=3,
@@ -276,17 +273,16 @@ def test_a_per_image_profile_keeps_the_digest_its_build_recorded() -> None:
         prepared_width=256,
         prepared_height=256,
         padding_fraction=0.05,
-        seed=17,
         created_at="2026-01-01T00:00:00.000Z",
     )
 
     assert profile.sample_alignment is SampleAlignment.PER_IMAGE
-    assert (
-        _config_digest(profile)
-        == "85daecd93c35cddb0cda5eb556f6799960d1217ffe49e3673d5b96063745d99b"
-    )
+    renumbered = profile.model_copy(update={"id": 8, "created_at": "2026-02-02T00:00:00.000Z"})
+    assert _config_digest(renumbered) == _config_digest(profile)
     united = profile.model_copy(update={"sample_alignment": SampleAlignment.UNION})
     assert _config_digest(united) != _config_digest(profile)
+    wider = profile.model_copy(update={"prepared_width": 320})
+    assert _config_digest(wider) != _config_digest(profile)
 
 
 def test_a_per_image_manifest_carries_no_new_field(settings: Settings, tmp_path: Path) -> None:
@@ -314,7 +310,6 @@ def test_union_is_refused_for_an_extractor_that_does_not_crop_to_a_box(
         "extractor_config": {},
         "prepared_width": 64,
         "prepared_height": 64,
-        "seed": 17,
     }
     url = f"/api/datasets/{catalog.dataset_id}/region-profiles"
 
@@ -343,28 +338,3 @@ def test_the_api_stores_a_union_profile(client: TestClient, catalog: SeededCatal
     assert response.json()["sample_alignment"] == "union"
     fetched = client.get(f"/api/region-profiles/{response.json()['id']}")
     assert fetched.json()["sample_alignment"] == "union"
-
-
-def test_migration_025_gives_earlier_revisions_per_image(tmp_path: Path) -> None:
-    conn = sqlite3.connect(tmp_path / "catalog.db")
-    conn.row_factory = sqlite3.Row
-    try:
-        for migration in discover_migrations():
-            if migration.number > 24:
-                break
-            conn.executescript(
-                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
-            )
-        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/d')")
-        conn.execute(
-            "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type, "
-            "prepared_width, prepared_height, seed) VALUES (1, 'p', 1, 'identity', 64, 64, 17)"
-        )
-        conn.commit()
-
-        assert apply_migrations_to(conn) >= 25
-
-        row = conn.execute("SELECT sample_alignment FROM region_profile_revision").fetchone()
-        assert row["sample_alignment"] == "per_image"
-    finally:
-        conn.close()

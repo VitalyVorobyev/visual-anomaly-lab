@@ -57,7 +57,7 @@ from anomaly_lab.datasets.commit import commit_manifest
 from anomaly_lab.datasets.reference_packs import pack_specs, scan_spec
 from anomaly_lab.datasets.splitting import SplitParams, SplitStrategy, plan_imported_split
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import results as results_repo
@@ -184,7 +184,6 @@ def _build_profile(
             prepared_width=PREPARED_SIZE,
             prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
-            seed=SEED,
         )
     run_region_prepare_job(
         JobContext(
@@ -487,7 +486,7 @@ def main(argv: list[str] | None = None) -> int:
     data_dir.mkdir(parents=True, exist_ok=True)
     settings = _settings(data_dir, args.datasets)
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
 
     report: dict[str, Any] = {
         "category": args.category,

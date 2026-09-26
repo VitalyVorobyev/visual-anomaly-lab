@@ -413,9 +413,8 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
     onSuccess: (revisions) => {
       // Written, not invalidated. Invalidating refetched the draft while this screen's observer
       // was still mounted, and while that query function was a POST the refetch *recreated* the
-      // draft completion had just consumed — one orphan per unit of finished work, and the
-      // single largest source of the rows migration 016 had to clear. A completed target seeds
-      // from the revision just written, which is exactly what the server would now return.
+      // draft completion had just consumed — one orphan per unit of finished work. A completed
+      // target seeds from the revision just written, which is exactly what the server would now return.
       const completed = revisions[0];
       if (completed) {
         queryClient.setQueryData<DraftEnvelope>(targetKey(target), {

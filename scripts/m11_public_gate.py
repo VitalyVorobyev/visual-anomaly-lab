@@ -39,7 +39,7 @@ from anomaly_lab.datasets.splitting import (
     plan_imported_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -315,7 +315,6 @@ def _identity_profile(
             prepared_width=prepared_size,
             prepared_height=height,
             padding_fraction=0.0,
-            seed=SEED,
         )
     print(f"Preparing {category} at {frame}px...", file=sys.stderr)
     with contextlib.redirect_stdout(log):
@@ -389,7 +388,7 @@ def _peak_rss_bytes() -> int:
 
 def _child(data_dir: Path, experiment_id: int) -> int:
     settings = _settings(data_dir)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     log_path = data_dir / "gate.log"
     started = time.perf_counter()
     with log_path.open("a", encoding="utf-8") as log, contextlib.redirect_stdout(log):
@@ -518,7 +517,7 @@ def _run(
     _empty_destination(data_dir)
     settings = _settings(data_dir)
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     candidate_config = dict(candidate_spec.config)
     if steps is not None:
         if candidate_spec.step_field is None:

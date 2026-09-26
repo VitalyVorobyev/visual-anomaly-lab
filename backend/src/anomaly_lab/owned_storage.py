@@ -78,8 +78,9 @@ def remove_orphan_experiment_artifacts(
 ) -> list[Path]:
     """Remove only app-named experiment directories with no corresponding DB row.
 
-    A migration may deliberately discard incompatible experiment rows.  SQLite cannot
-    remove their filesystem payloads, so startup performs this narrow reconciliation.
+    An experiment row can disappear without its directory — a deletion interrupted between
+    the commit and the filesystem sweep. SQLite cannot remove filesystem payloads, so
+    startup performs this narrow reconciliation.
     Arbitrary files, unexpected directory names, symlinks, and every source path are
     outside the operation by construction.
     """

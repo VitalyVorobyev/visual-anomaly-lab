@@ -85,7 +85,6 @@ def create_revision(
     prepared_height: int,
     padding_fraction: float,
     resample: SpatialResample = SpatialResample.BILINEAR,
-    seed: int,
     sample_alignment: SampleAlignment = SampleAlignment.PER_IMAGE,
 ) -> RegionProfileRevision:
     row = conn.execute(
@@ -101,9 +100,8 @@ def create_revision(
         """
         INSERT INTO region_profile_revision (
             dataset_id, name, revision_no, extractor_type, extractor_config,
-            prepared_width, prepared_height, padding_fraction, failure_policy, seed, resample,
-            sample_alignment
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'fail', ?, ?, ?)
+            prepared_width, prepared_height, padding_fraction, resample, sample_alignment
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             dataset_id,
@@ -114,7 +112,6 @@ def create_revision(
             prepared_width,
             prepared_height,
             padding_fraction,
-            seed,
             resample.value,
             sample_alignment.value,
         ),
