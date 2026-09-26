@@ -92,6 +92,7 @@ def render_anomaly_map(
     value_range: tuple[float, float] | None = None,
     size: tuple[int, int] | None = None,
     alpha_follows_score: bool = True,
+    optimize: bool = True,
 ) -> bytes:
     """Colormap one map to an RGBA PNG whose **alpha follows the score**.
 
@@ -114,6 +115,8 @@ def render_anomaly_map(
     shown **on its own** — a diagnostics panel, not an overlay — where score-driven alpha
     would dissolve the quiet regions into the page background and leave the reader unable
     to tell "the model found nothing here" from "nothing was rendered here".
+
+    `optimize=False` is `render_rgb_image`'s trade, for an overlay drawn once per click.
     """
     values = np.asarray(array, dtype=np.float32)
     finite = np.isfinite(values)
@@ -140,8 +143,15 @@ def render_anomaly_map(
     if size is not None and image.size != size:
         image = image.resize(size, Image.Resampling.BILINEAR)
 
+    return _save_png(image, optimize=optimize)
+
+
+def _save_png(image: Image.Image, *, optimize: bool) -> bytes:
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
+    if optimize:
+        image.save(buffer, format="PNG", optimize=True)
+    else:
+        image.save(buffer, format="PNG", compress_level=1)
     return buffer.getvalue()
 
 
@@ -167,12 +177,7 @@ def render_rgb_image(
     if size is not None and image.size != size:
         image = image.resize(size, Image.Resampling.BILINEAR)
 
-    buffer = io.BytesIO()
-    if optimize:
-        image.save(buffer, format="PNG", optimize=True)
-    else:
-        image.save(buffer, format="PNG", compress_level=1)
-    return buffer.getvalue()
+    return _save_png(image, optimize=optimize)
 
 
 def boundary_of(binary: np.ndarray, width: int = 2) -> np.ndarray:
@@ -315,6 +320,7 @@ def render_label_map(
     colours: list[tuple[int, int, int]],
     *,
     truth: bool,
+    optimize: bool = True,
 ) -> bytes:
     """One label map as a transparent RGBA PNG, at the plane's own size.
 
@@ -353,9 +359,38 @@ def render_label_map(
     rgba[..., 3] = alpha
     rgba[alpha == 0, :3] = 0
 
-    buffer = io.BytesIO()
-    Image.fromarray(rgba, mode="RGBA").save(buffer, format="PNG", optimize=True)
-    return buffer.getvalue()
+    return _save_png(Image.fromarray(rgba, mode="RGBA"), optimize=optimize)
+
+
+def render_class_regions(
+    labels: np.ndarray,
+    colours: Sequence[tuple[int, int, int]],
+    *,
+    outline_only: bool,
+) -> bytes:
+    """An image's class regions as a transparent RGBA PNG at the plane's own size.
+
+    Label `i` is `colours[i - 1]`, 0 is clear. Filled faintly with a solid border in the
+    class's colour, or the border alone for anomaly truth — the outline every anomaly screen
+    draws, so the pixels inside stay visible. The border is `boundary_of` per class, as wide
+    as the image is large (two pixels up to 1000 on the long side, then one more per 500), so
+    it reads at a fitted zoom without crowding a small image.
+    """
+    index = np.asarray(labels, dtype=np.uint8)
+    width = 2 + max(0, (max(index.shape) - 1000) // 500)
+    rgba = np.zeros((*index.shape, 4), dtype=np.uint8)
+    for label in np.unique(index):
+        if label == 0:
+            continue
+        region = index == label
+        colour = colours[(int(label) - 1) % len(colours)]
+        if not outline_only:
+            rgba[region, :3] = colour
+            rgba[region, 3] = LABEL_FILL_ALPHA
+        edge = boundary_of(region, width)
+        rgba[edge, :3] = colour
+        rgba[edge, 3] = LABEL_LINE_ALPHA
+    return _save_png(Image.fromarray(rgba, mode="RGBA"), optimize=False)
 
 
 def render_box_map(

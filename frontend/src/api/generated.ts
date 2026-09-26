@@ -1245,10 +1245,14 @@ export interface paths {
         };
         /**
          * An explore map as an overlay at the source image's size
-         * @description Similarity on the fixed range [0, 1]; a threshold turns it into a filled mask.
+         * @description Similarity over this image's own range; a threshold turns it into a filled mask.
          *
-         *     Clusters are drawn in the colours the client names, one per cluster, as a supervised
-         *     run's label map is; `cluster` keeps that one alone. False colour is opaque RGB.
+         *     The heatmap is coloured over the range the response reported (`value_low` to
+         *     `value_high`: this image's median to its top percent), so it is legible on any image;
+         *     the threshold is absolute cosine. Clusters are drawn in the colours the
+         *     client names, one per cluster, as a supervised run's label map is; `cluster` keeps that
+         *     one alone. False colour is opaque RGB. Every overlay is drawn once per click, so none is
+         *     zlib-optimised.
          */
         get: operations["explore_map_api_explore_maps__map_id__png_get"];
         put?: never;
@@ -1294,6 +1298,44 @@ export interface paths {
          * @description Report the backend's version, its schema version, and where its data lives.
          */
         get: operations["read_health_api_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/truth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** An image's truth, as the sample view draws it */
+        get: operations["get_image_truth_api_images__image_id__truth_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/truth/regions.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An image's truth regions in its classes' colours, at the source size
+         * @description Every region but a drawn box, filled in its class's colour — or, for an imported
+         *     anomaly mask, its outline. Boxes are drawn by the client, with their class tags.
+         */
+        get: operations["get_image_truth_regions_api_images__image_id__truth_regions_png_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4166,6 +4208,16 @@ export interface components {
             cells: number[] | null;
             /** Clusters */
             clusters: number | null;
+            /**
+             * Value Low
+             * @description Similarity only: the cosine the heatmap's coldest colour stands for — this image's median. The heatmap is coloured from `value_low` to `value_high`, its top percent; a threshold stays in absolute cosine.
+             */
+            value_low: number | null;
+            /**
+             * Value High
+             * @description Similarity only: the cosine of the hottest colour.
+             */
+            value_high: number | null;
         };
         /** ExploreShape */
         ExploreShape: {
@@ -4415,6 +4467,40 @@ export interface components {
          * @enum {string}
          */
         ImageTier: "thumb" | "preview" | "full";
+        /** ImageTruthResponse */
+        ImageTruthResponse: {
+            /** Image Id */
+            image_id: number;
+            /**
+             * Source
+             * @description What answers for this image: its newest completed revision, an imported ground-truth mask, its sample's normal label, or nothing yet.
+             * @enum {string}
+             */
+            source: "revision" | "imported_mask" | "normal" | "none";
+            /** Revision Id */
+            revision_id: number | null;
+            /**
+             * Classes
+             * @description The classes present, in the dataset's order.
+             */
+            classes: components["schemas"]["TruthClass"][];
+            /**
+             * Boxes
+             * @description Drawn boxes, source-frame pixel edges.
+             */
+            boxes: components["schemas"]["TruthBox"][];
+            /**
+             * Regions Url
+             * @description The region overlay, when the truth has regions other than boxes.
+             */
+            regions_url: string | null;
+            /**
+             * Outline
+             * @description The regions are anomaly truth, drawn as an outline.
+             * @default false
+             */
+            outline: boolean;
+        };
         /** InferParams */
         InferParams: {
             /** Experiment Id */
@@ -4861,7 +4947,7 @@ export interface components {
          * MapKind
          * @enum {string}
          */
-        MapKind: "values" | "labels" | "rgb";
+        MapKind: "values" | "rgb" | "clusters";
         /**
          * MapPeak
          * @description Where one map's largest value sits, in source-frame pixels.
@@ -6518,6 +6604,31 @@ export interface components {
              * @description Matched by a kept detection of its class at IoU 0.5.
              */
             found: boolean;
+        };
+        /** TruthBox */
+        TruthBox: {
+            /** Label Key */
+            label_key: string;
+            /** X */
+            x: number;
+            /** Y */
+            y: number;
+            /** Width */
+            width: number;
+            /** Height */
+            height: number;
+        };
+        /** TruthClass */
+        TruthClass: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /**
+             * Color
+             * @description The class's colour in the dataset's taxonomy, `#rrggbb`.
+             */
+            color: string;
         };
         /**
          * TruthKind
@@ -8941,6 +9052,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+        };
+    };
+    get_image_truth_api_images__image_id__truth_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ImageTruthResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_image_truth_regions_api_images__image_id__truth_regions_png_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -18,9 +18,13 @@ from anomaly_lab.db.repositories import images as images_repo
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.explore.grid import (
+    MIN_DISPLAY_SPAN,
+    CellWindow,
     ExploreMode,
+    cluster_affinity,
     cluster_grid,
     covered_cells,
+    display_range,
     frame_side,
     frame_transform,
     kmeans,
@@ -138,6 +142,104 @@ def test_letterbox_cells_are_left_out_and_clicks_land_on_the_image() -> None:
     assert colour.min() >= 0.0 and colour.max() <= 1.0
 
 
+# ------------------------------------------------------------------ smooth clusters
+
+
+def _two_regions(rows: int = 32, cols: int = 32, width: int = 8) -> np.ndarray:
+    """Unit features of two materials meeting along a diagonal, `row + 0.6 col = 25`.
+
+    A patch is a window onto the image, so one the line crosses sees some of each material:
+    its feature is the mix, weighted by how far its centre lies from the line.
+    """
+    rng = np.random.default_rng(7)
+    rr, cc = np.indices((rows, cols)) + 0.5
+    side = (rr + 0.6 * cc - 25.0) / np.hypot(1.0, 0.6)
+    weight = np.clip(0.5 - side, 0.0, 1.0)[..., None]
+    first, second = np.eye(width, dtype=np.float32)[:2]
+    grid = weight * first + (1.0 - weight) * second
+    grid = grid + rng.normal(0.0, 0.02, grid.shape)
+    return np.asarray(grid / np.linalg.norm(grid, axis=-1, keepdims=True), dtype=np.float32)
+
+
+def _patch_edge_steps(labels: np.ndarray, patch: int) -> int:
+    """Label changes that lie exactly on patch boundaries, both axes."""
+    horizontal = labels[:, 1:] != labels[:, :-1]
+    vertical = labels[1:, :] != labels[:-1, :]
+    on_columns = horizontal[:, patch - 1 :: patch].sum()
+    on_rows = vertical[patch - 1 :: patch, :].sum()
+    return int(on_columns + on_rows)
+
+
+def _changes(labels: np.ndarray) -> int:
+    return int((labels[:, 1:] != labels[:, :-1]).sum() + (labels[1:, :] != labels[:-1, :]).sum())
+
+
+def test_cluster_affinity_is_a_distribution_whose_argmax_is_the_label_grid() -> None:
+    window = CellWindow(top=0, bottom=32, left=0, right=32)
+    affinity, labels = cluster_affinity(_two_regions(), window, 2, seed=0)
+    assert affinity.shape == (32, 32, 2) and affinity.dtype == np.float32
+    np.testing.assert_allclose(affinity.sum(axis=-1), 1.0, atol=1e-5)
+    assert np.array_equal(np.argmax(affinity, axis=-1) + 1, labels)
+    assert np.array_equal(labels, cluster_grid(_two_regions(), window, 2, seed=0))
+
+
+def test_cluster_affinity_is_reproducible_in_both_directions() -> None:
+    window = CellWindow(top=0, bottom=32, left=0, right=32)
+    features = _unit_grid(32, 32, 6, seed=2)
+    first, labels = cluster_affinity(features, window, 5, seed=0)
+    again, labels_again = cluster_affinity(features, window, 5, seed=0)
+    assert np.array_equal(first, again) and np.array_equal(labels, labels_again)
+    other, _ = cluster_affinity(features, window, 5, seed=1)
+    assert not np.array_equal(first, other)
+
+
+def test_letterbox_cells_take_the_affinity_of_the_nearest_covered_cell() -> None:
+    transform = frame_transform((200, 100), DinoBackbone.DINOV2_VIT_B14)
+    window = covered_cells(transform, 14)
+    affinity, labels = cluster_affinity(_unit_grid(32, 32, 5), window, 3, seed=0)
+    assert labels[:8].max() == 0 and labels[24:].max() == 0
+    np.testing.assert_array_equal(affinity[0], affinity[window.top])
+    np.testing.assert_array_equal(affinity[31], affinity[window.bottom - 1])
+
+
+def test_clusters_follow_a_diagonal_instead_of_the_patch_grid(tmp_path: Path) -> None:
+    transform = frame_transform((448, 448), DinoBackbone.DINOV2_VIT_B14)
+    window = covered_cells(transform, 14)
+    affinity, labels = cluster_affinity(_two_regions(), window, 2, seed=0)
+
+    smooth = to_source(
+        read_grid(
+            map_path(tmp_path, write_grid(tmp_path, MapKind.CLUSTERS, affinity, transform, 14))
+        )
+    )
+    blocky = np.kron(labels, np.ones((14, 14), dtype=np.uint8))
+    assert smooth.shape == blocky.shape == (448, 448)
+    assert set(np.unique(smooth).tolist()) == {1, 2}
+    # The same two regions, split in the same place...
+    assert (smooth == blocky).mean() > 0.95
+    # ...but the nearest-neighbour picture changes label only on patch edges, and the
+    # interpolated one mostly between them.
+    assert _patch_edge_steps(blocky, 14) == _changes(blocky)
+    assert _patch_edge_steps(smooth, 14) < 0.25 * _patch_edge_steps(blocky, 14)
+
+
+def test_a_similarity_is_coloured_from_its_median_to_its_top_percent() -> None:
+    values = np.linspace(0.0, 0.5, 32 * 32, dtype=np.float32).reshape(32, 32)
+    values[20, 20] = 1.0  # The clicked patch: always the max, so it must not set the range.
+    values[:4] = 0.9  # Letterbox cells, off the window: they do not count either.
+    window = CellWindow(top=4, bottom=32, left=0, right=32)
+    low, high = display_range(values, window)
+    inside = values[4:]
+    assert low == pytest.approx(float(np.percentile(inside, 50)))
+    assert high == pytest.approx(float(np.percentile(inside, 99)))
+    assert high < 1.0
+
+    flat = np.full((32, 32), 0.95, dtype=np.float32)
+    low, high = display_range(flat, window)
+    assert high - low == pytest.approx(MIN_DISPLAY_SPAN)
+    assert high <= 1.0 and low <= 0.95
+
+
 # ------------------------------------------------------------------ scratch maps
 
 
@@ -154,11 +256,11 @@ def test_a_stored_grid_projects_to_the_source_frame(tmp_path: Path) -> None:
     mask = mask_of(stored, threshold=0.5)
     assert mask[15, 5] and not mask[15, 55]
 
-    labels = np.zeros((32, 32), dtype=np.uint8)
-    labels[8:24] = 2
-    labels[8:24, 16:] = 1
+    affinity = np.zeros((32, 32, 2), dtype=np.float32)
+    affinity[:, :16, 1] = 1.0
+    affinity[:, 16:, 0] = 1.0
     stored_labels = read_grid(
-        map_path(tmp_path, write_grid(tmp_path, MapKind.LABELS, labels, transform, 14))
+        map_path(tmp_path, write_grid(tmp_path, MapKind.CLUSTERS, affinity, transform, 14))
     )
     cluster = mask_of(stored_labels, cluster=2)
     assert cluster.shape == (30, 60)
@@ -206,15 +308,19 @@ class _StubResident:
         transform = frame_transform((image.width, image.height), DinoBackbone(backbone))
         grid = np.linspace(0.0, 1.0, 32 * 32, dtype=np.float32).reshape(32, 32)
         kind = MapKind.VALUES
-        extra: dict[str, object] = {}
+        extra: dict[str, object] = {"value_low": 0.2, "value_high": 0.9}
         if payload["mode"] == ExploreMode.CLUSTERS.value:
-            grid = (np.arange(32 * 32).reshape(32, 32) % 3 + 1).astype(np.uint8)
-            kind = MapKind.LABELS
-            extra = {"cells": grid.reshape(-1).tolist(), "clusters": 3}
+            labels = np.arange(32 * 32).reshape(32, 32) % 3
+            grid = np.eye(3, dtype=np.float32)[labels]
+            kind = MapKind.CLUSTERS
+            extra = {"cells": (labels + 1).reshape(-1).tolist(), "clusters": 3}
         elif payload["mode"] == ExploreMode.PCA.value:
             grid = np.full((32, 32, 3), 0.5, dtype=np.float32)
             kind = MapKind.RGB
-        map_id = write_grid(explore_dir(self.settings), kind, grid, transform, 14)
+        value_range = (0.2, 0.9) if kind is MapKind.VALUES else None
+        map_id = write_grid(
+            explore_dir(self.settings), kind, grid, transform, 14, value_range=value_range
+        )
         return (
             {
                 "image_id": payload["image_id"],
@@ -328,6 +434,7 @@ def test_a_similarity_map_is_served_at_source_size_and_becomes_a_candidate(
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["map_kind"] == "values"
+    assert (body["value_low"], body["value_high"]) == (0.2, 0.9)
     assert stubbed.calls[0]["points"] == [{"x": 3.0, "y": 4.0}]
     assert stubbed.calls[0]["backbone"] == "dinov2_vit_b14"
 

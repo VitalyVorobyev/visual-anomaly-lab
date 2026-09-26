@@ -142,6 +142,17 @@ class ExploreResponse(BaseModel):
         description="Clusters only: each grid cell's cluster, row-major; 0 is off the image.",
     )
     clusters: int | None = None
+    value_low: float | None = Field(
+        default=None,
+        description=(
+            "Similarity only: the cosine the heatmap's coldest colour stands for — this "
+            "image's median. The heatmap is coloured from `value_low` to `value_high`, its top "
+            "percent; a threshold stays in absolute cosine."
+        ),
+    )
+    value_high: float | None = Field(
+        default=None, description="Similarity only: the cosine of the hottest colour."
+    )
 
 
 class ExploreShapeRequest(BaseModel):
@@ -300,25 +311,33 @@ def explore_map(
         description="Comma-separated `rrggbb`, one per cluster or one for a threshold mask.",
     ),
 ) -> Response:
-    """Similarity on the fixed range [0, 1]; a threshold turns it into a filled mask.
+    """Similarity over this image's own range; a threshold turns it into a filled mask.
 
-    Clusters are drawn in the colours the client names, one per cluster, as a supervised
-    run's label map is; `cluster` keeps that one alone. False colour is opaque RGB.
+    The heatmap is coloured over the range the response reported (`value_low` to
+    `value_high`: this image's median to its top percent), so it is legible on any image;
+    the threshold is absolute cosine. Clusters are drawn in the colours the
+    client names, one per cluster, as a supervised run's label map is; `cluster` keeps that
+    one alone. False colour is opaque RGB. Every overlay is drawn once per click, so none is
+    zlib-optimised.
     """
     stored = _stored(_settings(request), map_id)
     palette = _palette(colours)
     if stored.kind is MapKind.RGB:
         payload = render_rgb_image(to_source(stored), optimize=False)
     elif stored.kind is MapKind.VALUES and threshold is None:
-        payload = render_anomaly_map(to_source(stored), value_range=(0.0, 1.0))
+        payload = render_anomaly_map(
+            to_source(stored), value_range=stored.value_range or (0.0, 1.0), optimize=False
+        )
     elif stored.kind is MapKind.VALUES:
         mask = mask_of(stored, threshold=threshold)
-        payload = render_label_map(mask.astype(np.float32), palette[:1], truth=False)
+        payload = render_label_map(
+            mask.astype(np.float32), palette[:1], truth=False, optimize=False
+        )
     else:
         labels = to_source(stored).astype(np.float32)
         if cluster is not None:
             labels = np.where(labels == cluster, labels, 0.0).astype(np.float32)
-        payload = render_label_map(labels, palette, truth=False)
+        payload = render_label_map(labels, palette, truth=False, optimize=False)
     return Response(content=payload, media_type="image/png", headers={"Cache-Control": "no-store"})
 
 

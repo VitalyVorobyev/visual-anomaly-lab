@@ -108,6 +108,10 @@ export function useUpdateAnnotationLabel(datasetId: number) {
       ),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.annotationLabels(datasetId) });
+      // Every image's truth carries its classes' colours and names.
+      void queryClient.invalidateQueries({
+        predicate: (query) => query.queryKey[0] === "annotations" && query.queryKey[2] === "truth",
+      });
     },
   });
 }
@@ -425,6 +429,7 @@ export function useCompleteDraft(target: DraftTarget, imageIds: readonly number[
       }
       for (const imageId of imageIds) {
         void queryClient.invalidateQueries({ queryKey: queryKeys.annotationRevisions(imageId) });
+        void queryClient.invalidateQueries({ queryKey: queryKeys.imageTruth(imageId) });
       }
       void queryClient.invalidateQueries({ queryKey: queryKeys.classCoverageAll() });
       // A dataset's truth and class counts are derived from completed annotations (ADR-0041),

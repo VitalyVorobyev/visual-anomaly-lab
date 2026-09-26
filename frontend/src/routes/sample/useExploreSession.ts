@@ -214,7 +214,7 @@ export function useExploreSession({
         src: exploreMapUrl(answer.map_url, { threshold }),
         opacity,
       });
-    } else if (answer.map_kind === "labels") {
+    } else if (answer.map_kind === "clusters") {
       layers.push({
         key: "explore-clusters",
         src: exploreMapUrl(answer.map_url, { clusters: answer.clusters ?? 0, cluster }),

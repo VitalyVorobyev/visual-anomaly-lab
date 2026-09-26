@@ -21,6 +21,7 @@ from anomaly_lab.datasets.reference_packs import (
     class_key,
     pack_specs,
     register_class_truth,
+    registered_dataset_id,
     scan_spec,
 )
 from anomaly_lab.datasets.splitting import plan_class_stratified_split, plan_few_shot_split
@@ -29,7 +30,7 @@ from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
-from anomaly_lab.domain.entities import ClassPresence, Subset
+from anomaly_lab.domain.entities import ClassPresence, Dataset, Subset
 
 
 def _write_image(path: Path) -> None:
@@ -141,6 +142,30 @@ def test_a_dataset_that_merely_shares_a_name_inherits_nothing(tmp_path: Path) ->
         assert mine["description"] is None
 
 
+def test_a_dataset_registered_under_a_former_name_is_still_registered(tmp_path: Path) -> None:
+    settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=tmp_path / "references")
+    fss = next(
+        spec
+        for pack in pack_specs(settings)
+        for spec in pack.datasets
+        if spec.key == "fss1000:panel"
+    )
+    assert fss.name == "FSS-1000"
+
+    def registered(name: str) -> Dataset:
+        return Dataset(
+            id=5,
+            name=name,
+            root_path=str(fss.scan_root),
+            adapter=fss.adapter,
+            created_at="2026-01-01T00:00:00Z",
+        )
+
+    assert registered_dataset_id(fss, [registered("FSS-1000 panel")]) == 5
+    assert registered_dataset_id(fss, [registered("FSS-1000")]) == 5
+    assert registered_dataset_id(fss, [registered("something else")]) is None
+
+
 def test_an_incomplete_pack_is_not_offered_for_registration(tmp_path: Path) -> None:
     references = tmp_path / "references"
     (references / "VisA_20220922").mkdir(parents=True)
@@ -186,7 +211,7 @@ def test_fss1000_registers_one_dataset_whose_masks_are_class_truth(tmp_path: Pat
         assert (entered["images"], entered["regions"], entered["kept"]) == (40, 40, 0)
 
         [dataset] = client.get("/api/datasets").json()
-        assert (dataset["name"], dataset["collection"]) == ("FSS-1000 panel", "FSS-1000")
+        assert (dataset["name"], dataset["collection"]) == ("FSS-1000", "FSS-1000")
         assert dataset["samples"] == 2 * 20
         assert dataset["label_counts"] == {"normal": 0, "defect": 0, "unlabeled": 40}
         assert dataset["truth"] == ["classes"]

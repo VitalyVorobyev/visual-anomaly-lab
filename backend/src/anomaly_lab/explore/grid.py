@@ -44,6 +44,10 @@ DEFAULT_CLUSTERS = 6
 KMEANS_ITERATIONS = 40
 MAX_POINTS = 32
 """A prompt of more points than this is somebody clicking, not somebody asking."""
+MIN_DISPLAY_SPAN = 0.1
+"""The narrowest cosine range a similarity map is stretched over (`display_range`)."""
+DISPLAY_PERCENTILES = (50.0, 99.0)
+"""The percentiles of the covered cells a similarity map is stretched between."""
 
 
 class ExploreMode(StrEnum):
@@ -129,7 +133,14 @@ def similarity(
 def kmeans(
     vectors: np.ndarray, k: int, *, seed: int, iterations: int = KMEANS_ITERATIONS
 ) -> np.ndarray:
-    """Seeded k-means++ then Lloyd, pure numpy; labels `0..k-1` ordered by cluster size.
+    """Seeded k-means++ then Lloyd, pure numpy; labels `0..k-1` ordered by cluster size."""
+    return kmeans_fit(vectors, k, seed=seed, iterations=iterations)[0]
+
+
+def kmeans_fit(
+    vectors: np.ndarray, k: int, *, seed: int, iterations: int = KMEANS_ITERATIONS
+) -> tuple[np.ndarray, np.ndarray]:
+    """`kmeans`, with the centres: `(labels, centres)`, centre `i` being label `i`'s.
 
     Every random draw comes from one `default_rng(seed)`, so the same seed gives the same
     labels and a different one is free to differ. Labels are renumbered largest cluster first,
@@ -137,7 +148,7 @@ def kmeans(
     """
     count = int(vectors.shape[0])
     if count == 0:
-        return np.zeros(0, dtype=np.int64)
+        return np.zeros(0, dtype=np.int64), np.zeros((0, vectors.shape[-1]), dtype=np.float64)
     k = max(1, min(int(k), count))
     data = np.asarray(vectors, dtype=np.float64)
     rng = np.random.default_rng(seed)
@@ -176,19 +187,98 @@ def kmeans(
     order = np.argsort(-sizes, kind="stable")
     rank = np.empty(k, dtype=np.int64)
     rank[order] = np.arange(k)
-    return rank[labels]
+    return rank[labels], centres[order]
+
+
+def cluster_affinity(
+    features: np.ndarray, window: CellWindow, k: int, *, seed: int
+) -> tuple[np.ndarray, np.ndarray]:
+    """Per-cell soft assignment to the image's k-means clusters, and the hard labels.
+
+    Returns `(affinity, labels)`: a `(rows, cols, k)` float32 softmax of the negative squared
+    distance to each centre, and the `(rows, cols)` uint8 `cluster_grid` of its argmax.
+
+    **The soft assignment is what gets drawn.** A cluster index is a name, so projecting the
+    label grid can only be nearest-neighbour, and a 32x32 grid drawn that way has patch
+    squares for edges. Each cluster's affinity is a quantity: it is bilinear between patch
+    centres like any map, and the argmax of the interpolated planes (`store.to_source`) puts a
+    boundary where two clusters are equally likely, which runs between patch centres at any
+    angle instead of along the grid.
+
+    **The temperature is the typical squared distance between two centres**, so the softmax is
+    graded rather than hard: a patch halfway between two centres is about even between them,
+    and the interpolated planes cross where the features do. A hard assignment would put the
+    crossing at the midpoint between two patch centres — on the patch edge again — and a
+    temperature in one encoder's units would be hard on one encoder and flat on another.
+    Cells off the image take the affinity of the nearest covered cell: a letterbox is a smear
+    of the border and should not pull a boundary toward itself.
+    """
+    rows, cols, width = features.shape
+    inside = features[window.top : window.bottom, window.left : window.right]
+    points = inside.reshape(-1, width)
+    # The hard labels are the argmax below, which is what the picture draws.
+    _, centres = kmeans_fit(points, k, seed=seed)
+    data = np.asarray(points, dtype=np.float64)
+    distances = np.maximum(
+        np.einsum("ij,ij->i", data, data)[:, None]
+        - 2.0 * data @ centres.T
+        + np.einsum("ij,ij->i", centres, centres),
+        0.0,
+    )
+    nearest = distances.min(axis=1, keepdims=True)
+    logits = -(distances - nearest) / _temperature(centres)
+    weights = np.exp(logits)
+    soft = (weights / weights.sum(axis=1, keepdims=True)).astype(np.float32)
+
+    shape = inside.shape[:2]
+    affinity = np.pad(
+        soft.reshape(*shape, -1),
+        ((window.top, rows - window.bottom), (window.left, cols - window.right), (0, 0)),
+        mode="edge",
+    )
+    grid = np.zeros((rows, cols), dtype=np.uint8)
+    grid[window.top : window.bottom, window.left : window.right] = (
+        np.argmax(soft, axis=1).reshape(shape) + 1
+    ).astype(np.uint8)
+    return np.ascontiguousarray(affinity, dtype=np.float32), grid
+
+
+def _temperature(centres: np.ndarray) -> float:
+    """The median squared distance between two distinct centres; 1 when there is no pair."""
+    count = int(centres.shape[0])
+    if count < 2:
+        return 1.0
+    norms = np.einsum("ij,ij->i", centres, centres)
+    pairs = norms[:, None] - 2.0 * centres @ centres.T + norms[None, :]
+    upper = pairs[np.triu_indices(count, k=1)]
+    typical = float(np.median(np.maximum(upper, 0.0)))
+    return typical if typical > 0.0 else 1.0
 
 
 def cluster_grid(features: np.ndarray, window: CellWindow, k: int, *, seed: int) -> np.ndarray:
     """A `(rows, cols)` uint8 label grid: 0 off the image, `1..k` over it."""
-    rows, cols, width = features.shape
-    inside = features[window.top : window.bottom, window.left : window.right]
-    labels = kmeans(inside.reshape(-1, width), k, seed=seed)
-    grid = np.zeros((rows, cols), dtype=np.uint8)
-    grid[window.top : window.bottom, window.left : window.right] = (
-        labels.reshape(inside.shape[:2]) + 1
-    ).astype(np.uint8)
-    return grid
+    return cluster_affinity(features, window, k, seed=seed)[1]
+
+
+def display_range(values: np.ndarray, window: CellWindow) -> tuple[float, float]:
+    """The range a similarity map is coloured over: from this image's median to its top 1 %.
+
+    Coloured on the fixed [0, 1] a similarity map is a faint wash: the clicked patch is 1 and
+    most of the image sits in a band well below it, which the heatmap's score-driven alpha
+    all but hides. Its own min and max change nothing — the click itself is always the max.
+    Stretched from the median of the covered cells (what a typical patch scores against the
+    click) to their 99th percentile, everything more like the click than most of the image
+    shows, and the few patches most like it saturate. The range is never narrower than
+    `MIN_DISPLAY_SPAN`, so a flat map stays flat instead of amplifying noise; the threshold
+    that cuts a mask is in absolute cosine and does not move with it.
+    """
+    inside = values[window.top : window.bottom, window.left : window.right]
+    low = float(np.percentile(inside, DISPLAY_PERCENTILES[0]))
+    high = float(np.percentile(inside, DISPLAY_PERCENTILES[1]))
+    if high - low < MIN_DISPLAY_SPAN:
+        high = min(1.0, low + MIN_DISPLAY_SPAN)
+        low = high - MIN_DISPLAY_SPAN
+    return low, high
 
 
 def pca_grid(features: np.ndarray, window: CellWindow) -> np.ndarray:

@@ -171,6 +171,9 @@ class DatasetSpec:
     # its directory's class -- which an imported mask, speaking for the default class alone,
     # cannot carry. It sets no sample label: class truth is not anomaly truth (ADR-0041).
     class_truth: BoxTruthSpec | MaskTruthSpec | None = None
+    # Names this dataset was registered under before, so a catalogue that registered it then
+    # still reads as registered rather than offering it a second time.
+    former_names: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -232,7 +235,8 @@ def pack_specs(settings: Settings) -> tuple[PackSpec, ...]:
     fss_classes = fss / "fewshot_data"
     fss_dataset = DatasetSpec(
         key="fss1000:panel",
-        name="FSS-1000 panel",
+        name="FSS-1000",
+        former_names=("FSS-1000 panel",),
         root=fss_classes,
         scan_root=fss_classes,
         adapter="folder_classes",
@@ -344,7 +348,7 @@ def registered_dataset_id(spec: DatasetSpec, datasets: list[Dataset]) -> int | N
     expected_roots = {spec.root.resolve(), spec.scan_root.resolve()}
     for dataset in datasets:
         if (
-            dataset.name == spec.name
+            (dataset.name == spec.name or dataset.name in spec.former_names)
             and dataset.adapter == spec.adapter
             and Path(dataset.root_path).resolve() in expected_roots
         ):

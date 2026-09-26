@@ -126,7 +126,7 @@ describe("the datasets catalogue", () => {
     renderCatalogue([
       dataset({
         id: 5,
-        name: "FSS-1000 panel",
+        name: "FSS-1000",
         samples: 200,
         label_counts: { normal: 0, defect: 0, unlabeled: 200 },
         truth: ["classes"],
@@ -140,7 +140,7 @@ describe("the datasets catalogue", () => {
     ]);
 
     const card = screen
-      .getByRole("heading", { level: 3, name: "FSS-1000 panel" })
+      .getByRole("heading", { level: 3, name: "FSS-1000" })
       .closest("li")!;
     expect(card.textContent).toContain("200 samples · 20 classes");
     expect(card.textContent).not.toContain("defect");

@@ -27,6 +27,13 @@ interface ShapeBase {
    * detection's class colour on a box toned by whether it matched.
    */
   labelColour?: string;
+  /**
+   * The outline's own colour, for a shape whose colour is data rather than a verdict — a
+   * truth box in its class's taxonomy colour. Wins over `tone`.
+   */
+  colour?: string;
+  /** 0–1, for a shape whose weight the reader sets (the sample view's truth opacity). */
+  opacity?: number;
 }
 
 export interface BoxShape extends ShapeBase {
@@ -68,10 +75,10 @@ export function VectorLayer({
       aria-hidden
     >
       {shapes.map((shape) => {
-        const colour = toneColor(shape.tone);
+        const colour = shape.colour ?? toneColor(shape.tone);
         const anchor = labelAnchor(shape);
         return (
-          <g key={shape.id} data-shape={shape.kind}>
+          <g key={shape.id} data-shape={shape.kind} opacity={shape.opacity}>
             {shape.kind === "box" ? (
               <rect
                 x={shape.x}
