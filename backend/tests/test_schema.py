@@ -235,9 +235,8 @@ def test_region_profile_revisions_are_dataset_owned_and_immutable(
     migrated_db.execute(
         """
         INSERT INTO region_profile_revision (
-            dataset_id, name, revision_no, extractor_type, extractor_config,
-            prepared_width, prepared_height
-        ) VALUES (1, 'dominant object', 1, 'identity', '{}', 256, 256)
+            dataset_id, name, revision_no, extractor_type, extractor_config
+        ) VALUES (1, 'dominant object', 1, 'identity', '{}')
         """
     )
     row = migrated_db.execute("SELECT * FROM region_profile_revision").fetchone()
@@ -251,9 +250,8 @@ def test_region_profile_revisions_are_dataset_owned_and_immutable(
         migrated_db.execute(
             """
             INSERT INTO region_profile_revision (
-                dataset_id, name, revision_no, extractor_type, extractor_config,
-                prepared_width, prepared_height, resample
-            ) VALUES (1, 'bad resample', 1, 'identity', '{}', 256, 256, 'cubic-ish')
+                dataset_id, name, revision_no, extractor_type, extractor_config, resample
+            ) VALUES (1, 'bad resample', 1, 'identity', '{}', 'cubic-ish')
             """
         )
 
@@ -294,14 +292,22 @@ def test_results_carry_open_vocabularies_and_closed_shapes(
         "VALUES (1, 's', 'imported', 0, '{}')"
     )
     conn.execute(
-        "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type, "
-        "prepared_width, prepared_height) VALUES (1, 'full frame', 1, 'identity', 8, 8)"
+        "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type) "
+        "VALUES (1, 'full frame', 1, 'identity')"
     )
     conn.execute(
         "INSERT INTO experiment (name, dataset_id, split_id, region_profile_id, "
-        "region_manifest_sha256, model_type, artifact_dir) "
-        "VALUES ('e', 1, 1, 1, 'sha', 'pixel_reference', '/artifacts/1')"
+        "model_type, artifact_dir) "
+        "VALUES ('e', 1, 1, 1, 'pixel_reference', '/artifacts/1')"
     )
+    # A run pins nothing at creation; its first job pins a build, once.
+    assert conn.execute("SELECT region_manifest_sha256 FROM experiment").fetchone()[0] is None
+    conn.execute("UPDATE experiment SET region_manifest_sha256 = 'sha'")
+    conn.execute("UPDATE experiment SET region_manifest_sha256 = 'sha'")
+    with pytest.raises(sqlite3.IntegrityError, match="frozen"):
+        conn.execute("UPDATE experiment SET region_manifest_sha256 = 'other'")
+    with pytest.raises(sqlite3.IntegrityError, match="frozen"):
+        conn.execute("UPDATE experiment SET region_manifest_sha256 = NULL")
     experiment = conn.execute("SELECT task, channels, classes FROM experiment").fetchone()
     assert tuple(experiment) == ("anomaly", "[]", "[]")
     conn.execute(

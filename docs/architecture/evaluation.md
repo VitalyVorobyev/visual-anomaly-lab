@@ -1,6 +1,6 @@
 # Evaluation
 
-The evaluation layer is **model-independent by construction** (ADR-0011). Its only inputs are:
+The evaluation layer is **model-independent by construction**. Its only inputs are:
 
 - `ImageResult.score` rows for an experiment,
 - `Sample.label`,
@@ -29,12 +29,22 @@ Split, labels and region build are shared by every run over one multi-channel da
 between "one channel" and "all channels" is the channel, not two imports. An image whose `channel_id` is
 `NULL` is **excluded by a non-empty selection**; a single-view dataset is only read unfiltered.
 
+The selection is the experiment's and not the split's: a split decides *which samples* and exists to
+prevent leakage, and a selection on it would make "one channel" and "all channels" incomparable by
+construction. Importing each channel as a dataset of its own is the other thing it replaces — separate
+datasets have independent splits, so one view of a part could train while another is tested. A valid name
+that no sample in the split carries yields a legal, empty run; the unknown-name check catches typos only.
+Wherever runs with different selections are shown side by side, images align by channel name, never by
+position.
+
 ## Channel → sample aggregation
 
 A part is scored from its per-image scores. The **default aggregation is `max`**: a defect visible under any
 single illumination makes the part defective, while `mean` dilutes single-channel evidence with
 uninformative views. `mean` is an option. The method is recorded in `SampleResult.aggregation` and
-`Experiment.eval_config`.
+`Experiment.eval_config`. The reduction lives here and not in the methods, so no method's number is partly
+a measure of its own fusion; a learned fusion would need labels the workbench cannot assume. `max` is the
+least robust choice — one noisy view, a specular flare or a registration failure, sets the part's score.
 
 **`max` assumes per-channel scores share a scale.** If one illumination's scores simply sit higher, every
 maximum comes from that channel and the sample score measures which view the method finds noisiest.
@@ -51,7 +61,7 @@ is recorded on `SampleResult.normalization` beside the aggregation.
 labels would make the metric a function of the answer. It is transductive, the same cost the pixel metrics
 accept by adapting their bins to a run's range.
 
-**Image-level ROC-AUC stays on raw scores** (ADR-0011): it isolates model quality from how channels were
+**Image-level ROC-AUC stays on raw scores**: it isolates model quality from how channels were
 combined.
 
 ## Metrics

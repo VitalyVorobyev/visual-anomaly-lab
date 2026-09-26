@@ -145,11 +145,10 @@ def _run(
         profile = conn.execute(
             """
             INSERT INTO region_profile_revision
-                   (dataset_id, name, revision_no, extractor_type, prepared_width,
-                    prepared_height)
-            VALUES (?, ?, 1, 'identity', ?, ?)
+                   (dataset_id, name, revision_no, extractor_type)
+            VALUES (?, ?, 1, 'identity')
             """,
-            (dataset_id, f"identity {label_key} {seed}", SIZE, SIZE),
+            (dataset_id, f"identity {label_key} {seed}"),
         ).lastrowid
         experiment = experiments_repo.create_experiment(
             conn,

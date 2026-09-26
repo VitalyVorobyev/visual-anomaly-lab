@@ -54,8 +54,10 @@ from anomaly_lab.models.dino_backbone import (
     FeatureLayers,
     FrozenEncoder,
     image_patch_features,
+    native_frame,
     noise_patch_features,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.positional import INSID3_RANK, debias, positional_basis, resolved_rank
@@ -89,6 +91,7 @@ class ProtoSegConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder. The DINOv3 entries are licence-gated (an approved HF_TOKEN must "
@@ -130,6 +133,7 @@ class ProtoSegConfig(BaseModel):
         description="Softmax temperature over cosine similarities. Lower is a harder maximum.",
     )
     adaptation: Adaptation = Field(
+        json_schema_extra={"x-primary": True},
         default=Adaptation.TRAINING_FREE,
         description=(
             "'training_free' scores with the prototype bank. 'linear_adapt' fits a "
@@ -144,6 +148,7 @@ class ProtoSegConfig(BaseModel):
         ),
     )
     calibration: Calibration = Field(
+        json_schema_extra={"x-primary": True},
         default=Calibration.NONE,
         description=(
             "'leave_one_out' rescales the foreground probability on the references: each is "
@@ -212,6 +217,19 @@ class ProtoSegModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return ProtoSegConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the few-shot gates ran at 448x448 (docs/measurements.md)."""
+        if not isinstance(config, ProtoSegConfig):
+            raise TypeError(f"expected ProtoSegConfig, got {type(config).__name__}")
+        return native_frame(config.backbone, 448)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, ProtoSegConfig):
+            raise TypeError(f"expected ProtoSegConfig, got {type(config).__name__}")
+        return patch_multiple(config.backbone)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

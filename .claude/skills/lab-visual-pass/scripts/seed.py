@@ -1,7 +1,7 @@
 """Seed a scratch lab with one public VisA class and two scored runs.
 
 Talks only to the HTTP API of a backend started on a *scratch* data dir, so the user's
-own catalogue is never written. Idempotent: an existing dataset, profile, split or run
+own catalogue is never written. Idempotent: an existing dataset, split or run
 of the same name is reused. Prints one JSON object of the ids the screenshot pass needs.
 
     python seed.py --api http://127.0.0.1:8010 --visa-root /abs/path/datasets/VisA_20220922 \
@@ -91,16 +91,8 @@ def main() -> None:
         else req("POST", "/api/splits", {"dataset_id": dataset_id, "name": "generated", "seed": 7})
     )
 
-    profiles = req("GET", f"/api/datasets/{dataset_id}/region-profiles")
-    profile = next((p for p in profiles if p["name"] == "full frame 256"), None)
-    if profile is None:
-        profile = req(
-            "POST",
-            f"/api/datasets/{dataset_id}/region-profiles",
-            {"name": "full frame 256", "extractor_type": "identity"},
-        )
-        wait(req("POST", f"/api/region-profiles/{profile['id']}/build"))
-
+    # Every dataset has an implicit "Full frame" profile, and a run's train job prepares it at
+    # the run's size, so nothing is built here.
     experiments = req("GET", f"/api/experiments?dataset_id={dataset_id}")
     experiments = (
         experiments.get("items", experiments) if isinstance(experiments, dict) else experiments
@@ -116,7 +108,6 @@ def main() -> None:
                     "name": name,
                     "dataset_id": dataset_id,
                     "split_id": split["id"],
-                    "region_profile_id": profile["id"],
                     "model_type": "pixel_reference",
                 },
             )
@@ -149,7 +140,6 @@ def main() -> None:
                     "name": "colour floor",
                     "dataset_id": dataset_id,
                     "split_id": references["id"],
-                    "region_profile_id": profile["id"],
                     "model_type": "color_prototype",
                     "task": "few_shot_segmentation",
                     "target_label": "defect",

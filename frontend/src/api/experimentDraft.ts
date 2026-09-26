@@ -22,6 +22,9 @@ export interface ExperimentDraft {
   preprocessingValues: RawValues;
   evaluationValues: RawValues;
   channels: string[];
+  /** The typed input size; empty means the method's own. */
+  width?: string;
+  height?: string;
 }
 
 /** One draft per mount: the dataset-scoped form and the cross-dataset one do not share. */
@@ -47,6 +50,8 @@ export function readDraft(key: string, storage = safeSession()): ExperimentDraft
       channels: Array.isArray(parsed.channels)
         ? parsed.channels.filter((entry): entry is string => typeof entry === "string")
         : [],
+      width: typeof parsed.width === "string" ? parsed.width : "",
+      height: typeof parsed.height === "string" ? parsed.height : "",
     };
   } catch {
     return null;

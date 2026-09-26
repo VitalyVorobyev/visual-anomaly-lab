@@ -52,7 +52,8 @@ Do not repeatedly redraw the split to improve a number. Create a new named split
 
 ## 5. Establish the image geometry
 
-Start with the identity region profile. If the object occupies a small or unstable portion of the frame,
+Start with the dataset's own **Full frame** profile — identity, created with the dataset, and what a run
+reads unless told otherwise. If the object occupies a small or unstable portion of the frame,
 create a second profile using a deterministic classical localizer or MobileSAM and review its overlays over
 the entire dataset. Measure missed defect pixels, not merely successful crops. Pin a new revision after each
 configuration change.

@@ -218,7 +218,7 @@ def test_an_imported_split_reproduces_the_published_partition(
 def test_an_empty_validation_subset_is_ordinary_not_a_failure(
     client: TestClient, published: Path
 ) -> None:
-    """The official one-class protocols have no val subset at all (ADR-0011 amended)."""
+    """The official one-class protocols have no val subset at all (handbook evaluation.md)."""
     result = _import(client, published)
 
     split = _create_split(client, result["dataset_id"], params={"strategy": "imported"}).json()

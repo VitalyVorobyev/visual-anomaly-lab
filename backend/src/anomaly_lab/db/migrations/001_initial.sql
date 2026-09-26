@@ -47,7 +47,7 @@ CREATE TABLE dataset (
     -- datasets that came from one.
     collection       TEXT,
     -- Whether annotation truth is edited per image or once per sample for every channel
-    -- of a part (ADR-0036). A property of the data, not a preference.
+    -- of a part (handbook annotations.md). A property of the data, not a preference.
     annotation_scope TEXT    NOT NULL DEFAULT 'image'
                              CHECK (annotation_scope IN ('image', 'sample')),
     -- The channel a part is normally read in, by name so it survives a re-import that
@@ -129,7 +129,7 @@ CREATE TABLE split (
     strategy    TEXT    NOT NULL,
     seed        INTEGER NOT NULL,
     -- Ratios and stratification key as JSON. A seed alone does not reproduce a split;
-    -- the parameters it was drawn under are part of the record (ADR-0011).
+    -- the parameters it was drawn under are part of the record (handbook evaluation.md).
     params      TEXT    NOT NULL DEFAULT '{}',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Splits are immutable once created; changing one means creating a new one.
@@ -146,9 +146,11 @@ CREATE TABLE split_assignment (
 CREATE INDEX idx_split_assignment_sample ON split_assignment (sample_id);
 CREATE INDEX idx_split_assignment_subset ON split_assignment (split_id, subset);
 
--- Dataset-owned immutable input-region configurations (ADR-0033): the frozen
--- configuration an experiment pins, never a mutable "current" value. Build products and
--- their status live on disk under the profile's directory.
+-- Dataset-owned immutable input-region configurations (ADR-0033): where to look, frozen
+-- for an experiment to pin, never a mutable "current" value. The size a region is prepared
+-- at is not here: it is the experiment's (`preprocessing_config`), and a build is keyed by
+-- (revision, width, height). Build products and their status live on disk under the
+-- profile's directory, one subdirectory per size.
 CREATE TABLE region_profile_revision (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     dataset_id        INTEGER NOT NULL REFERENCES dataset (id) ON DELETE CASCADE,
@@ -156,8 +158,6 @@ CREATE TABLE region_profile_revision (
     revision_no       INTEGER NOT NULL CHECK (revision_no >= 1),
     extractor_type    TEXT    NOT NULL,
     extractor_config  TEXT    NOT NULL DEFAULT '{}' CHECK (json_valid(extractor_config)),
-    prepared_width    INTEGER NOT NULL CHECK (prepared_width > 0),
-    prepared_height   INTEGER NOT NULL CHECK (prepared_height > 0),
     padding_fraction  REAL    NOT NULL DEFAULT 0.05
                               CHECK (padding_fraction BETWEEN 0.0 AND 1.0),
     -- The interpolation used to materialise prepared pixels.
@@ -191,8 +191,10 @@ CREATE TABLE experiment (
     split_id               INTEGER NOT NULL REFERENCES split (id) ON DELETE RESTRICT,
     region_profile_id      INTEGER NOT NULL
                                    REFERENCES region_profile_revision (id) ON DELETE RESTRICT,
-    -- The digest of the prepared-region manifest the run was built on.
-    region_manifest_sha256 TEXT    NOT NULL,
+    -- The digest of the prepared-region manifest the run was built on, for its profile
+    -- at its own size. NULL until the run's first train or infer job builds or adopts
+    -- that build; frozen from then on (the trigger below).
+    region_manifest_sha256 TEXT,
     -- Registry key from MODEL_REGISTRY (ADR-0007), e.g. 'pixel_reference'.
     model_type             TEXT    NOT NULL,
     model_config           TEXT    NOT NULL DEFAULT '{}',
@@ -223,6 +225,16 @@ CREATE TABLE experiment (
 CREATE INDEX idx_experiment_dataset ON experiment (dataset_id);
 CREATE INDEX idx_experiment_split ON experiment (split_id);
 CREATE INDEX idx_experiment_region_profile ON experiment (region_profile_id);
+
+-- A pinned build is part of the run's frozen record: it may be set once, never changed or
+-- cleared. The repository refuses first; this is the guarantee.
+CREATE TRIGGER experiment_region_pin_frozen
+BEFORE UPDATE OF region_manifest_sha256 ON experiment
+WHEN OLD.region_manifest_sha256 IS NOT NULL
+ AND NEW.region_manifest_sha256 IS NOT OLD.region_manifest_sha256
+BEGIN
+    SELECT RAISE(ABORT, 'an experiment''s pinned region build is frozen');
+END;
 
 CREATE TABLE job (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -279,7 +291,7 @@ CREATE TABLE sample_result (
     sample_id     INTEGER NOT NULL REFERENCES sample (id) ON DELETE CASCADE,
     agg_score     REAL    NOT NULL,
     -- One of `Aggregation` and one of `ChannelNormalization`, recorded per row so a
-    -- stored result stays self-describing after a default changes (ADR-0011).
+    -- stored result stays self-describing after a default changes (handbook evaluation.md).
     aggregation   TEXT    NOT NULL,
     normalization TEXT    NOT NULL,
     -- The same three-valued verdict as `image_result.localized`, resolved from the image
@@ -295,7 +307,7 @@ CREATE TABLE metric_set (
     experiment_id       INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
     subset              TEXT    NOT NULL CHECK (subset IN ('train', 'val', 'test')),
     -- Threshold-independent metrics only. Nothing that depends on a decision
-    -- threshold is persisted; those are computed on demand (ADR-0011).
+    -- threshold is persisted; those are computed on demand (handbook evaluation.md).
     metrics             TEXT    NOT NULL DEFAULT '{}',
     computed_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Which resolved labels and masks the metrics measured (ADR-0032); a different

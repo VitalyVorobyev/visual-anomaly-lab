@@ -56,7 +56,11 @@ def serve(asset_key: str, settings: Settings) -> int:
 def _answer(session: MobileSamSession, request: dict[str, Any]) -> None:
     rid = request.get(REQUEST_ID)
     try:
-        result = session.segment(request)
+        # One resident, two questions: a prompt from the annotation editor, or the
+        # automatic region the Prepare screen's live stage asks for.
+        result = (
+            session.region(request) if request.get("op") == "region" else session.segment(request)
+        )
     except MobileSamError as exc:
         emit(ErrorEvent(error_type=type(exc).__name__, message=str(exc)))
         return

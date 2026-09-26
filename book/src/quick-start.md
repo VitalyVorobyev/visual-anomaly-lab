@@ -51,9 +51,11 @@ If you use your own tree instead, continue with [Import and registration](import
 From the dataset workspace:
 
 1. Open **Experiments** and choose **New experiment**.
-2. Select the split and `pixel_reference`.
+2. Select the split and `pixel_reference`. The region profile is already **Full frame** and the input
+   size already the method's own; there is nothing to prepare first.
 3. Leave the first configuration at its defaults and create the experiment.
-4. Run **Train**. It builds a robust per-pixel reference from normal training images.
+4. Run **Train**. It prepares the full frame at the run's size, then builds a robust per-pixel reference
+   from normal training images.
 5. Run **Score & evaluate** on the test subset.
 6. Open **Samples**, filter to **Mistakes**, and inspect the hottest false positives and false negatives.
 
@@ -64,8 +66,9 @@ semantic method is the next useful experiment.
 ## Add a second method
 
 For a first contrast choose `patchcore_anomalib`: it does not optimize weights, but builds a bounded memory
-bank of normal patch features. Keep the same dataset, split, preprocessing, and region profile. Compare the
-runs from the dataset's experiment history.
+bank of normal patch features. Keep the same dataset, split, colour, and region profile. Its native size is
+448 × 448 rather than 256 × 256; type 256 × 256 into its size fields if you want both runs to see identical
+pixels. Compare the runs from the dataset's experiment history.
 
 Never compare raw score values across methods. A score only has meaning inside its run. The comparison view
 uses threshold-independent metrics directly and resolves threshold-dependent outputs independently under one

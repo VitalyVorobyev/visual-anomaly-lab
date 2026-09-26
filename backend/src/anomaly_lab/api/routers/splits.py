@@ -165,7 +165,7 @@ def create_split(request: Request, body: CreateSplitRequest) -> SplitDetail:
 
     A seeded split is per sample, so no two views of one part can straddle the boundary;
     training gets normals only; and the draw is stratified by capture group so an
-    acquisition-batch effect cannot land entirely on one side (ADR-0011).
+    acquisition-batch effect cannot land entirely on one side (handbook evaluation.md).
 
     The `imported` strategy instead reads the partition out of the manifest the dataset
     was committed from, because a benchmark's published number is only comparable against

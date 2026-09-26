@@ -29,6 +29,8 @@ function method(key: string, title: string, tasks: string[]) {
     },
     availability: { available: true, reason: null },
     config_schema: { type: "object", properties: {} },
+    status: "floor",
+    recommended_for: [],
   };
 }
 

@@ -25,13 +25,14 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
 import { apiBaseUrl, type ClassPresence, type SampleSummary } from "../api/client";
 import { preferredImageIndex } from "../api/defaultChannel";
+import { fullFrameProfile } from "../api/inputSize";
 import { classMaskUrl } from "../api/imageUrl";
 import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { useAnnotationLabels, useClassCoverage } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
 import { isUsableBuild } from "../hooks/useDatasetReadiness";
-import { useModelTypes } from "../hooks/useExperiments";
+import { useInputSize, useModelTypes } from "../hooks/useExperiments";
 import { useRegionBuild, useRegionProfiles } from "../hooks/useRegionProfiles";
 import {
   useFreezeReferences,
@@ -128,8 +129,14 @@ export function StudioRoute() {
   const method = methods.find((entry) => entry.key === methodKey);
   const profileId =
     Number(search.get("profile")) ||
-    (profiles.data?.length === 1 ? profiles.data[0]?.id : undefined);
-  const build = useRegionBuild(profileId);
+    (profiles.data
+      ? (fullFrameProfile(profiles.data) ?? (profiles.data.length === 1 ? profiles.data[0] : undefined))
+          ?.id
+      : undefined);
+  // A preview fits the method at its defaults, so it reads the method's own size — the size a
+  // run frozen from these references with no size named would read.
+  const nativeSize = useInputSize(method?.key, {});
+  const build = useRegionBuild(profileId, nativeSize.data);
   const freeze = useFreezeReferences();
   const setRegion = useSetStudioRegion(datasetId);
 
@@ -184,7 +191,9 @@ export function StudioRoute() {
           : profileId === undefined
             ? "Choose a region profile."
             : !isUsableBuild(build.data)
-              ? "The region profile is not built."
+              ? nativeSize.data
+                ? `Build the region profile at ${nativeSize.data.width} × ${nativeSize.data.height}, the size ${nativeSize.data.model_type} reads.`
+                : "Reading the method's input size…"
               : null;
 
   const images = focused.data?.images ?? [];
@@ -526,7 +535,7 @@ export function StudioRoute() {
               options={(profiles.data ?? []).map((profile) => ({
                 value: String(profile.id),
                 label: `${profile.name} · r${profile.revision_no}`,
-                note: `${profile.prepared_width}×${profile.prepared_height}`,
+                note: profile.extractor_type,
               }))}
               onValueChange={(value) => update({ profile: value })}
             />

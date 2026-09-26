@@ -255,8 +255,6 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
             name="delete-me",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=256,
-            prepared_height=256,
             padding_fraction=0.05,
         )
         experiment = experiments_repo.create_experiment(
@@ -312,7 +310,7 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
         "splits": 1,
         "experiments": 1,
         "jobs": 1,
-        "region_profiles": 1,
+        "region_profiles": 2,  # its own and the implicit "Full frame"
         "manual_labels": 1,
         "generated_files": 6,
         "generated_bytes": 25,

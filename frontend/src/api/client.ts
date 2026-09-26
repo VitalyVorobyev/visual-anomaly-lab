@@ -79,7 +79,14 @@ export type RegionProfileRevision = Schemas["RegionProfileRevision"];
 export type RegionProfileDeletionPreview = Schemas["RegionProfileDeletionPreview"];
 export type RegionProfileDeletionResult = Schemas["RegionProfileDeletionResult"];
 export type RegionBuildSummary = Schemas["RegionBuildSummary"];
+export type InputSizeAnswer = Schemas["InputSizeAnswer"];
 export type RegionPreparationEntry = Schemas["RegionPreparationEntry"];
+export type RegionCheckRequest = Schemas["RegionCheckRequest"];
+/** A profile's configuration, saved or not: where to look and how to cut it out. No size. */
+export type RegionRecipe = Omit<RegionCheckRequest, "width" | "height">;
+export type RegionLivePreview = Schemas["RegionLivePreview"];
+export type RegionPreviewImage = Schemas["RegionPreviewImage"];
+export type RegionPreviewImages = Schemas["RegionPreviewImages"];
 export type SpatialTransform = Schemas["SpatialTransform"];
 export type SpatialResample = Schemas["SpatialResample"];
 export type SampleAlignment = Schemas["SampleAlignment"];

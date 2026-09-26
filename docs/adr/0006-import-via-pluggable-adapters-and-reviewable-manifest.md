@@ -10,10 +10,9 @@ views and some two, one group uses timestamped filenames that do not group by st
 repeat across groups. Public benchmarks bring their own layouts: class folders, CSV tables,
 official split files.
 
-An importer that hard-codes one layout breaks on the next dataset. A fully automatic importer that
-silently guesses produces a corrupt dataset instead: a mis-grouped part is a labelling error that
-propagates into every experiment run afterwards. The alternatives were exactly those two — one
-built-in layout, or automatic inference with no review.
+An importer that hard-codes one layout breaks on the next dataset. An importer that silently
+guesses produces a corrupt dataset instead: a mis-grouped part is a labelling error that propagates
+into every experiment run afterwards.
 
 ## Decision
 
@@ -34,6 +33,13 @@ built-in layout, or automatic inference with no review.
 
 **Images are never copied** (see ADR-0022). A **sha256** of each file is recorded at import, and a
 separate verify operation re-hashes later to detect moved, replaced or corrupted sources.
+
+## Alternatives considered
+
+- **One built-in layout.** Simple, and it breaks on the second dataset; every new convention becomes
+  a branch in the importer.
+- **Automatic inference with no review.** One click, and a wrong grouping is discovered only when an
+  experiment's numbers stop making sense, if at all.
 
 ## Consequences
 

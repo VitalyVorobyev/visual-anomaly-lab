@@ -15,7 +15,7 @@ comparing them under one evaluation protocol.
   `patchcore_anomalib`, `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad`,
   `anomalyvfm_anomalib`), evaluation layer, and UI must stay dataset-agnostic.
 - **Public reference datasets live under `/datasets/` and are never committed** — gitignored for size, not
-  secrecy, and credited in the README (ADR-0015). VisA (with masks and official splits), GKN,
+  secrecy, and credited in the README. VisA (with masks and official splits), GKN,
   FSS-1000 (a few-shot panel) and PKU-Market-PCB (boxes of six classes) are the current packs. `check-repo-safety.sh` fails if anything under
   `datasets/` is staged. Note the leading slash: an unanchored pattern would also match
   `backend/src/anomaly_lab/datasets/`, the adapter package.
@@ -66,7 +66,7 @@ comparing them under one evaluation protocol.
   **Records are edited in place** and carry no changelog, narrative or measured numbers — git holds
   the history, `measurements.md` the figures; only a **reversal** gets a new number that supersedes
   explicitly. A record whose truth has moved into the handbook is **removed**, with
-  its citations repointed in the same change (ADR-0030). Numbers are never reused, so a surviving
+  its citations repointed in the same change (the rules are in `docs/adr/README.md`). Numbers are never reused, so a surviving
   record keeps the number it has always had.
 - **Every document says what is true or what was decided, never what happened.** No "used to", no
   milestone tags, no bug stories, no PR narrative — that is what `git log` is for.
@@ -169,8 +169,11 @@ comparing them under one evaluation protocol.
   a field nobody touched, so a default is defined in Python alone. A segmented control highlights
   the *effective* value and stores `""` when that is the schema default; a select carries an
   explicit `Default · <value>` entry. Do not "fix" this by pre-filling.
-- **Schema v1 is frozen.** It was amended in place through M2, as the rule below allowed; the first real
-  import has now landed, so every further change is a new numbered migration (ADR-0004).
+- **The schema is one initial script until a catalogue is worth keeping (ADR-0004).** A schema change
+  rewrites that script in place; a catalogue written under another version is refused at startup with
+  a message telling the user to delete it, never migrated. Numbered migrations begin only when the
+  owner declares a catalogue worth keeping. `db/migrations/` still holds numbered files until the
+  backlog item that collapses them lands.
 - **Regenerate `frontend/src/api/generated.ts`** with `scripts/gen-api-types.sh` after any API change; CI
   fails on a stale file.
 - **Take work from `docs/backlog.md`, and finish what is open before starting what is new.** The
@@ -205,7 +208,7 @@ comparing them under one evaluation protocol.
   **two** backend jobs for exactly this: `Backend` installs without the extra and is what *measures*
   the torch-free boundary, and `Backend (dl extra)` runs the `test_dl_*.py` files. Run the MPS smoke
   test (`scripts/mps-smoke-test.py`) before trusting the accelerator, and before writing wrapper code
-  against a new library (ADR-0008) — it has already paid for itself once.
+  against a new library (ADR-0029) — it has already paid for itself once.
 - **Type-check with bare `uv run mypy`, never `mypy --strict src`.** `pyproject` sets
   `files = ["src", "tests"]`; checking only `src` is how five type errors in a test file reached CI.
 - **Exactly one resident inference worker may exist, and a lock is what keeps it off the device

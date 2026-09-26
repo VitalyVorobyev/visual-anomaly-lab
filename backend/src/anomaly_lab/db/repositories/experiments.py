@@ -159,7 +159,7 @@ def create_experiment(
     dataset_id: int,
     split_id: int,
     region_profile_id: int,
-    region_manifest_sha256: str,
+    region_manifest_sha256: str | None = None,
     model_type: str,
     model_config: Mapping[str, Any],
     task: str = "anomaly",
@@ -202,6 +202,37 @@ def create_experiment(
         msg = "the experiment row vanished immediately after insertion"
         raise RuntimeError(msg)
     return created
+
+
+class PinConflictError(ValueError):
+    """An experiment already pins a different build; a pin is never moved."""
+
+
+def pin_region_build(
+    conn: sqlite3.Connection, experiment_id: int, manifest_sha256: str
+) -> Experiment:
+    """Pin the prepared-region build an experiment reads — once.
+
+    Setting the pin a run already holds is a no-op; setting a different one is refused,
+    because every stored score, map and checkpoint of the run was computed on the pinned
+    pixels. The schema's trigger enforces the same rule beneath this function.
+    """
+    cursor = conn.execute(
+        """
+        UPDATE experiment SET region_manifest_sha256 = ?
+         WHERE id = ? AND region_manifest_sha256 IS NULL
+        """,
+        (manifest_sha256, experiment_id),
+    )
+    current = get_experiment(conn, experiment_id)
+    if current is None:
+        raise ValueError(f"no experiment with id {experiment_id}")
+    if cursor.rowcount == 0 and current.region_manifest_sha256 != manifest_sha256:
+        raise PinConflictError(
+            f"experiment {experiment_id} already pins region build "
+            f"{current.region_manifest_sha256}; a pinned build never changes"
+        )
+    return current
 
 
 def set_status(

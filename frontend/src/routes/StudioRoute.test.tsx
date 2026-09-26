@@ -58,8 +58,10 @@ function renderAt(
         [queryKeys.sample(7, 1), sample(1)],
         [queryKeys.sample(7, 2), sample(2)],
         [queryKeys.modelTypes(), { methods: [METHOD] }],
-        [queryKeys.regionProfiles(7), [{ id: 11, name: "full frame", revision_no: 1, prepared_width: 448, prepared_height: 448 }]],
-        [queryKeys.regionBuild(11), built ? { failed: 0, succeeded: 12, total: 12 } : { failed: 3, succeeded: 9, total: 12 }],
+        [queryKeys.regionProfiles(7), [{ id: 11, name: "Full frame", revision_no: 1, extractor_type: "identity" }]],
+        // The preview reads the method's own size, and the build it needs is at that size.
+        [queryKeys.inputSize("fss_dino", {}), { model_type: "fss_dino", width: 448, height: 448, multiple: 14 }],
+        [queryKeys.regionBuild(11, 448, 448), built ? { failed: 0, succeeded: 12, total: 12 } : { failed: 3, succeeded: 9, total: 12 }],
         [
           queryKeys.samples(7, { classKey: "scratch", presence: "absent", limit: 48, offset: 0 }),
           { total: 1, limit: 48, offset: 0, items: [sample(3)] },
@@ -92,7 +94,9 @@ describe("the reference studio", () => {
 
   it("will not freeze onto a profile whose build failed images", () => {
     renderAt("?refs=1", false);
-    expect(screen.getByText("The region profile is not built.")).toBeTruthy();
+    expect(
+      screen.getByText("Build the region profile at 448 × 448, the size fss_dino reads."),
+    ).toBeTruthy();
   });
 
   it("reads the preview of the open image beside the stage", () => {

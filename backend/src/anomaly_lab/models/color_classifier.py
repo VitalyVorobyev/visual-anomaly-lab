@@ -47,6 +47,7 @@ class ColorClassifierConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     color_space: ColorSpace = Field(
+        json_schema_extra={"x-primary": True},
         default=ColorSpace.LAB,
         description=(
             "Where the colour models live. Lab separates lightness from hue, so a class under "
@@ -63,6 +64,7 @@ class ColorClassifierConfig(BaseModel):
         ),
     )
     smoothing_sigma: float = Field(
+        json_schema_extra={"x-primary": True},
         default=1.0,
         ge=0.0,
         le=16.0,
@@ -93,6 +95,14 @@ class ColorClassifierModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return ColorClassifierConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the supervised-segmentation gates ran this floor at 448x448.
+
+        See docs/measurements.md.
+        """
+        return (448, 448)
 
     @classmethod
     def capabilities(cls) -> Capabilities:

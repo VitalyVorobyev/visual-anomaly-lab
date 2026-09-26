@@ -73,7 +73,9 @@ from anomaly_lab.models.dino_backbone import (
     DinoBackbone,
     backbone_fingerprint,
     load_backbone,
+    native_frame,
     patch_grid,
+    patch_multiple,
     validate_prepared_size,
 )
 from anomaly_lab.models.preprocessing import (
@@ -371,6 +373,7 @@ class DinomalyCustomConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     encoder: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_S14_REG4,
         description=(
             "Frozen encoder the reconstructed features come from. The default is the "
@@ -382,6 +385,7 @@ class DinomalyCustomConfig(BaseModel):
         ),
     )
     decoder_depth: int = Field(
+        json_schema_extra={"x-primary": True},
         default=8,
         ge=2,
         le=12,
@@ -396,6 +400,7 @@ class DinomalyCustomConfig(BaseModel):
         ),
     )
     max_steps: int = Field(
+        json_schema_extra={"x-primary": True},
         default=5_000,
         ge=1,
         le=100_000,
@@ -543,6 +548,22 @@ class DinomalyCustomModel(AnomalyModel):
     @classmethod
     def config_model(cls) -> type[BaseModel]:
         return DinomalyCustomConfig
+
+    @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """392 px square: the promotion and parity gates ran at 392x392 on the default /14
+        encoder. A /16 encoder gets 448, the frame the encoder sweep ran every arm at
+        (docs/measurements.md).
+        """
+        if not isinstance(config, DinomalyCustomConfig):
+            raise TypeError(f"expected DinomalyCustomConfig, got {type(config).__name__}")
+        return native_frame(config.encoder, 392)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        if not isinstance(config, DinomalyCustomConfig):
+            raise TypeError(f"expected DinomalyCustomConfig, got {type(config).__name__}")
+        return patch_multiple(config.encoder)
 
     @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:

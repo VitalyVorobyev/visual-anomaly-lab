@@ -1,4 +1,4 @@
-"""Threshold-dependent outputs, computed on demand and never stored (ADR-0011).
+"""Threshold-dependent outputs, computed on demand and never stored (handbook evaluation.md).
 
 A confusion matrix is a function of data already in the database. Persisting one per
 threshold would multiply rows to store a derived value, and would make the UI's threshold

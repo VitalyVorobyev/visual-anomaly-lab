@@ -6,9 +6,9 @@ import asyncio
 import shutil
 import sqlite3
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
@@ -22,14 +22,16 @@ from anomaly_lab.domain.entities import (
     JobKind,
     RegionProfileRevision,
     SampleAlignment,
-    SpatialResample,
 )
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.owned_storage import path_usage
 from anomaly_lab.regions.base import RegionExtractorDescription
 from anomaly_lab.regions.preparation import (
     RegionBuildSummary,
+    RegionRecipe,
+    build_dir,
     has_published_build,
+    list_build_summaries,
     read_build_summary,
 )
 from anomaly_lab.regions.registry import (
@@ -81,24 +83,8 @@ class RegionProfileDeletionResult(BaseModel):
     prepared_error: str | None = None
 
 
-class RegionProfileCreate(BaseModel):
-    model_config = API_MODEL_CONFIG
-
+class RegionProfileCreate(RegionRecipe):
     name: str = Field(min_length=1, max_length=120)
-    extractor_type: str = Field(min_length=1, max_length=80)
-    extractor_config: dict[str, Any] = Field(default_factory=dict)
-    prepared_width: int = Field(default=256, ge=8, le=2048)
-    prepared_height: int = Field(default=256, ge=8, le=2048)
-    padding_fraction: float = Field(default=0.05, ge=0.0, le=1.0)
-    resample: SpatialResample = SpatialResample.BILINEAR
-    sample_alignment: SampleAlignment = Field(
-        default=SampleAlignment.PER_IMAGE,
-        description=(
-            "Whether each image keeps its own crop (per_image) or every image of a sample "
-            "gets the union of their crops (union), keeping the channels of one part "
-            "registered. Union requires the sample's images to share a source size."
-        ),
-    )
 
     @field_validator("name")
     @classmethod
@@ -107,6 +93,47 @@ class RegionProfileCreate(BaseModel):
         if not stripped:
             raise ValueError("profile name cannot be blank")
         return stripped
+
+
+def validated_recipe(recipe: RegionRecipe) -> dict[str, Any]:
+    """The recipe's extractor config, validated and with its defaults filled in — or a 422.
+
+    One rule for the three places an unsaved recipe arrives: a new revision, the live
+    preview and the sampled check.
+    """
+    try:
+        validated = validate_config(recipe.extractor_type, recipe.extractor_config)
+    except UnknownRegionExtractorError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
+    if recipe.sample_alignment is SampleAlignment.UNION and not (
+        get_extractor_class(recipe.extractor_type).crops_to_box
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"region extractor {recipe.extractor_type!r} does not crop to a box in the "
+                "source frame, so its crops cannot be united across a sample; "
+                "use sample_alignment 'per_image'"
+            ),
+        )
+    return validated.model_dump(mode="json")
+
+
+class PreparationSize(BaseModel):
+    """The frame a preview or build is prepared at. A profile has no size of its own."""
+
+    model_config = API_MODEL_CONFIG
+
+    width: int = Field(ge=8, le=2048, description="Prepared frame width in pixels.")
+    height: int = Field(ge=8, le=2048, description="Prepared frame height in pixels.")
+
+
+BuildWidth = Annotated[int, Query(ge=8, le=2048, description="Prepared frame width of the build.")]
+BuildHeight = Annotated[
+    int, Query(ge=8, le=2048, description="Prepared frame height of the build.")
+]
 
 
 @router.get("/api/region-extractors", summary="Every registered region extractor and its schema")
@@ -133,23 +160,7 @@ def list_region_profiles(request: Request, dataset_id: int) -> list[RegionProfil
 def create_region_profile(
     request: Request, dataset_id: int, body: RegionProfileCreate
 ) -> RegionProfileRevision:
-    try:
-        validated = validate_config(body.extractor_type, body.extractor_config)
-    except UnknownRegionExtractorError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    except ValidationError as exc:
-        raise HTTPException(status_code=422, detail=exc.errors(include_url=False)) from exc
-    if body.sample_alignment is SampleAlignment.UNION and not (
-        get_extractor_class(body.extractor_type).crops_to_box
-    ):
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                f"region extractor {body.extractor_type!r} does not crop to a box in the "
-                "source frame, so its crops cannot be united across a sample; "
-                "use sample_alignment 'per_image'"
-            ),
-        )
+    extractor_config = validated_recipe(body)
 
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -162,9 +173,7 @@ def create_region_profile(
                     dataset_id=dataset_id,
                     name=body.name,
                     extractor_type=body.extractor_type,
-                    extractor_config=validated.model_dump(mode="json"),
-                    prepared_width=body.prepared_width,
-                    prepared_height=body.prepared_height,
+                    extractor_config=extractor_config,
                     padding_fraction=body.padding_fraction,
                     resample=body.resample,
                     sample_alignment=body.sample_alignment,
@@ -195,15 +204,17 @@ def _require_profile(request: Request, profile_id: int) -> RegionProfileRevision
     return profile
 
 
-def _enqueue_preparation(request: Request, profile_id: int, mode: str) -> JobSummary:
+def _enqueue_preparation(
+    request: Request, profile_id: int, mode: str, size: PreparationSize
+) -> JobSummary:
     profile = _require_profile(request, profile_id)
     settings: Settings = request.app.state.settings
-    if mode == "build" and has_published_build(settings, profile_id):
+    if mode == "build" and has_published_build(settings, profile_id, (size.width, size.height)):
         raise HTTPException(
             status_code=409,
             detail=(
-                f"region profile {profile_id} already has an immutable completed build; "
-                "create a new profile revision to rebuild it"
+                f"region profile {profile_id} already has an immutable completed build at "
+                f"{size.width}x{size.height}; create a new profile revision to rebuild it"
             ),
         )
     with connection(settings.db_path) as conn:
@@ -226,19 +237,29 @@ def _enqueue_preparation(request: Request, profile_id: int, mode: str) -> JobSum
     return summary_of(
         queue.enqueue(
             kind=JobKind.REGION_PREPARE,
-            params={"dataset_id": profile.dataset_id, "profile_id": profile.id, "mode": mode},
+            params={
+                "dataset_id": profile.dataset_id,
+                "profile_id": profile.id,
+                "mode": mode,
+                "width": size.width,
+                "height": size.height,
+            },
         )
     )
 
 
 @router.post("/api/region-profiles/{profile_id}/preview", summary="Preview a profile on 24 images")
-def preview_region_profile(request: Request, profile_id: int) -> JobSummary:
-    return _enqueue_preparation(request, profile_id, "preview")
+def preview_region_profile(request: Request, profile_id: int, body: PreparationSize) -> JobSummary:
+    return _enqueue_preparation(request, profile_id, "preview", body)
 
 
-@router.post("/api/region-profiles/{profile_id}/build", summary="Prepare a profile for every image")
-def build_region_profile(request: Request, profile_id: int) -> JobSummary:
-    return _enqueue_preparation(request, profile_id, "build")
+@router.post(
+    "/api/region-profiles/{profile_id}/build",
+    summary="Prepare a profile for every image at one size",
+)
+def build_region_profile(request: Request, profile_id: int, body: PreparationSize) -> JobSummary:
+    """Build ahead of a run. A run whose size has no build prepares it in its own job."""
+    return _enqueue_preparation(request, profile_id, "build", body)
 
 
 def _owned_profile_dir(settings: Settings, profile_id: int) -> Path | None:
@@ -374,15 +395,30 @@ async def delete_region_profile(request: Request, profile_id: int) -> RegionProf
 
 
 @router.get(
-    "/api/region-profiles/{profile_id}/build",
-    summary="The latest complete profile build report",
+    "/api/region-profiles/{profile_id}/builds",
+    summary="Every completed build of a profile, one per size",
 )
-def get_region_profile_build(request: Request, profile_id: int) -> RegionBuildSummary:
+def list_region_profile_builds(request: Request, profile_id: int) -> list[RegionBuildSummary]:
     _require_profile(request, profile_id)
     settings: Settings = request.app.state.settings
-    summary = read_build_summary(settings, profile_id)
+    return list_build_summaries(settings, profile_id)
+
+
+@router.get(
+    "/api/region-profiles/{profile_id}/build",
+    summary="The completed build report of a profile at one size",
+)
+def get_region_profile_build(
+    request: Request, profile_id: int, width: BuildWidth, height: BuildHeight
+) -> RegionBuildSummary:
+    _require_profile(request, profile_id)
+    settings: Settings = request.app.state.settings
+    summary = read_build_summary(settings, profile_id, (width, height))
     if summary is None:
-        raise HTTPException(status_code=404, detail=f"region profile {profile_id} is not built")
+        raise HTTPException(
+            status_code=404,
+            detail=f"region profile {profile_id} is not built at {width}x{height}",
+        )
     return summary
 
 
@@ -391,7 +427,9 @@ def get_region_profile_build(request: Request, profile_id: int) -> RegionBuildSu
     summary="One lossless prepared image from a completed profile build",
     response_class=FileResponse,
 )
-def get_prepared_image(request: Request, profile_id: int, image_id: int) -> FileResponse:
+def get_prepared_image(
+    request: Request, profile_id: int, image_id: int, width: BuildWidth, height: BuildHeight
+) -> FileResponse:
     profile = _require_profile(request, profile_id)
     settings: Settings = request.app.state.settings
     with connection(settings.db_path) as conn:
@@ -406,8 +444,15 @@ def get_prepared_image(request: Request, profile_id: int, image_id: int) -> File
         raise HTTPException(
             status_code=404, detail="image does not belong to this profile's dataset"
         )
-    path = settings.region_profile_dir(profile_id) / "images" / f"{image_id}.png"
-    if settings.region_profiles_dir.is_symlink() or path.is_symlink() or not path.is_file():
+    root = build_dir(settings, profile_id, (width, height))
+    path = root / "images" / f"{image_id}.png"
+    if (
+        settings.region_profiles_dir.is_symlink()
+        or settings.region_profile_dir(profile_id).is_symlink()
+        or root.is_symlink()
+        or path.is_symlink()
+        or not path.is_file()
+    ):
         raise HTTPException(
             status_code=404, detail=f"image {image_id} was not prepared successfully"
         )

@@ -58,7 +58,7 @@ from anomaly_lab.experiments.train import MODEL_SUBDIR, read_training_state
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
 from anomaly_lab.media.overlay import render_anomaly_map, render_rgb_image
-from anomaly_lab.models.base import Capabilities
+from anomaly_lab.models.base import AnomalyModel, Capabilities
 from anomaly_lab.models.diagnostics import (
     DiagnosticEntry,
     DiagnosticKind,
@@ -78,7 +78,6 @@ from anomaly_lab.owned_storage import StorageUsage, experiment_artifact_path, pa
 from anomaly_lab.regions.preparation import (
     PreparedRegionBuild,
     load_prepared_build,
-    read_build_summary,
 )
 
 # --- Lookups and preconditions -------------------------------------------------------------
@@ -178,6 +177,12 @@ def refuse_impossible_diagnose(
     if capabilities.requires_training and experiment.status is not ExperimentStatus.TRAINED:
         raise InvalidInputError(
             f"experiment {experiment.id} is {experiment.status.value}; train it before "
+            "asking what it saw in an image"
+        )
+    if experiment.region_manifest_sha256 is None:
+        # A diagnose request reads the build a job pinned; it never prepares one.
+        raise InvalidInputError(
+            f"experiment {experiment.id} has no prepared input yet; score it before "
             "asking what it saw in an image"
         )
 
@@ -304,10 +309,12 @@ def create_experiment(
     name: str,
     dataset_id: int,
     split_id: int,
-    region_profile_id: int,
+    region_profile_id: int | None = None,
     model_type: str,
     config: dict[str, Any],
     preprocessing: dict[str, Any],
+    width: int | None = None,
+    height: int | None = None,
     task: Task = Task.ANOMALY,
     target_label: str | None = None,
     evaluation: dict[str, Any],
@@ -318,7 +325,14 @@ def create_experiment(
 
     Validation happens here rather than at job time so a typo is refused on the create
     screen instead of as a failed job discovered ten minutes later.
+
+    No region build is needed. The run's size is `width` x `height`, or the method's own
+    `native_size` when neither is given; its profile is the one named, or the dataset's
+    "Full frame". The first train or infer job builds (or adopts) that profile at that size
+    and pins it.
     """
+    if (width is None) != (height is None):
+        raise InvalidInputError("give both width and height, or neither for the method's own")
     try:
         model_class = get_model_class(model_type)
     except UnknownModelError as exc:
@@ -351,31 +365,18 @@ def create_experiment(
             raise InvalidInputError(f"split {split_id} belongs to dataset {split.dataset_id}")
         validate_target(conn, task, target_label, split)
         classes = pin_classes(conn, task, dataset_id)
-        profile = region_profiles_repo.get_profile(conn, region_profile_id)
-        if profile is None:
-            raise NotFoundError(f"no region profile with id {region_profile_id}")
-        if profile.dataset_id != dataset_id:
-            raise InvalidInputError(
-                f"region profile {region_profile_id} belongs to dataset {profile.dataset_id}"
-            )
-        build_summary = read_build_summary(settings, profile.id)
-        if build_summary is None:
-            raise InvalidInputError(f"region profile {profile.id} has not been built")
-        try:
-            load_prepared_build(settings, profile, manifest_sha256=build_summary.manifest_sha256)
-        except ValueError as exc:
-            raise InvalidInputError(str(exc)) from exc
-        prepared = PreprocessingConfig(
-            width=profile.prepared_width,
-            height=profile.prepared_height,
-            color=preprocessing_options.color,
-        )
-        # What only the method knows it cannot read — a patch size the frame does not divide —
-        # is refused here, by the method, rather than minutes into a job.
-        try:
-            model_class.check_input(model_class.config_model().model_validate(config), prepared)
-        except ValueError as exc:
-            raise InvalidInputError(str(exc)) from exc
+        if region_profile_id is None:
+            profile = region_profiles_repo.full_frame_profile(conn, dataset_id)
+        else:
+            named = region_profiles_repo.get_profile(conn, region_profile_id)
+            if named is None:
+                raise NotFoundError(f"no region profile with id {region_profile_id}")
+            if named.dataset_id != dataset_id:
+                raise InvalidInputError(
+                    f"region profile {region_profile_id} belongs to dataset {named.dataset_id}"
+                )
+            profile = named
+        prepared = resolve_input(model_class, config, preprocessing_options, width, height)
         frozen_preprocessing = prepared.model_dump(mode="json")
 
         # The directory is named after the row, so it cannot be built until the row
@@ -386,7 +387,6 @@ def create_experiment(
             dataset_id=dataset_id,
             split_id=split_id,
             region_profile_id=profile.id,
-            region_manifest_sha256=build_summary.manifest_sha256,
             model_type=model_type,
             task=task.value,
             target_label=target_label,
@@ -409,6 +409,53 @@ def create_experiment(
     if stored is None:  # pragma: no cover - inserted a moment ago
         raise RuntimeError("the experiment vanished after creation")
     return stored
+
+
+def resolve_input(
+    model_class: type[AnomalyModel],
+    config: dict[str, Any],
+    options: PreprocessingOptions,
+    width: int | None,
+    height: int | None,
+) -> PreprocessingConfig:
+    """The run's frozen input: its size — named, or the method's own — and its colour.
+
+    What only the method knows it cannot read — a patch size the frame does not divide —
+    is refused here, by the method, rather than minutes into a job.
+    """
+    try:
+        validated = model_class.config_model().model_validate(config)
+        size = (width, height) if width is not None and height is not None else None
+        if size is None:
+            size = model_class.native_size(validated)
+        prepared = PreprocessingConfig(width=size[0], height=size[1], color=options.color)
+        model_class.check_input(validated, prepared)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
+    return prepared
+
+
+@dataclass(frozen=True)
+class InputSize:
+    """The size a run of a method resolves to, and the multiple its dimensions snap to."""
+
+    width: int
+    height: int
+    multiple: int
+
+
+def method_input_size(model_type: str, config: dict[str, Any]) -> InputSize:
+    """What the create form shows beside an empty size: the method's own, for this config."""
+    try:
+        model_class = get_model_class(model_type)
+    except UnknownModelError as exc:
+        raise InvalidInputError(str(exc)) from exc
+    try:
+        validated = model_class.config_model().model_validate(config)
+    except ValueError as exc:
+        raise InvalidInputError(str(exc)) from exc
+    width, height = model_class.native_size(validated)
+    return InputSize(width=width, height=height, multiple=model_class.size_multiple(validated))
 
 
 # --- Deletion ------------------------------------------------------------------------------
@@ -611,10 +658,18 @@ def source_values(settings: Settings, experiment: Experiment, image_id: int) -> 
         raise NotFoundError(f"no image {image_id}")
     if profile is None:
         raise GoneError("the experiment's region profile is missing")
+    if experiment.region_manifest_sha256 is None:
+        raise NotFoundError(
+            f"experiment {experiment.id} has no prepared input yet; train or score it first"
+        )
 
+    config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
     try:
         build = load_prepared_build(
-            settings, profile, manifest_sha256=experiment.region_manifest_sha256
+            settings,
+            profile,
+            size=config.size,
+            manifest_sha256=experiment.region_manifest_sha256,
         )
         entry = build.entries.get(image_id)
         if entry is None or entry.source_sha256 != image.sha256:
@@ -623,7 +678,6 @@ def source_values(settings: Settings, experiment: Experiment, image_id: int) -> 
     except ValueError as exc:
         raise GoneError(str(exc)) from exc
 
-    config = PreprocessingConfig.model_validate(experiment.preprocessing_config)
     digest = hashlib.sha256(
         f"{entry.prepared_sha256}|{config.model_dump_json()}".encode()
     ).hexdigest()[:16]

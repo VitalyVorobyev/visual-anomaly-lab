@@ -3,7 +3,7 @@
 **How `visual-anomaly-lab` works, now.** These pages carry no status and no date; they describe the system
 as it currently is and are edited whenever it changes. *Why* it is shaped this way is in
 [`docs/adr/`](../adr/) — when a page and a record disagree, **the page is right about what the code does and
-the record is right about what was chosen** (ADR-0030).
+the record is right about what was chosen** ([the index](../adr/README.md)).
 
 | Page | What it covers |
 |---|---|

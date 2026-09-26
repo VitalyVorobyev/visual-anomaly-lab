@@ -133,7 +133,7 @@ class AnnotationScope(StrEnum):
     `IMAGE` is the original and the default: every photograph carries its own document.
     `SAMPLE` is for a multi-shot rig where the channels are exposures of one registered
     part -- one document is edited once and materialised onto every image of the sample.
-    Truth stays image-keyed in both cases; only the editing scope moves (ADR-0036).
+    Truth stays image-keyed in both cases; only the editing scope moves (handbook annotations.md).
     """
 
     IMAGE = "image"
@@ -282,7 +282,11 @@ class SampleAlignment(StrEnum):
 
 
 class RegionProfileRevision(BaseModel):
-    """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
+    """One immutable dataset-owned spatial-input configuration: where to look (ADR-0033).
+
+    It carries no size. A run prepares its profile at the run's own input size, and a
+    build is keyed by `(revision, width, height)`.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -292,8 +296,6 @@ class RegionProfileRevision(BaseModel):
     revision_no: int
     extractor_type: str
     extractor_config: dict[str, Any] = Field(default_factory=dict)
-    prepared_width: int
-    prepared_height: int
     padding_fraction: float = 0.05
     resample: SpatialResample = SpatialResample.BILINEAR
     created_at: str
@@ -344,16 +346,16 @@ class ExperimentStatus(StrEnum):
 
 
 class Aggregation(StrEnum):
-    """How a sample's per-image scores become one number (ADR-0011)."""
+    """How a sample's per-image scores become one number (handbook evaluation.md)."""
 
     MAX = "max"
     MEAN = "mean"
 
 
 class ChannelNormalization(StrEnum):
-    """How per-channel scores are put on one scale before they are reduced (ADR-0011).
+    """How per-channel scores are put on one scale before they are reduced (handbook evaluation.md).
 
-    ADR-0011 chose `max` and recorded the caveat in the same breath: `max` assumes a
+    Evaluation chose `max` and states the caveat in the same breath: `max` assumes a
     part's per-channel scores are comparable, and for a deep method they are not — one
     illumination's distribution simply sits higher and wins every maximum, so the sample
     score measures which channel the model finds noisiest rather than which part is
@@ -390,7 +392,13 @@ class Experiment(BaseModel):
     dataset_id: int
     split_id: int
     region_profile_id: int
-    region_manifest_sha256: str
+    region_manifest_sha256: str | None = Field(
+        default=None,
+        description=(
+            "The prepared-region build the run reads, pinned by its first train or infer "
+            "job; null until then, and frozen once set."
+        ),
+    )
     model_type: str
     task: Task = Task.ANOMALY
     target_label: str | None = Field(
@@ -503,7 +511,7 @@ class SampleResult(BaseModel):
 
 
 class MetricSet(BaseModel):
-    """Threshold-independent metrics for one subset of one experiment (ADR-0011)."""
+    """Threshold-independent metrics for one subset of one experiment (handbook evaluation.md)."""
 
     model_config = API_MODEL_CONFIG
 

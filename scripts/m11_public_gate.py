@@ -116,7 +116,7 @@ CANDIDATES = {
     ),
     # The wrapper's exact protocol row — 392 px, its pinned encoder, 5000 steps, the shared
     # seed — so the custom implementation's gate reads directly against the wrapper's
-    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0008/0029).
+    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0029).
     "dinomaly_custom": CandidateSpec(
         key="dinomaly_custom",
         label="Dinomaly (ours)",
@@ -312,8 +312,6 @@ def _identity_profile(
             name=f"M11 identity {frame}",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=prepared_size,
-            prepared_height=height,
             padding_fraction=0.0,
         )
     print(f"Preparing {category} at {frame}px...", file=sys.stderr)
@@ -326,17 +324,22 @@ def _identity_profile(
                     "dataset_id": dataset_id,
                     "profile_id": profile.id,
                     "mode": "build",
+                    "width": prepared_size,
+                    "height": height,
                 },
                 settings=settings,
             )
         )
-    summary = read_build_summary(settings, profile.id)
+    size = (prepared_size, height)
+    summary = read_build_summary(settings, profile.id, size)
     if summary is None or summary.failed:
         raise RuntimeError(
             f"identity build for {category} failed "
             f"({None if summary is None else summary.failed} images)"
         )
-    return load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+    return load_prepared_build(
+        settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+    )
 
 
 def _create_experiment(
@@ -354,8 +357,8 @@ def _create_experiment(
         get_model_class(method).config_model().model_validate(method_config).model_dump(mode="json")
     )
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width,
-        height=build.profile.prepared_height,
+        width=build.size[0],
+        height=build.size[1],
     ).model_dump(mode="json")
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(

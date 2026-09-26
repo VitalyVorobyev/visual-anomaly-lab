@@ -21,6 +21,20 @@ class ExampleConfig(BaseModel):
     )
 ```
 
+Mark the one to four fields a person actually decides — the encoder or backbone, the scoring rule, the
+training length, the axes a gate or sweep varied — with `json_schema_extra={"x-primary": True}`. The form
+shows those in front and folds every field with a working default behind a disclosure, so a method with
+nineteen options still opens on the three that matter. A test fails a method that marks none or more than
+four.
+
+```python
+    backbone: DinoBackbone = Field(
+        default=DinoBackbone.DINOV2_VIT_S14_REG4,
+        json_schema_extra={"x-primary": True},
+        description="The frozen encoder whose patch features are the model.",
+    )
+```
+
 ## 2. Implement `AnomalyModel`
 
 Provide title, summary, `config_model`, `capabilities`, `availability`, `fit`, `predict`, `save`, and `load`.
@@ -30,6 +44,11 @@ description must remain cheap in a torch-free API process.
 Read pixels only through `models.preprocessing.load_array` (or a helper built on it). Return one `Prediction`
 per `ImageRecord`, with higher score meaning more anomalous. Write maps through the inference context. Never
 read labels or masks in the plugin.
+
+The input size belongs to the run, not to the region profile. Declare `native_size(config)` — the frame your
+method was measured at, which a run that names no size reads — and refuse in `check_input` any size the
+method cannot read. If the configuration decides a patch size, also declare `size_multiple(config)` so the
+create form snaps a typed size to it.
 
 ```python
 class ExampleModel(AnomalyModel):
@@ -70,6 +89,11 @@ is true. Reload on CPU and move to the requested device during execution. Refuse
 
 Add one lazy loader and one key to `models/registry.py`. The method appears in the picker and its form is
 generated automatically. No frontend edit is expected.
+
+The same file records where the method stands. Add its key to `STATUS` as `experimental` — or `floor` if it
+is a new task's numpy baseline — and leave `RECOMMENDED` alone. A method becomes `supported`, or the
+recommended default a new experiment of its task starts from, only when a public gate's verdict in
+`docs/measurements.md` says so; the picker's order and badges follow from these two tables.
 
 ## 7. Test the claim, not just execution
 

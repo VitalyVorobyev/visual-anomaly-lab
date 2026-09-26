@@ -13,6 +13,8 @@ from anomaly_lab.api.routers.experiments.views import (
     ExperimentDetail,
     ExperimentPage,
     ExperimentSort,
+    InputSizeAnswer,
+    InputSizeRequest,
     MethodCatalog,
     detail,
     load,
@@ -49,6 +51,22 @@ def list_model_types() -> MethodCatalog:
     )
 
 
+@router.post("/input-size", summary="The input size a run of a method resolves to")
+def resolve_input_size(body: InputSizeRequest) -> InputSizeAnswer:
+    """The method's own size for this configuration, and the multiple a named size snaps to.
+
+    What the create form shows beside an empty size field, so "leave it empty" has a
+    visible answer before the experiment exists.
+    """
+    resolved = service.method_input_size(body.model_type, body.config)
+    return InputSizeAnswer(
+        model_type=body.model_type,
+        width=resolved.width,
+        height=resolved.height,
+        multiple=resolved.multiple,
+    )
+
+
 @router.post("", summary="Create an experiment with its configuration frozen")
 def create_experiment(request: Request, body: CreateExperimentRequest) -> ExperimentDetail:
     """Validate a configuration against its method's schema and record it.
@@ -64,6 +82,8 @@ def create_experiment(request: Request, body: CreateExperimentRequest) -> Experi
         split_id=body.split_id,
         region_profile_id=body.region_profile_id,
         model_type=body.model_type,
+        width=body.width,
+        height=body.height,
         task=body.task,
         target_label=body.target_label,
         config=body.config,

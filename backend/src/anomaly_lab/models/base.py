@@ -44,7 +44,7 @@ from anomaly_lab.domain.entities import Task
 from anomaly_lab.eval.localization import peak_of
 from anomaly_lab.map_files import map_file, write_map_file
 from anomaly_lab.models.diagnostics import DiagnosticKind, DiagnosticWriter
-from anomaly_lab.models.preprocessing import PreprocessingConfig
+from anomaly_lab.models.preprocessing import DEFAULT_INPUT_SIZE, PreprocessingConfig
 from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -59,6 +59,20 @@ class PortableFormat(StrEnum):
     """A deployment representation a fitted method can prove it emits."""
 
     ONNX = "onnx"
+
+
+class MethodStatus(StrEnum):
+    """Where a method stands by this workbench's own evidence (`docs/measurements.md`).
+
+    `supported` cleared its public gate; `experimental` has not, or has not run one; `floor`
+    is a task's numpy baseline, which every other method of the task has to beat and which
+    is never promoted, whatever it scores. A verdict, not a capability: the registry records
+    it, because a gate decides it and the plugin does not.
+    """
+
+    SUPPORTED = "supported"
+    EXPERIMENTAL = "experimental"
+    FLOOR = "floor"
 
 
 class Capabilities(BaseModel):
@@ -626,6 +640,26 @@ class AnomalyModel(ABC):
         return
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """The `(width, height)` a run is prepared at when its experiment names no size.
+
+        The size belongs to the method, not to the region profile: a profile says only where
+        to look. A method returns the frame its recorded measurement ran at
+        (`docs/measurements.md`), so a run at its defaults reproduces a measured protocol,
+        and it must pass the method's own `check_input` for the same `config`.
+        """
+        return (DEFAULT_INPUT_SIZE, DEFAULT_INPUT_SIZE)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        """What both input dimensions must be a multiple of — a patch size; 1 for any size.
+
+        Read by the create form to snap a typed size, and stated beside it, so the refusal
+        `check_input` would give is avoided rather than explained.
+        """
+        return 1
+
+    @classmethod
     def build(cls, config: dict[str, Any]) -> AnomalyModel:
         """Validate a stored config mapping into this method's own config type."""
         return cls(cls.config_model().model_validate(config))
@@ -729,4 +763,9 @@ class ModelDescription(BaseModel):
     summary: str
     capabilities: Capabilities
     availability: Availability
+    status: MethodStatus
+    recommended_for: list[Task] = Field(
+        default_factory=list,
+        description="The tasks this method is the default for: what a new experiment picks first.",
+    )
     config_schema: dict[str, Any] = Field(default_factory=dict)

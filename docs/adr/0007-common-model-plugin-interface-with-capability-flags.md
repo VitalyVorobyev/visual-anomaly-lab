@@ -16,9 +16,6 @@ others into it.
 The differences are not only internal: the UI must render a configuration form per method, decide
 whether to offer an anomaly-map overlay, and know whether a train step exists at all.
 
-The alternatives were per-method routes and screens (simple for two methods, unbounded after), or
-a UI that branches on the method's name.
-
 ## Decision
 
 **One `AnomalyModel` abstract base class, declarative capability flags, and a name-keyed
@@ -28,30 +25,37 @@ registry.**
 - **Configuration** is a pydantic model. Its JSON Schema is served to the frontend, which generates
   the form. A hyperparameter is a Python field, never a UI change.
 - **Capabilities** are declared flags — whether the method trains, produces a map, produces
-  diagnostics, is channel-aware, is dataset-specific, can resume, can export, which device it
-  prefers. The UI and the job layer branch on flags, **never on a registry key**.
+  diagnostics, is channel-aware, is dataset-specific, can resume, can export, which tasks it
+  supports, which device it prefers. The UI and the job layer branch on flags, **never on a
+  registry key**.
 - **The registry** maps stable keys to plugins; the key is what an experiment persists (see
   ADR-0041). It loads plugins lazily, so a heavy import stays inside its plugin.
 - **Contexts** carry progress, cancellation and logging into `fit` and `predict`. A plugin knows
   nothing about subprocesses, queues or WebSockets (see ADR-0009).
-- **`predict` returns a per-image score and, optionally, a per-image anomaly map.** Reducing a
-  sample's images to one score is the evaluation layer's job (see ADR-0011); a channel-aware method
-  may consult channel metadata but still emits per-image results.
-- **Maps are stored raw, as float32 numpy files** (see ADR-0004; the format is in the handbook's
-  methods page). Colormap, normalization and blending are applied at view time and never baked
-  into stored data.
+- **`predict` returns per-image results.** Reducing a sample's images to one score is the evaluation
+  layer's job (see the handbook's [evaluation](../architecture/evaluation.md) page); a
+  channel-aware method may consult channel metadata but still emits per-image results.
+- **Maps are stored raw, as float32 arrays** (see ADR-0004). Colormap, normalization and blending
+  are applied at view time and never baked into stored data.
 
 A new method is one module and one registry entry. If it needs a route, a schema change or a line
 of TypeScript, the boundary is wrong and is fixed there, not in the caller.
 
+## Alternatives considered
+
+- **Per-method routes and screens.** Simple for two methods and unbounded after; every method
+  becomes a frontend change and a new place for the evaluation protocol to diverge.
+- **A UI that branches on the method's name.** Cheaper than a route per method, and it spreads
+  knowledge of every method across every screen that shows one.
+
 ## Consequences
 
 Several methods, and several implementations of one algorithm, coexist under their own keys and are
-compared inside the app under one protocol. Because scores stay per-image and maps stay raw,
+compared inside the app under one protocol. Because results stay per-image and maps stay raw,
 evaluation and visualization choices remain open after the expensive computation is done.
 
 - **The interface was designed from a few examples.** A method that does not fit `fit`/`predict` —
-  online, few-shot, or trained on negatives — will strain it, and may force a breaking change.
+  online, or trained on negatives — will strain it, and may force a breaking change.
 - **Capability flags proliferate.** Every "the UI needs to know whether…" becomes a flag, and the
   struct is a growing, weakly-typed catalogue of exceptions. Re-read this before adding one.
 - **Generated forms are generic forms.** JSON Schema gives types and bounds, not conditional

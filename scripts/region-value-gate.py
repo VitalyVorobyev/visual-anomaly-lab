@@ -202,8 +202,6 @@ def _build_profile(
             name=f"gate {label}",
             extractor_type=extractor_type,
             extractor_config=extractor_config,
-            prepared_width=PREPARED_SIZE,
-            prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
         )
     print(f"Preparing {category} / {label}...", file=sys.stderr)
@@ -216,11 +214,13 @@ def _build_profile(
                     "dataset_id": dataset_id,
                     "profile_id": profile.id,
                     "mode": "build",
+                    "width": PREPARED_SIZE,
+                    "height": PREPARED_SIZE,
                 },
                 settings=settings,
             )
         )
-    summary = read_build_summary(settings, profile.id)
+    summary = read_build_summary(settings, profile.id, (PREPARED_SIZE, PREPARED_SIZE))
     if summary is None:
         raise RuntimeError(f"profile {profile.id} did not publish a build summary")
     report: dict[str, Any] = {
@@ -242,7 +242,10 @@ def _build_profile(
         ]
         return None, report
     build = load_prepared_build(
-        settings, profile, manifest_sha256=summary.manifest_sha256
+        settings,
+        profile,
+        size=(PREPARED_SIZE, PREPARED_SIZE),
+        manifest_sha256=summary.manifest_sha256,
     )
     crop_fractions = [
         (entry.transform.crop_width * entry.transform.crop_height)
@@ -287,8 +290,8 @@ def _create_experiment(
         .model_dump(mode="json")
     )
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width,
-        height=build.profile.prepared_height,
+        width=build.size[0],
+        height=build.size[1],
     ).model_dump(mode="json")
     evaluation = EvalConfig().model_dump(mode="json")
     with connection(settings.db_path) as conn:
