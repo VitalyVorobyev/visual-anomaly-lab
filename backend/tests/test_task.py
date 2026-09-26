@@ -3,14 +3,9 @@ evaluator registry — and invisible to every anomaly run that existed before it
 
 from __future__ import annotations
 
-import sqlite3
-
 import pytest
 from fastapi.testclient import TestClient
 
-from anomaly_lab.config import Settings
-from anomaly_lab.db.connection import connect
-from anomaly_lab.db.migrate import apply_migrations_to, discover_migrations
 from anomaly_lab.domain.entities import Task
 from anomaly_lab.eval import runner
 from anomaly_lab.eval.evaluators import (
@@ -101,35 +96,3 @@ def test_creation_refuses_a_task_without_an_evaluator(
     )
     assert refused.status_code == 422
     assert "no evaluator is registered for the task 'object_detection'" in refused.text
-
-
-def test_migration_021_makes_every_existing_run_an_anomaly_run(settings: Settings) -> None:
-    with connect(settings.db_path) as conn:
-        for migration in discover_migrations():
-            if migration.number > 20:
-                break
-            conn.executescript(
-                f"BEGIN;\n{migration.sql}\nPRAGMA user_version = {migration.number};\nCOMMIT;"
-            )
-        conn.execute("INSERT INTO dataset (name, root_path) VALUES ('d', '/d')")
-        conn.execute(
-            "INSERT INTO split (dataset_id, name, strategy, seed, params) "
-            "VALUES (1, 's', 'imported', 0, '{}')"
-        )
-        conn.execute(
-            "INSERT INTO region_profile_revision (dataset_id, name, revision_no, extractor_type, "
-            "extractor_config, prepared_width, prepared_height, seed) "
-            "VALUES (1, 'full frame', 1, 'identity', '{}', 8, 8, 17)"
-        )
-        conn.execute(
-            "INSERT INTO experiment (name, dataset_id, split_id, region_profile_id, "
-            "region_manifest_sha256, model_type, artifact_dir) "
-            "VALUES ('e', 1, 1, 1, 'sha', 'pixel_reference', '/artifacts/1')"
-        )
-
-        assert apply_migrations_to(conn) >= 21
-        assert conn.execute("SELECT task FROM experiment").fetchone()[0] == "anomaly"
-        # Validated in Python, like `job.kind`: a new task is not a table rebuild.
-        conn.execute("UPDATE experiment SET task = 'object_detection'")
-        with pytest.raises(sqlite3.IntegrityError):
-            conn.execute("UPDATE experiment SET task = NULL")

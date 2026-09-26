@@ -48,7 +48,7 @@ from anomaly_lab.datasets.splitting import (
     plan_class_stratified_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -385,7 +385,7 @@ def main() -> int:
     settings = Settings(
         data_dir=data_dir, reference_datasets_dir=args.datasets_dir.resolve(), dev_cors=False
     )
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     started = time.perf_counter()
     runs: list[dict[str, Any]] = []
     result_path = data_dir / "result.json"

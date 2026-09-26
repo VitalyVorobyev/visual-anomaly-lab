@@ -19,7 +19,7 @@ has annotation, and whether it is ready for a task is a readiness check.
 ## The seams, in dependency order
 
 1. **The enum.** `Task` in `backend/src/anomaly_lab/domain/entities.py`. Adding a value needs no
-   migration — `experiment.task` is validated in Python (migration 021), like `job.kind`. Add the
+   schema change — `experiment.task` is validated in Python, like `job.kind`. Add the
    label to `TASK_ORDER`/`TASK_LABEL` in `frontend/src/routes/ExperimentsRoute.tsx`, then
    `scripts/gen-api-types.sh`.
 2. **The evaluator.** One class and one entry in `EVALUATORS`, `backend/src/anomaly_lab/eval/evaluators.py`.

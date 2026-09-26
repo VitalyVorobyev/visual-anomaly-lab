@@ -614,12 +614,7 @@ def _resolve_assets(settings: Settings, profile: RegionProfileRevision) -> dict[
 
 
 def _config_digest(profile: RegionProfileRevision) -> str:
-    # A field added after builds were published enters the digest only at a non-default
-    # value, so every revision authored before it keeps the digest its build recorded.
-    exclude = {"id", "created_at"}
-    if profile.sample_alignment is SampleAlignment.PER_IMAGE:
-        exclude.add("sample_alignment")
-    payload = profile.model_dump(mode="json", exclude=exclude)
+    payload = profile.model_dump(mode="json", exclude={"id", "created_at"})
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()
 

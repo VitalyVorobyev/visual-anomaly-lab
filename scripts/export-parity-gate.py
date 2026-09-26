@@ -44,7 +44,7 @@ from m11_public_gate import (
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import results as results_repo
 from anomaly_lab.deployment.export import MANIFEST_FILENAME, run_export_job
 from anomaly_lab.deployment.parity import (
@@ -295,7 +295,7 @@ def main(argv: list[str] | None = None) -> int:
         dev_cors=False,
     )
     settings.ensure_directories()
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
 
     report: dict[str, Any] = {
         "schema_version": 1,

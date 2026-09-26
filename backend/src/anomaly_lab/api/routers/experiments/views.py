@@ -110,7 +110,7 @@ class MetricSummary(BaseModel):
     subset: Subset
     metrics: dict[str, Any] = Field(default_factory=dict)
     computed_at: str
-    ground_truth_digest: str | None = None
+    ground_truth_digest: str
     ground_truth_stale: bool = False
 
 

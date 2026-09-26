@@ -100,7 +100,9 @@ def _sample_draft(row: sqlite3.Row) -> AnnotationSampleDraft:
     return AnnotationSampleDraft.model_validate(values)
 
 
-#: The seeded colour of the `defect` class. Migration 017 says why it is not red.
+#: The seeded colour of the `defect` class. Magenta, not alarm red: a mask is painted over the
+#: photograph for minutes at a time, and magenta stays legible on metal and in dark field
+#: without reading as an error or competing with the teal `signal` selection outline.
 DEFAULT_LABEL_COLOR = "#c026d3"
 # The class an imported binary mask, and a sample's normal/defect label, speak about.
 DEFAULT_LABEL_KEY = "defect"
@@ -464,11 +466,9 @@ def count_open_image_drafts(conn: sqlite3.Connection, dataset_id: int) -> int:
     """How many images hold annotation work that has not been completed.
 
     **The absence of a predicate here is load-bearing.** A draft row exists only because
-    somebody saved one, so counting rows is counting work. It was not always so: creation used
-    to happen when the editor opened an image, which is what made every image ever looked at a
-    permanent blocker on `annotation_scope` and what migration 016 cleaned up. Do not be
-    tempted to filter on `version` — under the current write path `version = 1` means "saved
-    once", not "untouched".
+    somebody saved one, so counting rows is counting work; were a read to create one, every
+    image ever looked at would become a permanent blocker on `annotation_scope`. Do not be
+    tempted to filter on `version` — `version = 1` means "saved once", not "untouched".
     """
     return int(
         conn.execute(

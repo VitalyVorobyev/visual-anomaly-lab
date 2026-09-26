@@ -27,7 +27,7 @@ from fastapi.testclient import TestClient
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import jobs as jobs_repo
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.experiments.train import MODEL_SUBDIR
@@ -255,7 +255,7 @@ def test_a_hook_that_cannot_evict_fails_the_job_instead_of_starting_it(
 ) -> None:
     """ "Freeing the device failed, so we trained on top of it anyway" is the bad outcome."""
 
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
 
     async def scenario() -> str | None:
         async def refuses() -> None:

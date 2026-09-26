@@ -82,7 +82,6 @@ export function RegionPreparationRoute() {
   const [height, setHeight] = useState("256");
   const [padding, setPadding] = useState("0.05");
   const [resample, setResample] = useState<SpatialResample>("bilinear");
-  const [seed, setSeed] = useState("17");
   const [alignment, setAlignment] = useState<SampleAlignment>("per_image");
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [view, setView] = useState("source");
@@ -166,7 +165,6 @@ export function RegionPreparationRoute() {
       prepared_height: Number(height),
       padding_fraction: Number(padding),
       resample,
-      seed: Number(seed),
       sample_alignment: alignment,
     });
     updatePrep({ profile: profile.id });
@@ -187,7 +185,6 @@ export function RegionPreparationRoute() {
     setHeight(String(profile.prepared_height));
     setPadding(String(profile.padding_fraction));
     setResample(profile.resample);
-    setSeed(String(profile.seed));
     setAlignment(profile.sample_alignment);
     // The next render has the right extractor schema; preserve values as strings so the
     // schema layer can apply its own numeric/enum conversion on submit.
@@ -225,8 +222,7 @@ export function RegionPreparationRoute() {
     outOfBounds.length > 0 ||
     !validNumber(width, 8, 2048) ||
     !validNumber(height, 8, 2048) ||
-    !validNumber(padding, 0, 1) ||
-    !Number.isInteger(Number(seed));
+    !validNumber(padding, 0, 1);
 
   return (
     <TabScroll
@@ -336,9 +332,6 @@ export function RegionPreparationRoute() {
                 </Field>
                 <Field label="Padding" annotation="0–1">
                   <NumberInput min={0} max={1} step="any" value={padding} onChange={(event) => setPadding(event.target.value)} />
-                </Field>
-                <Field label="Seed">
-                  <NumberInput step={1} value={seed} onChange={(event) => setSeed(event.target.value)} />
                 </Field>
               </div>
               <Field label="Resampling">

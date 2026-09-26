@@ -140,7 +140,7 @@ def test_a_few_shot_run_with_no_answered_reference_is_refused(
 
 
 def _complete_legacy(settings: Settings, image_id: int, shapes: list[dict[str, Any]]) -> None:
-    """A revision as written before migration 023: no class mask, no table."""
+    """A revision with no class mask and no class table: its truth is read from the document."""
     document = {
         "schema_version": 1,
         "image_width": FIXTURE_SIZE,

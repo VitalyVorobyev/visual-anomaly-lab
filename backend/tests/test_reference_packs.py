@@ -24,7 +24,7 @@ from anomaly_lab.datasets.reference_packs import (
 )
 from anomaly_lab.datasets.splitting import plan_class_stratified_split, plan_few_shot_split
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import images as images_repo
@@ -280,7 +280,7 @@ def test_pku_pcb_box_truth_keeps_what_an_image_already_has(tmp_path: Path) -> No
     references = tmp_path / "references"
     _pcb_tree(references)
     settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=references)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     spec = next(pack for pack in pack_specs(settings) if pack.key == "pku_pcb").datasets[0]
     with connection(settings.db_path) as conn:
         dataset_id = commit_manifest(conn, settings, scan_spec(spec, lambda *_: None)).dataset_id
@@ -315,7 +315,7 @@ def test_pku_pcb_refuses_a_class_its_taxonomy_does_not_name(tmp_path: Path) -> N
         root / "Annotations" / directory / f"02_{name}_01.xml", (16, 12), [("scratch", 1, 1, 2, 2)]
     )
     settings = Settings(data_dir=tmp_path / "data", reference_datasets_dir=references)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     spec = next(pack for pack in pack_specs(settings) if pack.key == "pku_pcb").datasets[0]
     with connection(settings.db_path) as conn:
         dataset_id = commit_manifest(conn, settings, scan_spec(spec, lambda *_: None)).dataset_id

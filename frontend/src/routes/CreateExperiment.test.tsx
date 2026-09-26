@@ -55,8 +55,6 @@ const PROFILE = {
   prepared_height: 256,
   padding_fraction: 0,
   resample: "bilinear",
-  failure_policy: "fail",
-  seed: 17,
   created_at: "2026-09-01T00:00:00Z",
 };
 

@@ -21,7 +21,7 @@ from PIL import Image
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings, get_settings
 from anomaly_lab.db.connection import connect, connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import (
     datasets,
     experiments,
@@ -61,7 +61,7 @@ def settings(data_dir: Path) -> Settings:
 @pytest.fixture
 def migrated_db(settings: Settings) -> Iterator[sqlite3.Connection]:
     """A database at the current schema version, with an open connection."""
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     conn = connect(settings.db_path)
     try:
         yield conn
@@ -359,7 +359,6 @@ def seed_synthetic_split(
         prepared_width=FIXTURE_SIZE,
         prepared_height=FIXTURE_SIZE,
         padding_fraction=0.0,
-        seed=17,
     )
     return Fixture(
         dataset_id=dataset.id,

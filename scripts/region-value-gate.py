@@ -37,7 +37,7 @@ from anomaly_lab.datasets.splitting import (
     plan_imported_split,
 )
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import experiments as experiments_repo
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.db.repositories import splits as splits_repo
@@ -205,7 +205,6 @@ def _build_profile(
             prepared_width=PREPARED_SIZE,
             prepared_height=PREPARED_SIZE,
             padding_fraction=PADDING_FRACTION,
-            seed=SEED,
         )
     print(f"Preparing {category} / {label}...", file=sys.stderr)
     with contextlib.redirect_stdout(log):
@@ -323,7 +322,7 @@ def _peak_rss_bytes() -> int:
 
 def _run_leg(data_dir: Path, experiment_id: int) -> int:
     settings = _settings(data_dir)
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     log_path = data_dir / "gate.log"
     started = time.perf_counter()
     with log_path.open("a", encoding="utf-8") as log, contextlib.redirect_stdout(log):
@@ -516,7 +515,7 @@ def _run_gate(
         if localizer == "mobile_sam"
         else None
     )
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     report: dict[str, Any] = {
         "schema_version": 1,
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),

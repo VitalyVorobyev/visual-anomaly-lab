@@ -214,14 +214,13 @@ their own digests, so a revision completed while a polygon or a box was filled o
 pixel wider on its far edges) is read that way wherever a file answers: the binary mask for every
 anomaly consumer and for export, the class mask for class and label truth, the instances file for
 detection. What reads a document **in memory** follows the rule in [the document
-contract](#document-contract) instead: the class and label truth of a revision older than class tables, the detection truth of one older than
-instances files or drawn over the source mask, the reference studio's current region, and interchange's
+contract](#document-contract) instead: the class and label truth of a revision without a class table, the detection truth of one without an
+instances file or drawn over the source mask, the reference studio's current region, and interchange's
 `render_shapes`. Such an answer names the polygon rule in its identity when its document holds a
 polygon, so a run scored against it reads its ground truth as stale rather than silently changed.
 
 The revision pins `class_table`: every class the dataset had at completion, in taxonomy order, with its
-index (from 1) and pixel count, and `instances_path` / `instances_sha256` (migration 024; null on a
-revision completed before it). Completion then hashes the canonical document, both masks and the instances
+index (from 1) and pixel count, and `instances_path` / `instances_sha256`. Completion then hashes the canonical document, both masks and the instances
 file, inserts an append-only revision and removes the draft. A database trigger rejects `UPDATE` on revisions. The mask
 endpoint verifies its expected app-owned path and digest before serving immutable bytes.
 

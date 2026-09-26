@@ -25,7 +25,7 @@ visual-anomaly-lab/
 │   │   ├── experiments/            # service.py (create, preconditions, deletion); train/infer/diagnose work
 │   │   ├── errors.py               # domain refusals: NotFound, Conflict, StaleVersion, InvalidInput, …
 │   │   ├── domain/                 # pydantic entities and enums — no I/O
-│   │   ├── db/                     # SQL migrations (NNN_*.sql), connection + transaction(), repositories
+│   │   ├── db/                     # the schema script (migrations/001_initial.sql), connection + transaction(), repositories
 │   │   ├── datasets/               # import adapters, manifest model, scan/commit/verify, reference packs
 │   │   ├── regions/                # region extractors, transforms, prepared-image builds
 │   │   ├── media/                  # decode, thumbnail/preview cache, map rendering, prewarm
@@ -81,8 +81,8 @@ exception, then runs the rollback callbacks registered on it. `immediate=True` t
 front, which a read-check-write needs (a draft's version check, a deletion's blocker check). Because the
 filesystem cannot join a transaction, a file written inside one (a completed annotation's mask, an accepted
 manifest) is registered with `tx.remove_on_rollback(path)` and removed with the rows that would have
-referenced it. Nothing else issues `BEGIN`, `COMMIT` or `ROLLBACK`, except the migration runner, whose
-`executescript` carries its own transaction.
+referenced it. Nothing else issues `BEGIN`, `COMMIT` or `ROLLBACK`, except `db/migrate.py`, which applies
+the schema script to an empty database inside one `executescript` that carries its own transaction.
 
 ## Model assets
 

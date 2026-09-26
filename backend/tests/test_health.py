@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from anomaly_lab.config import Settings
-from anomaly_lab.db.migrate import discover_migrations
+from anomaly_lab.db.migrate import SCHEMA_VERSION
 
 
 def test_health_reports_version_schema_and_paths(client: TestClient, settings: Settings) -> None:
@@ -15,16 +15,16 @@ def test_health_reports_version_schema_and_paths(client: TestClient, settings: S
     body = response.json()
     assert body["status"] == "ok"
     assert body["version"]
-    assert body["schema_version"] == len(discover_migrations())
+    assert body["schema_version"] == SCHEMA_VERSION
     assert body["db_path"] == str(settings.db_path)
     assert body["data_dir"] == str(settings.data_dir)
     assert body["started_at"]
 
 
-def test_lifespan_applies_migrations(client: TestClient, settings: Settings) -> None:
+def test_lifespan_applies_the_schema(client: TestClient, settings: Settings) -> None:
     """Starting the app is enough to create the database — no separate setup step."""
     assert settings.db_path.exists()
-    assert client.get("/api/health").json()["schema_version"] >= 1
+    assert client.get("/api/health").json()["schema_version"] == SCHEMA_VERSION
 
 
 def test_health_is_served_under_the_api_prefix(client: TestClient) -> None:

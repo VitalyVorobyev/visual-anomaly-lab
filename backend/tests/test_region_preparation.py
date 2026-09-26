@@ -10,7 +10,7 @@ import pytest
 
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
-from anomaly_lab.db.migrate import apply_migrations
+from anomaly_lab.db.migrate import apply_schema
 from anomaly_lab.db.repositories import region_profiles as profiles_repo
 from anomaly_lab.domain.entities import JobKind
 from anomaly_lab.jobs.context import JobContext
@@ -28,7 +28,7 @@ from tests.conftest import Fixture, seed_synthetic_split
 
 @pytest.fixture
 def prepared_fixture(settings: Settings, tmp_path: Path) -> tuple[Fixture, int]:
-    apply_migrations(settings.db_path)
+    apply_schema(settings.db_path)
     with connection(settings.db_path) as conn:
         fixture = seed_synthetic_split(conn, tmp_path / "synthetic")
         profile = profiles_repo.create_revision(
@@ -40,7 +40,6 @@ def prepared_fixture(settings: Settings, tmp_path: Path) -> tuple[Fixture, int]:
             prepared_width=24,
             prepared_height=20,
             padding_fraction=0.05,
-            seed=17,
         )
     return fixture, profile.id
 

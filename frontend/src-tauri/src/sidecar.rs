@@ -53,12 +53,39 @@ const STDERR_TAIL_LINES: usize = 40;
 /// default; the rest are Homebrew (Apple silicon), Homebrew (Intel) and MacPorts.
 const UV_FALLBACK_DIRS: [&str; 3] = ["/opt/homebrew/bin", "/usr/local/bin", "/opt/local/bin"];
 
-/// The first line the sidecar writes to stdout, in the ADR-0009 event envelope.
+/// A line the sidecar writes to stdout, in the ADR-0009 event envelope.
+///
+/// Two events matter before the window exists: `ready`, carrying the port, and `error`,
+/// carrying the one sentence that says why the backend refuses to start — a catalogue it
+/// cannot open, for instance.
 #[derive(Debug, Deserialize)]
-struct ReadyEvent {
+struct StartupEvent {
     ev: String,
-    port: u16,
-    pid: u32,
+    #[serde(default)]
+    port: Option<u16>,
+    #[serde(default)]
+    pid: Option<u32>,
+    #[serde(default)]
+    message: Option<String>,
+}
+
+/// What the stdout drain reports: the first startup event that decides the outcome.
+#[derive(Debug, PartialEq)]
+enum Announcement {
+    Ready { port: u16, pid: u32 },
+    Refused(String),
+}
+
+impl Announcement {
+    /// A line that decides the start, or `None` for anything else on the stream.
+    fn parse(line: &str) -> Option<Self> {
+        let event = serde_json::from_str::<StartupEvent>(line).ok()?;
+        match (event.ev.as_str(), event.port, event.pid, event.message) {
+            ("ready", Some(port), Some(pid), _) => Some(Self::Ready { port, pid }),
+            ("error", _, _, Some(message)) => Some(Self::Refused(message)),
+            _ => None,
+        }
+    }
 }
 
 /// Why the backend did not start, in a shape a window can show.
@@ -142,37 +169,41 @@ impl Sidecar {
         });
 
         // stdout carries structured events. Report the first one, then keep draining.
-        let (sender, receiver) = mpsc::channel::<ReadyEvent>();
+        let (sender, receiver) = mpsc::channel::<Announcement>();
         std::thread::spawn(move || {
             let mut sender = Some(sender);
             for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-                match serde_json::from_str::<ReadyEvent>(&line) {
-                    Ok(event) if event.ev == "ready" => {
+                match Announcement::parse(&line) {
+                    Some(announcement) => {
                         if let Some(sender) = sender.take() {
-                            let _ = sender.send(event);
+                            let _ = sender.send(announcement);
                         }
                     }
                     // Anything else is diagnostic output, not an error: ADR-0009 requires
                     // this parser to tolerate non-JSON lines rather than choke on them.
-                    _ => eprintln!("[sidecar] {line}"),
+                    None => eprintln!("[sidecar] {line}"),
                 }
             }
         });
 
-        let ready = match receiver.recv_timeout(READY_TIMEOUT) {
-            Ok(event) => event,
+        let (port, pid) = match receiver.recv_timeout(READY_TIMEOUT) {
+            Ok(Announcement::Ready { port, pid }) => (port, pid),
+            // The backend said why it will not start; that sentence is the headline.
+            Ok(Announcement::Refused(message)) => {
+                return Err(refused(message, &mut child, &tail));
+            }
             // `Disconnected` is not the same failure as `Timeout` and must not be reported
             // as one: the drain thread drops its sender at EOF, so a backend that dies on
             // startup lands here immediately rather than after the full minute.
             Err(reason) => return Err(never_ready(reason, &mut child, &tail)),
         };
 
-        let base_url = format!("http://127.0.0.1:{}", ready.port);
-        eprintln!("[shell] sidecar ready on {base_url} (pid {})", ready.pid);
+        let base_url = format!("http://127.0.0.1:{port}");
+        eprintln!("[shell] sidecar ready on {base_url} (pid {pid})");
 
         Ok(Self {
             child,
-            sidecar_pid: ready.pid,
+            sidecar_pid: pid,
             base_url,
         })
     }
@@ -213,6 +244,20 @@ impl Sidecar {
 
         let _ = self.child.wait();
     }
+}
+
+/// Turn a refusal the backend announced into the page the window shows.
+fn refused(message: String, child: &mut Child, tail: &StderrTail) -> StartupError {
+    // The backend exits on its own after announcing; wait briefly, then make sure.
+    for _ in 0..20 {
+        if matches!(child.try_wait(), Ok(Some(_))) {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    kill_now(child);
+    let _ = child.wait();
+    StartupError::new(message, format!("Its last output:\n{}", tail_text(tail)))
 }
 
 /// Turn "no ready line" into a message that says which of the two failures it was.
@@ -414,6 +459,32 @@ mod tests {
 
     fn only(runnable: &'static str) -> impl Fn(&Path) -> bool {
         move |path: &Path| path == Path::new(runnable)
+    }
+
+    #[test]
+    fn a_ready_line_and_an_error_line_decide_the_start() {
+        assert_eq!(
+            Announcement::parse(r#"{"ev": "ready", "port": 54321, "pid": 7}"#),
+            Some(Announcement::Ready {
+                port: 54321,
+                pid: 7
+            })
+        );
+        assert_eq!(
+            Announcement::parse(r#"{"ev": "error", "message": "Delete the catalogue."}"#),
+            Some(Announcement::Refused("Delete the catalogue.".to_owned()))
+        );
+    }
+
+    #[test]
+    fn anything_else_on_stdout_is_diagnostic() {
+        assert_eq!(Announcement::parse("not json"), None);
+        assert_eq!(Announcement::parse(r#"{"ev": "ready"}"#), None);
+        assert_eq!(Announcement::parse(r#"{"ev": "error"}"#), None);
+        assert_eq!(
+            Announcement::parse(r#"{"ev": "log", "message": "hi"}"#),
+            None
+        );
     }
 
     #[test]

@@ -160,7 +160,7 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
   which `GET /api/studio/previews/{generation}/{image}.png` renders on the fixed range [0, 1]. A preview is
   stored for nobody and evaluated by nothing.
 
-- **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no migration. A
+- **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no schema change. A
   browse click is not a unit of work anyone needs to cancel or resume.
 - **Requests travel on stdin**, one JSON line, `{"rid": n, "image_id": i}` — the genuine extension to
   a protocol that is otherwise one-way. Responses keep the existing envelope and the same

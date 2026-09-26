@@ -5,8 +5,8 @@ The evaluation layer is **model-independent by construction** (ADR-0011): its in
 `Mask` rows and the float32 maps on disk. It never imports a model module and never
 re-runs inference, which is the precondition for the comparison view to mean anything.
 
-It writes three things back: the sample rows, the metric sets, and — since migration 019 —
-each image's map peak and localization verdict. All three are threshold-free, so persisting
+It writes three things back: the sample rows, the metric sets, and each image's map peak
+and localization verdict. All three are threshold-free, so persisting
 them leaves ADR-0011's line where it was: what moves with the slider is still computed on
 demand and still stored nowhere.
 
@@ -205,9 +205,9 @@ def ensure_peaks(
 ) -> dict[int, tuple[int, int]]:
     """Every scored map's peak, computing and persisting the ones not recorded yet.
 
-    A run written after migration 019 records its peaks as it writes each map, so this is a
-    no-op for it. A run from before has none, and re-evaluating is the backfill path — one
-    `read_map` per map, once, after which the column is filled forever. Idempotent by
+    A run records its peaks as it writes each map, so this is usually a no-op. A row with no
+    peak beside a map gets one here — one `read_map` per map, once, after which the column
+    is filled for good. Idempotent by
     construction: a row that already has a peak is never re-read, so the cost of the second
     call is a dictionary comprehension.
 

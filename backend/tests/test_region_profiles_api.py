@@ -45,7 +45,6 @@ def test_profile_revisions_validate_schema_and_append(
         "prepared_width": 256,
         "prepared_height": 192,
         "padding_fraction": 0.05,
-        "seed": 91,
     }
     first = client.post(f"/api/datasets/{dataset_id}/region-profiles", json=body)
     second = client.post(
@@ -57,7 +56,7 @@ def test_profile_revisions_validate_schema_and_append(
     assert second.status_code == 200
     assert first.json()["revision_no"] == 1
     assert second.json()["revision_no"] == 2
-    assert first.json()["failure_policy"] == "fail"
+    assert "seed" not in first.json()
     listed = client.get(f"/api/datasets/{dataset_id}/region-profiles")
     assert [item["revision_no"] for item in listed.json()] == [2, 1]
     fetched = client.get(f"/api/region-profiles/{first.json()['id']}")
@@ -72,7 +71,6 @@ def test_profile_creation_rejects_unknown_or_invalid_extractor_config(
         "name": "Broken",
         "prepared_width": 256,
         "prepared_height": 256,
-        "seed": 17,
     }
 
     unknown = client.post(
@@ -116,7 +114,6 @@ def test_preview_and_build_routes_expose_a_persisted_visual_audit(
             "prepared_height": 18,
             "padding_fraction": 0.0,
             "resample": "bilinear",
-            "seed": 17,
         },
     )
     profile_id = int(created.json()["id"])

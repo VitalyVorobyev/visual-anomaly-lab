@@ -258,7 +258,6 @@ def test_dataset_deletion_previews_and_removes_only_app_owned_state(
             prepared_width=256,
             prepared_height=256,
             padding_fraction=0.05,
-            seed=17,
         )
         experiment = experiments_repo.create_experiment(
             conn,
