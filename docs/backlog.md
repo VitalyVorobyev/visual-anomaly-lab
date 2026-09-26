@@ -107,10 +107,18 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
       per-channel branch once a channel's basis is chosen. `portable_formats` is empty today because
       nothing has been measured for parity, not because the graph is hard.
 
+## Persistence
+
+- [ ] **Collapse the numbered migrations into one initial script** (M) — ADR-0004. The schema is one
+      script rewritten in place until a catalogue is worth keeping, but `db/migrations/` still holds
+      the numbered files and `migrate.py` applies them in order. Fold them into one script, record
+      its version in `PRAGMA user_version`, and refuse any other version at startup with a message
+      telling the user to delete the catalogue; `test_migrations.py` pins the refusal.
+
 ## Evaluation
 
 - [ ] **Give `TrainContext` labelled validation data**, so a method can report validation AUROC per
-      epoch (M) — ADR-0007, ADR-0011. The training chart wanted it and could not have it: `val` is
+      epoch (M) — ADR-0007, handbook `evaluation.md`. The training chart wanted it and could not have it: `val` is
       filtered to normals and carries no labels, so there is one class and no AUROC. A
       plugin-interface decision, not a chart.
 

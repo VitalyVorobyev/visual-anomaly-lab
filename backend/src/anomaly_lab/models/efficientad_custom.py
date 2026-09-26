@@ -1,7 +1,7 @@
 """`efficientad_custom` — EfficientAD (arXiv:2303.14535), ours.
 
 The in-house implementation of the method, behind the same `AnomalyModel` interface as
-every other one (**ADR-0007**, **ADR-0008**). It started as the second of two
+every other one (**ADR-0007**, **ADR-0029**). It started as the second of two
 implementations, measured against `efficientad_anomalib` — a thin wrapper around Intel's
 anomalib — as **a baseline, not a specification to match** (**ADR-0029**): everything that
 decides a number here is ours. That wrapper is now retired, its head-to-head numbers kept
@@ -30,7 +30,7 @@ only so the runs already recorded against it stay reproducible — an experiment
 configuration is the record of what it did, and removing the value would make five of them
 unloadable. `teacher_source="anomalib"` is now a deliberate ablation against those recorded
 numbers rather than something a default, or an in-app head-to-head, produces (**ADR-0029**,
-**ADR-0031**).
+handbook methods.md).
 
 **What this implementation does differently from the retired wrapper, and why:**
 

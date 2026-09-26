@@ -39,7 +39,7 @@ pre-spawn hook prevents it from coexisting with a training worker on the acceler
 
 SQLite stores entities, configuration, relationships, scores, and paths. Large or array-shaped artifacts—
 checkpoints, raw maps, diagnostics, manifests, thumbnails, and exports—live on disk. Source images remain
-outside the worktree and are referenced read-only. Schema migrations are numbered; schema v1 is frozen.
+outside the worktree and are referenced read-only. How the schema changes is ADR-0004's rule.
 
 ## Extension boundaries
 

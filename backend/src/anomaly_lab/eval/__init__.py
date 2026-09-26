@@ -1,1 +1,1 @@
-"""Model-independent evaluation (ADR-0011)."""
+"""Model-independent evaluation (handbook evaluation.md)."""

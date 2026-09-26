@@ -90,9 +90,9 @@ has annotation, and whether it is ready for a task is a readiness check.
 
 ## Open questions to raise, not to settle silently
 
-- What a sample-level result means for a multi-channel part outside `anomaly` (ADR-0011 aggregates
+- What a sample-level result means for a multi-channel part outside `anomaly` (the anomaly evaluator aggregates
   scores; there is no rule yet for classes or boxes). Evaluate per image until one is decided, and
   say so on screen.
 
-Record any decision with a live alternative by editing ADR-0039 in place (ADR-0030: no changelog), and
+Record any decision with a live alternative by editing ADR-0039 in place (no changelog; the rules are in `docs/adr/README.md`), and
 commit with the `safe-commit` skill.

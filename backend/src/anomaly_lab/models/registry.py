@@ -116,13 +116,13 @@ def _subspace_ad() -> type[AnomalyModel]:
 # line of TypeScript — which is the prediction ADR-0007 made. It started as a second
 # implementation measured against the anomalib-wrapped `efficientad_anomalib`, which has
 # since been retired now that the in-house implementation is the one the workbench carries
-# forward (ADR-0008, ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
+# forward (ADR-0029). `patchcore_anomalib` cost the same in M7, and it is the
 # stronger test of the two: PatchCore trains nothing and holds a memory bank instead of
 # weights. `dinomaly_custom` adds reconstruction training and exact continuation without
 # changing the boundary — it started as a second implementation measured against the
 # anomalib-wrapped `dinomaly_anomalib`, which has since been retired the same way
 # `efficientad_anomalib` was, now that the in-house implementation reached VisA parity
-# (ADR-0008, ADR-0029) and is the one the workbench carries forward: a configurable encoder
+# (ADR-0029) and is the one the workbench carries forward: a configurable encoder
 # and a configurable decoder depth, neither of which the wrapper could offer. GLASS adds
 # learned anomaly synthesis and a bounded reference-frame pass under that same contract: each
 # method still costs one module and one entry here.

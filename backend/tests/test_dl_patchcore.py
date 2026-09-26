@@ -457,7 +457,7 @@ def test_the_checkpoint_does_not_carry_the_backbone(fitted: Fitted, tmp_path: Pa
 
 
 def test_every_m4_view_works_with_no_new_code(fitted: Fitted) -> None:
-    """ADR-0018's prediction, tested against a method the interface was not designed around.
+    """The diagnostics contract's prediction, against a method the interface was not built around.
 
     M6 checked this for a second EfficientAD, which shares its shape with the first.
     PatchCore trains nothing, has no steps, resumes nothing and holds a bank instead of
