@@ -128,14 +128,18 @@ module = [
 ignore_missing_imports = true
 follow_untyped_imports = true
 
-# `efficientad_nets` and `dinomaly_nets` are the modules that define real `nn.Module`
+# `efficientad_nets`, `dinomaly_nets` and `subspace_portable` are the modules that define real `nn.Module`
 # subclasses rather than holding torch objects as `Any`. In the environment CI
 # type-checks in, torch is not installed, so `nn.Module` resolves to `Any` and `strict`'s
 # `disallow_subclassing_any` rejects every class in the file. The alternative — a
 # `type: ignore` on each class statement — puts silencers in the source to work around a
 # property of the checking environment rather than of the code.
 [[tool.mypy.overrides]]
-module = ["anomaly_lab.models.efficientad_nets", "anomaly_lab.models.dinomaly_nets"]
+module = [
+    "anomaly_lab.models.efficientad_nets",
+    "anomaly_lab.models.dinomaly_nets",
+    "anomaly_lab.models.subspace_portable",
+]
 disallow_subclassing_any = false
 
 # `dinomaly_nets.StableAdamW.step` carries a `type: ignore[override]` that is exercised
