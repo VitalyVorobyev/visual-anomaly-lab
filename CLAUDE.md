@@ -103,7 +103,8 @@ comparing them under one evaluation protocol.
   coreset bank, a per-position bank or a per-position Gaussian depending on one `scoring` field —
   cleared its paired VisA gate, `docs/measurements.md`), `subspace_ad` (a PCA of normal
   patch appearance over the same frozen encoders; nothing is trained, and **its defaults are the
-  verdict of a sweep that ran outside the application**, ADR-0038) and `anomalyvfm_anomalib`
+  verdict of a sweep that ran outside the application**, ADR-0038, and it cleared the paired VisA
+  gate) and `anomalyvfm_anomalib`
   (AnomalyVFM, zero-shot: a published checkpoint that reads no normal images, so
   `requires_training` is false; verified by digest and built offline). The second task, few-shot
   segmentation (ADR-0040), runs end to end with `color_prototype` (numpy, the floor), `fss_dino`

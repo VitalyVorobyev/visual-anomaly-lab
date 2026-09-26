@@ -181,7 +181,7 @@ STATUS: dict[str, MethodStatus] = {
     "dinomaly_custom": MethodStatus.SUPPORTED,
     "glass_anomalib": MethodStatus.EXPERIMENTAL,
     "dino_memory": MethodStatus.SUPPORTED,
-    "subspace_ad": MethodStatus.EXPERIMENTAL,
+    "subspace_ad": MethodStatus.SUPPORTED,
     "anomalyvfm_anomalib": MethodStatus.SUPPORTED,
     "color_prototype": MethodStatus.FLOOR,
     "fss_dino": MethodStatus.EXPERIMENTAL,

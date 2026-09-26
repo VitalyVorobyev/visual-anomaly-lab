@@ -117,7 +117,7 @@ Both follow the verdicts in [measurements](../measurements.md) and change with t
 
 | task | recommended | supported | experimental | floor |
 | --- | --- | --- | --- | --- |
-| `anomaly` | `dino_memory` | `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `anomalyvfm_anomalib` | `glass_anomalib`, `subspace_ad` | `pixel_reference` |
+| `anomaly` | `dino_memory` | `efficientad_custom`, `patchcore_anomalib`, `dinomaly_custom`, `subspace_ad`, `anomalyvfm_anomalib` | `glass_anomalib` | `pixel_reference` |
 | `few_shot_segmentation` | `proto_seg` | — | `fss_dino` | `color_prototype` |
 | `semantic_segmentation` | `dino_linear_seg` | — | — | `color_classifier` |
 | `object_detection` | — | — | `dino_linear_det` | `color_detector` |
@@ -581,8 +581,8 @@ what demonstrates the property.
 
 The same frozen encoders asked a different question: patch tokens are mean-pooled over a band of blocks,
 PCA is fitted to the normals, and a patch scores the squared residual the leading subspace cannot
-reconstruct. A fitted model is a mean and an orthonormal basis. **Experimental**: its defaults come from a
-sweep run outside the application (ADR-0038) and its promotion gate is open.
+reconstruct. A fitted model is a mean and an orthonormal basis. **Supported**: its defaults come from a
+sweep run outside the application (ADR-0038), and it cleared the paired VisA gate in the application.
 
 - `backbone` (default DINOv2 ViT-L/14), `pretrained_backbone`, `allow_downloads`, `seed`.
 - `layers` — a `LayerWindow` (default `upper_half`) expressed as a fraction of depth

@@ -58,7 +58,8 @@ application.
   PatchCore control on all three floor metrics ([measurements.md](measurements.md)).
   `subspace_ad` keeps what the normal patches *span* rather than the patches themselves — a PCA
   over the same frozen encoders, with no training step at all — and is the first method whose
-  defaults were chosen by a measured sweep rather than picked (ADR-0038).
+  defaults were chosen by a measured sweep rather than picked (ADR-0038). It cleared the same
+  paired gate on the same pixels, and beat PatchCore on all three metrics.
   `anomalyvfm_anomalib` is the zero-shot reference: AnomalyVFM's published checkpoint, verified by
   digest and built offline, scores a run with no train job and reads no normal image. It cleared its
   public gate's floors on VisA at 768 px ([measurements.md](measurements.md)).
