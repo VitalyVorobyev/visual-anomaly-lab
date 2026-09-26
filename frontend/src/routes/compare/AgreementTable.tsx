@@ -20,7 +20,6 @@ import { Link } from "react-router";
 import type { ComparedRun, ComparedSample } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { writeCompareState } from "../../api/compareState";
-import type { Outcome } from "../../api/resultsState";
 import { OUTCOMES } from "../../api/resultsState";
 import { Badge, Empty, Panel, Switch, Tabs } from "@vitavision/lab-ui";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "../experiment/ResultsPanel";
@@ -67,7 +66,7 @@ export function AgreementTable({
         <Tabs
           label="Outcome filter"
           active={state.outcome ?? "all"}
-          onSelect={(id) => onChange({ outcome: id === "all" ? undefined : (id as Outcome) })}
+          onSelect={(id) => onChange({ outcome: id === "all" ? undefined : (id) })}
           items={[
             { id: "all", label: "every outcome" },
             ...OUTCOMES.map((outcome) => ({
@@ -142,7 +141,7 @@ function Row({
         <td key={run.id} className="px-2 py-1.5">
           <div className="flex items-baseline gap-2">
             {row.outcomes[index] ? (
-              <Badge tone={OUTCOME_TONE[row.outcomes[index] as string] ?? "neutral"}>
+              <Badge tone={OUTCOME_TONE[row.outcomes[index]] ?? "neutral"}>
                 {row.outcomes[index]}
               </Badge>
             ) : (
@@ -153,7 +152,7 @@ function Row({
                   never compared with the cell beside it. */}
               {row.scores[index] === null || row.scores[index] === undefined
                 ? "—"
-                : (row.scores[index] as number).toFixed(3)}
+                : (row.scores[index]).toFixed(3)}
             </span>
           </div>
         </td>

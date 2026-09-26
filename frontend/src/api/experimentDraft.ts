@@ -23,13 +23,13 @@ const TASKS: Task[] = [
 export interface ExperimentDraft {
   name: string;
   /** The task decides everything after it, so a draft without it restores the wrong form. */
-  task?: Task;
+  task?: Task | undefined;
   /** The class a few-shot run segments, when the reader chose one. */
-  targetLabel?: string;
-  datasetId?: number;
-  splitId?: number;
-  regionProfileId?: number;
-  methodKey?: string;
+  targetLabel?: string | undefined;
+  datasetId?: number | undefined;
+  splitId?: number | undefined;
+  regionProfileId?: number | undefined;
+  methodKey?: string | undefined;
   /** Configuration values belong to the method they were typed for. */
   configValues: RawValues;
   preprocessingValues: RawValues;

@@ -56,7 +56,7 @@ export function GalleryTab({
    * legend and each tile draws the run's label maps instead of a cut — or, for an object
    * detection run, its boxes at the run's resolved cut, and the legend adds their tones.
    */
-  classes?: readonly string[];
+  classes?: readonly string[] | undefined;
   /** Decides the outcome strip and its words (`taskViews.tsx`). */
   task: Task | undefined;
   targetLabel: string | null;

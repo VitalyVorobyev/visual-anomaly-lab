@@ -9,10 +9,10 @@
 export type PrepareJobMode = "preview" | "build" | "asset";
 
 export interface PrepareState {
-  profile?: number;
-  job?: number;
-  jobProfile?: number;
-  mode?: PrepareJobMode;
+  profile?: number | undefined;
+  job?: number | undefined;
+  jobProfile?: number | undefined;
+  mode?: PrepareJobMode | undefined;
 }
 
 const MODES: readonly PrepareJobMode[] = ["preview", "build", "asset"];

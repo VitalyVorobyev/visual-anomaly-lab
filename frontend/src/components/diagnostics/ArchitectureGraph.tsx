@@ -24,11 +24,11 @@ import type { ModuleNode } from "./ModuleTree";
 
 interface GraphNode {
   id: string;
-  label?: string;
-  type?: string;
-  parameters?: number;
-  input_shape?: number[];
-  output_shape?: number[];
+  label?: string | undefined;
+  type?: string | undefined;
+  parameters?: number | undefined;
+  input_shape?: number[] | undefined;
+  output_shape?: number[] | undefined;
 }
 
 interface GraphEdge {

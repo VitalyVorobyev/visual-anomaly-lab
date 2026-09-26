@@ -38,7 +38,7 @@ function index(overrides: Partial<DiagnosticIndex> = {}): DiagnosticIndex {
     image_budget: null,
     truncated_images: 0,
     ...overrides,
-  } as DiagnosticIndex;
+  };
 }
 
 describe("diagnosticPayloadUrl", () => {

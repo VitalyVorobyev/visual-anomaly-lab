@@ -14,7 +14,6 @@
  */
 
 import type { ComparedRun, OperatingPoint } from "../../api/client";
-import type { MetricValue } from "../../api/metrics";
 import {
   comparisonRows,
   detectionRows,
@@ -28,7 +27,7 @@ import type { ComparisonRow } from "../../api/metrics";
 import { InfoHint, Panel, cn } from "@vitavision/lab-ui";
 
 export function MetricTable({ runs }: { runs: ComparedRun[] }) {
-  const metrics = runs.map((run) => (run.metrics ?? {}) as MetricValue);
+  const metrics = runs.map((run) => (run.metrics ?? {}));
   const sections: { title: string; rows: ComparisonRow[] }[] = [
     { title: "Detection", rows: comparisonRows(metrics.map(detectionRows)) },
     { title: "Pixel level", rows: comparisonRows(metrics.map(pixelRows)) },
@@ -148,9 +147,9 @@ export interface GridRun {
   id: number;
   name: string;
   model_type: string;
-  threshold_rationale?: string;
+  threshold_rationale?: string | undefined;
   /** Printed under the method key — a few-shot run's reference draw, say. */
-  note?: string;
+  note?: string | undefined;
 }
 
 export function Grid({

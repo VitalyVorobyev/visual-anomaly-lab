@@ -71,6 +71,7 @@ import { PeakMarker } from "./experiment/PeakMarker";
 import { ValueReadout } from "./experiment/ValueReadout";
 import { OUTCOME_LABEL, OUTCOME_TONE, localizationBadge } from "./experiment/ResultsPanel";
 import { useVerdicts } from "./experiment/useVerdicts";
+import { defined } from "../api/defined";
 
 export function ExperimentSampleRoute() {
   const { experimentId: rawExperiment, sampleId: rawSample } = useParams();
@@ -106,7 +107,7 @@ export function ExperimentSampleRoute() {
   const neighbours = stepThrough(verdicts.shown, sampleId);
   const goTo = (target: SampleVerdict | undefined) => {
     if (!target || experimentId === undefined) return;
-    navigate({
+    void navigate({
       pathname: `/experiments/${experimentId}/samples/${target.sample_id}`,
       search: writeResultsState(state, task).toString(),
     });
@@ -281,7 +282,7 @@ export function ExperimentSampleRoute() {
 
       {/* Below the fold by design. These decompose the map above; they must not compete
           with it for the first screen. */}
-      <Disclosure summary="Per-branch diagnostics" count={anyDiagnostic ? undefined : 0}>
+      <Disclosure summary="Per-branch diagnostics" {...defined({ count: anyDiagnostic ? undefined : 0 })}>
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <p className="max-w-prose text-xs text-fg-muted">
@@ -673,9 +674,9 @@ function DiagnosticPane({
   maskSrc,
 }: {
   title: string;
-  description?: string;
+  description?: string | undefined;
   src: string;
-  maskSrc?: string;
+  maskSrc?: string | undefined;
 }) {
   return (
     <figure className="flex flex-col gap-1">

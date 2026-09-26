@@ -18,8 +18,8 @@ import { VectorLayer, type VectorShape } from "../../components/viewer/VectorLay
 /** The image on the stage. Its size is known from the filmstrip, or from the first answer. */
 export interface StageTarget {
   imageId: number;
-  width?: number;
-  height?: number;
+  width?: number | undefined;
+  height?: number | undefined;
   label: string;
 }
 

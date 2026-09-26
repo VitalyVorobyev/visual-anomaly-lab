@@ -39,6 +39,7 @@ import { ArchitectureTab, InspectorTab, PICTURE_KINDS, STRUCTURE_KINDS } from ".
 import { Configuration } from "./experiment/OverviewTab";
 import { TrainingTab } from "./experiment/TrainingTab";
 import { taskView, type ResultsBodyProps } from "./experiment/taskViews";
+import { defined } from "../api/defined";
 
 /* A disabled tab used to give no reason at all, which reads as broken rather than as
    not-yet. Each says what would fill it. */
@@ -134,7 +135,8 @@ export function ExperimentRoute() {
     state: results,
     onChange: updateResults,
     verdicts,
-    aggregation: String(detail.evaluation.aggregation ?? "max"),
+    aggregation:
+      typeof detail.evaluation.aggregation === "string" ? detail.evaluation.aggregation : "max",
     targetLabel: detail.target_label ?? null,
   };
   const runScoped = modelScoped(diagnostics.data);
@@ -235,31 +237,31 @@ export function ExperimentRoute() {
             id: "samples",
             label: "Samples",
             disabled: !hasScores,
-            title: hasScores ? undefined : NOT_SCORED,
+            ...defined({ title: hasScores ? undefined : NOT_SCORED }),
           },
           {
             id: "training",
             label: "Training",
             disabled: !hasTrainJob,
-            title: hasTrainJob ? undefined : "Nothing has been trained yet.",
+            ...defined({ title: hasTrainJob ? undefined : "Nothing has been trained yet." }),
           },
           {
             id: "benchmark",
             label: "Benchmark",
             disabled: !hasScores,
-            title: hasScores ? undefined : NOT_SCORED,
+            ...defined({ title: hasScores ? undefined : NOT_SCORED }),
           },
           {
             id: "architecture",
             label: "Architecture",
             disabled: !hasStructure,
-            title: hasStructure ? undefined : NO_STRUCTURE,
+            ...defined({ title: hasStructure ? undefined : NO_STRUCTURE }),
           },
           {
             id: "inspector",
             label: "Inspector",
             disabled: !hasPictures,
-            title: hasPictures ? undefined : NO_PICTURES,
+            ...defined({ title: hasPictures ? undefined : NO_PICTURES }),
           },
           { id: "jobs", label: "Jobs & files" },
         ]}

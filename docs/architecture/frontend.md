@@ -10,6 +10,17 @@ or colour.
 A small one — `react-router`, TanStack Query, Tailwind, Konva for the annotation canvas — with the API
 client generated rather than written (**ADR-0012**).
 
+- **The toolchain is the shared vitavision baseline**: the versions every lab frontend is on, the
+  compiler options from `@vitavision/config-ts` (strict, `noUncheckedIndexedAccess`,
+  `exactOptionalPropertyTypes`) and the lint rules from `@vitavision/config-eslint`. Under
+  `exactOptionalPropertyTypes`, our own optional props say `?: T | undefined`; a prop or request body typed
+  elsewhere (lab-ui, Konva, the generated client) is passed through `defined()` (`src/api/defined.ts`),
+  which leaves out the keys that have no value. The React Compiler rules (`react-hooks/set-state-in-effect`,
+  `react-hooks/refs`, `react-hooks/immutability`) report as warnings until each screen is reworked; everything else is an error.
+- **Every main route has a screenshot** (`bun run test:screens`): Playwright against a throwaway backend
+  seeded once through the real API by `scripts/e2e-seed.py`, in light and dark. The baseline is local and
+  uncommitted — capture it before a change, compare after it, on the same machine.
+
 - **Routing is `react-router`'s `HashRouter`.** The bundle is served from Vite's dev server at `/`, the
   desktop WebView at `…/index.html` and `tauri://localhost`; a path-based router matches no route at the
   second and renders an empty document.
@@ -17,7 +28,7 @@ client generated rather than written (**ADR-0012**).
 - **The API client is generated.** `scripts/gen-api-types.sh` starts a throwaway backend, reads
   `/openapi.json` and writes `frontend/src/api/generated.ts`. The file is committed, so `tsc` needs no
   backend, and CI regenerates it and fails on any diff. The generator runs in its own throwaway project on
-  TypeScript 5, because openapi-typescript needs the TS 5 compiler API the frontend's TS 7 lacks.
+  TypeScript 5, because openapi-typescript peers `typescript ^5` and the frontend is on TypeScript 6.
 
 ## Design system
 

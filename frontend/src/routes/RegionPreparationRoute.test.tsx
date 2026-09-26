@@ -47,7 +47,7 @@ function deletionPreview(
     can_delete: true,
     blocker: null,
     ...overrides,
-  } as RegionProfileDeletionPreview;
+  };
 }
 
 function mount(preview: RegionProfileDeletionPreview) {
@@ -129,8 +129,8 @@ describe("the size a profile is prepared at", () => {
   it("is not part of the profile: preview, check and build name it, 448 unless changed", () => {
     mountSelected();
 
-    expect((screen.getByLabelText("Preview width") as HTMLInputElement).value).toBe("448");
-    expect((screen.getByLabelText("Preview height") as HTMLInputElement).value).toBe("448");
+    expect(screen.getByLabelText<HTMLInputElement>("Preview width").value).toBe("448");
+    expect(screen.getByLabelText<HTMLInputElement>("Preview height").value).toBe("448");
     expect(screen.getByText(/The preview, Check 24 and Build all prepare at 448×448/)).toBeTruthy();
     expect(screen.getByText("Check 24 · 448×448")).toBeTruthy();
     // The profile form asks where to look, never how large.
@@ -150,7 +150,7 @@ describe("the size a profile is prepared at", () => {
     expect(screen.getByRole("button", { name: "Build all" }).hasAttribute("disabled")).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "256×256" }));
-    expect((screen.getByLabelText("Preview width") as HTMLInputElement).value).toBe("256");
+    expect(screen.getByLabelText<HTMLInputElement>("Preview width").value).toBe("256");
   });
 });
 
@@ -158,7 +158,7 @@ describe("opening a saved revision", () => {
   it("loads it into the form, shared crop included", () => {
     mountSelected([], { ...profile, sample_alignment: "union" });
 
-    expect((screen.getByRole("radio", { name: "Shared" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("radio", { name: "Shared" }).checked).toBe(true);
     expect(screen.getByText(/Showing r3 as saved · shared crop/)).toBeTruthy();
   });
 

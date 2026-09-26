@@ -81,3 +81,8 @@ deployment/runner/target/
 .claude/settings.local.json
 # Agent worktrees: whole checkouts, created and removed by the tooling.
 .claude/worktrees/
+
+# ── Screenshot suite state: seeded backend data and the local baseline ──
+frontend/e2e/.state/
+frontend/test-results/
+frontend/playwright-report/

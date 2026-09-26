@@ -47,6 +47,7 @@ import {
 import { hasClasses, hasLabels, labelsApply } from "../api/truth";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 import { SampleTile, type SelectModifiers } from "./dataset/SampleTile";
+import { defined } from "../api/defined";
 
 const COLUMNS = 6;
 const ROW_HEIGHT = 132;
@@ -135,7 +136,7 @@ export function DatasetRoute() {
               <SlidersHorizontal className="size-3.5" aria-hidden /> Filters
             </span>
           }
-          count={activeFilters > 0 ? activeFilters : undefined}
+          {...defined({ count: activeFilters > 0 ? activeFilters : undefined })}
         >
           <div className="pb-2">
             {filters}

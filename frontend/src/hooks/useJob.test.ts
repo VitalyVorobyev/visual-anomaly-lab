@@ -169,7 +169,7 @@ describe("reconnectDelay", () => {
  * so the two halves are merged rather than concatenated blindly.
  */
 function metrics(series: JobMetrics["series"]): JobMetrics {
-  return { job_id: 1, series } as JobMetrics;
+  return { job_id: 1, series };
 }
 
 describe("toSeries", () => {

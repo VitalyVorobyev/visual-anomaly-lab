@@ -22,18 +22,18 @@ import { Badge, Button, Input, cn } from "@vitavision/lab-ui";
 
 export interface ModuleNode {
   id: string;
-  label?: string;
-  type?: string;
-  parameters?: number;
-  parameters_own?: number;
-  parent?: string | null;
-  depth?: number;
-  order?: number;
-  executed?: boolean;
-  calls?: number;
-  leaf?: boolean;
-  input_shape?: number[];
-  output_shape?: number[];
+  label?: string | undefined;
+  type?: string | undefined;
+  parameters?: number | undefined;
+  parameters_own?: number | undefined;
+  parent?: string | null | undefined;
+  depth?: number | undefined;
+  order?: number | undefined;
+  executed?: boolean | undefined;
+  calls?: number | undefined;
+  leaf?: boolean | undefined;
+  input_shape?: number[] | undefined;
+  output_shape?: number[] | undefined;
 }
 
 /** Whether a payload carries a hierarchy at all, so the caller can fall back. */
@@ -61,8 +61,8 @@ export function ModuleTree({
   maxNodes,
 }: {
   nodes: ModuleNode[];
-  truncated?: number;
-  maxNodes?: number;
+  truncated?: number | undefined;
+  maxNodes?: number | undefined;
 }) {
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(

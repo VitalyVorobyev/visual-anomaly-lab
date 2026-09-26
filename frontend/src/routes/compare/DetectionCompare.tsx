@@ -8,7 +8,6 @@
  */
 
 import type { DetectionComparison, Subset } from "../../api/client";
-import type { MetricValue } from "../../api/metrics";
 import { comparisonRows, objectDetectionRows, timingRows } from "../../api/metrics";
 import { Callout, Panel, Select } from "@vitavision/lab-ui";
 import { Grid, SectionRows } from "./MetricTable";
@@ -20,7 +19,7 @@ export function DetectionCompare({
   report: DetectionComparison;
   onSubset: (subset: Subset) => void;
 }) {
-  const metrics = report.runs.map((run) => (run.metrics ?? {}) as MetricValue);
+  const metrics = report.runs.map((run) => (run.metrics ?? {}));
   const grid = report.runs.map((run) => ({
     id: run.id,
     name: run.name,

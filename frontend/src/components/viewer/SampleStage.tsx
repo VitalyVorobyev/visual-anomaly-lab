@@ -11,12 +11,13 @@
  * from a scale in real units.
  */
 
-import { useLayoutEffect, useRef, type MutableRefObject, type ReactNode } from "react";
+import { useLayoutEffect, useRef, type MutableRefObject, type PointerEvent, type ReactNode } from "react";
 
 import { ImageStage, StageToolbar, cn, useStage, type StageView } from "@vitavision/lab-ui";
 
 import { imageUrl, tierFor } from "../../api/imageUrl";
 import { VectorLayer, type VectorShape } from "./VectorLayer";
+import { defined } from "../../api/defined";
 
 export interface RasterLayer {
   key: string;
@@ -68,7 +69,7 @@ export function SampleStage({
    * background click in client coordinates; its own transform turns that into image pixels,
    * so a screen asking "where did they click" never re-derives the view arithmetic.
    */
-  onPick?: StagePick;
+  onPick?: StagePick | undefined;
 }) {
   const toImage = useRef<Projection | null>(null);
   return (
@@ -76,24 +77,25 @@ export function SampleStage({
       image={{ width: image.width, height: image.height }}
       view={view}
       onView={onView}
-      onHover={onHover}
-      panKeys={panKeys}
       label={label}
       toolbar={<StageToolbar />}
-      readout={readout}
-      banner={banner}
-      onBackgroundClick={
-        onPick
-          ? (event) => {
-              const project = toImage.current;
-              if (!project) return;
-              const point = project({ x: event.clientX, y: event.clientY });
-              const inside =
-                point.x >= 0 && point.y >= 0 && point.x < image.width && point.y < image.height;
-              if (inside) onPick(point, { shiftKey: event.shiftKey });
-            }
-          : undefined
-      }
+      {...defined({
+        onHover,
+        panKeys,
+        readout,
+        banner,
+        onBackgroundClick:
+          onPick
+            ? (event: PointerEvent<HTMLDivElement>) => {
+                const project = toImage.current;
+                if (!project) return;
+                const point = project({ x: event.clientX, y: event.clientY });
+                const inside =
+                  point.x >= 0 && point.y >= 0 && point.x < image.width && point.y < image.height;
+                if (inside) onPick(point, { shiftKey: event.shiftKey });
+              }
+            : undefined
+      })}
     >
       <img
         src={imageUrl(image.id, tierFor(view))}

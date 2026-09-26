@@ -32,13 +32,13 @@ export const STEP_TITLE: Record<Step, string> = {
 export type SplitChoice = { kind: "preset"; key: string } | { kind: "existing"; id: number };
 
 export interface GuidedRunState {
-  task?: Task;
+  task?: Task | undefined;
   /** The class a few-shot run segments; unset is the most frequent. */
-  targetClass?: string;
+  targetClass?: string | undefined;
   /** A saved region profile revision; unset is the dataset's "Full frame". */
-  profileId?: number;
-  split?: SplitChoice;
-  methodKey?: string;
+  profileId?: number | undefined;
+  split?: SplitChoice | undefined;
+  methodKey?: string | undefined;
   /** Configuration typed for `methodKey`; cleared when the method changes. */
   configValues: RawValues;
   name: string;
@@ -48,7 +48,7 @@ export interface GuidedRunState {
    * A split this run already created before a later stage failed, keyed by what it was
    * drawn from, so pressing Start again reuses it rather than drawing another.
    */
-  created?: { key: string; splitId: number };
+  created?: { key: string; splitId: number } | undefined;
 }
 
 export const EMPTY_GUIDED_RUN: GuidedRunState = { configValues: {}, name: "", reached: "goal" };
@@ -110,7 +110,7 @@ export function readGuidedRun(key: string, storage = safeSession()): GuidedRunSt
         typeof parsed.configValues === "object" &&
         parsed.configValues !== null &&
         !Array.isArray(parsed.configValues)
-          ? (parsed.configValues as RawValues)
+          ? (parsed.configValues)
           : {},
       name: typeof parsed.name === "string" ? parsed.name : "",
       reached: readStep(typeof parsed.reached === "string" ? parsed.reached : null),

@@ -15,6 +15,7 @@ import { useCancelJob } from "../../hooks/useExperiments";
 import { isTerminal, useJob } from "../../hooks/useJob";
 import { useInstallModelAsset, useModelAssets } from "../../hooks/useModelAssets";
 import type { Flash } from "./useFlashMessage";
+import { defined } from "../../api/defined";
 
 export type AssistMode = "point" | "box";
 
@@ -103,12 +104,14 @@ export function useSegmentAssistSession({
 
   const request = async () => {
     try {
-      const result = await assist.mutateAsync({
-        points,
-        box: box ?? undefined,
-        label_key: labelKey,
-        operation,
-      });
+      const result = await assist.mutateAsync(
+        defined({
+          points,
+          box: box ?? undefined,
+          label_key: labelKey,
+          operation,
+        }),
+      );
       setCandidateIndex(0);
       flash(
         `${result.candidates.length} suggestion${result.candidates.length === 1 ? "" : "s"} · ${result.device.toUpperCase()} · ${result.warm ? "warm" : "loaded"}`,
