@@ -61,6 +61,20 @@ class PortableFormat(StrEnum):
     ONNX = "onnx"
 
 
+class MethodStatus(StrEnum):
+    """Where a method stands by this workbench's own evidence (`docs/measurements.md`).
+
+    `supported` cleared its public gate; `experimental` has not, or has not run one; `floor`
+    is a task's numpy baseline, which every other method of the task has to beat and which
+    is never promoted, whatever it scores. A verdict, not a capability: the registry records
+    it, because a gate decides it and the plugin does not.
+    """
+
+    SUPPORTED = "supported"
+    EXPERIMENTAL = "experimental"
+    FLOOR = "floor"
+
+
 class Capabilities(BaseModel):
     """What a method can do, declared rather than inferred.
 
@@ -729,4 +743,9 @@ class ModelDescription(BaseModel):
     summary: str
     capabilities: Capabilities
     availability: Availability
+    status: MethodStatus
+    recommended_for: list[Task] = Field(
+        default_factory=list,
+        description="The tasks this method is the default for: what a new experiment picks first.",
+    )
     config_schema: dict[str, Any] = Field(default_factory=dict)

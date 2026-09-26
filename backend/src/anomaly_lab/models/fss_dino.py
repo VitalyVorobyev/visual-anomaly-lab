@@ -76,6 +76,7 @@ class FssDinoConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder; its last block is read. FSSDINO used DINOv3 ViT-B/16, which is "
@@ -84,6 +85,7 @@ class FssDinoConfig(BaseModel):
         ),
     )
     prototypes_per_class: int = Field(
+        json_schema_extra={"x-primary": True},
         default=5,
         ge=1,
         le=64,
@@ -106,6 +108,7 @@ class FssDinoConfig(BaseModel):
         ),
     )
     calibration: Calibration = Field(
+        json_schema_extra={"x-primary": True},
         default=Calibration.NONE,
         description=(
             "'leave_one_out' rescales the foreground probability on the references: each is "

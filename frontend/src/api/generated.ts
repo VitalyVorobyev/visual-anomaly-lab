@@ -4397,6 +4397,17 @@ export interface components {
             };
         };
         /**
+         * MethodStatus
+         * @description Where a method stands by this workbench's own evidence (`docs/measurements.md`).
+         *
+         *     `supported` cleared its public gate; `experimental` has not, or has not run one; `floor`
+         *     is a task's numpy baseline, which every other method of the task has to beat and which
+         *     is never promoted, whatever it scores. A verdict, not a capability: the registry records
+         *     it, because a gate decides it and the plugin does not.
+         * @enum {string}
+         */
+        MethodStatus: "supported" | "experimental" | "floor";
+        /**
          * MetricPoint
          * @description One `metric` event, reduced to what a chart plots.
          */
@@ -4500,6 +4511,12 @@ export interface components {
             summary: string;
             capabilities: components["schemas"]["Capabilities"];
             availability: components["schemas"]["Availability"];
+            status: components["schemas"]["MethodStatus"];
+            /**
+             * Recommended For
+             * @description The tasks this method is the default for: what a new experiment picks first.
+             */
+            recommended_for: components["schemas"]["Task"][];
             /** Config Schema */
             config_schema: {
                 [key: string]: unknown;
