@@ -76,6 +76,15 @@ class TruthKind(StrEnum):
     """Some completed annotation shows a class."""
 
 
+class ClassGeometry(StrEnum):
+    """How a dataset's class truth is drawn, derived from it and never stored."""
+
+    BOXES = "boxes"
+    """Every shape of the class truth is a box: the question it answers is where, roughly."""
+    REGIONS = "regions"
+    """Some shape is a polygon, a brush stroke or a mask: it answers which pixels."""
+
+
 class LabelSource(StrEnum):
     """Where a label came from, so hand corrections survive a re-import (handbook import.md)."""
 

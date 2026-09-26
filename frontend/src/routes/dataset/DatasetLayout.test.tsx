@@ -198,12 +198,18 @@ describe("the dataset band", () => {
     expect(new Set(shapes).size).toBe(1);
   });
 
-  it("offers the same one action from every tab", () => {
+  it("opens the guided run from every tab, with the full form beside it", () => {
     for (const path of TABS) {
       const { container, unmount } = renderAt(path);
-      const action = container.querySelector('[data-band="dataset"] a[href$="/experiments/new"]');
+      const band = container.querySelector('[data-band="dataset"]')!;
+      const start = band.querySelector('a[href="/datasets/7/run"]');
+      const form = band.querySelector('a[href$="/experiments/new"]');
 
-      expect(action?.textContent).toContain("New experiment");
+      expect(start?.textContent).toContain("Start a run");
+      expect(form?.textContent).toContain("New experiment");
+      // No readiness checklist to read first, and nothing hidden at a narrow width.
+      expect(band.querySelector('nav[aria-label="Before training"]')).toBeNull();
+      expect(start?.closest(".hidden")).toBeNull();
       unmount();
     }
   });

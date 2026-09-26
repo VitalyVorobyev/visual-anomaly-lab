@@ -85,8 +85,11 @@ comparing them under one evaluation protocol.
 ## Current status and working discipline
 
 - **Everything below closes, and every screen has been reviewed at rest and in its transient
-  states** (pending, error, focus, disabled; `lab-visual-pass --states`). Two findings wait on lab-ui:
-  a `ButtonLink`, and `Tabs` explaining a disabled tab on screen (see `docs/roadmap.md`). **N methods can be read against each other**: import a directory tree or a
+  states** (pending, error, focus, disabled; `lab-visual-pass --states`). One finding waits on lab-ui:
+  `Tabs` explaining a disabled tab on screen (see `docs/roadmap.md`). **The guided run is the front
+  door** (`/datasets/:id/run`, handbook `frontend.md`): five steps with defaults already chosen, so a
+  first run needs nothing prepared or split in advance; Prepare, Splits and the full create form are
+  the expert surface. **N methods can be read against each other**: import a directory tree or a
   public benchmark, browse and label it, annotate it at pixel level, pin an invertible region profile, split it, train, score, read image- and pixel-level
   metrics, browse every scored sample and filter to the model's mistakes, ask the method about any
   image, continue training — then put N runs of one split side by side, find the samples they
@@ -137,7 +140,8 @@ comparing them under one evaluation protocol.
   reproducible; M6 found the same shape in torch's global stream for weight init. When adding a
   method, assert reproducibility in *both* directions — same seed identical, different seed different.
 - **Controls come from `@vitavision/lab-ui`** — the shared design system for every lab app, not a
-  helper extracted from this one; see its README for the consumer wiring. There is an `Input`,
+  helper extracted from this one; see its README for the consumer wiring. There is a `ButtonLink` —
+  a navigation that looks like a button, never a `<Button>` inside a `<Link>` — an `Input`,
   `NumberInput`, `Textarea`, `Select`, `SegmentedControl`, `Switch`, `Checkbox`, `Slider`, `Table`,
   `Dialog`, `ConfirmDialog`, `Tooltip`, `InfoHint`, `Disclosure`, `Field`, `Badge`, `CountRun`,
   `Empty`, `ErrorBox`, `Callout`, `Skeleton`, `ToggleChip`, `PageHeader`, `Panel`, `Section`,

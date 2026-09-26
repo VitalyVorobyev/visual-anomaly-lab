@@ -18,6 +18,8 @@ function memory(): Storage {
 
 const DRAFT: ExperimentDraft = {
   name: "kept",
+  task: "few_shot_segmentation",
+  targetLabel: "screw",
   datasetId: 7,
   splitId: 3,
   regionProfileId: 11,
@@ -47,9 +49,11 @@ describe("the create-experiment draft", () => {
     const storage = memory();
     storage.setItem("k", "{not json");
     expect(readDraft("k", storage)).toBeNull();
-    storage.setItem("k", JSON.stringify({ name: 3, datasetId: "7", channels: ["a", 2] }));
+    storage.setItem("k", JSON.stringify({ name: 3, task: "painting", datasetId: "7", channels: ["a", 2] }));
     expect(readDraft("k", storage)).toEqual({
       name: "",
+      task: undefined,
+      targetLabel: "",
       datasetId: undefined,
       splitId: undefined,
       regionProfileId: undefined,

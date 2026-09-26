@@ -14,10 +14,10 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { useSearchParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
-import { Badge, Button, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, ButtonLink, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
 import type {
   AdapterInfo,
   ChannelMapping,
@@ -28,7 +28,7 @@ import type {
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { hasDirectoryPicker, pickDirectory } from "../api/shell";
-import { Check } from "lucide-react";
+import { Check, Play } from "lucide-react";
 
 import { JobProgress } from "../components/JobProgress";
 import { WarningsPanel, commitBlocked } from "../components/WarningsPanel";
@@ -658,8 +658,6 @@ function CommittedStep({
   result: CommitResponse;
   onRestart: () => void;
 }) {
-  const navigate = useNavigate();
-
   return (
     <Panel title={result.dataset_created ? "Dataset created" : "Dataset updated"}>
       <div className="flex flex-col gap-4">
@@ -692,11 +690,16 @@ function CommittedStep({
           </div>
         )}
 
-        <div className="flex gap-2">
-          <Button variant="primary" onClick={() => void navigate(`/datasets/${result.dataset_id}`)}>
+        <div className="flex flex-wrap gap-2">
+          <ButtonLink variant="primary" icon={<Play />} to={`/datasets/${result.dataset_id}/run`}>
+            Start a run
+          </ButtonLink>
+          <ButtonLink variant="secondary" to={`/datasets/${result.dataset_id}`}>
             Browse the dataset
+          </ButtonLink>
+          <Button variant="ghost" onClick={onRestart}>
+            Import another
           </Button>
-          <Button onClick={onRestart}>Import another</Button>
         </div>
       </div>
     </Panel>

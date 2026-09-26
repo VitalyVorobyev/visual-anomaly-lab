@@ -91,6 +91,10 @@ on `DatasetSummary`:
 - `class_counts` lists each class that some sample shows — `key`, `name`, `color`, and `samples`, the
   samples any of whose images' newest revision shows it — in class order. An imported ground-truth mask is
   anomaly truth and is not counted here.
+- `class_geometry`, on `DatasetDetail` only, says how that class truth is drawn: `boxes` when every shape
+  of those revisions is a box, `regions` when any is a polygon, a brush stroke or a mask, null without
+  class truth. A detector reads boxes and a segmenter regions, so it is what opens the guided run on
+  detection for a dataset annotated in boxes ([frontend](frontend.md#the-guided-run)).
 
 ### Channel
 

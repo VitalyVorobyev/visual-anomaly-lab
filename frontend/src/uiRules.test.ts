@@ -26,7 +26,8 @@ const RULES = {
   "bare-control": /<select\b|<input[^>]*type=["'](?:range|checkbox)/g,
   /** A raw `<details>` renders with no caret; use `Disclosure`. */
   "raw-details": /<details\b/g,
-  /** A control never nests inside a link — the click has to be cancelled to stop navigation. */
+  /** A control never nests inside a link — the click has to be cancelled to stop navigation.
+   *  lab-ui's `ButtonLink` is the one element that looks like a button and navigates. */
   "link-wraps-button": /<Link\b[^>]*>\s*<Button\b/g,
 } as const;
 
@@ -51,13 +52,6 @@ const KNOWN: Partial<Record<Rule, Record<string, number>>> = {
   },
   // The one listener every other screen goes through.
   "bare-keydown": { "hooks/useHotkeys.ts": 1 },
-  "link-wraps-button": {
-    "routes/AnnotationQueueRoute.tsx": 1,
-    "routes/ExperimentsRoute.tsx": 1,
-    "routes/SampleRoute.tsx": 1,
-    "routes/dataset/DatasetLayout.tsx": 1,
-    "routes/datasets/DatasetsRoute.tsx": 2,
-  },
 };
 
 const sources = import.meta.glob<string>(["./**/*.ts", "./**/*.tsx", "!./**/*.test.*"], {

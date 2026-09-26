@@ -37,6 +37,7 @@ from anomaly_lab.domain.entities import (
     AnnotationScope,
     AnnotationState,
     Channel,
+    ClassGeometry,
     ClassPresence,
     Dataset,
     Image,
@@ -157,6 +158,14 @@ class DatasetDetail(DatasetSummary):
     # Carried on the detail rather than the summary: the annotation editor already reads
     # the detail, and the catalogue grid has no use for it.
     annotation_scope: AnnotationScope = AnnotationScope.IMAGE
+    class_geometry: ClassGeometry | None = Field(
+        default=None,
+        description=(
+            "How the class truth is drawn: `boxes` when every shape of it is a box, `regions` "
+            "otherwise, null without class truth. The guided run reads it to open on "
+            "detection for a dataset annotated in boxes."
+        ),
+    )
 
 
 class DatasetUpdate(BaseModel):
@@ -570,8 +579,13 @@ def _dataset_detail(
     conn: sqlite3.Connection, settings: Settings, dataset: Dataset
 ) -> DatasetDetail:
     membership = pack_membership(settings, [dataset]).get(dataset.id)
+    summary = _dataset_summary(conn, dataset, membership)
     return DatasetDetail(
-        **_dataset_summary(conn, dataset, membership).model_dump(),
+        **summary.model_dump(),
+        # Only asked when there is class truth to describe.
+        class_geometry=(
+            datasets_repo.class_geometry(conn, dataset.id) if summary.class_counts else None
+        ),
         manifest_path=dataset.manifest_path,
         channels=datasets_repo.list_channels(conn, dataset.id),
         group_keys=samples_repo.list_group_keys(conn, dataset.id),

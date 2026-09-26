@@ -49,6 +49,7 @@ from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import datasets as datasets_repo
 from anomaly_lab.db.repositories import samples as samples_repo
 from anomaly_lab.domain.entities import ClassPresence, Dataset, Label, Split, Subset, Task
+from anomaly_lab.models.base import evenly_spaced
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
 # Everything that means "this request cannot be planned on this dataset".
@@ -87,6 +88,10 @@ class ClassShare(BaseModel):
     samples: int
 
 
+# Enough to see what a subset holds; a subset of a thousand is not a thousand thumbnails.
+EXAMPLES_PER_SUBSET = 4
+
+
 class SubsetComposition(BaseModel):
     """What a subset actually contains, so a split can report itself honestly.
 
@@ -102,6 +107,13 @@ class SubsetComposition(BaseModel):
     defect: int
     unlabeled: int
     classes: list[ClassShare] = Field(default_factory=list)
+    examples: list[int] = Field(
+        default_factory=list,
+        description=(
+            f"Up to {EXAMPLES_PER_SUBSET} of the subset's sample ids, spread evenly over it in "
+            "browse order: a picture of what it holds, never a list of its members."
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -132,8 +144,14 @@ def read_truth(conn: sqlite3.Connection, dataset_id: int) -> DatasetTruth:
 def compose(assignments: Mapping[int, Subset], truth: DatasetTruth) -> list[SubsetComposition]:
     """Per-subset counts by verdict and by class, with every subset present even when empty."""
     rows: list[SubsetComposition] = []
+    # Browse order, which `truth.labels` keeps, so the examples spread over the dataset's own
+    # order rather than over whatever order the planner happened to assign in.
+    order = {sample_id: index for index, sample_id in enumerate(truth.labels)}
     for subset in Subset:
-        members = [sample_id for sample_id, placed in assignments.items() if placed is subset]
+        members = sorted(
+            (sample_id for sample_id, placed in assignments.items() if placed is subset),
+            key=lambda sample_id: order.get(sample_id, len(order)),
+        )
         verdicts = [truth.labels.get(sample_id, Label.UNLABELED) for sample_id in members]
         rows.append(
             SubsetComposition(
@@ -151,6 +169,9 @@ def compose(assignments: Mapping[int, Subset], truth: DatasetTruth) -> list[Subs
                         ),
                     )
                     for key, presence in truth.classes.items()
+                ],
+                examples=[
+                    members[index] for index in evenly_spaced(len(members), EXAMPLES_PER_SUBSET)
                 ],
             )
         )

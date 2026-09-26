@@ -15,11 +15,11 @@
 
 import { FolderPlus, Plus } from "lucide-react";
 import { useState } from "react";
-import { Link } from "react-router";
 
 import type { DatasetSummary } from "../../api/client";
 import {
   Button,
+  ButtonLink,
   ConfirmDialog,
   Empty,
   ErrorBox,
@@ -69,11 +69,13 @@ export function DatasetsRoute() {
                 New collection
               </Button>
             )}
-            <Link to="/import">
-              <Button variant="primary" icon={<Plus />}>
-                Import
-              </Button>
-            </Link>
+            <ButtonLink
+              to="/import"
+              variant="primary"
+              icon={<Plus />}
+            >
+              Import
+            </ButtonLink>
           </>
         }
       />
@@ -87,11 +89,13 @@ export function DatasetsRoute() {
       {datasets.data?.length === 0 && (
         <Empty
           action={
-            <Link to="/import">
-              <Button variant="primary" icon={<Plus />}>
-                Import a dataset
-              </Button>
-            </Link>
+            <ButtonLink
+              to="/import"
+              variant="primary"
+              icon={<Plus />}
+            >
+              Import a dataset
+            </ButtonLink>
           }
         >
           Nothing imported yet. Point the importer at a directory of images to begin.

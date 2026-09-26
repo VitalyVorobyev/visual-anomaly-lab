@@ -7,7 +7,7 @@ import sqlite3
 from anomaly_lab.db.connection import transaction
 from anomaly_lab.db.repositories import annotations as annotations_repo
 from anomaly_lab.db.repositories import region_profiles as region_profiles_repo
-from anomaly_lab.domain.entities import AnnotationScope, Channel, Dataset, Label
+from anomaly_lab.domain.entities import AnnotationScope, Channel, ClassGeometry, Dataset, Label
 
 
 def _to_dataset(row: sqlite3.Row) -> Dataset:
@@ -227,6 +227,41 @@ def label_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[Label, int]:
     for row in rows:
         counts[Label(row["label"])] = int(row["n"])
     return counts
+
+
+def class_geometry(conn: sqlite3.Connection, dataset_id: int) -> ClassGeometry | None:
+    """How the dataset's class truth is drawn: `boxes` when every shape is a box.
+
+    Read from the newest completed revision of each image that pinned a class table, the same
+    revisions `class_counts` reads. A single polygon, brush stroke or imported mask makes it
+    `regions`; no class truth at all is `None`. A detector reads boxes and a segmenter reads
+    regions, so this is what says which question a dataset was annotated to answer.
+    """
+    row = conn.execute(
+        """
+        WITH latest AS (
+            SELECT revision.document
+              FROM image
+              JOIN sample ON sample.id = image.sample_id
+              JOIN annotation_revision AS revision
+                ON revision.id = (SELECT id FROM annotation_revision
+                                   WHERE annotation_revision.image_id = image.id
+                                   ORDER BY revision_no DESC LIMIT 1)
+             WHERE sample.dataset_id = ?
+               AND revision.class_table IS NOT NULL
+        )
+        SELECT EXISTS (SELECT 1 FROM latest, json_each(latest.document, '$.shapes') AS shape
+                        WHERE json_extract(shape.value, '$.kind') != 'box') AS regions,
+               EXISTS (SELECT 1 FROM latest, json_each(latest.document, '$.shapes') AS shape
+                        WHERE json_extract(shape.value, '$.kind') = 'box') AS boxes
+        """,
+        (dataset_id,),
+    ).fetchone()
+    if row["regions"]:
+        return ClassGeometry.REGIONS
+    if row["boxes"]:
+        return ClassGeometry.BOXES
+    return None
 
 
 def class_counts(conn: sqlite3.Connection, dataset_id: int) -> dict[str, int]:

@@ -13,13 +13,14 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Check, ChevronLeft, ChevronRight, Eye, Play, Shuffle, Sparkles, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Play, Shuffle, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useSearchParams } from "react-router";
 
 import {
   Badge,
   Button,
+  ButtonLink,
   Callout,
   ConfirmDialog,
   describeFields,
@@ -126,7 +127,14 @@ export function RegionPreparationRoute() {
   const [params, setParams] = useSearchParams();
   const { profile: selectedId, job: jobId, jobProfile: jobProfileId, mode: jobMode } =
     readPrepareState(params);
-  const updatePrep = (next: PrepareState) => setParams(writePrepareState(next), { replace: true });
+  // Opened from a guided run's Look step (`?return=run`): the way back stays in the URL
+  // through every revision and job this screen writes there, and carries the profile open.
+  const fromRun = params.get("return") === "run";
+  const updatePrep = (next: PrepareState) => {
+    const written = writePrepareState(next);
+    if (fromRun) written.set("return", "run");
+    setParams(written, { replace: true });
+  };
 
   const [extractorKey, setExtractorKey] = useState("identity");
   const [name, setName] = useState("");
@@ -313,6 +321,24 @@ export function RegionPreparationRoute() {
 
   return (
     <TabScroll measure="wide" className="grid items-start gap-5 lg:grid-cols-[22rem_minmax(0,1fr)]">
+      {fromRun && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border border-signal/40 bg-signal/5 px-4 py-2.5 lg:col-span-2">
+          <p className="text-sm text-fg-muted">
+            Tuning where a guided run looks. Save a profile if it should differ, then go back —
+            the run takes the profile open here.
+          </p>
+          <ButtonLink
+            size="sm"
+            variant="primary"
+            icon={<ArrowLeft />}
+            to={`/datasets/${datasetId}/run?step=look${
+              selected && !dirty ? `&profile=${selected.id}` : ""
+            }`}
+          >
+            Back to the run{selected && !dirty ? ` with ${selected.name}` : ""}
+          </ButtonLink>
+        </div>
+      )}
       {dataset.error && (
         <div className="lg:col-span-2">
           <ErrorBox>{dataset.error.message}</ErrorBox>

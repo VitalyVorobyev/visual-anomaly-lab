@@ -41,14 +41,17 @@ python3 .claude/skills/lab-visual-pass/scripts/seed.py --api http://127.0.0.1:80
 One VisA class, its published split, the implicit "Full frame" region profile, and two trained and scored
 `pixel_reference` runs (the only method that needs no torch, and fast). `--few-shot` adds a 5-shot
 `defect` reference split and a scored `color_prototype` run, and the shots then include screens
-19–22, a few-shot run's Overview, Samples, Benchmark and sample page. It prints the ids the next step
-needs. If VisA is absent, say so and stop — do not substitute any other data.
+19–22, a few-shot run's Overview, Samples, Benchmark and sample page. `--packs fss1000 pku_pcb`
+registers those reference packs too (start the backend with `ANOMALY_LAB_REFERENCE_DATASETS_DIR`
+pointing at the repository's `datasets/`), and the shots then include the guided run on a dataset of
+classes drawn as regions (25) and one drawn as boxes (26) beside VisA's (24). It prints the ids the next
+step needs. If VisA is absent, say so and stop — do not substitute any other data.
 
 ## 3. Shoot and audit
 
 ```bash
 uv run --with playwright python .claude/skills/lab-visual-pass/scripts/shots.py \
-  --ids $S/ids.json --out $S/shots            # all 19 screens (23 with --few-shot) × {light,dark} × {1440,1024}
+  --ids $S/ids.json --out $S/shots            # every screen seeded for × {light,dark} × {1440,1024}
 # --quick for light 1440 only; --only 11-exp-overview 15-exp-sample to re-shoot a few
 ```
 

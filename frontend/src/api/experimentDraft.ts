@@ -11,8 +11,21 @@
 
 import type { RawValues } from "@vitavision/lab-ui";
 
+import type { Task } from "./client";
+
+const TASKS: Task[] = [
+  "anomaly",
+  "few_shot_segmentation",
+  "semantic_segmentation",
+  "object_detection",
+];
+
 export interface ExperimentDraft {
   name: string;
+  /** The task decides everything after it, so a draft without it restores the wrong form. */
+  task?: Task;
+  /** The class a few-shot run segments, when the reader chose one. */
+  targetLabel?: string;
   datasetId?: number;
   splitId?: number;
   regionProfileId?: number;
@@ -40,6 +53,8 @@ export function readDraft(key: string, storage = safeSession()): ExperimentDraft
     if (typeof parsed !== "object" || parsed === null) return null;
     return {
       name: typeof parsed.name === "string" ? parsed.name : "",
+      task: TASKS.find((task) => task === parsed.task),
+      targetLabel: typeof parsed.targetLabel === "string" ? parsed.targetLabel : "",
       datasetId: numberOrUndefined(parsed.datasetId),
       splitId: numberOrUndefined(parsed.splitId),
       regionProfileId: numberOrUndefined(parsed.regionProfileId),

@@ -20,7 +20,7 @@
  * uppercase summaries over eight fields that nobody has to touch.
  */
 
-import { ArrowDown, ArrowUp, ArrowUpDown, Plus, Search, Trash2 } from "lucide-react";
+import { ArrowDown, ArrowUp, ArrowUpDown, Play, Plus, Search, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 
@@ -34,14 +34,15 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, NumberInput, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
+import { Badge, Button, ButtonLink, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, NumberInput, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { useAnnotationLabels } from "../hooks/useAnnotations";
 import { useCreateSplit, useSplitPresets } from "../hooks/useSplitPresets";
+import { useLaunchRun } from "../hooks/useLaunchRun";
+import { MethodCard } from "../components/MethodCard";
 import { TabScroll } from "./dataset/TabScroll";
 import {
   CATALOGUE_PAGE,
-  useCreateExperiment,
   useDeleteExperiment,
   useExperimentDeletionPreview,
   useExperimentPages,
@@ -448,11 +449,13 @@ export function ExperimentsRoute() {
       <PageHeader
         title="Experiments"
         actions={
-          <Link to="/experiments/new">
-            <Button variant="primary" icon={<Plus />}>
-              New experiment
-            </Button>
-          </Link>
+          <ButtonLink
+            to="/experiments/new"
+            variant="primary"
+            icon={<Plus />}
+          >
+            New experiment
+          </ButtonLink>
         }
       />
       <ExperimentCatalog />
@@ -555,7 +558,9 @@ function CreateExperiment({
   const navigate = useNavigate();
   const catalog = useModelTypes();
   const datasets = useDatasets();
-  const create = useCreateExperiment();
+  const create = useLaunchRun();
+  // Which of the two presses is in flight, so only that one spins.
+  const [pressed, setPressed] = useState<"run" | "create">("run");
 
   // Read once, on mount: the draft this form left behind when the reader followed one of
   // its own prerequisite links out of it.
@@ -572,8 +577,10 @@ function CreateExperiment({
     draft?.regionProfileId,
   );
   const [methodKey, setMethodKey] = useState<string | undefined>(draft?.methodKey);
-  const [task, setTask] = useState<Task>("anomaly");
-  const [targetLabel, setTargetLabel] = useState<string>("");
+  // Kept in the draft with everything else: a detour to Splits or the studio used to come
+  // back to an anomaly form with no class, whatever had been chosen before it.
+  const [task, setTask] = useState<Task>(draft?.task ?? "anomaly");
+  const [targetLabel, setTargetLabel] = useState<string>(draft?.targetLabel ?? "");
   const [configValues, setConfigValues] = useState<RawValues>({});
   const [preprocessingValues, setPreprocessingValues] = useState<RawValues>({});
   const [evaluationValues, setEvaluationValues] = useState<RawValues>({});
@@ -716,6 +723,8 @@ function CreateExperiment({
   useEffect(() => {
     writeDraft(storageKey, {
       name,
+      task,
+      targetLabel,
       datasetId,
       splitId,
       regionProfileId,
@@ -730,6 +739,8 @@ function CreateExperiment({
   }, [
     storageKey,
     name,
+    task,
+    targetLabel,
     datasetId,
     splitId,
     regionProfileId,
@@ -783,7 +794,9 @@ function CreateExperiment({
   const ready =
     missing.length === 0 && methodKey !== undefined && blocking.length === 0;
 
-  const submit = () => {
+  // "Create & run" is the run bar's first primary pressed for the reader; "Create only"
+  // stops at a draft, for a run that should wait.
+  const submit = (run: boolean) => {
     setAttempted(true);
     if (
       !ready ||
@@ -795,20 +808,23 @@ function CreateExperiment({
     }
     create.mutate(
       {
-        name: effectiveName,
-        dataset_id: datasetId,
-        split_id: splitId,
-        // Omitted, the dataset's "Full frame" — the same default the field shows.
-        ...(regionProfileId === undefined ? {} : { region_profile_id: regionProfileId }),
-        // Omitted, the method's own size for this configuration.
-        ...(size.named === undefined ? {} : size.named),
-        model_type: methodKey,
-        task,
-        target_label: targeted ? effectiveTarget : null,
-        config: toOptions(configFields, configValues),
-        preprocessing: toOptions(preprocessingFields, preprocessingValues),
-        evaluation: toOptions(evaluationFields, evaluationValues),
-        channels,
+        split: { id: splitId },
+        run,
+        experiment: {
+          name: effectiveName,
+          dataset_id: datasetId,
+          // Omitted, the dataset's "Full frame" — the same default the field shows.
+          ...(regionProfileId === undefined ? {} : { region_profile_id: regionProfileId }),
+          // Omitted, the method's own size for this configuration.
+          ...(size.named === undefined ? {} : size.named),
+          model_type: methodKey,
+          task,
+          target_label: targeted ? effectiveTarget : null,
+          config: toOptions(configFields, configValues),
+          preprocessing: toOptions(preprocessingFields, preprocessingValues),
+          evaluation: toOptions(evaluationFields, evaluationValues),
+          channels,
+        },
       },
       {
         onSuccess: (created) => {
@@ -1154,8 +1170,28 @@ function CreateExperiment({
         <div className="flex items-center gap-3 border-t border-line pt-4">
           {/* Pressable while incomplete: pressing it is how the reader finds out what,
               beside the field that needs it rather than in a sentence down here only. */}
-          <Button variant="primary" loading={create.isPending} onClick={submit}>
-            Create experiment
+          <Button
+            variant="primary"
+            icon={<Play />}
+            loading={create.isPending && pressed === "run"}
+            disabled={create.isPending}
+            onClick={() => {
+              setPressed("run");
+              submit(true);
+            }}
+          >
+            Create &amp; run
+          </Button>
+          <Button
+            variant="secondary"
+            loading={create.isPending && pressed === "create"}
+            disabled={create.isPending}
+            onClick={() => {
+              setPressed("create");
+              submit(false);
+            }}
+          >
+            Create only
           </Button>
           {missing.length > 0 && (
             <p className="text-xs text-fg-muted">Still needs {joinWords(missing)}.</p>
@@ -1181,89 +1217,4 @@ function restoreValues(fields: ReturnType<typeof describeFields>, saved?: RawVal
 function joinWords(words: string[]): string {
   if (words.length <= 1) return words.join("");
   return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
-}
-
-/**
- * One method, as a thing you press.
- *
- * A native radio underneath, so a keyboard reaches the group with Tab and moves inside it
- * with the arrow keys, and the whole card is the hit target.
- */
-function MethodCard({
-  method,
-  recommended,
-  selected,
-  onSelect,
-}: {
-  method: ModelDescription;
-  /** The registry's default for the task being configured. */
-  recommended: boolean;
-  selected: boolean;
-  onSelect: () => void;
-}) {
-  const capabilities = method.capabilities;
-  const unavailable = !method.availability.available;
-
-  return (
-    <label
-      className={cn(
-        "relative flex cursor-pointer flex-col gap-2 rounded-panel border p-3 transition-colors",
-        "has-focus-visible:outline-2 has-focus-visible:outline-offset-2 has-focus-visible:outline-signal",
-        selected
-          ? "border-signal bg-signal/5 ring-1 ring-signal"
-          : "border-line bg-raised/40 hover:border-line-strong",
-      )}
-    >
-      <input
-        type="radio"
-        name="method"
-        value={method.key}
-        checked={selected}
-        onChange={onSelect}
-        className="absolute inset-0 cursor-pointer opacity-0"
-      />
-
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-semibold tracking-tight text-fg">{method.title}</span>
-        <span className="font-mono text-[11px] text-fg-subtle">{method.key}</span>
-      </div>
-
-      <p className="text-xs leading-snug text-fg-muted">{method.summary}</p>
-
-      <div className="flex flex-wrap gap-1.5">
-        {/* The registry's verdict, first on the card: a gate decided it, and it is what a
-            reader choosing between methods needs before any capability. */}
-        {recommended && <Badge tone="normal">recommended</Badge>}
-        {method.status === "experimental" && <Badge tone="warning">experimental</Badge>}
-        {method.status === "floor" && <Badge tone="neutral">floor</Badge>}
-        {capabilities.dataset_specific && <Badge tone="warning">dataset-specific</Badge>}
-        {/* A segmenter's map is a foreground probability, not an anomaly map. */}
-        {capabilities.produces_anomaly_map && (
-          <Badge tone="info">
-            {capabilities.tasks.includes("anomaly") ? "anomaly maps" : "probability maps"}
-          </Badge>
-        )}
-        {capabilities.produces_diagnostics && <Badge tone="info">diagnostics</Badge>}
-        {capabilities.channel_aware && <Badge tone="info">channel-aware</Badge>}
-        {capabilities.portable_formats.map((format) => (
-          <Badge key={format} tone="neutral">
-            {format.toUpperCase()} export
-          </Badge>
-        ))}
-        {!capabilities.requires_training && <Badge tone="neutral">no training</Badge>}
-        <Badge tone="neutral">
-          <span className="font-mono">{capabilities.preferred_device}</span>
-        </Badge>
-      </div>
-
-      {/* Stated on the card rather than in a banner elsewhere: this is where the reader
-          asks the question, so this is where it has to be answered. Nothing went wrong —
-          a dependency is simply not installed — so it is a caveat, not an error. */}
-      {unavailable && method.availability.reason && (
-        <p className="rounded-control border border-warn/30 bg-warn/8 px-2 py-1.5 text-xs leading-snug text-fg-muted">
-          {method.availability.reason}
-        </p>
-      )}
-    </label>
-  );
 }

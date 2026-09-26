@@ -71,6 +71,20 @@ def screens(ids: dict) -> dict[str, str]:
         "17-compare-sample": f"/compare/samples/{s}?ids={a},{b}",
         "18-experiments": "/experiments",
         "23-studio": f"/datasets/{d}/studio/defect?refs={s}&focus={s}&method=color_prototype",
+        # The guided run, every step, on the anomaly dataset — and on the class datasets the
+        # seed registered with `--packs`, where the goal opens on few-shot and detection.
+        **{
+            f"24-run-{step}": f"/datasets/{d}/run?step={step}"
+            for step in ("goal", "look", "split", "method", "run")
+        },
+        # Prepare opened from the Look step's Adjust, with its way back to the run.
+        "27-prepare-from-run": f"/datasets/{d}/prepare?return=run",
+        **{
+            f"{prefix}-run-{step}": f"/datasets/{ids[key]}/run?step={step}"
+            for prefix, key in (("25-fss", "fss1000_dataset_id"), ("26-pcb", "pku_pcb_dataset_id"))
+            if key in ids
+            for step in ("goal", "look", "split", "method", "run")
+        },
         # A few-shot segmentation run (ADR-0040), when the seed made one.
         **(
             {

@@ -67,6 +67,14 @@ describe("the route table", () => {
     expect(container.querySelectorAll('[data-scroll="rail"]')).toHaveLength(2);
   });
 
+  it("gives the guided run the canvas, with the step as its one scroller", () => {
+    const { container } = renderAt("/datasets/7/run");
+
+    expect(band(container)).toBeNull();
+    expect(container.querySelector('[data-layout="canvas"]')).not.toBeNull();
+    expect(container.querySelectorAll('[data-scroll="step"]')).toHaveLength(1);
+  });
+
   it("keeps the annotation editor out of the band", () => {
     const { container } = renderAt("/datasets/7/annotate/1/2");
 
