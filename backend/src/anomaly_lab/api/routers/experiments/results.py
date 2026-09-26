@@ -1,7 +1,7 @@
 """Reading a scored run: rankings, thresholds, curves, previews and what it left on disk.
 
 Threshold-dependent numbers are computed per request rather than stored, so the slider is
-a filter over a few hundred floats and never a database write (ADR-0011).
+a filter over a few hundred floats and never a database write (handbook evaluation.md).
 """
 
 from __future__ import annotations
@@ -480,7 +480,7 @@ def get_curves(
 
     Recomputed from the stored scores on every request — the same read the threshold
     endpoint does, over a few hundred floats — rather than persisted. Nothing here is
-    threshold-dependent and nothing is written (ADR-0011).
+    threshold-dependent and nothing is written (handbook evaluation.md).
 
     Pixel-level curves are deliberately absent. The pixel accumulator streams its
     histograms and discards them by design (handbook evaluation.md), so drawing that

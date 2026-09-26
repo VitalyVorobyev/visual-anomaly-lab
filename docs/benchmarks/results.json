@@ -2,64 +2,49 @@
  "schema_version": 1,
  "methods": {
   "pixel_reference": {
-   "family": "statistical reference",
-   "maturity": "supported"
+   "family": "statistical reference"
   },
   "efficientad_custom": {
-   "family": "student–teacher + reconstruction",
-   "maturity": "supported"
+   "family": "student–teacher + reconstruction"
   },
   "patchcore_anomalib": {
-   "family": "feature memory bank",
-   "maturity": "supported"
+   "family": "feature memory bank"
   },
   "dinomaly_custom": {
-   "family": "transformer feature reconstruction",
-   "maturity": "supported"
+   "family": "transformer feature reconstruction"
   },
   "glass_anomalib": {
-   "family": "learned anomaly synthesis",
-   "maturity": "experimental"
+   "family": "learned anomaly synthesis"
   },
   "dino_memory": {
-   "family": "frozen-backbone patch memory",
-   "maturity": "supported"
+   "family": "frozen-backbone patch memory"
   },
   "subspace_ad": {
-   "family": "frozen-backbone subspace",
-   "maturity": "experimental"
+   "family": "frozen-backbone subspace"
   },
   "anomalyvfm_anomalib": {
-   "family": "zero-shot adapted foundation model",
-   "maturity": "supported"
+   "family": "zero-shot adapted foundation model"
   },
   "color_prototype": {
-   "family": "few-shot colour prototype",
-   "maturity": "experimental"
+   "family": "few-shot colour prototype"
   },
   "fss_dino": {
-   "family": "few-shot DINO prototypes",
-   "maturity": "experimental"
+   "family": "few-shot DINO prototypes"
   },
   "proto_seg": {
-   "family": "few-shot debiased prototypes",
-   "maturity": "experimental"
+   "family": "few-shot debiased prototypes"
   },
   "color_classifier": {
-   "family": "segmentation colour classifier",
-   "maturity": "experimental"
+   "family": "segmentation colour classifier"
   },
   "dino_linear_seg": {
-   "family": "segmentation linear head on frozen DINO",
-   "maturity": "supported"
+   "family": "segmentation linear head on frozen DINO"
   },
   "color_detector": {
-   "family": "detection colour components",
-   "maturity": "experimental"
+   "family": "detection colour components"
   },
   "dino_linear_det": {
-   "family": "detection linear head on frozen DINO",
-   "maturity": "experimental"
+   "family": "detection linear head on frozen DINO"
   }
  },
  "quality_protocols": [

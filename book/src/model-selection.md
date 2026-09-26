@@ -54,9 +54,10 @@ fit is a single bounded pass and the plan is printed before it starts.
 
 Choose `local_knn` only when the capture is **registered** — pixel (i, j) meaning roughly the same thing
 across the dataset. That is the one thing a global bank structurally cannot see: a pattern that is normal
-in one place and misplaced in another. On unregistered data it is a worse global bank. No public quality
-gate has been run against any of the three rules yet, so treat it as a research comparison rather than a
-recommended default, and read its scores only against its own run (ADR-0028).
+in one place and misplaced in another. On unregistered data it is a worse global bank. At `global_knn` it
+cleared the paired public gate and beat PatchCore on it (`docs/measurements.md`), which is why it is the
+anomaly task's recommended default and the method a new experiment starts from; `local_knn` and
+`local_gaussian` have no gate of their own. Read its scores only against its own run (ADR-0028).
 
 The DINOv3 backbone entries are licence-gated and need approved Hugging Face access; the default is an
 ungated Apache-2.0 DINOv2 that needs no account.
@@ -105,8 +106,9 @@ It is the heaviest entry in the table: a 1.42 GB checkpoint, fetched once into t
 size and SHA-256 on every run, and about 0.6 s per image at 768 × 768 on the target Mac, the frame it was
 measured at. That is its native size, so a run that names none reads it; the patch size is 16, so any
 other frame must be a multiple of 16.
-Its public promotion gate has not run yet, so it is experimental, and like every other method its scores
-are read only against its own run (ADR-0028).
+It cleared the public floors on VisA without seeing a normal image, so it is supported as the zero-shot
+reference (`docs/measurements.md`), and like every other method its scores are read only against its own
+run (ADR-0028).
 
 ## A practical matrix
 

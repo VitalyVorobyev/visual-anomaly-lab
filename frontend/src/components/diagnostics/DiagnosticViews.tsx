@@ -1,7 +1,7 @@
 /**
  * One renderer per `kind`, and a placeholder for a kind that does not exist yet.
  *
- * The placeholder is not defensive clutter: ADR-0018 says the index is self-describing and
+ * The placeholder is not defensive clutter: the diagnostics handbook says the index is self-describing and
  * the UI renders by kind, which means a future plugin can legitimately write a kind this
  * build has never heard of. Crashing the tab would make the contract a lie; saying so
  * plainly keeps everything else on the screen.

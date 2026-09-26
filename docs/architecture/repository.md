@@ -42,7 +42,7 @@ visual-anomaly-lab/
 │   └── src-tauri/                  # Rust desktop shell: sidecar spawn, port handoff, teardown
 ├── deployment/runner/              # Rust reference runner for ONNX bundles
 │
-├── datasets/                       # GITIGNORED — public reference datasets (ADR-0015)
+├── datasets/                       # GITIGNORED — public reference datasets, credited in README.md
 └── data/                           # GITIGNORED — all app-managed state
     ├── app.sqlite3                 # metadata, scores, paths
     ├── manifests/                  # committed import manifests (dataset-<id>-*.json)
@@ -57,12 +57,21 @@ visual-anomaly-lab/
 Source images are not in this tree. They live outside the working directory and are reached by absolute
 path (ADR-0022), so `git add` cannot reach them.
 
-Monorepo layout (ADR-0002): one repository, two build systems, no shared build tooling — `uv` owns
-`backend/`, `bun` + `cargo` own `frontend/`. The two halves are coupled only by the HTTP contract.
+**One repository, no monorepo orchestration.** The Python service, the React app and the Rust shell are
+developed together, change together and ship as one desktop application, so a cross-cutting change (a
+route, its generated TypeScript type and the screen that reads it) lands in one commit. Each stack keeps
+its native tool — `uv` owns `backend/`, `bun` + `cargo` own `frontend/` and `deployment/runner/` — and
+`scripts/` glues them together; lockfiles are committed. There is no Nx, Turborepo, Bazel or Pants, so
+there is no single `build` or `test` command and CI re-runs whole-stack checks rather than only what
+changed. The two halves are coupled only by the HTTP contract, which the generated client checks
+(ADR-0012). `src-tauri/` sits inside `frontend/` because the Tauri CLI expects it beside the web app it
+wraps, and the shell is a delivery mechanism for the frontend rather than a peer component.
 
 ## Data directory
 
-`data/` is repo-local by default so a fresh clone works with zero configuration. `ANOMALY_LAB_DATA_DIR`
+`data/` is repo-local by default so a fresh clone works with zero configuration, and a research tool's
+state can be listed with `ls` and reset with `rm -rf`. The cost is that an aggressive `git clean -xdf`
+deletes experiment results. `ANOMALY_LAB_DATA_DIR`
 overrides it — for tests (a temp dir each), packaged builds (which have no checkout to infer a root from
 and must set it) and external disks. All backend code resolves paths through the one `Settings` object; no
 module builds a path from `__file__` or the working directory.

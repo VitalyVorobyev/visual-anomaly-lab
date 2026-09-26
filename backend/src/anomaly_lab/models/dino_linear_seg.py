@@ -142,6 +142,7 @@ class DinoLinearSegConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     backbone: DinoBackbone = Field(
+        json_schema_extra={"x-primary": True},
         default=DinoBackbone.DINOV2_VIT_B14,
         description=(
             "Frozen encoder. The DINOv3 entries are licence-gated (an approved HF_TOKEN must "
@@ -182,7 +183,11 @@ class DinoLinearSegConfig(BaseModel):
         ),
     )
     epochs: int = Field(
-        default=10, ge=1, le=500, description="Passes of the head over the sampled pixels."
+        json_schema_extra={"x-primary": True},
+        default=10,
+        ge=1,
+        le=500,
+        description="Passes of the head over the sampled pixels.",
     )
     batch_size: int = Field(
         default=1024, ge=16, le=65_536, description="Pixels per optimisation step."

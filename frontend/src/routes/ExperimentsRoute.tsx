@@ -54,6 +54,7 @@ import { formatHeadline } from "../api/headline";
 import { splitServesTask, SUPERVISED_TASKS } from "../hooks/useDatasetReadiness";
 import { fullFrameProfile, inputSizeState, snapToMultiple } from "../api/inputSize";
 import { experimentStatusTone } from "../api/statusTone";
+import { defaultMethod, isRecommended, orderMethods, schemaForTask } from "../api/methodChoice";
 
 type ExperimentRow = ExperimentSummary;
 
@@ -601,8 +602,13 @@ function CreateExperiment({
   const tasks = TASK_ORDER.filter((entry) =>
     (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)),
   );
+  // In the order a reader should weigh them: the task's default first, the floor last.
   const methodsForTask = useMemo(
-    () => (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
+    () =>
+      orderMethods(
+        (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
+        task,
+      ),
     [catalog.data, task],
   );
   // A task trains on its own kind of split: an anomaly run on a drawn or adopted partition,
@@ -624,9 +630,12 @@ function CreateExperiment({
     () => (catalog.data ? describeFields(catalog.data.preprocessing_schema) : []),
     [catalog.data],
   );
+  // Only the options this task's evaluator reads: a field that would change nothing is not
+  // a question to put to the reader.
   const evaluationFields = useMemo(
-    () => (catalog.data ? describeFields(catalog.data.evaluation_schema) : []),
-    [catalog.data],
+    () =>
+      catalog.data ? describeFields(schemaForTask(catalog.data.evaluation_schema, task)) : [],
+    [catalog.data, task],
   );
   // The size a run of this method with this configuration reads when none is typed: a DINO
   // backbone's patch decides it, so it follows the config rather than the method alone.
@@ -640,13 +649,13 @@ function CreateExperiment({
   const inputSize = useInputSize(method?.key, methodOptions);
   const size = inputSizeState(inputWidth, inputHeight, inputSize.data);
 
-  // Default to the first method the moment the catalog lands, so the form is never a
-  // blank screen waiting for a choice nobody knew they had to make.
+  // Default to the task's recommended method the moment the catalog lands, so the form is
+  // never a blank screen waiting for a choice nobody knew they had to make.
   useEffect(() => {
     if (methodsForTask.length > 0 && !methodsForTask.some((entry) => entry.key === methodKey)) {
-      setMethodKey(methodsForTask[0]?.key);
+      setMethodKey(defaultMethod(methodsForTask, task)?.key);
     }
-  }, [methodsForTask, methodKey]);
+  }, [methodsForTask, methodKey, task]);
 
   // Each group starts from its schema's defaults, with the draft laid over it once — and the
   // method's values only for the method they were typed for.
@@ -1022,6 +1031,7 @@ function CreateExperiment({
               <MethodCard
                 key={entry.key}
                 method={entry}
+                recommended={isRecommended(entry, task)}
                 selected={entry.key === methodKey}
                 onSelect={() => setMethodKey(entry.key)}
               />
@@ -1050,11 +1060,16 @@ function CreateExperiment({
                   label: "Colour",
                   count: overrideCount(preprocessingFields, preprocessingValues),
                 },
-                {
-                  id: "evaluation",
-                  label: "Evaluation",
-                  count: overrideCount(evaluationFields, evaluationValues),
-                },
+                // Absent when this task's evaluator reads none of the options.
+                ...(evaluationFields.length > 0
+                  ? [
+                      {
+                        id: "evaluation" as const,
+                        label: "Evaluation",
+                        count: overrideCount(evaluationFields, evaluationValues),
+                      },
+                    ]
+                  : []),
               ]}
             />
 
@@ -1075,7 +1090,7 @@ function CreateExperiment({
                 onChange={setPreprocessingValues}
               />
             )}
-            {tab === "evaluation" && (
+            {tab === "evaluation" && evaluationFields.length > 0 && (
               <SchemaForm
                 fields={evaluationFields}
                 values={evaluationValues}
@@ -1132,10 +1147,13 @@ function joinWords(words: string[]): string {
  */
 function MethodCard({
   method,
+  recommended,
   selected,
   onSelect,
 }: {
   method: ModelDescription;
+  /** The registry's default for the task being configured. */
+  recommended: boolean;
   selected: boolean;
   onSelect: () => void;
 }) {
@@ -1169,6 +1187,11 @@ function MethodCard({
       <p className="text-xs leading-snug text-fg-muted">{method.summary}</p>
 
       <div className="flex flex-wrap gap-1.5">
+        {/* The registry's verdict, first on the card: a gate decided it, and it is what a
+            reader choosing between methods needs before any capability. */}
+        {recommended && <Badge tone="normal">recommended</Badge>}
+        {method.status === "experimental" && <Badge tone="warning">experimental</Badge>}
+        {method.status === "floor" && <Badge tone="neutral">floor</Badge>}
         {capabilities.dataset_specific && <Badge tone="warning">dataset-specific</Badge>}
         {/* A segmenter's map is a foreground probability, not an anomaly map. */}
         {capabilities.produces_anomaly_map && (

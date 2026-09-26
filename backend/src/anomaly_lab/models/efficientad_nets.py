@@ -537,7 +537,7 @@ class EfficientAdNet(nn.Module):
         Kept apart rather than combined here. An anomaly the student missed and an anomaly
         the autoencoder missed mean different things about what went wrong, and the
         combined map that gets stored averages that distinction away — which is exactly
-        what the per-image diagnostics exist to give back (ADR-0018).
+        what the per-image diagnostics exist to give back (handbook diagnostics.md).
         """
         image_size = (batch.shape[-2], batch.shape[-1])
         with torch.no_grad():

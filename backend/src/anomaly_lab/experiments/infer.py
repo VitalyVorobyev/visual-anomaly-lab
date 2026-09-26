@@ -5,7 +5,7 @@ reasons and are re-run for different reasons. Re-scoring a trained model after c
 the preprocessing is nonsense; re-scoring it over a subset it has not seen is routine.
 
 Inference ends by running the evaluation layer, so a finished job means finished results.
-Evaluation is cheap, model-independent, and re-runnable on its own (ADR-0011).
+Evaluation is cheap, model-independent, and re-runnable on its own (handbook evaluation.md).
 """
 
 from __future__ import annotations

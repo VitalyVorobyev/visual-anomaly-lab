@@ -10,8 +10,8 @@ rule from its own distribution, and the caller is expected to print both the rul
 value it produced; a confusion matrix with no threshold beside it is a claim about an
 operating point the reader cannot name.
 
-Like the rest of `eval/`, this imports no model and re-runs no inference (ADR-0011). Its
-inputs are the scored samples already in the database.
+Like the rest of `eval/`, this imports no model and re-runs no inference
+(handbook evaluation.md). Its inputs are the scored samples already in the database.
 """
 
 from __future__ import annotations

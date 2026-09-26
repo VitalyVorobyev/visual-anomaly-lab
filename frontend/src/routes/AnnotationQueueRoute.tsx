@@ -5,7 +5,7 @@
  * configuration form.
  *
  * A *unit* is one image or one whole sample, depending on the dataset's annotation scope
- * (ADR-0036). Under sample scope a three-channel part is one card and one job, because one
+ * (handbook annotations.md). Under sample scope a three-channel part is one card and one job, because one
  * completion writes truth to all three of its images.
  */
 
