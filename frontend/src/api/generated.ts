@@ -1180,6 +1180,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/explore/capability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Whether Explore can run, and on which encoders */
+        get: operations["explore_capability_api_explore_capability_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/images/{image_id}/explore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask a frozen encoder what it sees in one image */
+        post: operations["explore_image_api_images__image_id__explore_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/explore/maps/{map_id}.png": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * An explore map as an overlay at the source image's size
+         * @description Similarity on the fixed range [0, 1]; a threshold turns it into a filled mask.
+         *
+         *     Clusters are drawn in the colours the client names, one per cluster, as a supervised
+         *     run's label map is; `cluster` keeps that one alone. False colour is opaque RGB.
+         */
+        get: operations["explore_map_api_explore_maps__map_id__png_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/explore/maps/{map_id}/shape": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Turn an explore mask into an annotation candidate
+         * @description A thresholded similarity or one cluster as a tight source-frame bitmap.
+         *
+         *     The same shape MobileSAM's candidates are (`tight_bitmap_shape`), so the editor takes it
+         *     as an assist candidate the person accepts or rejects; nothing is written here.
+         */
+        post: operations["explore_shape_api_explore_maps__map_id__shape_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/health": {
         parameters: {
             query?: never;
@@ -3449,6 +3529,31 @@ export interface components {
          */
         DiagnosticScope: "model" | "image";
         /**
+         * DinoBackbone
+         * @description Which frozen encoder produces the patch features.
+         *
+         *     A closed set rather than a free timm name, for the reason `patchcore_anomalib.LayerSet`
+         *     is one: the form is generated from the schema and renders an enum as a picker, where a
+         *     text box would let a typo fail inside timm minutes into a job. The five here are also
+         *     the five whose licence, patch size and width this module can state without asking the
+         *     network.
+         *
+         *     Deliberately excluded: every `_qkvb` DINOv3 variant and the `eupe` pretrainings. timm
+         *     carries them, but they resolve to weights under a FAIR noncommercial research licence
+         *     (`fair-noncommercial-research-license` in timm's own pretrained config), and a menu that
+         *     mixes a licence a user may not use with six they may is a menu that has to be read
+         *     rather than chosen from.
+         *
+         *     **ViT-L was once excluded on the grounds that at that size the encoder forward, not the
+         *     method, is what a run measures.** That was a guess, and the SubspaceAD campaign is what
+         *     turned it into a measurement: ViT-L costs three times ViT-B per image on this hardware,
+         *     so the claim about *cost* holds, and whether the accuracy follows is what
+         *     `docs/measurements.md` now records. ViT-g/14 stays out -- it is another three-fold step
+         *     on top of ViT-L, on a workbench whose compute target is a laptop.
+         * @enum {string}
+         */
+        DinoBackbone: "dinov2_vit_s14" | "dinov2_vit_s14_reg4" | "dinov2_vit_b14" | "dinov2_vit_l14" | "dinov3_vit_s16" | "dinov3_vit_b16" | "dinov3_vit_l16";
+        /**
          * DisplayRange
          * @description The value span one diagnostic key is drawn over, across a whole run.
          *
@@ -3676,6 +3781,160 @@ export interface components {
              * @description That metric on test, or on the best subset scored so far.
              */
             headline_value: number | null;
+        };
+        /** ExploreBackbone */
+        ExploreBackbone: {
+            key: components["schemas"]["DinoBackbone"];
+            /** Title */
+            title: string;
+            /** Patch Size */
+            patch_size: number;
+            /** Gated */
+            gated: boolean;
+            /** Available */
+            available: boolean;
+            /**
+             * Reason
+             * @description Why a gated encoder cannot be used here, in words.
+             */
+            reason: string | null;
+        };
+        /** ExploreCapability */
+        ExploreCapability: {
+            /** Runtime Available */
+            runtime_available: boolean;
+            /** Available */
+            available: boolean;
+            /** Reason */
+            reason: string | null;
+            /** @default dinov2_vit_b14 */
+            default_backbone: components["schemas"]["DinoBackbone"];
+            /** Backbones */
+            backbones: components["schemas"]["ExploreBackbone"][];
+            /**
+             * Min Clusters
+             * @default 2
+             */
+            min_clusters: number;
+            /**
+             * Max Clusters
+             * @default 12
+             */
+            max_clusters: number;
+            /**
+             * Default Clusters
+             * @default 6
+             */
+            default_clusters: number;
+        };
+        /**
+         * ExploreMode
+         * @enum {string}
+         */
+        ExploreMode: "similar" | "clusters" | "pca";
+        /** ExplorePoint */
+        ExplorePoint: {
+            /**
+             * X
+             * @description Source-image pixel column.
+             */
+            x: number;
+            /**
+             * Y
+             * @description Source-image pixel row.
+             */
+            y: number;
+        };
+        /** ExploreRequest */
+        ExploreRequest: {
+            mode: components["schemas"]["ExploreMode"];
+            /** @default dinov2_vit_b14 */
+            backbone: components["schemas"]["DinoBackbone"];
+            /** Points */
+            points?: components["schemas"]["ExplorePoint"][];
+            /** Negatives */
+            negatives?: components["schemas"]["ExplorePoint"][];
+            /**
+             * K
+             * @default 6
+             */
+            k: number;
+            /**
+             * Seed
+             * @default 0
+             */
+            seed: number;
+        };
+        /** ExploreResponse */
+        ExploreResponse: {
+            /** Image Id */
+            image_id: number;
+            mode: components["schemas"]["ExploreMode"];
+            backbone: components["schemas"]["DinoBackbone"];
+            /**
+             * Device
+             * @enum {string}
+             */
+            device: "mps" | "cpu";
+            /** Grid Rows */
+            grid_rows: number;
+            /** Grid Cols */
+            grid_cols: number;
+            /** Feature Dim */
+            feature_dim: number;
+            /** Patch Size */
+            patch_size: number;
+            /** @description The contain-resize from the source image into the encoder's frame. */
+            transform: components["schemas"]["SpatialTransform"];
+            /**
+             * Cached
+             * @description The image's features were already encoded.
+             */
+            cached: boolean;
+            /**
+             * Warm
+             * @description The encoder was already loaded.
+             */
+            warm: boolean;
+            /** Encode Ms */
+            encode_ms: number;
+            /** Compute Ms */
+            compute_ms: number;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /** Map Id */
+            map_id: string;
+            map_kind: components["schemas"]["MapKind"];
+            /** Map Url */
+            map_url: string;
+            /**
+             * Cells
+             * @description Clusters only: each grid cell's cluster, row-major; 0 is off the image.
+             */
+            cells: number[] | null;
+            /** Clusters */
+            clusters: number | null;
+        };
+        /** ExploreShape */
+        ExploreShape: {
+            shape: components["schemas"]["BitmapShape-Output"];
+            /**
+             * Area
+             * @description Mask area in source-image pixels.
+             */
+            area: number;
+        };
+        /** ExploreShapeRequest */
+        ExploreShapeRequest: {
+            /** Threshold */
+            threshold?: number | null;
+            /** Cluster */
+            cluster?: number | null;
+            /**
+             * Label Key
+             * @default defect
+             */
+            label_key: string;
         };
         /** ExportParams */
         ExportParams: {
@@ -4313,6 +4572,11 @@ export interface components {
             /** Paths */
             paths: string[];
         };
+        /**
+         * MapKind
+         * @enum {string}
+         */
+        MapKind: "values" | "labels" | "rgb";
         /**
          * MapPeak
          * @description Where one map's largest value sits, in source-frame pixels.
@@ -7889,6 +8153,132 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_capability_api_explore_capability_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExploreCapability"];
+                };
+            };
+        };
+    };
+    explore_image_api_images__image_id__explore_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExploreRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExploreResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_map_api_explore_maps__map_id__png_get: {
+        parameters: {
+            query?: {
+                threshold?: number | null;
+                cluster?: number | null;
+                /** @description Comma-separated `rrggbb`, one per cluster or one for a threshold mask. */
+                colours?: string | null;
+            };
+            header?: never;
+            path: {
+                map_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_shape_api_explore_maps__map_id__shape_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                map_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExploreShapeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExploreShape"];
+                };
             };
             /** @description Validation Error */
             422: {

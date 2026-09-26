@@ -22,6 +22,7 @@ from anomaly_lab.api.routers import (
     compare,
     datasets,
     experiments,
+    explore,
     health,
     images,
     import_,
@@ -141,6 +142,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(compare.router)
     app.include_router(datasets.router)
     app.include_router(experiments.router)
+    app.include_router(explore.router)
     app.include_router(health.router)
     app.include_router(images.router)
     app.include_router(import_.router)

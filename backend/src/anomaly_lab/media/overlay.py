@@ -145,7 +145,9 @@ def render_anomaly_map(
     return buffer.getvalue()
 
 
-def render_rgb_image(array: np.ndarray, *, size: tuple[int, int] | None = None) -> bytes:
+def render_rgb_image(
+    array: np.ndarray, *, size: tuple[int, int] | None = None, optimize: bool = True
+) -> bytes:
     """Render an `(H, W, 3)` float32 array in `[0, 1]` as an opaque PNG.
 
     No colormap and no range stretch: the `image` diagnostic kind is already a picture —
@@ -153,6 +155,10 @@ def render_rgb_image(array: np.ndarray, *, size: tuple[int, int] | None = None) 
     something to whoever produced them. Rescaling would be this layer inventing an
     interpretation. Values outside `[0, 1]` are clipped rather than renormalized, for the
     same reason.
+
+    `optimize=False` trades size for time — a source-sized false-colour frame is a second of
+    zlib at the optimizing setting and a few tens of milliseconds at the fastest, which is the
+    difference for an overlay drawn once per click (Explore) rather than once per run.
     """
     values = np.clip(np.asarray(array, dtype=np.float32), 0.0, 1.0)
     rgb = (values * _UINT8_MAX).astype(np.uint8)
@@ -162,7 +168,10 @@ def render_rgb_image(array: np.ndarray, *, size: tuple[int, int] | None = None) 
         image = image.resize(size, Image.Resampling.BILINEAR)
 
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG", optimize=True)
+    if optimize:
+        image.save(buffer, format="PNG", optimize=True)
+    else:
+        image.save(buffer, format="PNG", compress_level=1)
     return buffer.getvalue()
 
 

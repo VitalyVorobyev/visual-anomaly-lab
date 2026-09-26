@@ -173,6 +173,7 @@ server-visible absolute path.
 | `splits` | `/api/splits` | create/list seeded or imported splits, per-subset counts, assignments |
 | `region_profiles` | `/api/region-extractors`, `/api/region-profiles` | extractor catalogue, immutable profiles, bounded preview/build, prepared images and guarded revision deletion |
 | `segment_assist` | `/api/segment-assist`, `/api/images/…/segment-assist` | MobileSAM readiness and temporary prompt-guided mask suggestions |
+| `explore` | `/api/explore`, `/api/images/…/explore` | which frozen encoders can run, and what one sees in an image: similarity, clusters, false colour, a mask as a candidate |
 | `experiments` | `/api/experiments` | a package of four modules on one prefix: `crud` (model catalogue/schema, search, create/detail/delete), `runs` (train/infer/export, re-evaluate), `results` (rankings, thresholds, curves, previews, artifacts) and `diagnostics`; `views` holds their shared read models |
 | `compare` | `/api/compare` | compatible multi-run metrics, operating points and per-sample agreement |
 | `jobs` | `/api/jobs`, `/ws/jobs/{id}` | status, cancel, metrics, log tail and live progress for generic background work |

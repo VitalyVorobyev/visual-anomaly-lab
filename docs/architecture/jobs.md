@@ -144,12 +144,13 @@ it.
 An interactive request is a hundred milliseconds of work behind seconds of setup, and the queue is a single
 FIFO, so a job per click would mean a model load per click and a wait behind training. There is instead
 **one resident compute worker**, keyed by `(kind, target key, artifact generation)` (ADR-0026), holding
-one of three things at a time: an experiment inspector, MobileSAM, or a few-shot preview.
+one of four things at a time: an experiment inspector, MobileSAM, a few-shot preview, or a frozen encoder
+for Explore.
 
 It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspector.py`,
-`jobs/segmenter.py` and `jobs/previewer.py` are thin entrypoints; `experiments/diagnose.py`,
-`model_assets/mobile_sam.py` and `experiments/preview.py` do the work — as `jobs/queue.py`,
-`jobs/worker.py` and a job handler do.
+`jobs/segmenter.py`, `jobs/previewer.py` and `jobs/explorer.py` are thin entrypoints;
+`experiments/diagnose.py`, `model_assets/mobile_sam.py`, `experiments/preview.py` and
+`explore/session.py` do the work — as `jobs/queue.py`, `jobs/worker.py` and a job handler do.
 
 - **A few-shot preview** (`few_shot_preview`, ADR-0040) is one method at its defaults, fitted on the
   reference studio's current references through the same `PreparedClassTargets` a run uses. Its spec
@@ -159,6 +160,29 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
 `previews/<generation>/maps/`,
   which `GET /api/studio/previews/{generation}/{image}.png` renders on the fixed range [0, 1]. A preview is
   stored for nobody and evaluated by nothing.
+
+- **Explore** (`feature_explorer`) is one frozen DINO encoder (`models/dino_backbone.py`), keyed by the
+  backbone alone: its weights come from the shared model cache, so no artifact generation can move under
+  it. The child reads the **source** image — no region profile — contain-resized through a
+  `SpatialTransform` into a fixed frame of 32×32 patches (448 px for a /14 encoder, 512 for a /16), written
+  to `explore/frame.png` and read back through `load_array`. Features are `FeatureLayers.LAST_TWO`,
+  `dino_memory`'s default. The last image's `(32, 32, D)` grid is cached, as MobileSAM caches an
+  embedding, so the first request on an image pays one forward pass and every later one on it is numpy
+  (`explore/grid.py`, torch-free): **similar** is `max cos(positives) − max cos(negatives)` clipped to
+  [0, 1]; **clusters** is seeded k-means++ and Lloyd, K 2–12, largest cluster first; **pca** is
+  `feature_view.pca_to_rgb`. Clusters and false colour are fitted on the cells whose centres fall on the
+  image, never on the letterbox. A request writes one grid-resolution `.npz` (the grid, the transform, the
+  patch size) under `explore/`, bounded to the newest `MAX_STORED_MAPS` (24) (`explore/store.py`).
+  `GET /api/explore/maps/{id}.png` projects it to the source frame and renders it — similarity on the fixed
+  range [0, 1], or as a filled mask with `threshold`; clusters in the colours the client names, `cluster`
+  keeping one; false colour as opaque RGB. `POST /api/explore/maps/{id}/shape` turns a threshold or a cluster
+  into a tight source-frame `BitmapShape`, the same form MobileSAM's candidates take; nothing is written.
+  `GET /api/explore/capability` reports the `dl` extra and which encoders are usable: a gated DINOv3 entry
+  is usable once `HF_TOKEN` is set or its weights are already cached, and otherwise carries its licence
+  sentence and access URL. `POST /api/images/{id}/explore` validates every prompt in the API process —
+  a point outside the image or a similarity with no positive is 400 — because a request the child refuses
+  kills it, and with it the loaded encoder. On MPS a ViT-B/14 spawn is seconds, a new image's encode about
+  a tenth of a second, and a cached click a few milliseconds.
 
 - **Requests are not jobs.** No `job` row, no log file, no `JobKind`, and therefore no migration. A
   browse click is not a unit of work anyone needs to cancel or resume.

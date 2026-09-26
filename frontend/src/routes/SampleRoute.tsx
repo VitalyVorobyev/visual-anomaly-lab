@@ -35,6 +35,9 @@ import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Sw
 import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
+import { ExploreMarks } from "./sample/ExploreMarks";
+import { ExploreSection } from "./sample/ExploreSection";
+import { useExploreSession, type ExploreSession } from "./sample/useExploreSession";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
   normal: "normal",
@@ -168,6 +171,12 @@ export function SampleRoute() {
       ? preferredImageIndex(images, dataset.data?.default_channel)
       : filteredChannel);
   const shown = images[Math.min(activeIndex, images.length - 1)];
+  const explore = useExploreSession({
+    datasetId,
+    sampleId,
+    shownImageId: shown?.id,
+    imageIds: images.map((image) => image.id),
+  });
 
   /** The next preview, fetched before it is asked for, so paging feels instant. */
   useEffect(() => {
@@ -289,7 +298,14 @@ export function SampleRoute() {
               }
             >
               {(sideBySide ? images : shown ? [shown] : []).map((image) => (
-                <ChannelStage key={image.id} image={image} view={view} onView={setView} />
+                <ChannelStage
+                  key={image.id}
+                  image={image}
+                  view={view}
+                  onView={setView}
+                  explore={explore}
+                  marked={sideBySide && images.length > 1}
+                />
               ))}
             </div>
           )}
@@ -356,6 +372,8 @@ export function SampleRoute() {
             </RailSection>
           )}
 
+          {images.length > 0 && <ExploreSection session={explore} />}
+
           {current && (
             <RailSection title={null}>
               {/* The path is here rather than on screen for the same reason the dataset
@@ -413,13 +431,30 @@ function ChannelStage({
   image,
   view,
   onView,
+  explore,
+  marked,
 }: {
   image: ImageSummary;
   view: StageView | null;
   onView: (view: StageView) => void;
+  explore: ExploreSession;
+  /** Side by side, the pane Explore is asking about carries a ring. */
+  marked: boolean;
 }) {
+  // Explore acts on whichever pane was clicked, so every pane listens and only the target
+  // draws. No channel is special: a two-channel sample and a five-channel one are one path.
+  const targeted = explore.on && explore.target === image.id;
+  const sam = explore.mode === "sam";
+  // Points belong to the mode that places them; clusters and false colour draw none.
+  const pointed = sam || explore.mode === "similar";
+  const { prompt } = explore;
   return (
-    <div className="relative h-full min-h-0 overflow-hidden">
+    <div
+      className={cn(
+        "relative h-full min-h-0 overflow-hidden rounded-control",
+        marked && targeted && "ring-1 ring-signal",
+      )}
+    >
       <SampleStage
         image={image}
         alt={image.channel ?? "unassigned channel"}
@@ -428,7 +463,34 @@ function ChannelStage({
         // The arrows page through the filtered set, as on both result viewers.
         panKeys={false}
         label={`${image.channel ?? "unassigned"} canvas`}
-      />
+        layers={targeted ? explore.layers : []}
+        onPick={
+          explore.on ? (point, { shiftKey }) => explore.pick(image.id, point, shiftKey) : undefined
+        }
+      >
+        {targeted && (
+          <ExploreMarks
+            width={image.width}
+            height={image.height}
+            positives={
+              !pointed
+                ? []
+                : sam
+                  ? prompt.sam.filter((point) => point.kind === "positive")
+                  : prompt.points
+            }
+            negatives={
+              !pointed
+                ? []
+                : sam
+                  ? prompt.sam.filter((point) => point.kind === "negative")
+                  : prompt.negatives
+            }
+            candidate={sam ? (explore.candidate?.shape ?? null) : null}
+            opacity={explore.opacity}
+          />
+        )}
+      </SampleStage>
     </div>
   );
 }
