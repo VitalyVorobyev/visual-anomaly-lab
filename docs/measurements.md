@@ -118,6 +118,32 @@ which also carry the accelerator's own rounding.
 Verdict: passed on both classes, with the worst disagreement some forty times inside the tolerance and the
 ranking identical. `dinomaly_custom` lists ONNX.
 
+## Export parity on real pixels — `subspace_ad` does not export
+
+The same gate, protocol and predeclared tolerance as `dinomaly_custom`'s above, at `subspace_ad`'s promotion
+configuration (448 × 448, DINOv2 ViT-L/14, `upper_half`, 16 fit images; a 1.22 GB opset-18 graph with the
+score as a named tensor). The plugin writes the graph and has not declared ONNX, so the gate lends the format
+for its own export call and records that it did.
+
+| | `candle` | `pcb1` |
+|---|---:|---:|
+| Export job's fixture, map / score error | 1.8 × 10⁻³ / 8.0 × 10⁻⁶ | 1.6 × 10⁻³ / 1.2 × 10⁻⁴ — refused |
+| Images within tolerance | 63 / 200 | — |
+| Median / worst map error | 1.8 × 10⁻³ / 3.0 × 10⁻² | — |
+| Worst score error | 1.0 × 10⁻² | — |
+| Image ROC-AUC, Python / portable | 0.9366 / 0.9366 | — |
+
+**Verdict, by the rule: failed.** On `pcb1` the export job's own fixture check refused the bundle, and on
+`candle` 137 of 200 test images fall outside the tolerance. `subspace_ad` does not list ONNX. The ranking is
+untouched — the portable image ROC-AUC equals the Python one — so the disagreement is rounding and not a
+different operation, but it is rounding at 10⁻³, an order above what this tolerance admits. Two things
+compound: a 24-block ViT-L in float32 through two runtimes' kernels, and a score that is a difference of
+two sums of similar size, which turns a small relative disagreement in the features into a larger one in
+the residual. Widening the sums to float64 inside the graph removed the second on the random-weight
+fixture; it cannot remove the first.
+
+
+
 ## `dinomaly_custom`'s encoder and decoder depth — the defaults stay; the result is the method's
 
 Whether Dinomaly's recorded result is about the method or about DINOv2, and whether the published
@@ -255,6 +281,10 @@ what the normals bought; it is what the normals bought through a cap sized for s
 AnomalyVFM against the floors, as the rule does, and read PatchCore at 768 as a finding about the cap
 (backlog: PatchCore's tuning).
 
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): the same
+protocol gives the means above to within 0.0001, and the same verdict.
+
+
 ## Region profiles — identity stays the default
 
 Rule, fixed before the run: at least +0.01 mean pixel ROC-AUC *and* +0.01 mean AU-PRO, losing no more than
@@ -339,6 +369,10 @@ vs 0.938, with a pixel-level win.
 - **Per-position ablation** (`local_knn`, r = 1, `pcb1`): image 0.847 / pixel **0.9969** / AU-PRO **0.9510**
   against `global_knn`'s 0.891 / 0.9952 / 0.9252. Restricting the bank by position sharpens *where* and
   costs a little *whether*. VisA is not a registered benchmark; this is the one public anchor for the mode.
+
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): the recorded
+DINOv2 row and its PatchCore control, to four decimals.
+
 
 ## `dino_memory`'s layers on DINOv3 — `last_two` stays; the deficit is the encoder's
 
@@ -629,6 +663,10 @@ evaluator reports and this verdict predates; a calibrated foreground probability
 below. VisA
 defects are also a hard target for a method built for objects, which is why a cross-domain few-shot
 dataset is the next gate.
+
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): the 5-shot
+primary gives 0.0357, 0.0037 and 0.0026 again, and the same verdict.
+
 
 ### Calibration leg — `none` stays the default
 
@@ -1051,6 +1089,10 @@ is usable, not good: most defect samples are still below an IoU of 0.5, a sixth 
 a quarter of normal images show some false presence. The Bayes shift is the wrong decision for this
 measure: it is roughly twice the fitted constant and draws nothing.
 
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): every
+mean IoU and background IoU in the table above, to four decimals.
+
+
 ## Detection — `dino_linear_det` stays experimental; neither method boxes a VisA defect
 
 The first public detection gate (ADR-0039), predeclared before it ran. `scripts/detection-public-gate.py`,
@@ -1136,6 +1178,10 @@ that draws one box around a cluster matches one of them at most. The same head t
 `candle` mask (IoU 0.24, the logit-bias gate above) scores 0.004 AP here, so this gate measures VisA's
 masks read as boxes as much as it measures the features; it does not say whether frozen DINO features
 are worth a box-regression head.
+
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): the same
+leads over `color_detector` on both classes, and the same verdict.
+
 
 ## Detection on box-drawn truth (PCB) — the features find defects; the boxes are loose
 
@@ -1251,6 +1297,10 @@ predicted for a detector that boxes connected regions of a 14-px grid: it finds 
 then misplaces the box edge by a fraction of a small box. The lead is also uneven: `missing_hole`, the
 one kind that is a clear round shape, carries half of the AP50 mean, and the three thin kinds
 (`mouse_bite`, `short`, `spur`) sit near 0.03 or below at this downscale.
+
+**Reproduced** on the current catalogue shape (one-script schema, task-scoped truth, the size on the run): leads of
+0.105 (AP50, all six classes) and 0.027 (AP@[.5:.95]), and the same verdict.
+
 
 ## Anomaly-map storage
 
