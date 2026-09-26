@@ -71,24 +71,32 @@ export function clusterColour(cluster: number): string {
 /**
  * One reading of a stored map. Similarity alone is a heatmap on [0, 1]; with a threshold it
  * is the filled mask at that cut. Clusters name their colours, and `cluster` keeps one.
+ * Instances are coloured the same way, one series colour each, and `instance` draws that
+ * one's whole mask alone.
  */
 export function exploreMapUrl(
   mapUrl: string,
-  options: { threshold?: number; clusters?: number; cluster?: number | null } = {},
+  options: {
+    threshold?: number;
+    clusters?: number;
+    cluster?: number | null;
+    instances?: number;
+    instance?: number | null;
+  } = {},
 ): string {
   const query = new URLSearchParams();
   if (options.threshold !== undefined) {
     query.set("threshold", options.threshold.toFixed(3));
     query.set("colours", hexDigits(clusterColour(1)));
   }
-  if (options.clusters !== undefined) {
+  const labelled = options.clusters ?? options.instances;
+  if (labelled !== undefined) {
     query.set(
       "colours",
-      Array.from({ length: options.clusters }, (_, index) => hexDigits(clusterColour(index + 1))).join(
-        ",",
-      ),
+      Array.from({ length: labelled }, (_, index) => hexDigits(clusterColour(index + 1))).join(","),
     );
     if (options.cluster) query.set("cluster", String(options.cluster));
+    if (options.instance) query.set("instance", String(options.instance));
   }
   const suffix = query.toString();
   return `${apiBaseUrl}${mapUrl}${suffix ? `?${suffix}` : ""}`;

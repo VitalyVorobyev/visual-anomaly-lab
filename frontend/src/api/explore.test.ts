@@ -66,6 +66,18 @@ describe("exploreMapUrl", () => {
     expect(url.searchParams.get("cluster")).toBe("2");
   });
 
+  it("names one colour per instance and draws a picked one alone", () => {
+    const url = new URL(exploreMapUrl("/m.png", { instances: 4, instance: 3 }));
+    const colours = url.searchParams.get("colours")?.split(",");
+    expect(colours).toHaveLength(4);
+    expect(colours?.[0]).toBe(hexDigits(SERIES_COLOURS[0] as string));
+    expect(url.searchParams.get("instance")).toBe("3");
+    expect(url.searchParams.get("cluster")).toBeNull();
+    expect(new URL(exploreMapUrl("/m.png", { instances: 2, instance: null })).searchParams.has("instance")).toBe(
+      false,
+    );
+  });
+
   it("is the bare map with no options", () => {
     expect(new URL(exploreMapUrl("/m.png")).search).toBe("");
   });

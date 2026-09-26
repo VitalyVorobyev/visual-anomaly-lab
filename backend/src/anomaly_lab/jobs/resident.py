@@ -6,8 +6,8 @@ image": the model load dominates, so a job per request would pay eleven seconds 
 to do a hundred milliseconds of work, and would queue behind whatever is training.
 
 So one process is kept alive for whichever interactive compute target is current: an
-experiment inspector, a promptable segmentation asset, a few-shot preview or a frozen
-encoder for Explore. Requests are written to its
+experiment inspector, a promptable segmentation asset, a few-shot preview, a frozen
+encoder for Explore or SAM 3 for Explore's text prompts. Requests are written to its
 stdin. It is the only long-lived compute state in this application, and everything below
 exists to keep that from becoming two competing device owners.
 
@@ -261,20 +261,45 @@ class ResidentWorker:
             asset_key, asset_path, {"op": "region", "image_id": image_id, "config": config}
         )
 
+    async def segment_text(
+        self, *, asset_key: str, asset_path: Path, payload: dict[str, object]
+    ) -> tuple[dict[str, object], bool]:
+        """Ask SAM 3 for the instances a phrase names in one image (`explore/text.py`).
+
+        Keyed like the MobileSAM resident — the catalogued asset and a fingerprint of its
+        verified file — and served under the same lock. The child caches the last image's
+        vision features, so a second phrase on one image skips the encoder.
+        """
+        return await self._ask_asset(
+            "text_segmenter", "anomaly_lab.jobs.text_segmenter", asset_key, asset_path, payload
+        )
+
     async def _ask_segmenter(
         self, asset_key: str, asset_path: Path, payload: dict[str, object]
     ) -> tuple[dict[str, object], bool]:
+        return await self._ask_asset(
+            "model_assist", "anomaly_lab.jobs.segmenter", asset_key, asset_path, payload
+        )
+
+    async def _ask_asset(
+        self,
+        kind: str,
+        module: str,
+        asset_key: str,
+        asset_path: Path,
+        payload: dict[str, object],
+    ) -> tuple[dict[str, object], bool]:
         async with self._lock:
             generation = await asyncio.to_thread(generation_of_file, asset_path)
-            warm = self._matches("model_assist", asset_key, generation)
+            warm = self._matches(kind, asset_key, generation)
             try:
                 if not warm:
                     await self._kill()
                     await self._spawn(
-                        kind="model_assist",
+                        kind=kind,
                         key=asset_key,
                         generation=generation,
-                        module="anomaly_lab.jobs.segmenter",
+                        module=module,
                         args=(asset_key,),
                         experiment_id=None,
                     )

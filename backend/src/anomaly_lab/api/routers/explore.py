@@ -1,4 +1,5 @@
-"""Explore — what a frozen encoder sees in one image, asked by clicking on it.
+"""Explore — what a frozen encoder sees in one image, asked by clicking on it, and the
+instances SAM 3 finds for a phrase.
 
 The HTTP edge only. The arithmetic is `explore/grid.py`, the scratch maps `explore/store.py`,
 and the encoder lives in the resident worker (ADR-0026) under the same lock as every other
@@ -41,10 +42,18 @@ from anomaly_lab.explore.store import (
     MapKind,
     StoredGrid,
     explore_dir,
+    instance_mask,
     map_path,
     mask_of,
     read_grid,
     to_source,
+)
+from anomaly_lab.explore.text import (
+    DEFAULT_THRESHOLD,
+    MAX_INSTANCES,
+    MAX_PHRASE_LENGTH,
+    TextExploreError,
+    clean_phrase,
 )
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentError, ResidentWorker
@@ -54,6 +63,8 @@ from anomaly_lab.media.overlay import (
     render_label_map,
     render_rgb_image,
 )
+from anomaly_lab.model_assets.catalog import SAM3_KEY, ModelAssetSpec, gated_message, get_spec
+from anomaly_lab.model_assets.store import ResolvedAsset, resolve_asset
 from anomaly_lab.models.dino_backbone import ACCESS_REQUEST_URLS, BACKBONES, DinoBackbone
 from anomaly_lab.regions.transform import SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
@@ -84,6 +95,23 @@ class ExploreBackbone(BaseModel):
     )
 
 
+class ExploreTextCapability(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    available: bool = Field(description="A phrase can be asked now.")
+    reason: str | None = Field(
+        default=None, description="Why it cannot, in words the reader can act on."
+    )
+    asset_key: str = Field(description="The catalogued checkpoint (`/api/model-assets`).")
+    installable: bool = Field(
+        description="The runtime is present and the checkpoint only needs downloading."
+    )
+    gated: bool
+    access_url: str | None = None
+    max_phrase_length: int = MAX_PHRASE_LENGTH
+    default_threshold: float = DEFAULT_THRESHOLD
+
+
 class ExploreCapability(BaseModel):
     model_config = API_MODEL_CONFIG
 
@@ -92,6 +120,7 @@ class ExploreCapability(BaseModel):
     reason: str | None = None
     default_backbone: DinoBackbone = DEFAULT_BACKBONE
     backbones: list[ExploreBackbone]
+    text: ExploreTextCapability
     min_clusters: int = MIN_CLUSTERS
     max_clusters: int = MAX_CLUSTERS
     default_clusters: int = DEFAULT_CLUSTERS
@@ -155,11 +184,69 @@ class ExploreResponse(BaseModel):
     )
 
 
+class ExploreTextRequest(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    phrase: str = Field(
+        min_length=1,
+        max_length=MAX_PHRASE_LENGTH,
+        description="What to find, in a few words: `candle`, `the cap`.",
+    )
+    threshold: float = Field(
+        default=DEFAULT_THRESHOLD,
+        gt=0.0,
+        lt=1.0,
+        description="The score an instance must reach — SAM 3's own, not a probability.",
+    )
+
+
+class ExploreBox(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    x0: float
+    y0: float
+    x1: float
+    y1: float
+
+
+class ExploreInstance(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    index: int = Field(ge=1, description="1-based, best first; the label it is drawn as.")
+    score: float
+    box: ExploreBox = Field(description="Source-image pixels.")
+    area: int = Field(ge=1, description="Mask area in source-image pixels.")
+
+
+class ExploreTextResponse(BaseModel):
+    model_config = API_MODEL_CONFIG
+
+    image_id: int
+    phrase: str
+    threshold: float
+    device: Literal["mps", "cpu"]
+    cached: bool = Field(description="The image's vision features were already encoded.")
+    warm: bool = Field(description="SAM 3 was already loaded.")
+    encode_ms: float
+    prompt_ms: float
+    elapsed_ms: float
+    map_id: str | None = Field(
+        default=None, description="The instance map; `None` when nothing was found."
+    )
+    map_url: str | None = None
+    instances: list[ExploreInstance]
+    dropped: int = Field(
+        ge=0,
+        description=f"Instances past the {MAX_INSTANCES} kept, lowest scores first.",
+    )
+
+
 class ExploreShapeRequest(BaseModel):
     model_config = API_MODEL_CONFIG
 
     threshold: float | None = Field(default=None, ge=0.0, le=1.0)
     cluster: int | None = Field(default=None, ge=1, le=MAX_CLUSTERS)
+    instance: int | None = Field(default=None, ge=1, le=MAX_INSTANCES)
     label_key: str = Field(
         default="defect", min_length=1, max_length=64, pattern=r"^[a-z][a-z0-9_-]*$"
     )
@@ -192,6 +279,58 @@ def runtime_available() -> bool:
     )
 
 
+def text_runtime_available() -> bool:
+    """Whether SAM 3 can run: the `dl` extra, which carries transformers."""
+    return runtime_available() and importlib.util.find_spec("transformers") is not None
+
+
+def hub_token_present() -> bool:
+    """An HF_TOKEN, or an account signed in with `hf auth login`. Nothing about the token
+    is read beyond whether it exists."""
+    if os.environ.get("HF_TOKEN"):
+        return True
+    if importlib.util.find_spec("huggingface_hub") is None:
+        return False
+    from huggingface_hub import get_token
+
+    return get_token() is not None
+
+
+def _sam3() -> ModelAssetSpec:
+    spec = get_spec(SAM3_KEY)
+    assert spec is not None, "SAM 3 is catalogued"
+    return spec
+
+
+def _text_capability(settings: Settings) -> tuple[ExploreTextCapability, ResolvedAsset]:
+    spec = _sam3()
+    resolved = resolve_asset(settings, spec)
+    runtime = text_runtime_available()
+    reason: str | None = None
+    if not runtime:
+        reason = f"Install the backend's 'dl' extra to run {spec.title}."
+    elif not resolved.ready and resolved.reason == "missing" and resolved.source == "managed":
+        reason = (
+            f"{spec.title} is not downloaded: {spec.total_size / 1e9:.1f} GB, once, under the "
+            f"{spec.license_name}."
+        )
+        if spec.gated and not hub_token_present():
+            reason = gated_message(spec)
+    elif not resolved.ready:
+        reason = f"{spec.title} is not usable: {resolved.reason}."
+    return (
+        ExploreTextCapability(
+            available=runtime and resolved.ready,
+            reason=reason,
+            asset_key=spec.key,
+            installable=runtime and not resolved.ready and resolved.source == "managed",
+            gated=spec.gated,
+            access_url=spec.hub.access_url if spec.hub is not None else None,
+        ),
+        resolved,
+    )
+
+
 def _backbone_entry(settings: Settings, backbone: DinoBackbone) -> ExploreBackbone:
     spec = BACKBONES[backbone]
     available = (
@@ -220,6 +359,7 @@ def explore_capability(request: Request) -> ExploreCapability:
         available=runtime and any(entry.available for entry in backbones),
         reason=None if runtime else "Install the backend's 'dl' extra to enable Explore.",
         backbones=backbones,
+        text=_text_capability(settings)[0],
     )
 
 
@@ -270,6 +410,61 @@ async def explore_image(request: Request, image_id: int, body: ExploreRequest) -
         raise HTTPException(status_code=503, detail="Explore returned an invalid response") from exc
 
 
+@router.post(
+    "/api/images/{image_id}/explore/text",
+    summary="Ask SAM 3 for the instances a phrase names in one image",
+)
+async def explore_text(
+    request: Request, image_id: int, body: ExploreTextRequest
+) -> ExploreTextResponse:
+    settings = _settings(request)
+    queue: JobQueue = request.app.state.job_queue
+    await asyncio.to_thread(refuse_while_a_job_runs, settings, queue)
+    image = await asyncio.to_thread(_image, settings, image_id)
+    try:
+        phrase = clean_phrase(body.phrase)
+    except TextExploreError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    capability, resolved = await asyncio.to_thread(_text_capability, settings)
+    if not capability.available:
+        raise HTTPException(status_code=409, detail=capability.reason)
+
+    resident: ResidentWorker = request.app.state.resident
+    started = time.perf_counter()
+    payload: dict[str, object] = {
+        "image_id": image.id,
+        "phrase": phrase,
+        "threshold": body.threshold,
+    }
+    try:
+        result, warm = await resident.segment_text(
+            asset_key=capability.asset_key, asset_path=resolved.path, payload=payload
+        )
+    except ResidentError as exc:
+        tail = resident.stderr_tail()
+        raise HTTPException(status_code=503, detail=f"{exc}\n{tail}" if tail else str(exc)) from exc
+
+    map_id = result.get("map_id")
+    instances = result.get("instances")
+    try:
+        return ExploreTextResponse.model_validate(
+            {
+                **result,
+                "instances": [
+                    {**entry, "index": index}
+                    for index, entry in enumerate(
+                        instances if isinstance(instances, list) else [], start=1
+                    )
+                ],
+                "warm": warm,
+                "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+                "map_url": f"/api/explore/maps/{map_id}.png" if map_id else None,
+            }
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=503, detail="SAM 3 returned an invalid response") from exc
+
+
 def _image(settings: Settings, image_id: int) -> Image:
     with connection(settings.db_path) as conn:
         image = images_repo.get_image(conn, image_id)
@@ -306,9 +501,12 @@ def explore_map(
     map_id: str,
     threshold: float | None = Query(default=None, ge=0.0, le=1.0),
     cluster: int | None = Query(default=None, ge=1, le=MAX_CLUSTERS),
+    instance: int | None = Query(default=None, ge=1, le=MAX_INSTANCES),
     colours: str | None = Query(
         default=None,
-        description="Comma-separated `rrggbb`, one per cluster or one for a threshold mask.",
+        description=(
+            "Comma-separated `rrggbb`, one per cluster or instance, or one for a threshold mask."
+        ),
     ),
 ) -> Response:
     """Similarity over this image's own range; a threshold turns it into a filled mask.
@@ -317,12 +515,24 @@ def explore_map(
     `value_high`: this image's median to its top percent), so it is legible on any image;
     the threshold is absolute cosine. Clusters are drawn in the colours the
     client names, one per cluster, as a supervised run's label map is; `cluster` keeps that
-    one alone. False colour is opaque RGB. Every overlay is drawn once per click, so none is
+    one alone. Instances are drawn the same way, one colour each, the better-scoring one on
+    top where two overlap; `instance` draws that one's whole mask alone. False colour is
+    opaque RGB. Every overlay is drawn once per click, so none is
     zlib-optimised.
     """
     stored = _stored(_settings(request), map_id)
     palette = _palette(colours)
-    if stored.kind is MapKind.RGB:
+    if stored.kind is MapKind.INSTANCES:
+        try:
+            labels = (
+                instance_mask(stored, instance).astype(np.float32) * float(instance)
+                if instance is not None
+                else to_source(stored).astype(np.float32)
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        payload = render_label_map(labels, palette, truth=False, optimize=False)
+    elif stored.kind is MapKind.RGB:
         payload = render_rgb_image(to_source(stored), optimize=False)
     elif stored.kind is MapKind.VALUES and threshold is None:
         payload = render_anomaly_map(
@@ -357,14 +567,16 @@ def _palette(colours: str | None) -> list[tuple[int, int, int]]:
     summary="Turn an explore mask into an annotation candidate",
 )
 def explore_shape(request: Request, map_id: str, body: ExploreShapeRequest) -> ExploreShape:
-    """A thresholded similarity or one cluster as a tight source-frame bitmap.
+    """A thresholded similarity, one cluster or one instance as a tight source-frame bitmap.
 
     The same shape MobileSAM's candidates are (`tight_bitmap_shape`), so the editor takes it
     as an assist candidate the person accepts or rejects; nothing is written here.
     """
     stored = _stored(_settings(request), map_id)
     try:
-        mask = mask_of(stored, threshold=body.threshold, cluster=body.cluster)
+        mask = mask_of(
+            stored, threshold=body.threshold, cluster=body.cluster, instance=body.instance
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     shape = tight_bitmap_shape(

@@ -141,3 +141,9 @@ Reference datasets remain under their authors' licences. Screenshots in this REA
 access must be requested from Meta for your own Hugging Face account, and nothing is fetched unless you
 select one of those two backbones. The method's default is an ungated Apache-2.0 DINOv2 encoder that
 needs no account at all.
+
+Explore's Text mode uses Meta's [SAM 3](https://github.com/facebookresearch/sam3) through Hugging Face
+`transformers`. Its weights are distributed under the
+[SAM License](https://huggingface.co/facebook/sam3): the download is gated, access must be requested for
+your own Hugging Face account, and the checkpoint is fetched — at a pinned revision, verified file by file
+— only when you accept that licence in the application.

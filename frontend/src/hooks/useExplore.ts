@@ -13,6 +13,8 @@ import type {
   ExploreResponse,
   ExploreShape,
   ExploreShapeRequest,
+  ExploreTextRequest,
+  ExploreTextResponse,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
@@ -33,6 +35,20 @@ export function useExploreRequest() {
           body,
         }),
         "what the encoder sees",
+      ),
+  });
+}
+
+/** SAM 3 by phrase: the resident answers with ranked instances and one instance map. */
+export function useExploreText() {
+  return useMutation<ExploreTextResponse, Error, { imageId: number; body: ExploreTextRequest }>({
+    mutationFn: async ({ imageId, body }) =>
+      unwrap(
+        await api.POST("/api/images/{image_id}/explore/text", {
+          params: { path: { image_id: imageId } },
+          body,
+        }),
+        "what SAM 3 finds",
       ),
   });
 }

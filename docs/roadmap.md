@@ -31,8 +31,10 @@ application.
   no verdicts it never asserted, and offered anomaly detection only once a sample carries one.
 - **Explore** what a frozen DINO encoder sees in any sample, by clicking: patch similarity with
   positive and negative points, k-means clusters whose edges follow the features rather than the patch
-  grid, a false-colour PCA, or MobileSAM masks — and send the
-  mask to the annotation editor as a suggestion. Intuition, not a result: nothing is stored or scored.
+  grid, a false-colour PCA, MobileSAM masks for a click, or SAM 3's instance masks for a phrase
+  ("candle", "the cap") — and send the mask to the annotation editor as a suggestion. SAM 3 finds the
+  objects and parts a phrase names, not defects by their name. Intuition, not a result: nothing is
+  stored or scored.
 - **Annotate** at pixel level: polygon, box and brush with editable contour tracing, instance ids,
   class keys, undo/redo, autosave with conflict detection, and a keyboard queue. Completion records
   the object instances beside the masks. Truth is versioned and lives in the source frame.
@@ -81,7 +83,8 @@ application.
 - **The visual pass's last finding, upstream in lab-ui.** Every screen has been reviewed at rest in both
   viewports and themes, and in its transient states — pending, error, a Tab walk and disabled controls
   (`lab-visual-pass --states`). Failed reads now show their error promptly, and every screen says what
-  went wrong. What is left: two disabled tabs explain themselves only in a tooltip, waiting on `Tabs`
+  went wrong. What is left: two disabled tabs explain themselves only in a tooltip, waiting on `Tabs`,
+  and Explore's five-way mode picker wraps in the sample viewer's rail, waiting on `SegmentedControl`
   (see [backlog.md](backlog.md)). The guided run's pictures of truth are too small to read on a
   small defect or a box ([backlog.md](backlog.md)).
 - The measurement and follow-up work each method left behind, in [backlog.md](backlog.md).

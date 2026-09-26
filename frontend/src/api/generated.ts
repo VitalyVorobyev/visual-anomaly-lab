@@ -1236,6 +1236,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/images/{image_id}/explore/text": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Ask SAM 3 for the instances a phrase names in one image */
+        post: operations["explore_text_api_images__image_id__explore_text_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/explore/maps/{map_id}.png": {
         parameters: {
             query?: never;
@@ -1251,7 +1268,9 @@ export interface paths {
          *     `value_high`: this image's median to its top percent), so it is legible on any image;
          *     the threshold is absolute cosine. Clusters are drawn in the colours the
          *     client names, one per cluster, as a supervised run's label map is; `cluster` keeps that
-         *     one alone. False colour is opaque RGB. Every overlay is drawn once per click, so none is
+         *     one alone. Instances are drawn the same way, one colour each, the better-scoring one on
+         *     top where two overlap; `instance` draws that one's whole mask alone. False colour is
+         *     opaque RGB. Every overlay is drawn once per click, so none is
          *     zlib-optimised.
          */
         get: operations["explore_map_api_explore_maps__map_id__png_get"];
@@ -1274,7 +1293,7 @@ export interface paths {
         put?: never;
         /**
          * Turn an explore mask into an annotation candidate
-         * @description A thresholded similarity or one cluster as a tight source-frame bitmap.
+         * @description A thresholded similarity, one cluster or one instance as a tight source-frame bitmap.
          *
          *     The same shape MobileSAM's candidates are (`tight_bitmap_shape`), so the editor takes it
          *     as an assist candidate the person accepts or rejects; nothing is written here.
@@ -4101,6 +4120,17 @@ export interface components {
              */
             reason: string | null;
         };
+        /** ExploreBox */
+        ExploreBox: {
+            /** X0 */
+            x0: number;
+            /** Y0 */
+            y0: number;
+            /** X1 */
+            x1: number;
+            /** Y1 */
+            y1: number;
+        };
         /** ExploreCapability */
         ExploreCapability: {
             /** Runtime Available */
@@ -4113,6 +4143,7 @@ export interface components {
             default_backbone: components["schemas"]["DinoBackbone"];
             /** Backbones */
             backbones: components["schemas"]["ExploreBackbone"][];
+            text: components["schemas"]["ExploreTextCapability"];
             /**
              * Min Clusters
              * @default 2
@@ -4128,6 +4159,23 @@ export interface components {
              * @default 6
              */
             default_clusters: number;
+        };
+        /** ExploreInstance */
+        ExploreInstance: {
+            /**
+             * Index
+             * @description 1-based, best first; the label it is drawn as.
+             */
+            index: number;
+            /** Score */
+            score: number;
+            /** @description Source-image pixels. */
+            box: components["schemas"]["ExploreBox"];
+            /**
+             * Area
+             * @description Mask area in source-image pixels.
+             */
+            area: number;
         };
         /**
          * ExploreMode
@@ -4242,11 +4290,108 @@ export interface components {
             threshold?: number | null;
             /** Cluster */
             cluster?: number | null;
+            /** Instance */
+            instance?: number | null;
             /**
              * Label Key
              * @default defect
              */
             label_key: string;
+        };
+        /** ExploreTextCapability */
+        ExploreTextCapability: {
+            /**
+             * Available
+             * @description A phrase can be asked now.
+             */
+            available: boolean;
+            /**
+             * Reason
+             * @description Why it cannot, in words the reader can act on.
+             */
+            reason: string | null;
+            /**
+             * Asset Key
+             * @description The catalogued checkpoint (`/api/model-assets`).
+             */
+            asset_key: string;
+            /**
+             * Installable
+             * @description The runtime is present and the checkpoint only needs downloading.
+             */
+            installable: boolean;
+            /** Gated */
+            gated: boolean;
+            /** Access Url */
+            access_url: string | null;
+            /**
+             * Max Phrase Length
+             * @default 80
+             */
+            max_phrase_length: number;
+            /**
+             * Default Threshold
+             * @default 0.5
+             */
+            default_threshold: number;
+        };
+        /** ExploreTextRequest */
+        ExploreTextRequest: {
+            /**
+             * Phrase
+             * @description What to find, in a few words: `candle`, `the cap`.
+             */
+            phrase: string;
+            /**
+             * Threshold
+             * @description The score an instance must reach — SAM 3's own, not a probability.
+             * @default 0.5
+             */
+            threshold: number;
+        };
+        /** ExploreTextResponse */
+        ExploreTextResponse: {
+            /** Image Id */
+            image_id: number;
+            /** Phrase */
+            phrase: string;
+            /** Threshold */
+            threshold: number;
+            /**
+             * Device
+             * @enum {string}
+             */
+            device: "mps" | "cpu";
+            /**
+             * Cached
+             * @description The image's vision features were already encoded.
+             */
+            cached: boolean;
+            /**
+             * Warm
+             * @description SAM 3 was already loaded.
+             */
+            warm: boolean;
+            /** Encode Ms */
+            encode_ms: number;
+            /** Prompt Ms */
+            prompt_ms: number;
+            /** Elapsed Ms */
+            elapsed_ms: number;
+            /**
+             * Map Id
+             * @description The instance map; `None` when nothing was found.
+             */
+            map_id: string | null;
+            /** Map Url */
+            map_url: string | null;
+            /** Instances */
+            instances: components["schemas"]["ExploreInstance"][];
+            /**
+             * Dropped
+             * @description Instances past the 24 kept, lowest scores first.
+             */
+            dropped: number;
         };
         /** ExportParams */
         ExportParams: {
@@ -4955,7 +5100,7 @@ export interface components {
          * MapKind
          * @enum {string}
          */
-        MapKind: "values" | "rgb" | "clusters";
+        MapKind: "values" | "rgb" | "clusters" | "instances";
         /**
          * MapPeak
          * @description Where one map's largest value sits, in source-frame pixels.
@@ -5129,6 +5274,16 @@ export interface components {
             license_url: string;
             /** Project Url */
             project_url: string;
+            /**
+             * Access Url
+             * @description Where an account requests access to gated weights; the download then needs that account's HF_TOKEN. `None` for an open asset.
+             */
+            access_url: string | null;
+            /**
+             * Total Size
+             * @description Bytes of the main file and every companion file.
+             */
+            total_size: number;
             active_job: components["schemas"]["JobSummary"] | null;
         };
         /**
@@ -8978,12 +9133,48 @@ export interface operations {
             };
         };
     };
+    explore_text_api_images__image_id__explore_text_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                image_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExploreTextRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExploreTextResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     explore_map_api_explore_maps__map_id__png_get: {
         parameters: {
             query?: {
                 threshold?: number | null;
                 cluster?: number | null;
-                /** @description Comma-separated `rrggbb`, one per cluster or one for a threshold mask. */
+                instance?: number | null;
+                /** @description Comma-separated `rrggbb`, one per cluster or instance, or one for a threshold mask. */
                 colours?: string | null;
             };
             header?: never;

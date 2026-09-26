@@ -18,6 +18,11 @@ until its output has been reviewed.
       header buttons, but `Table` cannot set `aria-sort` on the `<th>`, so a screen reader hears a
       button rather than a sorted column. Add a `sort` prop to `Column`, release, and move the
       catalogue's `SortHeader` onto it.
+- [ ] **A segmented control that fits five choices, upstream in lab-ui** (S): Explore's mode picker
+      has five segments, one more than the sample viewer's 288-px rail holds on a line, so it wraps
+      and Text sits on a row of its own. `SegmentedControl` could share its width across the
+      segments (or tighten their padding) when they would not fit; release, then drop the
+      `flex-wrap` in `routes/sample/ExploreSection.tsx`.
 - [ ] **A thumbnail that shows its truth at thumbnail size** (S): the guided run's strips lay the
       source-sized outline from `GET /api/images/{id}/mask` over each thumbnail, and at 112 px a VisA
       defect is a speck and a PKU-Market-PCB box is a hairline nobody can find. Serve a thumbnail
@@ -28,10 +33,6 @@ until its output has been reviewed.
       coverage, but the split presets read `class_counts`, which counts class-table revisions only, so
       no 1-shot or 5-shot preset is offered and the Split step can only point at Splits. One reading of
       "a class a sample shows" should feed both.
-- [ ] **Explore by text prompt** (M): a fifth Explore mode that takes a phrase ("scratch", "the
-      cap") and returns SAM 3's masks for it, as the SAM mode returns MobileSAM's for a click. It is
-      one more resident target beside `feature_explorer` and needs its checkpoint catalogued and
-      licence-gated like MobileSAM's; its masks go to the editor through the same Send to editor.
 
 ## Few-shot segmentation
 

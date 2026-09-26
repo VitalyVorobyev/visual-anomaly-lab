@@ -31,38 +31,21 @@ def managed_path(settings: Settings, spec: ModelAssetSpec) -> Path:
 
 def resolve_asset(settings: Settings, spec: ModelAssetSpec) -> ResolvedAsset:
     override = _read_overrides(settings).get(spec.key)
-    path = Path(override).expanduser().resolve() if override else managed_path(settings, spec)
-    source = "external" if override else "managed"
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return ResolvedAsset(path=path, source=source, ready=False, size=None, reason="missing")
-    if not path.is_file():
-        return ResolvedAsset(
-            path=path, source=source, ready=False, size=None, reason="not a regular file"
-        )
-    if stat.st_size != spec.expected_size:
-        return ResolvedAsset(
-            path=path,
-            source=source,
-            ready=False,
-            size=stat.st_size,
-            reason=f"expected {spec.expected_size} bytes, found {stat.st_size}",
-        )
-    digest = _digest_for_stat(str(path), stat.st_size, stat.st_mtime_ns)
-    if digest != spec.sha256:
-        return ResolvedAsset(
-            path=path,
-            source=source,
-            ready=False,
-            size=stat.st_size,
-            reason="SHA-256 mismatch",
-        )
-    return ResolvedAsset(path=path, source=source, ready=True, size=stat.st_size)
+    path = _absolute(Path(override)) if override else managed_path(settings, spec)
+    return _resolve_specific(path, spec, "external" if override else "managed")
+
+
+def _absolute(path: Path) -> Path:
+    """Absolute and normalised, with symlinks kept.
+
+    A Hugging Face snapshot is a directory of symlinks into content-addressed blobs; its
+    companions are found beside the *link*, so resolving it would lose them.
+    """
+    return Path(os.path.normpath(path.expanduser().absolute()))
 
 
 def set_external_source(settings: Settings, spec: ModelAssetSpec, path: Path) -> ResolvedAsset:
-    resolved = path.expanduser().resolve()
+    resolved = _absolute(path)
     candidate = _resolve_specific(resolved, spec, "external")
     if not candidate.ready:
         raise ValueError(candidate.reason or "asset is not valid")
@@ -86,31 +69,46 @@ def sha256_file(path: Path, *, chunk_size: int = 1024 * 1024) -> str:
     return digest.hexdigest()
 
 
+def asset_files(spec: ModelAssetSpec, path: Path) -> list[tuple[Path, int, str]]:
+    """Every file the asset is, as `(path, size, sha256)`: the main file, then its companions."""
+    return [
+        (path, spec.expected_size, spec.sha256),
+        *((path.parent / entry.filename, entry.size, entry.sha256) for entry in spec.companions),
+    ]
+
+
 def _resolve_specific(path: Path, spec: ModelAssetSpec, source: str) -> ResolvedAsset:
-    try:
-        stat = path.stat()
-    except FileNotFoundError:
-        return ResolvedAsset(path, source, False, None, "missing")
-    if not path.is_file():
-        return ResolvedAsset(path, source, False, None, "not a regular file")
-    if stat.st_size != spec.expected_size:
-        return ResolvedAsset(
-            path,
-            source,
-            False,
-            stat.st_size,
-            f"expected {spec.expected_size} bytes, found {stat.st_size}",
-        )
-    if _digest_for_stat(str(path), stat.st_size, stat.st_mtime_ns) != spec.sha256:
-        return ResolvedAsset(path, source, False, stat.st_size, "SHA-256 mismatch")
-    return ResolvedAsset(path, source, True, stat.st_size)
+    size: int | None = None
+    for index, (candidate, expected_size, expected_digest) in enumerate(asset_files(spec, path)):
+        # The main file names itself in no reason: "missing" is what the catalogue's
+        # status reads. A companion does, so a half-copied directory says what it lacks.
+        label = "" if index == 0 else f"{candidate.name}: "
+        try:
+            stat = candidate.stat()
+        except FileNotFoundError:
+            return ResolvedAsset(path, source, False, size, f"{label}missing")
+        if not candidate.is_file():
+            return ResolvedAsset(path, source, False, size, f"{label}not a regular file")
+        if index == 0:
+            size = stat.st_size
+        if stat.st_size != expected_size:
+            return ResolvedAsset(
+                path,
+                source,
+                False,
+                size,
+                f"{label}expected {expected_size} bytes, found {stat.st_size}",
+            )
+        if _digest_for_stat(str(candidate), stat.st_size, stat.st_mtime_ns) != expected_digest:
+            return ResolvedAsset(path, source, False, size, f"{label}SHA-256 mismatch")
+    return ResolvedAsset(path, source, True, size)
 
 
 def _state_path(settings: Settings) -> Path:
     return settings.model_assets_dir / STATE_FILENAME
 
 
-@lru_cache(maxsize=16)
+@lru_cache(maxsize=64)
 def _digest_for_stat(path: str, size: int, modified_ns: int) -> str:
     """Avoid re-hashing a 40 MB asset on every catalog poll.
 
