@@ -46,7 +46,7 @@ export function ToolSection({
       {hasTaxonomy && (
         // Only where there is something to choose between. A dataset with one class gets no
         // picker, and one with four gets a real one: label count is data in exactly the way
-        // channel count is (ADR-0005).
+        // channel count is (ADR-0041).
         // Named on screen: under a "Tool" heading, a bare dropdown reading "Defect" was a
         // tool picker to anyone who had not already guessed it was the class.
         <Field as="group" label="Class for new regions">

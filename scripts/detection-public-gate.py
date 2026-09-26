@@ -41,7 +41,7 @@ import m11_public_gate as harness
 
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.commit import commit_manifest
-from anomaly_lab.datasets.reference_packs import pack_specs, register_box_truth, scan_spec
+from anomaly_lab.datasets.reference_packs import pack_specs, register_class_truth, scan_spec
 from anomaly_lab.datasets.splitting import (
     SplitParams,
     SplitStrategy,
@@ -97,8 +97,8 @@ def _pcb_dataset(settings: Settings, log: Any) -> int:
     manifest = scan_spec(spec, lambda _fraction, _message: None)
     with connection(settings.db_path) as conn:
         committed = commit_manifest(conn, settings, manifest)
-    print("Entering its box truth...", file=sys.stderr)
-    entered = register_box_truth(settings, spec, committed.dataset_id)
+    print("Entering its class truth...", file=sys.stderr)
+    entered = register_class_truth(settings, spec, committed.dataset_id)
     log.write(
         json.dumps(
             {
@@ -108,7 +108,7 @@ def _pcb_dataset(settings: Settings, log: Any) -> int:
                 "samples": len(manifest.samples),
                 "box_truth": {
                     "images": entered.images,
-                    "boxes": entered.boxes,
+                    "boxes": entered.regions,
                     "clipped": entered.clipped,
                     "reshaped": entered.reshaped,
                     "without_file": entered.without_file,

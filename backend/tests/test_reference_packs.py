@@ -11,15 +11,16 @@ from fastapi.testclient import TestClient
 from PIL import Image
 
 from anomaly_lab.annotations.class_truth import load_boxes, resolve_box_truth
-from anomaly_lab.annotations.imported_boxes import write_box_truth
+from anomaly_lab.annotations.imported_truth import write_box_truth
 from anomaly_lab.api.app import create_app
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.commit import commit_manifest
 from anomaly_lab.datasets.reference_packs import (
     FSS_PANEL,
     PCB_DEFECTS,
+    class_key,
     pack_specs,
-    register_box_truth,
+    register_class_truth,
     scan_spec,
 )
 from anomaly_lab.datasets.splitting import plan_class_stratified_split, plan_few_shot_split
@@ -81,6 +82,7 @@ def test_absent_packs_are_instructional_and_gkn_registers_in_one_action(
             "defect": 2,
             "unlabeled": 0,
         }
+        assert (datasets[0]["truth"], datasets[0]["class_counts"]) == (["labels"], [])
 
         after = client.get("/api/reference-packs").json()
         assert after["packs"][1]["status"] == "registered"
@@ -160,8 +162,8 @@ def _write_fss_pair(directory: Path, index: int, shade: int) -> None:
     mask.save(directory / f"{index}.png")
 
 
-def test_fss1000_registers_one_few_shot_dataset_per_panel_class(tmp_path: Path) -> None:
-    """A target's own masks are its truth; the rest of the panel are confirmed absences."""
+def test_fss1000_registers_one_dataset_whose_masks_are_class_truth(tmp_path: Path) -> None:
+    """One dataset of the whole panel: every mask a region of its class, and no sample label."""
     references = tmp_path / "references"
     classes = references / "FSS-1000" / "fewshot_data"
     for position, name in enumerate(FSS_PANEL):
@@ -174,27 +176,46 @@ def test_fss1000_registers_one_few_shot_dataset_per_panel_class(tmp_path: Path) 
 
     with TestClient(create_app(settings)) as client:
         fss = client.get("/api/reference-packs").json()["packs"][2]
-        assert (fss["key"], fss["status"], len(fss["datasets"])) == ("fss1000", "available", 20)
+        assert (fss["key"], fss["status"], len(fss["datasets"])) == ("fss1000", "available", 1)
 
         started = client.post("/api/reference-packs/register", json={"pack_keys": ["fss1000"]})
         job = _wait(client, started.json()["id"])
         assert job["status"] == "succeeded", job
-        assert job["result"]["registered"] == 20
+        assert job["result"]["registered"] == 1
+        entered = job["result"]["class_truth"]["fss1000:panel"]
+        assert (entered["images"], entered["regions"], entered["kept"]) == (40, 40, 0)
 
-        datasets = {dataset["name"]: dataset for dataset in client.get("/api/datasets").json()}
-        target = datasets[FSS_PANEL[0]]
-        assert target["samples"] == 2 * 20
-        assert target["label_counts"] == {"normal": 38, "defect": 2, "unlabeled": 0}
-        assert target["collection"] == "FSS-1000"
+        [dataset] = client.get("/api/datasets").json()
+        assert (dataset["name"], dataset["collection"]) == ("FSS-1000 panel", "FSS-1000")
+        assert dataset["samples"] == 2 * 20
+        assert dataset["label_counts"] == {"normal": 0, "defect": 0, "unlabeled": 40}
+        assert dataset["truth"] == ["classes"]
+        counts = {entry["key"]: entry["samples"] for entry in dataset["class_counts"]}
+        assert counts == {class_key(name): 2 for name in FSS_PANEL}
+        assert "abes_flyingfish" in counts
+        assert dataset["class_counts"][0]["name"] == "Abe's flyingfish"
+        after = client.get("/api/reference-packs").json()["packs"][2]
+        assert after["status"] == "registered"
 
+    target = class_key(FSS_PANEL[3])
     with connection(settings.db_path) as conn:
-        presence = annotations_repo.class_presence(conn, target["id"], "defect")
+        presence = annotations_repo.class_presence(conn, dataset["id"], target)
         assert sum(found is ClassPresence.PRESENT for found in presence.values()) == 2
         assert sum(found is ClassPresence.ABSENT for found in presence.values()) == 38
-        split = plan_few_shot_split(conn, target["id"], seed=0, label_key="defect", shots=1)
+        # The default class is not the target of anything here, and no image answers it
+        # present: the masks are their own classes' truth.
+        defect = annotations_repo.class_presence(conn, dataset["id"], "defect")
+        assert all(found is ClassPresence.ABSENT for found in defect.values())
+        split = plan_few_shot_split(conn, dataset["id"], seed=0, label_key=target, shots=1)
     references_drawn = [sample for sample, subset in split.items() if subset is Subset.TRAIN]
     assert len(references_drawn) == 1
     assert presence[references_drawn[0]] is ClassPresence.PRESENT
+
+
+def test_class_keys_are_valid_annotation_keys() -> None:
+    assert class_key("abe's_flyingfish") == "abes_flyingfish"
+    assert class_key("Jet Aircraft") == "jetaircraft"
+    assert class_key("3d_printer") == "c3d_printer"
 
 
 def _write_voc(
@@ -246,12 +267,17 @@ def test_pku_pcb_registers_its_voc_boxes_as_class_truth(tmp_path: Path) -> None:
         started = client.post("/api/reference-packs/register", json={"pack_keys": ["pku_pcb"]})
         job = _wait(client, started.json()["id"])
         assert job["status"] == "succeeded", job
-        entered = job["result"]["box_truth"]["pku_pcb:pcb"]
-        assert (entered["images"], entered["boxes"], entered["kept"]) == (12, 12, 0)
+        entered = job["result"]["class_truth"]["pku_pcb:pcb"]
+        assert (entered["images"], entered["regions"], entered["kept"]) == (12, 12, 0)
         assert (entered["clipped"], entered["reshaped"], entered["without_file"]) == (0, 0, 0)
         dataset = client.get("/api/datasets").json()[0]
         assert dataset["samples"] == 12
-        assert dataset["label_counts"] == {"normal": 0, "defect": 12, "unlabeled": 0}
+        # A detection dataset: its boxes are its truth, and no board carries an anomaly label.
+        assert dataset["label_counts"] == {"normal": 0, "defect": 0, "unlabeled": 12}
+        assert dataset["truth"] == ["classes"]
+        assert [entry["key"] for entry in dataset["class_counts"]] == [
+            name for _, name in PCB_DEFECTS
+        ]
         assert (
             client.post("/api/reference-packs/register", json={"pack_keys": ["pku_pcb"]})
         ).status_code == 409
@@ -297,7 +323,7 @@ def test_pku_pcb_box_truth_keeps_what_an_image_already_has(tmp_path: Path) -> No
         job = _wait(client, started.json()["id"])
         assert job["status"] == "succeeded", job
         assert job["result"]["registered"] == 0
-        entered = job["result"]["box_truth"]["pku_pcb:pcb"]
+        entered = job["result"]["class_truth"]["pku_pcb:pcb"]
         assert (entered["images"], entered["kept"]) == (11, 1)
         assert client.get("/api/reference-packs").json()["packs"][3]["status"] == "registered"
     with connection(settings.db_path) as conn:
@@ -321,7 +347,7 @@ def test_pku_pcb_refuses_a_class_its_taxonomy_does_not_name(tmp_path: Path) -> N
         dataset_id = commit_manifest(conn, settings, scan_spec(spec, lambda *_: None)).dataset_id
 
     with pytest.raises(ValueError, match="scratch"):
-        register_box_truth(settings, spec, dataset_id)
+        register_class_truth(settings, spec, dataset_id)
     with connection(settings.db_path) as conn:
         labels = annotations_repo.list_labels(conn, dataset_id)
         assert [label.key for label in labels] == ["defect"]

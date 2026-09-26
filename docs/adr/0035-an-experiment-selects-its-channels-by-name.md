@@ -4,7 +4,7 @@
 
 ## Context
 
-ADR-0005 made `Channel` a per-dataset data row and `Sample` the unit of identity, labelling and
+ADR-0041 made `Channel` a per-dataset data row and `Sample` the unit of identity, labelling and
 splitting, so one physical part photographed under three illuminations is one sample owning three
 images. Without a way for a *run* to say which of those images it wants, the only way to ask "how
 well does one illumination do alone?" is to import that channel as a dataset of its own. Several

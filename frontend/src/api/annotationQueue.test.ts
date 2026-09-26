@@ -58,7 +58,7 @@ describe("what one unit of annotation work is", () => {
   });
 
   it("counts a two-channel part exactly like a three-channel one", () => {
-    // Channel count is data, never schema (ADR-0005): a short capture group is one job
+    // Channel count is data, never schema (ADR-0041): a short capture group is one job
     // under sample scope for the same reason a full one is, with no padding and no case.
     expect(queueUnits([TWO], true)).toHaveLength(1);
     expect(queueUnits([THREE], true)).toHaveLength(1);

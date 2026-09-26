@@ -113,7 +113,7 @@ def list_images_for_split(
     """Images whose *sample* is in one of these subsets, optionally by label and channel.
 
     Selection is by sample and never by image, which is the mechanism that keeps a
-    part's channels from straddling a subset (ADR-0005). The label filter is what a
+    part's channels from straddling a subset (ADR-0041). The label filter is what a
     training run uses to take normals only; it is applied here rather than in the
     handler so the "which images" question has exactly one answer in the codebase.
 

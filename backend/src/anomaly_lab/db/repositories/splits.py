@@ -1,7 +1,7 @@
 """Split repository.
 
 Assignments are sample-level and nothing here offers an image-level equivalent — that
-absence is the mechanism that makes cross-channel leakage impossible (ADR-0005).
+absence is the mechanism that makes cross-channel leakage impossible (ADR-0041).
 """
 
 from __future__ import annotations

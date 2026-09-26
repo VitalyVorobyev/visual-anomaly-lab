@@ -2,7 +2,7 @@
 
 Every filter here is expressed over **samples**, even the ones a user thinks of in terms
 of images: "channel = dark" means "samples having a dark-field image", never "these
-images". The sample is the unit of identity and labelling (ADR-0005), and keeping the API
+images". The sample is the unit of identity and labelling (ADR-0041), and keeping the API
 in those terms is what stops a screen from quietly reintroducing image-level thinking.
 
 Nothing in this module counts channels. A dataset's channel list has whatever length it
@@ -44,6 +44,7 @@ from anomaly_lab.domain.entities import (
     LabelSource,
     Sample,
     Subset,
+    TruthKind,
 )
 from anomaly_lab.jobs.queue import JobQueue
 from anomaly_lab.jobs.resident import ResidentWorker
@@ -99,6 +100,17 @@ class SamplePage(BaseModel):
     items: list[SampleSummary] = Field(default_factory=list)
 
 
+class ClassCount(BaseModel):
+    """One class the dataset's completed annotations show, and how many samples show it."""
+
+    model_config = API_MODEL_CONFIG
+
+    key: str
+    name: str
+    color: str
+    samples: int
+
+
 class DatasetSummary(BaseModel):
     model_config = API_MODEL_CONFIG
 
@@ -111,6 +123,18 @@ class DatasetSummary(BaseModel):
     samples: int
     images: int
     label_counts: dict[Label, int] = Field(default_factory=dict)
+    truth: list[TruthKind] = Field(
+        default_factory=list,
+        description=(
+            "Which truth the dataset holds, derived (ADR-0041): `labels` when a sample has an "
+            "anomaly verdict, `classes` when a completed annotation shows a class. Both, or "
+            "neither."
+        ),
+    )
+    class_counts: list[ClassCount] = Field(
+        default_factory=list,
+        description="The classes completed annotations show, in class order, with sample counts.",
+    )
     # The three fields the catalogue reads. `collection` and `description` are *effective*
     # values -- the stored override if there is one, otherwise what the dataset's reference
     # pack supplies -- while `notes` above stays the raw override, because an editor has to
@@ -180,13 +204,26 @@ class BulkLabelFilter(BaseModel):
     subset: Subset | None = Field(
         default=None, description="Only meaningful together with `split_id`."
     )
+    class_key: str | None = Field(
+        default=None,
+        description="Samples whose completed annotation shows this class (ADR-0041).",
+    )
 
-    def to_filter(self) -> SampleFilter:
+    def to_filter(self, conn: sqlite3.Connection, dataset_id: int) -> SampleFilter:
+        chosen: list[int] | None = None
+        if self.class_key is not None:
+            # The browse grid's class filter, resolved by the same presence rule, so labelling
+            # "everything matching" cannot reach past the samples the grid counted.
+            found = annotations_repo.class_presence(conn, dataset_id, self.class_key)
+            chosen = sorted(
+                sample for sample, value in found.items() if value is ClassPresence.PRESENT
+            )
         return SampleFilter(
             label=self.label,
             channel_id=self.channel_id,
             split_id=self.split_id,
             subset=self.subset,
+            sample_ids=chosen,
         )
 
 
@@ -278,6 +315,22 @@ def _dataset_summary(
     dataset: Dataset,
     membership: PackMembership | None = None,
 ) -> DatasetSummary:
+    labels = datasets_repo.label_counts(conn, dataset.id)
+    shown = datasets_repo.class_counts(conn, dataset.id)
+    truth = [
+        kind
+        for kind, held in (
+            (TruthKind.LABELS, labels[Label.NORMAL] + labels[Label.DEFECT] > 0),
+            (TruthKind.CLASSES, bool(shown)),
+        )
+        if held
+    ]
+    classes = {label.key: label for label in annotations_repo.list_labels(conn, dataset.id)}
+    # An anomaly dataset keeps its first-normal cover; a dataset of classes alone is shown
+    # by a sample of the class most samples show (the first such class in class order).
+    showing = (
+        max(shown, key=lambda key: shown[key]) if shown and TruthKind.LABELS not in truth else None
+    )
     return DatasetSummary(
         id=dataset.id,
         name=dataset.name,
@@ -287,10 +340,20 @@ def _dataset_summary(
         notes=dataset.notes,
         samples=samples_repo.count_samples(conn, dataset.id),
         images=datasets_repo.count_images(conn, dataset.id),
-        label_counts=datasets_repo.label_counts(conn, dataset.id),
+        label_counts=labels,
+        truth=truth,
+        class_counts=[
+            ClassCount(
+                key=key,
+                name=classes[key].name if key in classes else key,
+                color=classes[key].color if key in classes else "#888888",
+                samples=count,
+            )
+            for key, count in shown.items()
+        ],
         collection=_effective(dataset.collection, membership.collection if membership else None),
         description=_effective(dataset.notes, membership.description if membership else None),
-        cover_image_id=datasets_repo.cover_image_id(conn, dataset.id),
+        cover_image_id=datasets_repo.cover_image_id(conn, dataset.id, showing=showing),
         default_channel=dataset.default_channel,
     )
 
@@ -743,7 +806,7 @@ def update_labels(request: Request, dataset_id: int, body: BulkLabelRequest) -> 
             updated = samples_repo.set_labels(conn, dataset_id, body.sample_ids, body.label)
         elif body.filters is not None:
             updated = samples_repo.set_labels_matching(
-                conn, dataset_id, body.filters.to_filter(), body.label
+                conn, dataset_id, body.filters.to_filter(conn, dataset_id), body.label
             )
         else:  # pragma: no cover - the request validator rejects this shape
             raise HTTPException(

@@ -10,7 +10,8 @@
  * the strip vanished during load and popped back in.
  *
  * So the band belongs to the layout, not to the tabs. It carries the dataset's identity --
- * the only `<h1>` on any dataset screen, the facts, the label counts -- one action that is
+ * the only `<h1>` on any dataset screen, the facts, the counts its truth is kept in (verdicts
+ * for labels, classes for class annotations, ADR-0041) -- one action that is
  * a property of the dataset rather than of the tab, and the strip. Its height is fixed by
  * construction: the primary button sets the first row, `min-h-8` sets the second whether or
  * not the counts have anything to say, and the readout is held to one line. Nothing above
@@ -19,7 +20,7 @@
  * **The facts are one run, counted in samples.** It used to read `samples 1100 · images
  * 1100 · /Users/…/VisA…` with the label counts stranded on the row below -- two counting
  * units for one dataset, and an absolute path as permanent furniture. `label_counts` and
- * split membership are stored per *sample* (ADR-0005), so the sample is the denominator
+ * split membership are stored per *sample* (ADR-0041), so the sample is the denominator
  * the counts beside them already use; the image count only says something a reader cannot
  * infer when a sample holds more than one, which is exactly when the channel count is
  * shown instead. The path and the adapter did not disappear -- they moved behind the
@@ -40,12 +41,12 @@ import { Link, Outlet, useParams } from "react-router";
 import { DatasetSectionNav } from "../../components/DatasetSectionNav";
 import {
   Button,
-  CountRun,
   InfoHint,
   ReadoutStrip,
   Skeleton,
   Tooltip,
 } from "@vitavision/lab-ui";
+import { ClassHint, LabelRun, classCountText } from "../../components/DatasetTruth";
 import { useDataset } from "../../hooks/useCatalog";
 import { DatasetReadiness } from "./DatasetReadiness";
 
@@ -55,6 +56,7 @@ export function DatasetLayout() {
   // screen that must never be absent. A failed dataset read is reported by the tab, which
   // is where the reader is looking.
   const detail = useDataset(datasetId).data;
+  const classCount = detail ? classCountText(detail) : null;
 
   return (
     <div
@@ -87,15 +89,15 @@ export function DatasetLayout() {
                       ...(detail.channels.length > 1
                         ? [{ value: `${detail.channels.length} channels` }]
                         : []),
+                      // Class truth is counted in classes, never as a column of zero
+                      // defects (ADR-0041); the classes themselves are behind the mark.
+                      ...(classCount ? [{ value: classCount }] : []),
                     ]}
                   />
-                  <CountRun
-                    counts={[
-                      ["normal", detail.label_counts["normal"] ?? 0, "normal"],
-                      ["defect", detail.label_counts["defect"] ?? 0, "defect"],
-                      ["unlabeled", detail.label_counts["unlabeled"] ?? 0, "unlabeled"],
-                    ]}
-                  />
+                  <LabelRun dataset={detail} />
+                  <span className="hidden shrink-0 lg:block">
+                    <ClassHint dataset={detail} />
+                  </span>
                   <span className="hidden shrink-0 lg:block">
                     <InfoHint icon={Info} label="Where this dataset came from">
                       <DatasetProvenance detail={detail} />

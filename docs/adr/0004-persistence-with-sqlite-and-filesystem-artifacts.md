@@ -21,7 +21,7 @@ and blobs in the database.
 **SQLite for metadata, the filesystem for artifacts, both under the data directory** (repo-local
 `data/` by default, see ADR-0002).
 
-- **The database** holds every entity of the domain model (see ADR-0005). It stores scores and
+- **The database** holds every entity of the domain model (see ADR-0041). It stores scores and
   *paths*, never pixels.
 - **The filesystem** holds thumbnails, anomaly maps as **raw float32 numpy files**, checkpoints, manifests
   and job logs, with artifacts namespaced per experiment. Source images are referenced in place,

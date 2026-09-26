@@ -11,7 +11,7 @@ from anomaly_lab.api.routers.jobs import JobSummary, summary_of
 from anomaly_lab.config import Settings
 from anomaly_lab.datasets.reference_packs import (
     RegisterReferencePacksParams,
-    box_truth_unfinished,
+    class_truth_unfinished,
     is_present,
     pack_specs,
     registered_dataset_id,
@@ -84,7 +84,7 @@ def _catalog(settings: Settings) -> ReferencePackCatalog:
                     name=spec.name,
                     registered_dataset_id=dataset_id,
                     pending=dataset_id is None
-                    or box_truth_unfinished(settings, spec, dataset_id) > 0,
+                    or class_truth_unfinished(settings, spec, dataset_id) > 0,
                 )
             )
         if not pack.root.is_dir():

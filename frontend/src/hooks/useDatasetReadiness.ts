@@ -16,7 +16,8 @@ import { api, unwrap } from "../api/client";
 import type { RegionBuildSummary, SplitDetail, Task } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { useClassCoverage } from "./useAnnotations";
-import { useSplits } from "./useCatalog";
+import { truthServesTask } from "../api/truth";
+import { useDataset, useSplits } from "./useCatalog";
 import { useExperiments, useModelTypes } from "./useExperiments";
 import { useRegionProfiles } from "./useRegionProfiles";
 
@@ -90,6 +91,7 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
   const runs = useExperiments(datasetId === undefined ? {} : { datasetId });
   const catalog = useModelTypes();
   const coverage = useClassCoverage(datasetId);
+  const dataset = useDataset(datasetId);
   const builds = useQueries({
     queries: (profiles.data ?? []).map((profile) => ({
       queryKey: queryKeys.regionBuild(profile.id),
@@ -106,8 +108,14 @@ export function useDatasetReadiness(datasetId: number | undefined): DatasetReadi
   });
 
   const builtProfiles = builds.filter((build) => isUsableBuild(build.data)).length;
-  const offered = READINESS_TASKS.filter((task) =>
-    (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(task)),
+  // A task some method runs, that the dataset's truth can serve: a dataset of classes alone
+  // is not offered anomaly detection until a sample carries a verdict (ADR-0041). Not waited
+  // on: the band above reads the same dataset, so it is in cache, and an unknown truth
+  // offers every task rather than none.
+  const offered = READINESS_TASKS.filter(
+    (task) =>
+      (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(task)) &&
+      truthServesTask(dataset.data?.truth, task),
   );
   // A class a segmentation run can use has an annotated sample to learn from and another to
   // test on — for few-shot a reference, for a supervised run a training image.

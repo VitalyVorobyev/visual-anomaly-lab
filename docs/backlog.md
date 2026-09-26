@@ -33,6 +33,12 @@ The second task (ADR-0040), in dependency order. Each item is one PR.
       below a cut resolved on the references by one printed rule, predeclare a rerun of the FSS-1000
       and VisA protocols, and compare with the recorded verdicts.
 
+- [ ] **Re-run the FSS-1000 gate on the one-dataset shape** (M, about 3 h of MPS): the pack registers
+      the panel as one dataset whose masks are class truth (ADR-0041), while the recorded verdict was
+      measured with a dataset per class ([measurements.md](measurements.md)).
+      `scripts/few-shot-public-gate.py --benchmark fss1000` now runs on the new shape; confirm the
+      verdict reproduces and record the rerun beside it.
+
 Later, each behind a measured gate:
 - INSID3 upstream and FSS-SAM3 as quality references.
 - SAM-assisted pseudo-labelling at scale.

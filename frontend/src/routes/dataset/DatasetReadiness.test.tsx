@@ -199,6 +199,39 @@ describe("dataset readiness", () => {
     expect(screen.queryByRole("link", { name: /Make a split/ })).toBeNull();
   });
 
+  it("does not offer anomaly detection on a dataset of classes alone", () => {
+    const annotated = [
+      [queryKeys.classCoverage(7), [{ label_key: "bucket", present: 10, absent: 190, unlabeled: 0 }]],
+    ] as [readonly unknown[], unknown][];
+    const classes = { truth: ["classes"], label_counts: {}, class_counts: [] };
+    const { unmount } = renderWith(
+      [
+        ...BUILT,
+        [queryKeys.splits(7), [{ id: 3, strategy: "few_shot" }]],
+        [queryKeys.dataset(7), classes],
+        ...annotated,
+      ],
+      BOTH,
+    );
+    // One task left, and it is ready: the band reads as a checklist, not a task list.
+    expect(screen.getByText(/Ready to train/)).toBeTruthy();
+    expect(screen.queryByRole("navigation", { name: "Readiness by task" })).toBeNull();
+    unmount();
+
+    // Once a sample carries a verdict, anomaly detection is back beside few-shot.
+    renderWith(
+      [
+        ...BUILT,
+        [queryKeys.splits(7), [{ id: 3, strategy: "few_shot" }]],
+        [queryKeys.dataset(7), { ...classes, truth: ["labels", "classes"] }],
+        ...annotated,
+      ],
+      BOTH,
+    );
+    const band = screen.getByRole("navigation", { name: "Readiness by task" });
+    expect(band.textContent).toContain("Anomaly:");
+  });
+
   it("names detection beside anomaly, ready on the split segmentation draws", () => {
     const annotated = [
       [queryKeys.classCoverage(7), [{ label_key: "scratch", present: 3, absent: 5, unlabeled: 0 }]],

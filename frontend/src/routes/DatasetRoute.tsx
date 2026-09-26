@@ -11,6 +11,10 @@
  *    filters and lets the server resolve them, so it labels the whole matching set rather
  *    than the one page the client happens to be holding.
  *
+ * The class and label filters follow the dataset's truth (ADR-0041): a dataset of classes is
+ * filtered by class, and offered neither a label filter nor bulk labelling until one of its
+ * samples carries a verdict.
+ *
  * The channel filter is built from the dataset's own channel dictionary. Nothing in this
  * file knows how many channels there are, and a two-channel sample renders through the
  * same code as a three-channel one.
@@ -40,6 +44,7 @@ import {
   Select,
   SkeletonRows,
 } from "@vitavision/lab-ui";
+import { hasClasses, hasLabels, labelsApply } from "../api/truth";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 import { SampleTile, type SelectModifiers } from "./dataset/SampleTile";
 
@@ -81,9 +86,16 @@ export function DatasetRoute() {
   const detail = dataset.data;
   const items = page.data?.items ?? [];
   const total = page.data?.total ?? 0;
-  const activeFilters = [browse.label, browse.channelId, browse.splitId, browse.subset].filter(
-    (value) => value !== undefined,
-  ).length;
+  const activeFilters = [
+    browse.label,
+    browse.classKey,
+    browse.channelId,
+    browse.splitId,
+    browse.subset,
+  ].filter((value) => value !== undefined).length;
+  // Anomaly labelling belongs to a dataset with labels, or with no truth yet; a dataset of
+  // classes alone is not offered it here (ADR-0041) — its sample view is where one opts in.
+  const labelling = labelsApply(detail?.truth);
 
   /** Changing a filter returns to the first page; the old offset would be meaningless. */
   const setFilter = (patch: Partial<BrowseState>) =>
@@ -187,6 +199,7 @@ export function DatasetRoute() {
                   </span>
 
                   {total > 0 &&
+                    labelling &&
                     (labellingAll ? (
                       <span className="flex flex-wrap items-center gap-1.5">
                         <span className="text-fg">Label all {total} as</span>
@@ -236,6 +249,7 @@ export function DatasetRoute() {
                   search={search}
                   channelId={browse.channelId ?? undefined}
                   defaultChannel={dataset.data?.default_channel}
+                  showLabel={labelling}
                   selected={selected}
                   onSelected={setSelected}
                 />
@@ -252,16 +266,17 @@ export function DatasetRoute() {
                 </span>
               </span>
               <span className="flex flex-wrap gap-2">
-                {LABELS.map((label) => (
-                  <Button
-                    key={label}
-                    variant="primary"
-                    disabled={setLabels.isPending}
-                    onClick={() => labelSelected(label)}
-                  >
-                    {label}
-                  </Button>
-                ))}
+                {labelling &&
+                  LABELS.map((label) => (
+                    <Button
+                      key={label}
+                      variant="primary"
+                      disabled={setLabels.isPending}
+                      onClick={() => labelSelected(label)}
+                    >
+                      {label}
+                    </Button>
+                  ))}
                 <Button onClick={() => setSelected(new Set())}>Clear</Button>
               </span>
             </div>
@@ -283,20 +298,43 @@ function DatasetFilters({
   splits: SplitDetail[];
   onChange: (patch: Partial<BrowseState>) => void;
 }) {
+  // Each filter follows the truth it filters by (ADR-0041): classes for a dataset whose
+  // annotations show some, labels for one whose samples carry any. A filter already set in
+  // the URL stays on screen, so it can always be cleared.
+  const classes = hasClasses(detail.truth) || browse.classKey !== undefined;
+  const labels = hasLabels(detail.truth) || browse.label !== undefined;
   return (
     <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
-      <Field as="group" label="Label">
-        <Select
-          aria-label="Label"
-          value={browse.label ?? ""}
-          placeholder="Any label"
-          unsetLabel="Any label"
-          options={LABELS.map((label) => ({ value: label, label }))}
-          onValueChange={(value) =>
-            onChange({ label: (value || undefined) as Label | undefined })
-          }
-        />
-      </Field>
+      {classes && (
+        <Field as="group" label="Class">
+          <Select
+            aria-label="Class"
+            value={browse.classKey ?? ""}
+            placeholder="Any class"
+            unsetLabel="Any class"
+            options={detail.class_counts.map((entry) => ({
+              value: entry.key,
+              label: `${entry.name} · ${entry.samples}`,
+            }))}
+            onValueChange={(value) => onChange({ classKey: value || undefined })}
+          />
+        </Field>
+      )}
+
+      {labels && (
+        <Field as="group" label="Label">
+          <Select
+            aria-label="Label"
+            value={browse.label ?? ""}
+            placeholder="Any label"
+            unsetLabel="Any label"
+            options={LABELS.map((label) => ({ value: label, label }))}
+            onValueChange={(value) =>
+              onChange({ label: (value || undefined) as Label | undefined })
+            }
+          />
+        </Field>
+      )}
 
       <Field as="group" label="Channel">
         <Select
@@ -357,6 +395,7 @@ function SampleGrid({
   search,
   channelId,
   defaultChannel,
+  showLabel,
   selected,
   onSelected,
 }: {
@@ -367,6 +406,8 @@ function SampleGrid({
   channelId?: number | undefined;
   /** The dataset's own answer, used only when the rail is filtering by nothing. */
   defaultChannel?: string | null | undefined;
+  /** Whether each tile shows its anomaly label (`labelsApply`). */
+  showLabel: boolean;
   selected: ReadonlySet<number>;
   onSelected: (selected: ReadonlySet<number>) => void;
 }) {
@@ -450,6 +491,7 @@ function SampleGrid({
                     search={search}
                     channelId={channelId}
                     defaultChannel={defaultChannel}
+                    showLabel={showLabel}
                     selected={selected.has(sample.id)}
                     onSelect={(event) => select(index, event)}
                   />

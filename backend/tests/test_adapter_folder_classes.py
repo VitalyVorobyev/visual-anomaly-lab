@@ -63,7 +63,7 @@ def test_named_directories_carry_the_label(tree: Path) -> None:
 def test_one_image_is_one_sample_with_no_channel(tree: Path) -> None:
     """The point of this adapter beyond convenience: it exercises the single-view path.
 
-    A sample with one unchannelled image has been legal since ADR-0005 and was never
+    A sample with one unchannelled image has been legal since ADR-0041 and was never
     produced by anything until now.
     """
     manifest = _scan(tree, normal_dirs=["Data/Good"], defect_dirs=["Data/Nick"])

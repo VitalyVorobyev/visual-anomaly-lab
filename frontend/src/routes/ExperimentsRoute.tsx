@@ -53,6 +53,7 @@ import { refusalReason, toggleRun } from "../api/compareState";
 import { clearDraft, draftKey, readDraft, writeDraft } from "../api/experimentDraft";
 import { formatBytes } from "../api/format";
 import { formatHeadline } from "../api/headline";
+import { truthServesTask } from "../api/truth";
 import {
   isUsableBuild,
   splitServesTask,
@@ -601,9 +602,18 @@ function CreateExperiment({
   const effectiveTarget = targetLabel || splitClass;
   // The tasks any method can be run as (ADR-0039). One task is not a choice, so the picker
   // appears only when there are two — the same rule the channel chips follow.
-  const tasks = TASK_ORDER.filter((entry) =>
-    (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)),
+  // A dataset of classes alone is not offered anomaly detection (ADR-0041).
+  const tasks = TASK_ORDER.filter(
+    (entry) =>
+      (catalog.data?.methods ?? []).some((method) => method.capabilities.tasks.includes(entry)) &&
+      truthServesTask(dataset.data?.truth, entry),
   );
+  // The task starts at the first one the dataset serves: `anomaly` for an anomaly dataset,
+  // few-shot segmentation for a dataset of classes.
+  const [firstTask] = tasks;
+  useEffect(() => {
+    if (firstTask !== undefined && !tasks.includes(task)) setTask(firstTask);
+  }, [firstTask, tasks, task]);
   const methodsForTask = useMemo(
     () => (catalog.data?.methods ?? []).filter((entry) => entry.capabilities.tasks.includes(task)),
     [catalog.data, task],

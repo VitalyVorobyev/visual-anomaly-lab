@@ -5,7 +5,7 @@
 ## Context
 
 Methods emit **per-image** scores (see ADR-0007), but labels and splits belong to the **sample**
-(see ADR-0005). A part photographed under three illuminations yields three scores and one label.
+(see ADR-0041). A part photographed under three illuminations yields three scores and one label.
 Something must reduce them to one, and that reduction is a detection decision, not formatting.
 
 The evaluation layer must also stay independent of every method, so that all of them are compared

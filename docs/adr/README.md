@@ -23,7 +23,7 @@ handbook page that answers the question now. Numbers are never reused.
 | [0002](0002-monorepo-layout.md) | Monorepo layout | Structure |
 | [0003](0003-tauri-to-python-boundary-is-a-fastapi-sidecar.md) | Tauri-to-Python boundary is a FastAPI sidecar | Structure |
 | [0004](0004-persistence-with-sqlite-and-filesystem-artifacts.md) | Persistence with SQLite and filesystem artifacts | Storage |
-| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | Sample owns label and split; channel is data, not schema | Domain |
+| [0005](0005-sample-owns-label-and-split-channel-is-data-not-schema.md) | Sample owns label and split; channel is data, not schema — superseded by 0041 | Domain |
 | [0006](0006-import-via-pluggable-adapters-and-reviewable-manifest.md) | Import via pluggable adapters and a reviewable manifest | Import |
 | [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Common model plugin interface with capability flags | Methods |
 | [0008](0008-hybrid-dl-strategy-anomalib-now-custom-efficientad-later.md) | Hybrid deep-learning strategy — wrap a maintained library first, own a method later | Methods |
@@ -48,6 +48,7 @@ handbook page that answers the question now. Numbers are never reused.
 | [0038](0038-research-runs-outside-the-app-and-only-its-verdict-ships.md) | Research runs outside the app, and only its verdict ships | Process |
 | [0039](0039-a-task-is-frozen-on-the-experiment-and-chooses-its-evaluator.md) | A task is frozen on the experiment, and it chooses the evaluator | Tasks |
 | [0040](0040-few-shot-segmentation-is-a-task-and-its-references-are-a-split.md) | Few-shot segmentation is a task, and its references are a split | Tasks |
+| [0041](0041-truth-is-task-scoped.md) | Truth is task-scoped — the sample owns its anomaly label, and classes live in annotations | Domain |
 
 ## Conventions
 

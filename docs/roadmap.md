@@ -18,7 +18,10 @@ application.
 - **Browse and label** the result as a catalogue that groups — a collection is a dataset's stored
   override or the reference pack it came from — with a virtualised grid, channel filters and an
   image-first sample viewer. A dataset names the channel it is read in, and every screen that has
-  room for one photograph of a part opens on it.
+  room for one photograph of a part opens on it. Truth is task-scoped (ADR-0041): a sample's
+  normal/defect label is anomaly truth and a class lives in annotations, so a dataset of classes —
+  FSS-1000's panel, PKU-Market-PCB — is one dataset counted, filtered and covered by its classes, with
+  no verdicts it never asserted, and offered anomaly detection only once a sample carries one.
 - **Annotate** at pixel level: polygon, box and brush with editable contour tracing, instance ids,
   class keys, undo/redo, autosave with conflict detection, and a keyboard queue. Completion records
   the object instances beside the masks. Truth is versioned and lives in the source frame.

@@ -31,7 +31,7 @@ registry.**
   diagnostics, is channel-aware, is dataset-specific, can resume, can export, which device it
   prefers. The UI and the job layer branch on flags, **never on a registry key**.
 - **The registry** maps stable keys to plugins; the key is what an experiment persists (see
-  ADR-0005). It loads plugins lazily, so a heavy import stays inside its plugin.
+  ADR-0041). It loads plugins lazily, so a heavy import stays inside its plugin.
 - **Contexts** carry progress, cancellation and logging into `fit` and `predict`. A plugin knows
   nothing about subprocesses, queues or WebSockets (see ADR-0009).
 - **`predict` returns a per-image score and, optionally, a per-image anomaly map.** Reducing a

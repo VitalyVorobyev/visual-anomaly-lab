@@ -40,6 +40,9 @@ The complete walkthrough is in the **[Visual Anomaly Lab book](book/src/introduc
 
 - **Dataset-centered workflow.** Browse images, annotations, splits, region profiles, experiments, and
   experiment history from one dataset workspace. Filter history by method, status, split, or search text.
+- **Truth that fits the task.** A sample's normal/defect label is anomaly truth; classes live in
+  annotations. A dataset of classes — FSS-1000's few-shot panel, PKU-Market-PCB's boxes — is one dataset,
+  counted, filtered and trained by class, and never dressed up as an anomaly dataset.
 - **Source-frame annotation editor.** Polygon and region editing, undo/redo, automatic contour proposals,
   1:1 and fit views, double-click fit/restore, and direct drag-to-pan without a separate pan mode.
 - **Object-region experiments.** Identity, classical localization, and MobileSAM-backed region profiles are
@@ -86,7 +89,8 @@ offers a one-click registration when it recognizes a complete pack. Registration
   mirror this repository's fetch script uses is
   [`TheoM55/mvtec_anomaly_detection`](https://huggingface.co/datasets/TheoM55/mvtec_anomaly_detection).
 - [FSS-1000](https://github.com/HKUSTCV/FSS-1000)—1 000 object classes of ten images, each with a
-  foreground mask (Li et al., CVPR 2020), registered as a twenty-class few-shot panel. The upstream
+  foreground mask (Li et al., CVPR 2020), registered as one dataset of a twenty-class few-shot panel whose
+  masks are class annotations. The upstream
   repository publishes no licence and asks that users cite the paper; unzip its download so the classes
   sit under `datasets/FSS-1000/fewshot_data/`.
 - [PKU-Market-PCB](https://robotics.pkusz.edu.cn/resources/datasetENG/)—693 printed-circuit-board images

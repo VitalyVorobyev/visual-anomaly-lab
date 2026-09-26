@@ -4,7 +4,7 @@
 
 ## Context
 
-ADR-0005 makes `Sample` the unit of identity and `Channel` data, so one part photographed under
+ADR-0041 makes `Sample` the unit of identity and `Channel` data, so one part photographed under
 three illuminations is one sample owning three images. ADR-0032 made annotation truth versioned,
 source-frame and image-keyed all the way down: drafts and revisions are keyed by image, and the one
 resolver every consumer reads — pixel metrics, overlays, `has_mask`, the `MetricSet` ground-truth

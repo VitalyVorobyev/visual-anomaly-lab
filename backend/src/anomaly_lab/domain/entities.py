@@ -1,9 +1,9 @@
-"""Domain entities (ADR-0005).
+"""Domain entities (ADR-0041).
 
 The schema script `db/migrations/001_initial.sql` is the authoritative description of
 the data model (ADR-0004); these models are how the rest of the application reads it.
 
-Two invariants from ADR-0005 are visible in the shapes below and must stay that way:
+Two invariants from ADR-0041 are visible in the shapes below and must stay that way:
 
   * `Sample` owns `label` and, through `SplitAssignment`, subset membership. There is no
     image-level label and no image-level assignment, so every view of a part necessarily
@@ -56,9 +56,24 @@ class JobStatus(StrEnum):
 
 
 class Label(StrEnum):
+    """A sample's anomaly truth (ADR-0041). `UNLABELED` is no verdict, not a third verdict.
+
+    It says nothing about classes: a dataset whose truth is class annotations leaves every
+    sample `UNLABELED`.
+    """
+
     NORMAL = "normal"
     DEFECT = "defect"
     UNLABELED = "unlabeled"
+
+
+class TruthKind(StrEnum):
+    """Which truth a dataset holds, derived from it and never stored (ADR-0041)."""
+
+    LABELS = "labels"
+    """Some sample carries an anomaly verdict, normal or defect."""
+    CLASSES = "classes"
+    """Some completed annotation shows a class."""
 
 
 class LabelSource(StrEnum):

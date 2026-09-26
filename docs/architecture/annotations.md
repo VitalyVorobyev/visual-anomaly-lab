@@ -32,7 +32,9 @@ sample, whether a class is present, absent or unlabelled:
   none. A revision completed before class tables existed answers from its document instead: present when
   it adds a region of the class (or, for `defect`, starts from the source mask).
 - Without a revision, only `defect` has an answer: an imported ground-truth mask is present, and a sample
-  labelled normal is absent. Every other class is unlabelled.
+  labelled normal is absent. Every other class is unlabelled. This is the one bridge between anomaly truth
+  and class truth (ADR-0041): a sample's label is read for the default class and for no other, so on a
+  dataset of classes the negatives of a class are the images whose completed revision does not show it.
 - A sample shows the class when any of its images does, and is absent only when all of them are.
 
 **Every class at once**, for supervised segmentation (ADR-0039): an image is labelled for a run when the
@@ -63,11 +65,12 @@ integer corners is its own instance box. A reader keeps
 the classes its run pinned; `load_boxes` returns every instance and verifies each source against its
 digest.
 
-**Boxes a dataset ships are a revision, not a source.** A pack annotated as boxes of several classes
-(PKU-Market-PCB's Pascal VOC files) enters each image's boxes as its first completed revision, one `box`
-shape per object on an empty base (`annotations/imported_boxes.py`, [import](import.md#box-truth-a-pack-ships)).
-It is read by the first rule above, answers every class the dataset had when it was completed, and opens in
-the editor like any drawn truth; a correction completes the next revision.
+**Class truth a dataset ships is a revision, not a source.** A pack annotated with several classes enters
+each image's truth as its first completed revision on an empty base (`annotations/imported_truth.py`,
+[import](import.md#class-truth-a-pack-ships)): PKU-Market-PCB's Pascal VOC files as one `box` shape per
+object, FSS-1000's masks as one `bitmap` shape of the class the image's directory names. It is read by the
+first rule above, answers every class the dataset had when it was completed, and opens in the editor like
+any drawn truth; a correction completes the next revision. It sets no sample label (ADR-0041).
 
 `GET /api/datasets/{id}/annotation-labels/coverage` counts those samples per class, and
 `GET /api/datasets/{id}/samples?class_key=&presence=` lists them. `GET /api/images/{id}/mask?class_key=`
@@ -305,7 +308,7 @@ channel at adjustable alpha — the registration check.
 
 The editor header sets the sample's label through `PATCH /api/datasets/{id}/samples/{sid}` with the
 sample viewer's `n` / `d` / `u` keys, beside the part's identity because **the label describes the part,
-not the photograph** (ADR-0005). The edit is recorded `manual`, surviving re-import, and the header shows
+not the photograph** (ADR-0041). The edit is recorded `manual`, surviving re-import, and the header shows
 `imported` or `hand-set`. `Sample.label` is part of the `ground_truth_digest`, so metric sets go stale.
 
 Relabelling is not blocked by unsaved work (J/K are, because they navigate away): the mutation invalidates

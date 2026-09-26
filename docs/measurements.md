@@ -700,9 +700,12 @@ a panel that differs. Two known upstream defects stay out: a stray `.jpeg` besid
 the panel.
 
 **Protocol.**
-- Each panel class is its own dataset, registered as the reference pack registers it
-  ([import](architecture/import.md#reference-packs)). Its ten images, with their masks, are the target
-  class `defect`; the other nineteen classes' 190 images are confirmed absences.
+- Each panel class is its own dataset. Its ten images, with their masks, are the target class `defect`;
+  the other nineteen classes' 190 images are confirmed absences, labelled `normal`. This is the shape the
+  figures below were measured on. The pack now registers the panel as one dataset whose masks are class
+  truth, and a run names its class ([import](architecture/import.md#reference-packs), ADR-0041): the same
+  references, queries and truth by construction, which `tests/test_truth_is_task_scoped.py` asserts on a
+  synthetic panel. Re-running the gate on that shape is in [backlog.md](backlog.md).
 - `few_shot` splits draw k ∈ {1, 2, 5} references among the ten under seeds {0, 1, 2}, and every other
   image is a query: 10 − k that show the class and 190 that do not. Ten shots would leave no image of the
   class to segment, so k = 10 is not run.

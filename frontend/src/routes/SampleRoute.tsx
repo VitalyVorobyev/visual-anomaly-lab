@@ -4,7 +4,7 @@
  * **Channel tabs are rendered from the sample's own image list.** There is no constant
  * anywhere in this file for how many there should be, so the two-channel capture group in
  * the reference data renders through exactly the same code as every three-channel one —
- * which is the UI half of "channel count is data, never schema" (ADR-0005, §12).
+ * which is the UI half of "channel count is data, never schema" (ADR-0041, §12).
  *
  * Zoom and pan are shared across channels rather than per channel: the views are
  * near-simultaneous images of the same physical object, so comparing them is only useful
@@ -34,6 +34,7 @@ import { Badge, Button, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Sw
 
 import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
+import { labelsApply } from "../api/truth";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {
@@ -84,6 +85,14 @@ export function SampleRoute() {
   const [sideBySide, setSideBySide] = useState(false);
   const [view, setView] = useState<StageView | null>(RESET);
   const [autoAdvance, setAutoAdvance] = useState(true);
+  /**
+   * The label rail is anomaly truth (ADR-0041). A dataset of classes alone does not carry
+   * it — FSS-1000's objects are not normal or defective — so it is offered, not shown, and
+   * one press puts it back for this visit. Labelling one sample makes the dataset one with
+   * labels, and from then on the rail is simply there.
+   */
+  const [optedIn, setOptedIn] = useState(false);
+  const labelling = optedIn || labelsApply(dataset.data?.truth);
   /**
    * Crossing a page boundary cannot be done in one move: the neighbouring page is not
    * loaded yet. We shift the window and record which end of it we were heading for, and
@@ -181,7 +190,7 @@ export function SampleRoute() {
   // one every screen uses. This one had no modifier check, so ⌘D relabelled the part.
   useHotkeys((event) => {
     const label = LABEL_KEYS[event.key.toLowerCase()];
-    if (label) apply(label);
+    if (label && labelling) apply(label);
     if (event.key === "0") setView(RESET);
     if (event.key === "ArrowRight") step(1);
     if (event.key === "ArrowLeft") step(-1);
@@ -220,7 +229,7 @@ export function SampleRoute() {
             )}
           </h1>
 
-          {current && (
+          {current && labelling && (
             <span className="flex shrink-0 items-center gap-1.5">
               <Badge tone={LABEL_TONE[current.label]}>{current.label}</Badge>
               <Badge tone={current.label_source === "manual" ? "info" : "neutral"}>
@@ -299,36 +308,48 @@ export function SampleRoute() {
           data-scroll="rail"
           className="flex w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-l border-line bg-ground"
         >
-          <RailSection title="Label" hint="n · d · u">
-            <div className="flex flex-col gap-1.5">
-              {LABELS.map((label) => (
-                <Button
-                  key={label}
-                  className="justify-between"
-                  variant={current?.label === label ? "primary" : "secondary"}
-                  disabled={!current || setLabel.isPending}
-                  onClick={() => apply(label)}
-                >
-                  {label}
-                  <span
-                    className={cn(
-                      "font-mono text-[11px]",
-                      current?.label === label ? "opacity-70" : "text-fg-subtle",
-                    )}
-                    aria-hidden
+          {labelling ? (
+            <RailSection title="Label" hint="n · d · u">
+              <div className="flex flex-col gap-1.5">
+                {LABELS.map((label) => (
+                  <Button
+                    key={label}
+                    className="justify-between"
+                    variant={current?.label === label ? "primary" : "secondary"}
+                    disabled={!current || setLabel.isPending}
+                    onClick={() => apply(label)}
                   >
-                    {KEY_FOR[label]}
-                  </span>
-                </Button>
-              ))}
-            </div>
-            <Switch
-              checked={autoAdvance}
-              onCheckedChange={setAutoAdvance}
-              label="Advance after labelling"
-            />
-            {setLabel.error && <ErrorBox>{setLabel.error.message}</ErrorBox>}
-          </RailSection>
+                    {label}
+                    <span
+                      className={cn(
+                        "font-mono text-[11px]",
+                        current?.label === label ? "opacity-70" : "text-fg-subtle",
+                      )}
+                      aria-hidden
+                    >
+                      {KEY_FOR[label]}
+                    </span>
+                  </Button>
+                ))}
+              </div>
+              <Switch
+                checked={autoAdvance}
+                onCheckedChange={setAutoAdvance}
+                label="Advance after labelling"
+              />
+              {setLabel.error && <ErrorBox>{setLabel.error.message}</ErrorBox>}
+            </RailSection>
+          ) : (
+            <RailSection title="Anomaly label" hint="">
+              <p className="text-xs leading-relaxed text-fg-muted">
+                This dataset&apos;s truth is its classes. A normal or defect verdict is for
+                anomaly detection.
+              </p>
+              <Button size="sm" variant="ghost" onClick={() => setOptedIn(true)}>
+                Label for anomaly detection
+              </Button>
+            </RailSection>
+          )}
 
           {/* "Channels (1)" was a section heading that counted to one. The section is about
               looking at the image; the channel controls are part of that, and only exist

@@ -53,7 +53,7 @@ def training_set(conn: sqlite3.Connection, experiment: Experiment) -> TrainingSe
     )
     if experiment.task is Task.ANOMALY:
         # Normals only, and by *sample* label rather than by image, because the label lives
-        # on the sample (ADR-0005). A defect in the training set teaches that defects are
+        # on the sample (ADR-0041). A defect in the training set teaches that defects are
         # normal. Held-out normals, where the split has any, calibrate; VisA's official
         # protocol has no `val` subset, so an empty one is routine.
         train = [image for image in everything if image.label is Label.NORMAL]

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from anomaly_lab.annotations.class_truth import load_boxes, resolve_box_truth
-from anomaly_lab.annotations.imported_boxes import (
+from anomaly_lab.annotations.imported_truth import (
     CLASS_PALETTE,
     ImportedBox,
     ImportedClass,

@@ -8,7 +8,10 @@
  * time it takes to look, and the counts are one click away in the band, where they are
  * needed.
  *
- * So the card states what a catalogue entry is for: recognise it, and open it. The delete
+ * So the card states what a catalogue entry is for: recognise it, and open it. One quiet line
+ * of counts stays, in the unit its truth is kept in — verdicts for an anomaly dataset,
+ * classes for a class dataset (ADR-0041) — because what kind of dataset it is belongs to
+ * recognising it. The delete
  * and edit actions live in a corner that appears on hover or keyboard focus, so the resting
  * grid is a wall of pictures rather than a wall of buttons.
  */
@@ -20,6 +23,7 @@ import { Link } from "react-router";
 import type { DatasetSummary } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
 import { Button, cn, focusRing } from "@vitavision/lab-ui";
+import { truthLine } from "../../components/DatasetTruth";
 
 export function DatasetCard({
   dataset,
@@ -41,7 +45,7 @@ export function DatasetCard({
         )}
       >
         <Cover dataset={dataset} />
-        <div className="flex min-h-0 flex-col gap-1 px-3.5 py-3">
+        <div className="flex min-h-0 flex-1 flex-col gap-1 px-3.5 py-3">
           <h3 className="truncate text-sm font-medium tracking-tight text-fg">{dataset.name}</h3>
           {dataset.description ? (
             // Two lines is the budget: enough for a sentence, and a fixed ceiling so one
@@ -52,6 +56,9 @@ export function DatasetCard({
           ) : (
             <p className="text-xs text-fg-subtle italic">No description yet</p>
           )}
+          <p className="mt-auto pt-1 font-mono text-[11px] text-fg-subtle tabular-nums">
+            {truthLine(dataset)}
+          </p>
         </div>
       </Link>
 
@@ -83,7 +90,9 @@ export function DatasetCard({
 }
 
 /**
- * The dataset's own first normal image, at thumbnail tier.
+ * The image the server chose to stand for the dataset, at thumbnail tier: the first normal
+ * sample of an anomaly dataset, an annotated sample of the most frequent class of a class
+ * dataset (ADR-0041).
  *
  * `aspect-[4/3]` with `object-cover` rather than letting the image size the card: a
  * catalogue of mixed aspect ratios has to align on a grid, and a row whose height is set
