@@ -2,7 +2,7 @@
   "id": "CAP-003",
   "kind": "Capability",
   "title": "Experiment execution",
-  "summary": "Fit and score method plugins with replayable jobs.",
+  "summary": "Start a guided run from a dataset or use the full form; fit and score capability-declared method plugins with replayable jobs.",
   "status": "accepted",
   "confidence": 0.95,
   "owner": null,

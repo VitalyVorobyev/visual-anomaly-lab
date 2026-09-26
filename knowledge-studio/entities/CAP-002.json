@@ -2,7 +2,7 @@
   "id": "CAP-002",
   "kind": "Capability",
   "title": "Truth and annotation",
-  "summary": "Browse, label and annotate source-frame images with versioned truth.",
+  "summary": "Browse, explore, label and annotate source-frame images with versioned, task-scoped truth.",
   "status": "accepted",
   "confidence": 0.95,
   "owner": null,

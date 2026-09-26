@@ -2,7 +2,7 @@
   "id": "RSK-003",
   "kind": "Risk",
   "title": "Upstream accessibility gaps",
-  "summary": "Remaining interface findings depend on lab-ui controls.",
+  "summary": "The remaining disabled-tab explanation depends on an upstream lab-ui control.",
   "status": "open",
   "confidence": 0.9,
   "owner": null,
