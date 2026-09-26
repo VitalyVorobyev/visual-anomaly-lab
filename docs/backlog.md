@@ -106,13 +106,13 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
       what a literal reading of the paper does, so the option that excludes a rotation's invented
       corners is shipped unmeasured. It is a one-axis rerun of one phase, and the honest expectation
       is that it matters most where the part does not fill the frame.
-- [ ] **Run the real-pixel export-parity gate for `subspace_ad`** (S, unattended compute): the graph
-      is written and its fixture parity is tested (`test_dl_subspace_ad_export.py`); what remains is
-      `scripts/export-parity-gate.py --candidate subspace_ad` on VisA `candle` and `pcb1` under the
-      predeclared rule ([measurements.md](measurements.md)), its verdict recorded there, and — on a
-      pass — `portable_formats=[PortableFormat.ONNX]` with the handbook and the book updated to say so.
-      A fit over several channels stays refused; exporting one graph per channel would need a bundle
-      contract with a channel input.
+- [ ] **Decide what a `subspace_ad` bundle can promise** (S): the graph failed the real-pixel
+      export-parity gate at `atol = rtol = 1e-4` with the ranking unchanged
+      ([measurements.md](measurements.md)). Either predeclare a gate whose tolerance is sized to a
+      24-block encoder feeding a residual — and say why that bound still separates rounding from a
+      different operation — or measure the ViT-B and ViT-S configurations, whose encoders are half as
+      deep, under the existing bound and let the plugin declare ONNX only for those. A fit over several
+      channels stays refused; one graph per channel would need a bundle contract with a channel input.
 
 ## Evaluation
 
