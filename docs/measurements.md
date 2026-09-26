@@ -773,6 +773,10 @@ on `tiltrotor` (0.529), `wandering_albatross` (0.626) and `jet_aircraft` (0.690)
 leads `color_prototype` (0.017) by 0.79, while `fss_dino` leads it by 0.004, inside the 0.02 margin — so
 `fss_dino` does not carry across domains, and the DINO methods as a pair do not either.
 
+**Reproduced on the one-dataset shape.** The pack now registers the panel as one dataset whose masks are
+class truth, and a few-shot split names its class (ADR-0041). The same 540 runs on that shape give every
+cell of the table above to three decimals, so the verdict stands on it unchanged.
+
 **What the gate says beyond its rule.**
 - `proto_seg` ranks object pixels, and object images, almost perfectly: pixel AP 0.81 against a chance of
   about 0.006, presence ROC-AUC 1.000. Its mask is the problem, not its features: at the fixed `>= 0.5` cut
