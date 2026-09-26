@@ -33,7 +33,7 @@ representation, and the tier renderer is bit-depth agnostic, so no call site spe
 **The ground-truth outline is served in two frames.** `GET /api/images/{image_id}/mask` draws the annotated
 region's contour as a transparent PNG at the source's own size — an outline, because a fill hides the
 pixels the reader is judging the map against. `frame=prepared&experiment_id=N` draws the same mask
-projected through that run's pinned region transform, at the prepared size, which is what a
+projected through that run's pinned region transform, at the run's input size, which is what a
 **diagnostics** pane needs: diagnostics are prepared-frame, and a source-frame outline over one is off by
 exactly the crop and letterbox ([diagnostics](diagnostics.md)). The contour is traced after projection, and
 the `ETag` carries the frame and the pinned manifest digest so the two never answer for each other out of a

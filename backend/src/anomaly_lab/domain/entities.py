@@ -267,7 +267,11 @@ class SampleAlignment(StrEnum):
 
 
 class RegionProfileRevision(BaseModel):
-    """One immutable dataset-owned spatial-input configuration (ADR-0033)."""
+    """One immutable dataset-owned spatial-input configuration: where to look (ADR-0033).
+
+    It carries no size. A run prepares its profile at the run's own input size, and a
+    build is keyed by `(revision, width, height)`.
+    """
 
     model_config = API_MODEL_CONFIG
 
@@ -277,8 +281,6 @@ class RegionProfileRevision(BaseModel):
     revision_no: int
     extractor_type: str
     extractor_config: dict[str, Any] = Field(default_factory=dict)
-    prepared_width: int
-    prepared_height: int
     padding_fraction: float = 0.05
     resample: SpatialResample = SpatialResample.BILINEAR
     created_at: str
@@ -375,7 +377,13 @@ class Experiment(BaseModel):
     dataset_id: int
     split_id: int
     region_profile_id: int
-    region_manifest_sha256: str
+    region_manifest_sha256: str | None = Field(
+        default=None,
+        description=(
+            "The prepared-region build the run reads, pinned by its first train or infer "
+            "job; null until then, and frozen once set."
+        ),
+    )
     model_type: str
     task: Task = Task.ANOMALY
     target_label: str | None = Field(

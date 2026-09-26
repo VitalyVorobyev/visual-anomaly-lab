@@ -90,7 +90,7 @@ export function Configuration({
     preprocessing: Record<string, unknown>;
     region_profile_id: number;
     region_profile_name?: string | null;
-    region_manifest_sha256: string;
+    region_manifest_sha256: string | null;
     training_state?: TrainingState | null;
   };
 }) {
@@ -120,11 +120,11 @@ export function Configuration({
             values={{
               profile: detail.region_profile_name ?? detail.region_profile_id,
               revision_id: detail.region_profile_id,
-              manifest: detail.region_manifest_sha256,
+              manifest: detail.region_manifest_sha256 ?? "pinned by the first train or score",
             }}
           />
           <ConfigBlock title="Method" values={detail.config} />
-          <ConfigBlock title="Colour" values={detail.preprocessing} />
+          <ConfigBlock title="Input" values={detail.preprocessing} />
         </div>
       </Disclosure>
     </Panel>

@@ -40,7 +40,9 @@ parameters.
   byte count and SHA-256, so the sidecar cannot become an arbitrary downloader. The licence is accepted
   before enqueue. Bytes go to a job-specific partial file and reach the managed path only after size and
   digest verification; cancellation or failure removes the partial.
-- **`region_prepare`** — two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
+- **`region_prepare`** — one profile revision at one size: `params` carry `profile_id`, `width` and
+  `height`, because a profile has no size of its own ([domain model](domain-model.md#regionprofilerevision)).
+  Two modes. Preview selects at most 24 images, the budget shared between channels and evenly spaced within
   each (one stride over an interleaved list can miss a channel), and returns transforms
   without writing pixels. Under `sample_alignment = union` a crop depends on every image of its sample, so
   the preview spends the budget on whole samples instead — as many as fit in 24 images, evenly spaced over
@@ -49,11 +51,35 @@ parameters.
   sample at a time, so memory is one part's images, and writes its manifest in dataset image order. Build visits the whole dataset, checks cancellation between images, writes into
   managed staging and publishes atomically once its manifest and summary are complete. Per-image failures
   are recorded and reduce coverage; they never fall back to identity. A malformed job, missing asset or
-  extractor construction failure fails the job before processing.
+  extractor construction failure fails the job before processing. A build that already exists at that
+  size is refused (409 at enqueue): published builds are immutable. Nothing requires this job before a
+  run — a `train` or `infer` job prepares what its run needs (below); "Build all" only does it ahead.
 - **`distill`** — produces a teacher asset, not an experiment, so its `experiment_id` is null; it is started
   from the command line ([methods](methods.md)).
 - **`train`, `infer`, `export`** — experiment-bound. `export` writes an ONNX bundle into staging,
   runs graph parity on CPU, hashes the payloads and publishes atomically ([deployment](deployment.md)).
+
+### Preparing a run's input
+
+A run pins no region build at creation. `experiments/context.load_experiment(..., job=ctx)` — called by
+the `train` and `infer` handlers — resolves it through `regions/preparation.ensure_run_build` before the
+method is fitted or asked to score:
+
+- a run that already pins a manifest loads exactly that build, verified by digest;
+- otherwise a completed build of its profile at its `preprocessing_config` size is **adopted**;
+- otherwise that build is **prepared in-process**, inside the job, through the same `_build_all` the
+  `region_prepare` build runs — its progress and a line saying why go to the job's own log;
+
+and the handler then pins the manifest (`experiments.pin_region_build`), once. The queue knows none of
+this: preparation is part of the handler's work, so a train job on a new `(profile, size)` is simply a
+longer job, and the one-job-at-a-time queue is what keeps two jobs from preparing the same build at once.
+Each handler first refuses what cannot succeed — an `infer` of an untrained run whose method requires
+training, a split with nothing to fit — so a doomed job prepares nothing.
+
+A zero-shot method (`requires_training` false, `anomalyvfm_anomalib`) may be scored without a train job;
+its `infer` job is the first job and prepares the build the same way, because its `predict` reads the
+prepared images every other method reads. `export` and a diagnose request never prepare: they read the
+build a job already pinned, and refuse a run that has none.
 
 **A job may name its successor.** A `done` result carrying `follow_up: {"kind", "params"}`
 (`jobs/protocol.FOLLOW_UP_KEY`) is queued by `JobQueue._finish` only when the job `succeeded`, bound to the
@@ -153,8 +179,10 @@ It mirrors the queue's layering: `jobs/resident.py` is the manager; `jobs/inspec
 
 - **A few-shot preview** (`few_shot_preview`, ADR-0040) is one method at its defaults, fitted on the
   reference studio's current references through the same `PreparedClassTargets` a run uses. Its spec
-  (dataset, class, method, profile, references) is the resident's command line, never a request field. Its
-  generation fingerprints the spec, the pinned region build and every reference image's pinned truth, so
+  (dataset, class, method, profile, references) is the resident's command line, never a request field.
+  It reads the method's native size, and needs the profile already built at that size — a resident
+  request cannot hold a dataset's preparation — so the studio names the size to build when it is
+  missing. Its generation fingerprints the spec, the pinned region build and every reference image's pinned truth, so
   new references are a new resident. A request segments one image, or a batch of at most 48, into
 `previews/<generation>/maps/`,
   which `GET /api/studio/previews/{generation}/{image}.png` renders on the fixed range [0, 1]. A preview is

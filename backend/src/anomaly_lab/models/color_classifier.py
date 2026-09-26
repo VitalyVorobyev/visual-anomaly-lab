@@ -97,6 +97,14 @@ class ColorClassifierModel(AnomalyModel):
         return ColorClassifierConfig
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the supervised-segmentation gates ran this floor at 448x448.
+
+        See docs/measurements.md.
+        """
+        return (448, 448)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             tasks=[Task.SEMANTIC_SEGMENTATION],

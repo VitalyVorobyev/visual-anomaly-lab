@@ -367,6 +367,15 @@ class AnomalyVfmAnomalibModel(AnomalyModel):
         return module_available("anomalib", "dl", METHOD)
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """768 px square: the frame its resource gate kept and its public gate ran at."""
+        return (MEASURED_SIZE, MEASURED_SIZE)
+
+    @classmethod
+    def size_multiple(cls, config: BaseModel) -> int:
+        return PATCH_SIZE
+
+    @classmethod
     def check_input(cls, config: BaseModel, preprocessing: PreprocessingConfig) -> None:
         if not isinstance(config, AnomalyVfmConfig):
             raise TypeError(f"expected AnomalyVfmConfig, got {type(config).__name__}")

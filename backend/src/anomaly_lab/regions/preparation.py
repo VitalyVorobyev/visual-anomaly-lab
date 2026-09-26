@@ -1,9 +1,17 @@
-"""Bounded preview and atomic full preparation for one region profile revision."""
+"""Bounded preview and atomic full preparation of one region profile revision at one size.
+
+A profile says where to look; the size is the run's. A build is therefore keyed by
+`(revision, width, height)` and lives in its own subdirectory of the profile's directory,
+immutable once published. A train or infer job builds the one its run needs when it is
+missing (`ensure_run_build`); the Prepare screen's preview and "Build all" name a size
+explicitly.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import re
 import shutil
 import time
 from collections.abc import Sequence
@@ -35,6 +43,10 @@ from anomaly_lab.schemas import API_MODEL_CONFIG
 PREVIEW_LIMIT = 24
 SUMMARY_FILENAME = "summary.json"
 MANIFEST_FILENAME = "transforms.jsonl"
+_SIZE_DIR = re.compile(r"^([1-9][0-9]*)x([1-9][0-9]*)$")
+
+Size = tuple[int, int]
+"""`(width, height)` of a prepared frame, in Pillow's order."""
 
 _RESAMPLE_FILTERS = {
     SpatialResample.NEAREST: Image.Resampling.NEAREST,
@@ -61,9 +73,11 @@ class RegionPreparationEntry(BaseModel):
 class RegionBuildSummary(BaseModel):
     model_config = API_MODEL_CONFIG
 
-    schema_version: int = 1
+    schema_version: int = 2
     profile_id: int
     dataset_id: int
+    width: int = Field(gt=0, description="Prepared frame width this build was made at.")
+    height: int = Field(gt=0, description="Prepared frame height this build was made at.")
     total: int
     succeeded: int
     failed: int
@@ -82,6 +96,7 @@ class PreparedRegionBuild:
 
     root: Path
     profile: RegionProfileRevision
+    size: Size
     summary: RegionBuildSummary
     entries: dict[int, RegionPreparationEntry]
 
@@ -165,20 +180,52 @@ def preview_selection(
     return preview_indices([image.channel_id for image in images], limit)
 
 
-def read_build_summary(settings: Settings, profile_id: int) -> RegionBuildSummary | None:
-    root = settings.region_profile_dir(profile_id)
+def build_dir(settings: Settings, profile_id: int, size: Size) -> Path:
+    """Where the build of one profile revision at one size is published."""
+    width, height = size
+    return settings.region_profile_dir(profile_id) / f"{width}x{height}"
+
+
+def _unsafe_root(settings: Settings, profile_id: int) -> bool:
+    return (
+        settings.region_profiles_dir.is_symlink()
+        or settings.region_profile_dir(profile_id).is_symlink()
+    )
+
+
+def read_build_summary(
+    settings: Settings, profile_id: int, size: Size
+) -> RegionBuildSummary | None:
+    root = build_dir(settings, profile_id, size)
     path = root / SUMMARY_FILENAME
-    if settings.region_profiles_dir.is_symlink() or root.is_symlink() or path.is_symlink():
+    if _unsafe_root(settings, profile_id) or root.is_symlink() or path.is_symlink():
         return None
     try:
-        return RegionBuildSummary.model_validate_json(path.read_text(encoding="utf-8"))
+        summary = RegionBuildSummary.model_validate_json(path.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, ValueError):
         return None
+    return summary if (summary.width, summary.height) == size else None
 
 
-def has_published_build(settings: Settings, profile_id: int) -> bool:
-    """Whether a profile path was published, even when its report is now corrupted."""
+def list_build_summaries(settings: Settings, profile_id: int) -> list[RegionBuildSummary]:
+    """Every completed build of one revision, one per size, smallest frame first."""
     root = settings.region_profile_dir(profile_id)
+    if _unsafe_root(settings, profile_id) or not root.is_dir():
+        return []
+    found: list[RegionBuildSummary] = []
+    for child in root.iterdir():
+        match = _SIZE_DIR.match(child.name)
+        if match is None:
+            continue
+        summary = read_build_summary(settings, profile_id, (int(match[1]), int(match[2])))
+        if summary is not None:
+            found.append(summary)
+    return sorted(found, key=lambda summary: (summary.width * summary.height, summary.width))
+
+
+def has_published_build(settings: Settings, profile_id: int, size: Size) -> bool:
+    """Whether a build at this size was published, even when its report is now corrupted."""
+    root = build_dir(settings, profile_id, size)
     return root.exists() or root.is_symlink()
 
 
@@ -186,13 +233,15 @@ def load_prepared_build(
     settings: Settings,
     profile: RegionProfileRevision,
     *,
+    size: Size,
     manifest_sha256: str,
 ) -> PreparedRegionBuild:
     """Verify and load the complete materialization pinned by an experiment."""
-    root = settings.region_profile_dir(profile.id)
-    summary = read_build_summary(settings, profile.id)
+    width, height = size
+    root = build_dir(settings, profile.id, size)
+    summary = read_build_summary(settings, profile.id, size)
     if summary is None:
-        raise ValueError(f"region profile {profile.id} has no completed build")
+        raise ValueError(f"region profile {profile.id} has no completed build at {width}x{height}")
     if summary.profile_id != profile.id or summary.dataset_id != profile.dataset_id:
         raise ValueError(
             f"region profile {profile.id} build identity does not match its database revision"
@@ -237,7 +286,72 @@ def load_prepared_build(
             f"region profile {profile.id} manifest has {len(entries)} entries, "
             f"expected {summary.total}"
         )
-    return PreparedRegionBuild(root=root, profile=profile, summary=summary, entries=entries)
+    for entry in entries.values():
+        if (
+            entry.transform is not None
+            and (
+                entry.transform.prepared_width,
+                entry.transform.prepared_height,
+            )
+            != size
+        ):
+            raise ValueError(
+                f"region profile {profile.id} build at {width}x{height} holds a transform "
+                f"for another size (image {entry.image_id})"
+            )
+    return PreparedRegionBuild(
+        root=root, profile=profile, size=size, summary=summary, entries=entries
+    )
+
+
+def ensure_run_build(
+    ctx: JobContext,
+    profile: RegionProfileRevision,
+    size: Size,
+    *,
+    pinned: str | None,
+) -> PreparedRegionBuild:
+    """The build a run reads: the one it pins, or else the one at its size — built if missing.
+
+    A run pins nothing at creation. Its first train or infer job lands here: a completed
+    build of the profile at the run's size is adopted, and a missing one is built
+    in-process through the same `_build_all` the Prepare screen's "Build all" runs, with
+    its progress on this job's log. The caller pins the returned manifest.
+    """
+    if pinned is not None:
+        return load_prepared_build(ctx.settings, profile, size=size, manifest_sha256=pinned)
+    width, height = size
+    summary = read_build_summary(ctx.settings, profile.id, size)
+    if summary is None:
+        if has_published_build(ctx.settings, profile.id, size):
+            raise ValueError(
+                f"region profile {profile.id} has a build at {width}x{height} whose report "
+                "cannot be read; delete the profile or use a new revision"
+            )
+        with connection(ctx.settings.db_path) as conn:
+            images = images_repo.list_images_for_dataset(conn, profile.dataset_id)
+        ctx.log(
+            f"Region profile {profile.name!r} r{profile.revision_no} has no build at "
+            f"{width}x{height}; preparing {len(images)} images before this run."
+        )
+        extractor = build_extractor(
+            profile.extractor_type,
+            profile.extractor_config,
+            assets=_resolve_assets(ctx.settings, profile),
+        )
+        summary = _build_all(ctx, profile, size, images, extractor=extractor)
+        ctx.log(
+            f"Prepared {summary.succeeded}/{summary.total} images at {width}x{height} "
+            f"in {summary.elapsed_ms / 1000.0:.1f} s."
+        )
+    else:
+        ctx.log(
+            f"Reading region profile {profile.name!r} r{profile.revision_no} from its "
+            f"existing build at {width}x{height}."
+        )
+    return load_prepared_build(
+        ctx.settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+    )
 
 
 def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
@@ -246,6 +360,9 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
     mode = str(ctx.params.get("mode", ""))
     if mode not in {"preview", "build"}:
         raise ValueError("region preparation mode must be 'preview' or 'build'")
+    size = (_integer_param(ctx, "width"), _integer_param(ctx, "height"))
+    if min(size) <= 0:
+        raise ValueError("region preparation needs a positive width and height")
 
     with connection(ctx.settings.db_path) as conn:
         profile = profiles_repo.get_profile(conn, profile_id)
@@ -266,21 +383,23 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
         assets=assets,
     )
     ctx.log(
-        f"{mode.title()} profile {profile.id} ({profile.extractor_type}) on "
-        f"{len(selected)} of {len(images)} images."
+        f"{mode.title()} profile {profile.id} ({profile.extractor_type}) at "
+        f"{size[0]}x{size[1]} on {len(selected)} of {len(images)} images."
     )
 
     if mode == "preview":
         # Bounded: a union preview can exceed the budget only through one sample larger
         # than it, whose crop needs every image — so the result, not the work, is cut.
-        entries = _process_images(ctx, profile, selected, extractor=extractor, output_dir=None)[
-            :PREVIEW_LIMIT
-        ]
+        entries = _process_images(
+            ctx, profile, size, selected, extractor=extractor, output_dir=None
+        )[:PREVIEW_LIMIT]
         succeeded = sum(entry.status == "succeeded" for entry in entries)
         return {
             "mode": "preview",
             "profile_id": profile.id,
             "dataset_id": profile.dataset_id,
+            "width": size[0],
+            "height": size[1],
             "sampled": len(entries),
             "dataset_images": len(images),
             "succeeded": succeeded,
@@ -288,31 +407,36 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
             "entries": [entry.model_dump(mode="json") for entry in entries],
         }
 
-    return _build_all(ctx, profile, selected, extractor=extractor).model_dump(mode="json")
+    return _build_all(ctx, profile, size, selected, extractor=extractor).model_dump(mode="json")
 
 
 def _build_all(
     ctx: JobContext,
     profile: RegionProfileRevision,
+    size: Size,
     images: list[ImageEntity],
     *,
     extractor: Any,
 ) -> RegionBuildSummary:
-    if has_published_build(ctx.settings, profile.id):
+    width, height = size
+    if has_published_build(ctx.settings, profile.id, size):
         raise ValueError(
-            f"region profile {profile.id} already has an immutable completed build; "
-            "create a new profile revision to rebuild it"
+            f"region profile {profile.id} already has an immutable completed build at "
+            f"{width}x{height}; create a new profile revision to rebuild it"
         )
-    destination = ctx.settings.region_profile_dir(profile.id)
-    staging = ctx.settings.region_profiles_dir / f".profile-{profile.id}-job-{ctx.job_id}.staging"
-    backup = ctx.settings.region_profiles_dir / f".profile-{profile.id}-job-{ctx.job_id}.previous"
-    _require_managed_build_paths(ctx.settings, destination, staging, backup)
+    profile_root = ctx.settings.region_profile_dir(profile.id)
+    destination = build_dir(ctx.settings, profile.id, size)
+    staging = profile_root / f".{width}x{height}-job-{ctx.job_id}.staging"
+    backup = profile_root / f".{width}x{height}-job-{ctx.job_id}.previous"
+    _require_managed_build_paths(ctx.settings, profile.id, destination, staging, backup)
     shutil.rmtree(staging, ignore_errors=True)
     shutil.rmtree(backup, ignore_errors=True)
     (staging / "images").mkdir(parents=True)
     started = time.perf_counter()
     try:
-        entries = _process_images(ctx, profile, images, extractor=extractor, output_dir=staging)
+        entries = _process_images(
+            ctx, profile, size, images, extractor=extractor, output_dir=staging
+        )
         manifest = staging / MANIFEST_FILENAME
         with manifest.open("w", encoding="utf-8") as handle:
             for entry in entries:
@@ -324,6 +448,8 @@ def _build_all(
         summary = RegionBuildSummary(
             profile_id=profile.id,
             dataset_id=profile.dataset_id,
+            width=width,
+            height=height,
             total=len(entries),
             succeeded=succeeded,
             failed=len(entries) - succeeded,
@@ -367,19 +493,25 @@ def _build_all(
 def _process_images(
     ctx: JobContext,
     profile: RegionProfileRevision,
+    size: Size,
     images: list[ImageEntity],
     *,
     extractor: Any,
     output_dir: Path | None,
 ) -> list[RegionPreparationEntry]:
     if profile.sample_alignment is SampleAlignment.UNION:
-        return _process_samples(ctx, profile, images, extractor=extractor, output_dir=output_dir)
-    return _process_each_image(ctx, profile, images, extractor=extractor, output_dir=output_dir)
+        return _process_samples(
+            ctx, profile, size, images, extractor=extractor, output_dir=output_dir
+        )
+    return _process_each_image(
+        ctx, profile, size, images, extractor=extractor, output_dir=output_dir
+    )
 
 
 def _process_each_image(
     ctx: JobContext,
     profile: RegionProfileRevision,
+    size: Size,
     images: list[ImageEntity],
     *,
     extractor: Any,
@@ -401,7 +533,7 @@ def _process_each_image(
             extraction = extractor.extract(rgb)
             transform = SpatialTransform.resolve(
                 source_size=source.size,
-                prepared_size=(profile.prepared_width, profile.prepared_height),
+                prepared_size=size,
                 region=extraction.bounds,
                 padding_fraction=profile.padding_fraction,
             )
@@ -455,6 +587,7 @@ class _Located:
 def _process_samples(
     ctx: JobContext,
     profile: RegionProfileRevision,
+    size: Size,
     images: list[ImageEntity],
     *,
     extractor: Any,
@@ -475,9 +608,9 @@ def _process_samples(
         located: list[_Located] = []
         for index in indices:
             ctx.raise_if_cancelled()
-            located.append(_locate(profile, images[index], extractor))
+            located.append(_locate(profile, size, images[index], extractor))
         for index, entry in zip(
-            indices, _unite_sample(profile, sample_id, located, output_dir), strict=True
+            indices, _unite_sample(profile, size, sample_id, located, output_dir), strict=True
         ):
             by_index[index] = entry
             if entry.status == "failed":
@@ -487,7 +620,9 @@ def _process_samples(
     return [by_index[index] for index in range(total)]
 
 
-def _locate(profile: RegionProfileRevision, record: ImageEntity, extractor: Any) -> _Located:
+def _locate(
+    profile: RegionProfileRevision, size: Size, record: ImageEntity, extractor: Any
+) -> _Located:
     located = _Located(record=record, started=time.perf_counter())
     try:
         source = decode.load(Path(record.path))
@@ -499,7 +634,7 @@ def _locate(profile: RegionProfileRevision, record: ImageEntity, extractor: Any)
         located.extraction = extractor.extract(rgb)
         located.transform = SpatialTransform.resolve(
             source_size=source.size,
-            prepared_size=(profile.prepared_width, profile.prepared_height),
+            prepared_size=size,
             region=located.extraction.bounds,
             padding_fraction=profile.padding_fraction,
         )
@@ -511,6 +646,7 @@ def _locate(profile: RegionProfileRevision, record: ImageEntity, extractor: Any)
 
 def _unite_sample(
     profile: RegionProfileRevision,
+    size: Size,
     sample_id: int,
     located: list[_Located],
     output_dir: Path | None,
@@ -553,7 +689,7 @@ def _unite_sample(
     )
     shared = SpatialTransform.resolve(
         source_size=sizes.pop(),
-        prepared_size=(profile.prepared_width, profile.prepared_height),
+        prepared_size=size,
         # The members are already padded and clipped; the union is taken as it is.
         region=union,
         padding_fraction=0.0,
@@ -626,10 +762,11 @@ def _integer_param(ctx: JobContext, key: str) -> int:
         raise ValueError(f"region preparation job has malformed {key}") from exc
 
 
-def _require_managed_build_paths(settings: Settings, *paths: Path) -> None:
-    root = settings.region_profiles_dir
-    if root.is_symlink():
-        raise ValueError("region profile storage root may not be a symlink")
+def _require_managed_build_paths(settings: Settings, profile_id: int, *paths: Path) -> None:
+    if _unsafe_root(settings, profile_id):
+        raise ValueError("region profile storage may not be reached through a symlink")
+    profile_root = settings.region_profile_dir(profile_id)
     for path in paths:
-        if path.parent != root or path.is_symlink():
+        if path.parent != profile_root or path.is_symlink():
             raise ValueError(f"unsafe region profile build path: {path}")
+    profile_root.mkdir(parents=True, exist_ok=True)

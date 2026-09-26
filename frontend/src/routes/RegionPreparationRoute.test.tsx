@@ -25,8 +25,6 @@ const profile = {
   revision_no: 3,
   extractor_type: "mobile_sam",
   extractor_config: {},
-  prepared_width: 256,
-  prepared_height: 256,
   padding_fraction: 0.05,
   resample: "bilinear",
   created_at: "2026-01-01T00:00:00Z",
@@ -99,6 +97,47 @@ describe("deleting a saved profile revision", () => {
     expect(
       screen.getByRole("button", { name: "Delete revision" }).hasAttribute("disabled"),
     ).toBe(true);
+  });
+});
+
+describe("the size a profile is prepared at", () => {
+  function mountSelected(seed: [readonly unknown[], unknown][] = []) {
+    return render(
+      withProviders(
+        <MemoryRouter initialEntries={[`/datasets/${DATASET_ID}/prepare?profile=${profile.id}`]}>
+          <Routes>
+            <Route path="datasets/:datasetId/prepare" element={<RegionPreparationRoute />} />
+          </Routes>
+        </MemoryRouter>,
+        [[queryKeys.regionProfiles(DATASET_ID), [profile]], ...seed],
+      ),
+    );
+  }
+
+  it("is not part of the profile: preview and build name it, 448 unless changed", () => {
+    mountSelected();
+
+    expect((screen.getByLabelText("Preview width") as HTMLInputElement).value).toBe("448");
+    expect((screen.getByLabelText("Preview height") as HTMLInputElement).value).toBe("448");
+    expect(screen.getByText(/Preview and Build all prepare at 448×448/)).toBeTruthy();
+    // The revision form asks where to look, never how large.
+    expect(screen.queryByText("Width")).toBeNull();
+    expect(screen.getByRole("button", { name: "Build all" }).hasAttribute("disabled")).toBe(false);
+  });
+
+  it("says when that size is built, lists every built size, and does not build it twice", () => {
+    const report = { profile_id: 12, dataset_id: 7, width: 448, height: 448, total: 4, succeeded: 4, failed: 0, preview_entries: [], storage_bytes: 10 };
+    mountSelected([
+      [queryKeys.regionBuild(profile.id, 448, 448), report],
+      [queryKeys.regionBuilds(profile.id), [{ ...report, width: 256, height: 256 }, report]],
+    ]);
+
+    expect(screen.getByText(/This size is built/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "256×256" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Build all" }).hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "256×256" }));
+    expect((screen.getByLabelText("Preview width") as HTMLInputElement).value).toBe("256");
   });
 });
 

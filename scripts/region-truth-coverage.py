@@ -60,6 +60,8 @@ def dataset_image_ids(conn: sqlite3.Connection, dataset_id: int) -> list[int]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("profile_id", type=int, help="Region profile revision with a built output.")
+    parser.add_argument("--width", type=int, default=448, help="Width of the build to check.")
+    parser.add_argument("--height", type=int, default=448, help="Height of the build to check.")
     parser.add_argument(
         "--data-dir",
         type=Path,
@@ -76,11 +78,18 @@ def main(argv: list[str] | None = None) -> int:
         if profile is None:
             print(f"no region profile {args.profile_id} in {settings.db_path}", file=sys.stderr)
             return 2
-        summary = read_build_summary(settings, profile.id)
+        size = (args.width, args.height)
+        summary = read_build_summary(settings, profile.id, size)
         if summary is None:
-            print(f"region profile {profile.id} has no completed build", file=sys.stderr)
+            print(
+                f"region profile {profile.id} has no completed build at "
+                f"{args.width}x{args.height}",
+                file=sys.stderr,
+            )
             return 2
-        build = load_prepared_build(settings, profile, manifest_sha256=summary.manifest_sha256)
+        build = load_prepared_build(
+            settings, profile, size=size, manifest_sha256=summary.manifest_sha256
+        )
 
         image_ids = dataset_image_ids(conn, profile.dataset_id)
         truths = annotations_repo.resolve_ground_truth_masks(conn, image_ids, verify_bytes=True)
@@ -96,7 +105,7 @@ def main(argv: list[str] | None = None) -> int:
 
     print(
         f"profile {profile.id} · dataset {profile.dataset_id} · {profile.extractor_type} -> "
-        f"{profile.prepared_width}x{profile.prepared_height} · "
+        f"{args.width}x{args.height} · "
         f"{len(truths)}/{len(image_ids)} images with resolved truth"
     )
     print(f"{'image':>7}  {'truth px':>9}  {'kept px':>9}  {'lost':>6}  {'crop frac':>9}")

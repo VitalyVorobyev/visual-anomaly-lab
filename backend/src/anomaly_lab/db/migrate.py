@@ -27,7 +27,7 @@ from pathlib import Path
 from anomaly_lab.db.connection import connection
 
 #: The version the schema script stamps. Bump it whenever the script changes.
-SCHEMA_VERSION = 27
+SCHEMA_VERSION = 28
 
 SCHEMA_SCRIPT = "001_initial.sql"
 

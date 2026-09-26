@@ -56,8 +56,6 @@ function renderWith(seed: [readonly unknown[], unknown][], catalog = ANOMALY_ONL
 }
 
 const BUILT: [readonly unknown[], unknown][] = [
-  [queryKeys.regionProfiles(7), [{ id: 11 }]],
-  [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
   [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
 ];
 
@@ -76,33 +74,26 @@ describe("dataset readiness", () => {
 
   it("names the missing steps in order, each a link to where it is done", () => {
     renderWith([
-      [queryKeys.regionProfiles(7), []],
       [queryKeys.splits(7), []],
       [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
     ]);
     const steps = screen.getAllByRole("link");
-    expect(steps.map((step) => step.textContent)).toEqual([
-      "1. Build a region profile",
-      "2. Make a split",
-    ]);
-    expect(steps[0]?.getAttribute("href")).toBe("/datasets/7/prepare");
-    expect(steps[1]?.getAttribute("href")).toBe("/datasets/7/splits");
+    expect(steps.map((step) => step.textContent)).toEqual(["1. Make a split"]);
+    expect(steps[0]?.getAttribute("href")).toBe("/datasets/7/splits");
   });
 
-  it("does not count a build with failed images as prepared", () => {
+  it("asks for no region profile: a run reads the full frame and prepares its own size", () => {
     renderWith([
-      [queryKeys.regionProfiles(7), [{ id: 11 }]],
-      [queryKeys.regionBuild(11), { failed: 2, succeeded: 8, total: 10 }],
+      [queryKeys.regionProfiles(7), []],
       [queryKeys.splits(7), [{ id: 3, strategy: "imported" }]],
       [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
     ]);
-    expect(screen.getByRole("link").textContent).toBe("1. Build a region profile");
+    expect(screen.getByText(/Ready to train/)).toBeTruthy();
+    expect(screen.queryByText(/region profile/)).toBeNull();
   });
 
   it("says a ready dataset is ready, and how many runs it has", () => {
     renderWith([
-      [queryKeys.regionProfiles(7), [{ id: 11 }]],
-      [queryKeys.regionBuild(11), { failed: 0, succeeded: 10, total: 10 }],
       [queryKeys.splits(7), [{ id: 3, strategy: "normal_only_train" }]],
       [queryKeys.experiments({ datasetId: 7 }), { items: [{ id: 1 }, { id: 2 }], total: 2, next_cursor: null }],
     ]);
@@ -110,18 +101,17 @@ describe("dataset readiness", () => {
     expect(screen.getByRole("link").textContent).toBe("2 runs");
   });
 
-  it("with two tasks, puts the shared first step first and nothing else", () => {
+  it("with two tasks, puts a shared first step first and nothing else", () => {
     renderWith(
       [
-        [queryKeys.regionProfiles(7), []],
         [queryKeys.splits(7), []],
         [queryKeys.experiments({ datasetId: 7 }), { items: [], total: 0, next_cursor: null }],
-        [queryKeys.classCoverage(7), []],
+        [queryKeys.classCoverage(7), [{ label_key: "scratch", present: 3, absent: 5, unlabeled: 0 }]],
       ],
-      BOTH,
+      WITH_SEGMENT,
     );
     expect(screen.getAllByRole("link").map((step) => step.textContent)).toEqual([
-      "1. Build a region profile",
+      "1. Make a split",
     ]);
   });
 

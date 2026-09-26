@@ -107,15 +107,17 @@ of the work, in the order it is done: **Data** (`Browse`, `Prepare`) · **Truth*
 between the links, folded away below `md`, and each stage is a `role="group"`. The links are underlined
 because pills mark in-page state.
 
-**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. Every
-run needs a built profile; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
+**Readiness** (`hooks/useDatasetReadiness.ts`) sits in the band, per task that some method declares. No
+region profile is asked for — a run reads the dataset's "Full frame" unless it names another, and its
+first job prepares it at its size; `anomaly` needs a split drawn or adopted for it; `few_shot_segmentation` needs a
 class with a reference and something to test on (from the coverage read) and a split of references;
 `semantic_segmentation` (named *Segment*) and `object_detection` (named *Detect*) each need the same
 annotated class and a `class_stratified` or `manual` split (`splitServesTask`), one presence rule
-serving both. With one task the band is a checklist. With more, the shared first
-step comes first, then each task shows a check or the link to its next step.
+serving both. With one task the band is a checklist. With more, a first step every task
+shares comes alone; otherwise each task shows a check or the link to its next step.
 
-**Vocabulary.** A *region profile* is the crop-and-resize recipe built on Prepare; *Colour* is the
+**Vocabulary.** A *region profile* is where a run looks — the crop recipe defined on Prepare, with no size
+of its own; the *input size* is the run's; *Colour* is the
 experiment's colour option; the *threshold* is a run's image-score cut; the *map cut* is the fraction of a
 run's map range that draws its segmentation; the *threshold rule* is how Compare picks each run's
 threshold. A method is shown by its title, its registry key as secondary text.
@@ -151,12 +153,17 @@ checkpoint downloads from the model-asset catalogue only after explicit licence 
 `POST /api/images/{id}/segment-assist`, `GET /api/model-assets`.
 
 **Region preparation** — immutable profile configuration in a sticky rail, the crop audit central.
-Revision and followed job are in the URL (`profile`, `job`, `mode`, `jobProfile`). Preview samples 24
-images without writing (whole samples under a shared crop); Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a
-revision names the experiments pinning it. `GET /api/region-extractors`,
-`GET/POST /api/datasets/{id}/region-profiles`, `POST /api/region-profiles/{id}/preview`,
-`POST/GET /api/region-profiles/{id}/build`, `GET /api/region-profiles/{id}/prepared/{image_id}`,
-`GET/DELETE /api/region-profiles/{id}`.
+Revision and followed job are in the URL (`profile`, `job`, `mode`, `jobProfile`). The revision form asks
+where to look and never a size. **Preview and Build all name a size**: a width and height pair in the
+inspect panel, 448 × 448 until changed — the frame every DINO method and most measured gates read — with
+a line saying a run prepares its own size when it trains, so building here only saves that run the wait.
+The sizes the revision is already built at are listed as buttons that select one, and Build all is
+disabled at a size that is built. Preview samples 24 images without writing (whole samples under a shared
+crop); Build materialises atomically ([methods](methods.md#region-extractors)). Deleting a revision names
+the experiments pinning it. `GET /api/region-extractors`, `GET/POST /api/datasets/{id}/region-profiles`,
+`POST /api/region-profiles/{id}/preview` and `POST /api/region-profiles/{id}/build` (body `{width,
+height}`), `GET /api/region-profiles/{id}/build?width=&height=`, `GET /api/region-profiles/{id}/builds`,
+`GET /api/region-profiles/{id}/prepared/{image_id}?width=&height=`, `GET/DELETE /api/region-profiles/{id}`.
 
 **Splits** — create a seeded, stratified split, adopt the published one, or **draw references for a
 class** (`few_shot`: a class that some sample shows, a shot count and a seed, with the class's coverage
@@ -190,9 +197,15 @@ split was drawn for (ADR-0040). With no split its task can use, the Split field 
 opened on that task's strategy — `few_shot` for a targeted task, `class_stratified` for segmentation
 and detection.
 With one task the form starts at its inputs. The band lists what is
-missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
-`sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes
-`<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.
+missing as links in order; the unsent form is kept in `sessionStorage` (`api/experimentDraft.ts`). The
+region profile defaults to the dataset's "Full frame" (`api/inputSize.fullFrameProfile`) and needs no
+build. **Input size** is an optional width and height pair (`api/inputSize.ts`): empty means the method's
+own, and the caption says what that resolves to for the current configuration — "448 × 448 · from
+dino_memory", from `POST /api/experiments/input-size` — which follows the configured backbone. A typed
+size snaps on blur to the multiple the method reads (a DINO backbone's patch) and the caption says why;
+one side alone, or a size the multiple does not divide, is refused beside the fields. A lone split is
+preselected; an empty name becomes `<method> on <dataset>`. Method, colour and evaluation forms are
+**generated from JSON Schema**.
 Method cards come in the registry's order of standing (`api/methodChoice.ts`): the task's recommended
 method first, then `supported`, `experimental`, and the `floor` last, registry order within each; the form
 starts on the first of them, so a task with a recommended method starts there. A card badges
@@ -202,7 +215,7 @@ schema marks its decisions `x-primary`; the method tab puts them in front and fo
 0.5.0 on, and the 0.3 release this app is on renders the key inert. The evaluation tab shows only the
 fields the task's evaluator reads: a field carrying `x-tasks` is dropped for any other task
 (`schemaForTask`), and the tab is absent when none remains.
-`GET /api/experiments/model-types`, `POST /api/experiments`.
+`GET /api/experiments/model-types`, `POST /api/experiments/input-size`, `POST /api/experiments`.
 
 **Run bar** — a draft's primary action is **Train & score** (`then_score`, [jobs](jobs.md)), with **Train
 only** beside it; a trained run offers Retrain (confirmed), Continue for a resumable method, Score &
@@ -294,7 +307,9 @@ class in the class manager and from the Splits tab's reference draw.
 - **Centre:** the focused sample on `SampleStage`, with that class's outline
   (`GET /api/images/{id}/mask?class_key=`).
 - **Right rail:** the references (one to ten), the method (the few-shot methods that are available,
-  `proto_seg` first, the gate's default), the region profile, and **Freeze as experiment**. Freezing makes a `manual` split of
+  `proto_seg` first, the gate's default), the region profile ("Full frame" by default), and **Freeze as
+  experiment**. The preview reads the method's own size and needs the profile built at it; when it is
+  not, the blocker names the size to build on Prepare. Freezing makes a `manual` split of
   the references, a `few_shot_segmentation` run on the class and its Train & score
   (`hooks/useStudio.ts`), then lands on the run. Why it cannot freeze yet is said in words beside the
   button.

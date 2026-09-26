@@ -50,7 +50,7 @@ visual-anomaly-lab/
     ├── artifacts/exp-<id>/         # method state, maps/ (float32 .npz), logs/<job>.log, exports/
     ├── jobs/logs/                  # logs of jobs that belong to no experiment
     ├── annotations/image-<id>/     # revision-<n>.png, .classes.png, .instances.json — immutable truth
-    ├── region-profiles/profile-<id>/build/  # lossless prepared PNGs + transforms
+    ├── region-profiles/profile-<id>/<w>x<h>/  # one build per size: prepared PNGs + transforms
     └── model-cache/assets/         # verified shared weights + external-source metadata
 ```
 

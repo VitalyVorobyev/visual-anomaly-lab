@@ -170,6 +170,11 @@ class ColorDetectorModel(AnomalyModel):
         return ColorDetectorConfig
 
     @classmethod
+    def native_size(cls, config: BaseModel) -> tuple[int, int]:
+        """448 px square: the frame the detection gate ran this floor at (docs/measurements.md)."""
+        return (448, 448)
+
+    @classmethod
     def capabilities(cls) -> Capabilities:
         return Capabilities(
             tasks=[Task.OBJECT_DETECTION],

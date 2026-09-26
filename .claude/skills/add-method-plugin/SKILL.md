@@ -53,6 +53,13 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
       backbone"), read from the backbone's own config.
 - [ ] Anything the method cannot read — a patch size the frame does not divide, a channel count —
       is refused in `check_input`, so creation says so instead of a job failing at fit.
+- [ ] **Declare `native_size(config)`** — the frame the method's measurement ran at, the size a run
+      that names none reads (methods.md, "Native size"). The base default is 256 × 256; a method gated
+      at another frame returns it, so a run at its defaults reproduces the measured protocol. If the
+      config decides a patch, return a size it divides (`dino_backbone.native_frame`) and declare
+      `size_multiple(config)` so the create form snaps to it. `test_check_input.py` asserts every
+      registered method's native size passes its own `check_input`; a new method is covered by being
+      registered. Add a row to the native-size table in methods.md.
 - [ ] `Capabilities` declares what is true — `requires_training`, `supports_resume` (then also
       satisfy `SupportsResume`), `produces_diagnostics`, `channel_aware`, `preferred_device`.
       `portable_formats` stays **empty** until `scripts/export-parity-gate.py` has passed on a

@@ -13,7 +13,10 @@ from fastapi.testclient import TestClient
 from anomaly_lab.config import Settings
 from anomaly_lab.db.connection import connection
 
-from .conftest import Fixture, create_experiment
+from .conftest import Fixture, build_profile
+
+# `color_prototype` reads 448 x 448, so the studio previews at that size.
+STUDIO_SIZE = (448, 448)
 
 
 def _sample_of(settings: Settings, image_id: int) -> int:
@@ -31,7 +34,7 @@ def _preview(client: TestClient, seeded: Fixture, **body: Any) -> Any:
 def test_references_in_one_image_segmented_out_and_warm_the_second_time(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
-    profile = create_experiment(client, seeded)["region_profile_id"]
+    profile = build_profile(client, seeded, STUDIO_SIZE)
     reference = _sample_of(settings, seeded.defect_image_ids[0])
     query = seeded.defect_image_ids[1]
 
@@ -70,7 +73,7 @@ def test_references_in_one_image_segmented_out_and_warm_the_second_time(
 def test_a_preview_that_cannot_be_fitted_is_refused_by_name(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
-    profile = create_experiment(client, seeded)["region_profile_id"]
+    profile = build_profile(client, seeded, STUDIO_SIZE)
     reference = _sample_of(settings, seeded.defect_image_ids[0])
     anomaly = _preview(
         client,
@@ -110,7 +113,7 @@ def test_accepting_a_preview_makes_its_region_the_class_s_truth(
 ) -> None:
     from anomaly_lab.db.repositories import annotations as annotations_repo
 
-    profile = create_experiment(client, seeded)["region_profile_id"]
+    profile = build_profile(client, seeded, STUDIO_SIZE)
     reference = _sample_of(settings, seeded.defect_image_ids[0])
     query = seeded.defect_image_ids[1]
     preview = _preview(client, seeded, profile_id=profile, references=[reference], image_id=query)
@@ -134,7 +137,7 @@ def test_accepting_a_preview_makes_its_region_the_class_s_truth(
 def test_fixing_opens_a_draft_and_an_open_draft_is_never_completed_behind_it(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
-    profile = create_experiment(client, seeded)["region_profile_id"]
+    profile = build_profile(client, seeded, STUDIO_SIZE)
     reference = _sample_of(settings, seeded.defect_image_ids[0])
     query = seeded.defect_image_ids[2]
     generation = _preview(
@@ -191,7 +194,7 @@ def test_other_classes_keep_their_shapes(
 def test_a_batch_orders_a_page_least_certain_first_and_stays_bounded(
     client: TestClient, settings: Settings, seeded: Fixture
 ) -> None:
-    profile = create_experiment(client, seeded)["region_profile_id"]
+    profile = build_profile(client, seeded, STUDIO_SIZE)
     reference = _sample_of(settings, seeded.defect_image_ids[0])
     images = seeded.defect_image_ids[1:] + seeded.normal_image_ids
     url = f"/api/datasets/{seeded.dataset_id}/studio/preview-batch"

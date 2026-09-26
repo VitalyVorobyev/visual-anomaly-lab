@@ -77,6 +77,7 @@ export type RegionProfileRevision = Schemas["RegionProfileRevision"];
 export type RegionProfileDeletionPreview = Schemas["RegionProfileDeletionPreview"];
 export type RegionProfileDeletionResult = Schemas["RegionProfileDeletionResult"];
 export type RegionBuildSummary = Schemas["RegionBuildSummary"];
+export type InputSizeAnswer = Schemas["InputSizeAnswer"];
 export type RegionPreparationEntry = Schemas["RegionPreparationEntry"];
 export type SpatialTransform = Schemas["SpatialTransform"];
 export type SpatialResample = Schemas["SpatialResample"];

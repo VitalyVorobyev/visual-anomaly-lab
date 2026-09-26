@@ -160,7 +160,7 @@ def _experiment(
     overrides: dict[str, Any] = {"seed": seed} if "seed" in config_model.model_fields else {}
     config = config_model.model_validate(overrides).model_dump(mode="json")
     preprocessing = PreprocessingConfig(
-        width=build.profile.prepared_width, height=build.profile.prepared_height
+        width=build.size[0], height=build.size[1]
     )
     with connection(settings.db_path) as conn:
         experiment = experiments_repo.create_experiment(

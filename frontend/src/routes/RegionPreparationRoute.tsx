@@ -1,4 +1,11 @@
-/** Dataset-local spatial preparation: define, inspect, then materialise model input. */
+/**
+ * Dataset-local spatial preparation: define where to look, inspect it, and materialise it.
+ *
+ * A profile carries no size — the size is a run's. Preview and "Build all" therefore prepare
+ * at the size chosen here, 448 × 448 unless changed: the frame every DINO method and most
+ * measured gates read. A run whose size has no build prepares it in its own train or infer
+ * job, so building here only saves that run the wait; it is never a precondition.
+ */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Check, Copy, Eye, Play, Sparkles, Trash2 } from "lucide-react";
@@ -26,6 +33,7 @@ import {
   useCreateRegionProfile,
   useDeleteRegionProfile,
   useRegionBuild,
+  useRegionBuilds,
   useRegionExtractors,
   useRegionProfileDeletionPreview,
   useRegionProfiles,
@@ -34,8 +42,13 @@ import {
 } from "../hooks/useRegionProfiles";
 import { formatBytes } from "../api/format";
 
+/** The size Preview and "Build all" prepare at until another is typed. */
+export const DEFAULT_PREPARE_SIZE = 448;
+
 type PreviewResult = {
   mode: "preview";
+  width?: number;
+  height?: number;
   sampled: number;
   dataset_images: number;
   succeeded: number;
@@ -78,8 +91,8 @@ export function RegionPreparationRoute() {
     setParams(writePrepareState(next), { replace: true });
   const [extractorKey, setExtractorKey] = useState("identity");
   const [name, setName] = useState("");
-  const [width, setWidth] = useState("256");
-  const [height, setHeight] = useState("256");
+  const [width, setWidth] = useState(String(DEFAULT_PREPARE_SIZE));
+  const [height, setHeight] = useState(String(DEFAULT_PREPARE_SIZE));
   const [padding, setPadding] = useState("0.05");
   const [resample, setResample] = useState<SpatialResample>("bilinear");
   const [alignment, setAlignment] = useState<SampleAlignment>("per_image");
@@ -95,7 +108,13 @@ export function RegionPreparationRoute() {
     [extractor],
   );
   const job = useJob(jobId);
-  const buildReport = useRegionBuild(selectedId);
+  const sizeValid = validNumber(width, 8, 2048) && validNumber(height, 8, 2048);
+  const size = useMemo(
+    () => (sizeValid ? { width: Number(width), height: Number(height) } : undefined),
+    [sizeValid, width, height],
+  );
+  const buildReport = useRegionBuild(selectedId, size);
+  const builds = useRegionBuilds(selectedId);
 
   useEffect(() => {
     if (selectedId !== undefined || !profiles.data?.length) return;
@@ -106,7 +125,8 @@ export function RegionPreparationRoute() {
   useEffect(() => {
     if (!job.job || !isTerminal(job.job.status)) return;
     if (jobMode === "build" && job.job.status === "succeeded" && jobProfileId !== undefined) {
-      void queryClient.invalidateQueries({ queryKey: queryKeys.regionBuild(jobProfileId) });
+      // Every size of that profile: the report at the size built, and the list of builds.
+      void queryClient.invalidateQueries({ queryKey: ["region-profiles", jobProfileId] });
       setView("prepared");
     }
     if (jobMode === "asset") {
@@ -150,10 +170,8 @@ export function RegionPreparationRoute() {
     setConfigValues(initialValues(fields));
   };
 
-  // A default that says what the profile *is*. It used to be "model input" — which is also
-  // what the experiment form called its colour options — so every dataset's first profile
-  // was named after a different thing.
-  const suggestedName = `${extractor?.title ?? extractorKey} ${width}×${height}`;
+  // A default that says what the profile *is*: where it looks. It has no size to name.
+  const suggestedName = extractor?.title ?? extractorKey;
   const effectiveName = name.trim() || suggestedName;
 
   const createRevision = async () => {
@@ -161,8 +179,6 @@ export function RegionPreparationRoute() {
       name: effectiveName,
       extractor_type: extractorKey,
       extractor_config: toOptions(configFields, configValues),
-      prepared_width: Number(width),
-      prepared_height: Number(height),
       padding_fraction: Number(padding),
       resample,
       sample_alignment: alignment,
@@ -171,18 +187,17 @@ export function RegionPreparationRoute() {
   };
 
   const run = async (mode: "preview" | "build") => {
-    if (!selected) return;
+    if (!selected || size === undefined) return;
+    const request = { profileId: selected.id, size };
     const summary = await (mode === "preview"
-      ? preview.mutateAsync(selected.id)
-      : build.mutateAsync(selected.id));
+      ? preview.mutateAsync(request)
+      : build.mutateAsync(request));
     updatePrep({ profile: selected.id, job: summary.id, jobProfile: selected.id, mode });
   };
 
   const revise = (profile: RegionProfileRevision) => {
     setName(profile.name);
     setExtractorKey(profile.extractor_type);
-    setWidth(String(profile.prepared_width));
-    setHeight(String(profile.prepared_height));
     setPadding(String(profile.padding_fraction));
     setResample(profile.resample);
     setAlignment(profile.sample_alignment);
@@ -220,9 +235,10 @@ export function RegionPreparationRoute() {
     !extractor?.availability.available ||
     jsonErrors(configFields, configValues).length > 0 ||
     outOfBounds.length > 0 ||
-    !validNumber(width, 8, 2048) ||
-    !validNumber(height, 8, 2048) ||
     !validNumber(padding, 0, 1);
+  const running = job.job !== undefined && !isTerminal(job.job.status);
+  const sizeLabel = size === undefined ? "—" : `${size.width}×${size.height}`;
+  const alreadyBuilt = buildReport.data !== undefined;
 
   return (
     <TabScroll
@@ -262,7 +278,7 @@ export function RegionPreparationRoute() {
               {selected && (
                 <div className="flex items-center justify-between gap-3 rounded-control bg-raised px-3 py-2">
                   <div className="min-w-0 text-xs text-fg-muted">
-                    <span className="font-mono text-fg">{selected.prepared_width}×{selected.prepared_height}</span>
+                    <span className="text-fg">{selected.extractor_type}</span>
                     <span> · {selected.resample} · pad {selected.padding_fraction}</span>
                     {selected.sample_alignment === "union" && <span> · shared crop</span>}
                   </div>
@@ -324,12 +340,6 @@ export function RegionPreparationRoute() {
               ))}
 
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Width" annotation="8–2048">
-                  <NumberInput min={8} max={2048} value={width} onChange={(event) => setWidth(event.target.value)} />
-                </Field>
-                <Field label="Height" annotation="8–2048">
-                  <NumberInput min={8} max={2048} value={height} onChange={(event) => setHeight(event.target.value)} />
-                </Field>
                 <Field label="Padding" annotation="0–1">
                   <NumberInput min={0} max={1} step="any" value={padding} onChange={(event) => setPadding(event.target.value)} />
                 </Field>
@@ -371,10 +381,10 @@ export function RegionPreparationRoute() {
               actions={
                 selected ? (
                   <>
-                    <Button icon={<Eye />} disabled={job.job !== undefined && !isTerminal(job.job.status)} loading={preview.isPending} onClick={() => void run("preview")}>
+                    <Button icon={<Eye />} disabled={running || size === undefined} loading={preview.isPending} onClick={() => void run("preview")}>
                       Preview 24
                     </Button>
-                    <Button variant="primary" icon={<Play />} disabled={job.job !== undefined && !isTerminal(job.job.status)} loading={build.isPending} onClick={() => void run("build")}>
+                    <Button variant="primary" icon={<Play />} disabled={running || size === undefined || alreadyBuilt} loading={build.isPending} onClick={() => void run("build")}>
                       Build all
                     </Button>
                   </>
@@ -383,6 +393,42 @@ export function RegionPreparationRoute() {
               bodyClassName="flex flex-col gap-4"
             >
               {!selected && <Empty>Save a profile revision to inspect its crop and prepared pixels.</Empty>}
+              {selected && (
+                <div className="flex flex-col gap-2">
+                  <div className="grid max-w-sm grid-cols-2 gap-3">
+                    <Field label="Preview size · width" annotation="8–2048">
+                      <NumberInput aria-label="Preview width" min={8} max={2048} value={width} onChange={(event) => setWidth(event.target.value)} />
+                    </Field>
+                    <Field label="Height" annotation="8–2048">
+                      <NumberInput aria-label="Preview height" min={8} max={2048} value={height} onChange={(event) => setHeight(event.target.value)} />
+                    </Field>
+                  </div>
+                  <p className="text-xs leading-5 text-fg-muted">
+                    Preview and Build all prepare at {sizeLabel}. A profile has no size of its own:
+                    a run prepares it at the run&apos;s size when it trains, so building here only
+                    saves that run the wait.
+                    {alreadyBuilt && " This size is built."}
+                  </p>
+                  {(builds.data?.length ?? 0) > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5 text-xs text-fg-muted">
+                      <span>Built at</span>
+                      {builds.data?.map((entry) => (
+                        <Button
+                          key={`${entry.width}x${entry.height}`}
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            setWidth(String(entry.width));
+                            setHeight(String(entry.height));
+                          }}
+                        >
+                          {entry.width}×{entry.height}
+                        </Button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
               {selected && !jobId && !buildReport.data && (
                 <Callout>
                   Preview samples evenly across the dataset before building. A failure remains a failure; this workflow never substitutes the full frame silently.
@@ -424,7 +470,7 @@ export function RegionPreparationRoute() {
                   ]}
                 />
                 {view === "prepared" && !buildReport.data && (
-                  <Callout>Build this revision before opening its materialised prepared pixels.</Callout>
+                  <Callout>Build this revision at {sizeLabel} before opening its materialised prepared pixels.</Callout>
                 )}
                 <div className="grid grid-cols-2 gap-3 md:grid-cols-3 2xl:grid-cols-4">
                   {entries.map((entry) => (
@@ -432,6 +478,7 @@ export function RegionPreparationRoute() {
                       key={entry.image_id}
                       entry={entry}
                       profileId={selected?.id}
+                      size={size}
                       prepared={view === "prepared" && buildReport.data !== undefined}
                     />
                   ))}
@@ -501,10 +548,12 @@ export function RegionPreparationRoute() {
 function PreparationCard({
   entry,
   profileId,
+  size,
   prepared,
 }: {
   entry: RegionPreparationEntry;
   profileId: number | undefined;
+  size: { width: number; height: number } | undefined;
   prepared: boolean;
 }) {
   const transform = entry.transform;
@@ -514,7 +563,7 @@ function PreparationCard({
         {entry.status === "succeeded" && transform ? (
           <>
             <img
-              src={prepared && profileId !== undefined ? preparedImageUrl(profileId, entry.image_id) : imageUrl(entry.image_id, "preview")}
+              src={prepared && profileId !== undefined && size !== undefined ? preparedImageUrl(profileId, entry.image_id, size) : imageUrl(entry.image_id, "preview")}
               alt=""
               loading="lazy"
               className="absolute inset-0 h-full w-full object-contain"

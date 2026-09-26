@@ -308,8 +308,6 @@ def test_different_spatial_input_is_a_warning_and_not_a_refusal(
             name="coarse full frame",
             extractor_type="identity",
             extractor_config={},
-            prepared_width=8,
-            prepared_height=8,
             padding_fraction=0.0,
         )
     run_region_prepare_job(
@@ -320,11 +318,15 @@ def test_different_spatial_input_is_a_warning_and_not_a_refusal(
                 "dataset_id": seeded.dataset_id,
                 "profile_id": coarse_profile.id,
                 "mode": "build",
+                "width": 8,
+                "height": 8,
             },
             settings=settings,
         )
     )
-    coarse = create_experiment(client, seeded, name="coarse", region_profile_id=coarse_profile.id)
+    coarse = create_experiment(
+        client, seeded, name="coarse", region_profile_id=coarse_profile.id, width=8, height=8
+    )
     run_handler(settings, JobKind.TRAIN, {"experiment_id": coarse["id"]})
     run_handler(settings, JobKind.INFER, {"experiment_id": coarse["id"], "subsets": ["test"]})
 
