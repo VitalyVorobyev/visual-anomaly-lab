@@ -100,7 +100,8 @@ runs on the frozen-DINO path and has had its public gates on VisA and PKU-Market
       immutable pixels, VisA `candle` and `pcb1` at 448 × 448 against PatchCore
       ([measurements.md](measurements.md)). The sweep behind its defaults is far more evidence than
       any gate produces, but it is evidence of a different kind: it was collected outside the
-      application, by its own harness. `scripts/dino-memory-public-gate.py` is the template.
+      application, by its own harness. The protocol and rule are predeclared in
+      [measurements.md](measurements.md); `scripts/subspace-ad-public-gate.py` runs it.
 - [ ] **Sweep the three axes the campaign held fixed** (S): per-layer L2 normalization before
       pooling, `concat` instead of `mean` aggregation, and `final_norm=False`. Each is already a
       flag in `research/subspace_ad`, none is a plugin field, and all three change what the PCA sees
