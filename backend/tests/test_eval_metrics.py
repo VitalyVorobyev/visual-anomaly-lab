@@ -220,7 +220,7 @@ def test_aggregation_groups_by_sample_not_by_image() -> None:
     assert aggregated == {1: pytest.approx(0.9), 2: pytest.approx(0.2)}
 
 
-# ------------------------------------------- per-channel normalization (ADR-0011)
+# ------------------------------------------- per-channel normalization (handbook evaluation.md)
 
 
 def _channelled(image_id: int, sample_id: int, channel: str, score: float) -> ScoredImage:
@@ -252,7 +252,7 @@ def _two_channel_run() -> list[ScoredImage]:
 
 
 def test_without_normalization_the_loudest_channel_wins_every_sample() -> None:
-    """The caveat ADR-0011 recorded, made visible: `max` is reading the scale, not the part."""
+    """The caveat of `max`, made visible: `max` is reading the scale, not the part."""
     scores = aggregate_scores(_two_channel_run(), Aggregation.MAX)
 
     assert scores[1] == pytest.approx(50.0)

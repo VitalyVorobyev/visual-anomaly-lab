@@ -11,8 +11,8 @@
  * a run can be started and watched from wherever the reader is standing. Runs, logs and
  * files are their own tab, because a job log is diagnostic material rather than a finding.
  * Training, Benchmark, Architecture and Inspector are the workbench, and **the last two are
- * driven entirely by the diagnostics index, never by `model_type`** — which is what makes
- * `efficientad_custom` inherit both in M6 (ADR-0018).
+ * driven entirely by the diagnostics index, never by `model_type`** — which is what lets
+ * a new method inherit both (handbook diagnostics.md).
  *
  * The active tab lives in the URL rather than in component state, following
  * `api/browseState.ts`: reloading during a long run puts you back on the chart you were

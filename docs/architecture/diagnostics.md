@@ -2,9 +2,16 @@
 
 A score and a heatmap say whether a model works, not *why*. Diagnostics answer the second question.
 
-Diagnostics are an optional, *declared* capability (ADR-0018): a method pushes them into a self-describing
+Diagnostics are an optional, *declared* capability: a method pushes them into a self-describing
 index, and **the UI renders by `kind` and never by method name**, so every view works unchanged for a new
-method.
+method. A typed response model or a route per method would make each new method a UI change, which the
+plugin boundary (ADR-0007) exists to prevent; storing diagnostics in SQLite would put blobs that belong
+beside the maps behind a schema change; and always-on diagnostics would spend most of a long inference's
+disk on them.
+
+The cost is a weakly typed contract. `kind` says how to draw a payload and nothing about what it means, so
+a misleading title produces a plausible, wrong picture, and a view that compares two named maps silently
+shows less if a method names them differently — tests pin the keys each method emits.
 
 ## Authoring
 

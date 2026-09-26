@@ -324,7 +324,7 @@ class PixelReferenceModel(AnomalyModel):
             deviation = np.abs(array - reference.median) / reference.scale
             # Across channels, not averaged: a defect that shows under one illumination
             # is a defect, which is the same reasoning the evaluation layer applies one
-            # level up when it aggregates a sample's images (ADR-0011).
+            # level up when it aggregates a sample's images (handbook evaluation.md).
             raw = deviation.max(axis=2)
             smoothed = gaussian_blur(raw.astype(np.float64), self.config.smoothing_sigma)
             score = float(np.percentile(smoothed, self.config.score_percentile))

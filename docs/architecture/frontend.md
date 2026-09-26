@@ -322,7 +322,7 @@ The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studi
 run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
 sample viewer.
 
-**Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an
+**Diagnostics** — rendered by `kind`, never by method name ([diagnostics](diagnostics.md)): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
 beside the combined map on the sample page. Diagnostic panes are in the prepared frame
 ([diagnostics](diagnostics.md)), so their outline is fetched with `frame=prepared`.
@@ -371,7 +371,7 @@ them by class, and `refusalReason` refuses another task or another class by name
    working default (lab-ui 0.5.0; earlier releases ignore the key).
 3. **Opacity is client state; the threshold is a server read.** Opacity is CSS over a fetched PNG. The
    rule `score >= threshold` lives in Python only, so the threshold endpoint returns counts **and**
-   classified rows together (ADR-0011).
+   classified rows together ([evaluation](evaluation.md)).
 4. **Layer registration is structural.** `ImageStage` lays out at the image's own pixel size and carries
    the whole transform, so a layer at `inset-0` covers exactly the source frame. All sample viewers are
    `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, raster layers in order, then

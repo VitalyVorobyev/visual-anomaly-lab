@@ -1,4 +1,4 @@
-"""How the diagnostics index merges (ADR-0018, handbook diagnostics.md, handbook diagnostics.md).
+"""How the diagnostics index merges (handbook diagnostics.md).
 
 Torch-free, and the rules here are subtle enough that the tests are the specification.
 Two of them are regression pins for bugs that were invisible on screen: an inference run

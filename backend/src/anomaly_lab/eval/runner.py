@@ -1,14 +1,15 @@
 """Computing an experiment's metrics from what is already stored.
 
-The evaluation layer is **model-independent by construction** (ADR-0011): its inputs are
+The evaluation layer is **model-independent by construction** (handbook evaluation.md): its
+inputs are
 `ImageResult.score`, `Sample.label`, `SplitAssignment.subset` and — new in M3 — the
 `Mask` rows and the float32 maps on disk. It never imports a model module and never
 re-runs inference, which is the precondition for the comparison view to mean anything.
 
 It writes three things back: the sample rows, the metric sets, and — since migration 019 —
 each image's map peak and localization verdict. All three are threshold-free, so persisting
-them leaves ADR-0011's line where it was: what moves with the slider is still computed on
-demand and still stored nowhere.
+them leaves the evaluation layer's line where it was: what moves with the slider is still
+computed on demand and still stored nowhere.
 
 Re-running this on a finished experiment is safe and cheap: it reads persisted scores and
 rewrites the metric sets. That is what makes changing the aggregation mode a re-read
@@ -357,7 +358,7 @@ def _subset_metrics(
         "aggregation": config.aggregation.value,
         # Beside the aggregation, because it is the other half of the same decision and a
         # sample-level number is uninterpretable without both. `image_roc_auc` below stays
-        # on **raw** scores deliberately: ADR-0011 keeps it as the measure that isolates
+        # on **raw** scores deliberately: evaluation keeps it as the measure that isolates
         # model quality from how the channels were combined, and normalization is part of
         # combining them.
         "channel_normalization": config.channel_normalization.value,
@@ -476,7 +477,7 @@ def evaluate_and_store(
     an intermediate state of its own inputs.
 
     Everything written here is threshold-free, which is why persisting it does not contradict
-    ADR-0011: the slider still recomputes every count it moves.
+    the evaluation layer: the slider still recomputes every count it moves.
     """
     config = EvalConfig.model_validate(experiment.eval_config)
     images, masks = _scored_with_truth(conn, experiment)

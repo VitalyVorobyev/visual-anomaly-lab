@@ -4,7 +4,7 @@
 -- widening one means rebuilding the whole table. `job.kind` has paid that five times
 -- (migrations 002, 004, 007, 009, 011), which made "a new job kind costs one entry in
 -- `jobs/handlers.py` and one handler" true of the runtime and false of the schema
--- (ADR-0031 recorded exactly that). The vocabularies already live in Python, where every
+-- The vocabularies already live in Python, where every
 -- write goes through them: `JobKind` (`create_job` coerces through it, so an unknown kind
 -- is a `ValueError` before any SQL runs) and `Aggregation` (a field of the pydantic
 -- `SampleResult` every row is written from). Two lists that must agree is one list too
@@ -65,7 +65,7 @@ CREATE TABLE sample_result_new (
     sample_id     INTEGER NOT NULL REFERENCES sample (id) ON DELETE CASCADE,
     agg_score     REAL    NOT NULL,
     -- One of `Aggregation`, recorded per row so a stored result is self-describing
-    -- (ADR-0011). Validated in Python; see the header.
+    -- (handbook evaluation.md). Validated in Python; see the header.
     aggregation   TEXT    NOT NULL,
     -- One of `ChannelNormalization`, or NULL for a row written before migration 014.
     normalization TEXT,

@@ -25,7 +25,7 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
 **Before code**
 
 - [ ] If it depends on a new library or the accelerator, run `scripts/mps-smoke-test.py` (and write
-      a `scripts/<method>-smoke-test.py` like the existing ones) before any wrapper code (ADR-0008).
+      a `scripts/<method>-smoke-test.py` like the existing ones) before any wrapper code (ADR-0029).
 - [ ] Decide ours versus wrapped. A wrapper that reaches into a library's trainer or datamodule is
       a cost; say why it is worth it.
 

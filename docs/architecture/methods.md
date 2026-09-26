@@ -123,7 +123,7 @@ be shown.
 - `progress(fraction, message)`, `metric(name, value, step)`, `log` — become job events
   ([jobs](jobs.md));
 - `should_cancel()` / `raise_if_cancelled()` — cooperative cancellation, polled at batch boundaries;
-- `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract (ADR-0018);
+- `emit_diagnostic(...)` — the [diagnostics](diagnostics.md) contract;
 - `TrainContext.val` — held-out normals, empty when the split has no `val` subset;
 - `TrainContext.targets` — the only path ground truth takes into a plugin (ADR-0039). It is `None` for
   `anomaly`, so an anomaly method cannot see a defect mask by construction. For a targeted task it is a
@@ -256,13 +256,13 @@ figures are in [measurements](../measurements.md).
 ## Device policy
 
 `preferred_device` is where the tensor work goes: `mps` for the deep methods, `cpu` for `pixel_reference`
-(ADR-0008). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
+(ADR-0029). The device resolves at job start with a CPU fallback when MPS is unavailable or an operator is
 missing, and is recorded in the job log. A stage inside a method may be placed elsewhere when a smoke
 test (`scripts/mps-smoke-test.py`, `scripts/patchcore-smoke-test.py`,
 `scripts/dino-memory-smoke-test.py`, `scripts/anomalyvfm-smoke-test.py`) says so; nothing in the application reveals a mis-placed stage,
 because the run finishes with correct numbers either way.
 
-**A probe runs before a plugin is written** (ADR-0008). Before wrapper or method code targets a new
+**A probe runs before a plugin is written** (ADR-0029). Before wrapper or method code targets a new
 library, or a new stage targets the accelerator, a standalone `scripts/<name>-smoke-test.py` exercises it;
 what it finds (an operator missing on MPS, a stage faster on CPU, a footprint) becomes the plugin's
 defaults, device placement and caps.
@@ -408,7 +408,14 @@ becomes a z-map, smoothed, and scored by a percentile.
 
 EfficientAD, implemented in-house (`efficientad_custom.py` for config, loop and checkpoint;
 `efficientad_nets.py` for modules). A PDN student distils a frozen pretrained teacher, plus an autoencoder
-branch; defaults reproduce the published algorithm, and each departure is a field (ADR-0028).
+branch; defaults reproduce the published algorithm, and each departure is a field (ADR-0029).
+
+**The teacher is configuration of the experiment, not part of the method.** Two published teachers share
+an architecture and tensor shapes and differ element by element, and swapping one for the other moves the
+metrics by more than the seed range ([measurements](../measurements.md)). So the teacher is a field, a
+`distill` job can produce one, and a head-to-head against another EfficientAD implementation has to pin the
+same teacher or it measures two teachers. The source model a teacher is distilled from is training-only:
+what ships is the same PDN at the same inference cost.
 
 - `model_size` (`small`/`medium`), `max_steps`, `learning_rate`, `weight_decay`, `seed`.
 - `teacher_source` — `nelson1425` (default), `distilled` (a teacher produced by a `distill` job, named in
@@ -485,7 +492,15 @@ projection and discriminator train. **Experimental**: it missed its image-level 
 ### `dino_memory`
 
 A frozen DINOv2/DINOv3 encoder whose L2-normalized patch features for the training normals become a
-memory; a test patch scores by its distance to it (ADR-0037). Nothing is trained.
+memory; a test patch scores by its distance to it. Nothing is trained. It is ours (ADR-0029): the encoder
+comes from the shared backbone table in `models/dino_backbone.py`, never from a library's model, so every
+frozen-feature method measures the same encoders. Three published rules over the same frozen features —
+AnomalyDINO's global bank, PatchCore's coreset bank and PaDiM's per-position Gaussian — differ only in what
+the memory is, so they are one `scoring` field rather than three plugins that would copy the encoder path,
+fusion, plan, checkpoint and diagnostics. They report different distances and meet only through
+threshold-free metrics (ADR-0028). `local_knn` cannot be proven on public data: VisA is unregistered, so the
+mode whose premise is that position matters looks like a weaker global bank there, and a synthetic test is
+what demonstrates the property.
 
 - `backbone` (default ungated DINOv2 ViT-S/14-reg4), `layers` (`last_two`), `pretrained_backbone`,
   `allow_downloads`, `blur_sigma`, `score_percentile`, `feature_batch_size`, `seed`.

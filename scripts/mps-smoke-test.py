@@ -1,7 +1,7 @@
 #!/usr/bin/env -S uv run --project backend --extra dl python
 """Does this Mac actually train EfficientAD on MPS? Answer that before writing a wrapper.
 
-ADR-0008 requires this check to exist as a **standalone script run first**, not as a
+ADR-0029 requires this check to exist as a **standalone script run first**, not as a
 discovery made halfway through an integration. MPS has real gaps: an operator with no
 Metal kernel raises at the moment it is reached, which — inside a training loop — looks
 like a bug in the code that called it rather than a missing kernel.
@@ -207,7 +207,7 @@ CHECKS: list[tuple[str, Callable[[], str]]] = [
 
 def main() -> int:
     print(RULE)
-    print("MPS smoke test — run before trusting preferred_device='mps' (ADR-0008)")
+    print("MPS smoke test — run before trusting preferred_device='mps' (ADR-0029)")
     print(RULE)
 
     results: list[Check] = []

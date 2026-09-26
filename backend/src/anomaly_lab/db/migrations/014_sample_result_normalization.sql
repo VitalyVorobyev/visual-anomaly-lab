@@ -1,6 +1,6 @@
 -- How a sample's per-channel scores were put on one scale before they were reduced.
 --
--- ADR-0011 chose `max` and recorded its own caveat: `max` assumes per-channel scores are
+-- Evaluation chose `max` and recorded its own caveat: `max` assumes per-channel scores are
 -- comparable, which is not automatic for a deep model whose bright-field distribution simply
 -- sits higher than its dark-field one. On a single-channel dataset that caveat is inert. On a
 -- grouped one it decides every sample score, so the normalization is now a configured step
