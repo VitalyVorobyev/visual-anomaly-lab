@@ -36,6 +36,7 @@ export function SampleStage({
   onHover,
   readout,
   panKeys = true,
+  banner,
 }: {
   image: { id: number; width: number; height: number };
   alt: string;
@@ -52,6 +53,8 @@ export function SampleStage({
   readout?: ReactNode;
   /** False where the arrow keys belong to the screen (a sample list), not to panning. */
   panKeys?: boolean;
+  /** Over the top-left, outside the transform: a pending or stale state. */
+  banner?: ReactNode;
 }) {
   return (
     <ImageStage
@@ -63,6 +66,7 @@ export function SampleStage({
       label={label}
       toolbar={<StageToolbar />}
       readout={readout}
+      banner={banner}
     >
       <img
         src={imageUrl(image.id, tierFor(view))}

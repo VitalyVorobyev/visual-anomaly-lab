@@ -17,7 +17,7 @@ import time
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, Protocol
 
 import numpy as np
 from PIL import Image
@@ -37,6 +37,7 @@ from anomaly_lab.models.base import evenly_spaced
 from anomaly_lab.regions.base import RegionExtractionError
 from anomaly_lab.regions.registry import build as build_extractor
 from anomaly_lab.regions.registry import get_extractor_class
+from anomaly_lab.regions.registry import validate_config as validate_extractor_config
 from anomaly_lab.regions.transform import PixelBounds, SpatialTransform
 from anomaly_lab.schemas import API_MODEL_CONFIG
 
@@ -48,12 +49,50 @@ _SIZE_DIR = re.compile(r"^([1-9][0-9]*)x([1-9][0-9]*)$")
 Size = tuple[int, int]
 """`(width, height)` of a prepared frame, in Pillow's order."""
 
-_RESAMPLE_FILTERS = {
+RESAMPLE_FILTERS = {
     SpatialResample.NEAREST: Image.Resampling.NEAREST,
     SpatialResample.BILINEAR: Image.Resampling.BILINEAR,
     SpatialResample.BICUBIC: Image.Resampling.BICUBIC,
     SpatialResample.LANCZOS: Image.Resampling.LANCZOS,
 }
+
+
+class PreparationRecipe(Protocol):
+    """Everything preparation reads from a profile: where to look, and how to cut it out.
+
+    A saved `RegionProfileRevision` is one; an unsaved `RegionRecipe` from the Prepare
+    screen is the other. Neither carries a size — that is the caller's.
+    """
+
+    @property
+    def extractor_type(self) -> str: ...
+    @property
+    def extractor_config(self) -> dict[str, Any]: ...
+    @property
+    def padding_fraction(self) -> float: ...
+    @property
+    def resample(self) -> SpatialResample: ...
+    @property
+    def sample_alignment(self) -> SampleAlignment: ...
+
+
+class RegionRecipe(BaseModel):
+    """A profile's configuration that has not been saved: what the Prepare screen is editing."""
+
+    model_config = API_MODEL_CONFIG
+
+    extractor_type: str = Field(min_length=1, max_length=80)
+    extractor_config: dict[str, Any] = Field(default_factory=dict)
+    padding_fraction: float = Field(default=0.05, ge=0.0, le=1.0)
+    resample: SpatialResample = SpatialResample.BILINEAR
+    sample_alignment: SampleAlignment = Field(
+        default=SampleAlignment.PER_IMAGE,
+        description=(
+            "Whether each image keeps its own crop (per_image) or every image of a sample "
+            "gets the union of their crops (union), keeping the channels of one part "
+            "registered. Union requires the sample's images to share a source size."
+        ),
+    )
 
 
 class RegionPreparationEntry(BaseModel):
@@ -337,7 +376,7 @@ def ensure_run_build(
         extractor = build_extractor(
             profile.extractor_type,
             profile.extractor_config,
-            assets=_resolve_assets(ctx.settings, profile),
+            assets=resolve_assets(ctx.settings, profile.extractor_type),
         )
         summary = _build_all(ctx, profile, size, images, extractor=extractor)
         ctx.log(
@@ -355,7 +394,6 @@ def ensure_run_build(
 
 
 def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
-    profile_id = _integer_param(ctx, "profile_id")
     dataset_id = _integer_param(ctx, "dataset_id")
     mode = str(ctx.params.get("mode", ""))
     if mode not in {"preview", "build"}:
@@ -363,6 +401,11 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
     size = (_integer_param(ctx, "width"), _integer_param(ctx, "height"))
     if min(size) <= 0:
         raise ValueError("region preparation needs a positive width and height")
+    if "recipe" in ctx.params:
+        if mode != "preview":
+            raise ValueError("only a preview may run on an unsaved region recipe")
+        return _check_recipe(ctx, dataset_id, size)
+    profile_id = _integer_param(ctx, "profile_id")
 
     with connection(ctx.settings.db_path) as conn:
         profile = profiles_repo.get_profile(conn, profile_id)
@@ -376,7 +419,7 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
         if mode == "build"
         else [images[index] for index in preview_selection(images, profile.sample_alignment)]
     )
-    assets = _resolve_assets(ctx.settings, profile)
+    assets = resolve_assets(ctx.settings, profile.extractor_type)
     extractor = build_extractor(
         profile.extractor_type,
         profile.extractor_config,
@@ -388,26 +431,59 @@ def run_region_prepare_job(ctx: JobContext) -> dict[str, Any]:
     )
 
     if mode == "preview":
-        # Bounded: a union preview can exceed the budget only through one sample larger
-        # than it, whose crop needs every image — so the result, not the work, is cut.
-        entries = _process_images(
-            ctx, profile, size, selected, extractor=extractor, output_dir=None
-        )[:PREVIEW_LIMIT]
-        succeeded = sum(entry.status == "succeeded" for entry in entries)
-        return {
-            "mode": "preview",
-            "profile_id": profile.id,
-            "dataset_id": profile.dataset_id,
-            "width": size[0],
-            "height": size[1],
-            "sampled": len(entries),
-            "dataset_images": len(images),
-            "succeeded": succeeded,
-            "failed": len(entries) - succeeded,
-            "entries": [entry.model_dump(mode="json") for entry in entries],
-        }
+        return _preview_result(ctx, profile, size, images, selected, extractor, profile.id)
 
     return _build_all(ctx, profile, size, selected, extractor=extractor).model_dump(mode="json")
+
+
+def _check_recipe(ctx: JobContext, dataset_id: int, size: Size) -> dict[str, Any]:
+    """The sampled preview of a configuration nobody has saved, so tuning leaves no revisions."""
+    recipe = RegionRecipe.model_validate(ctx.params["recipe"])
+    validated = validate_extractor_config(recipe.extractor_type, recipe.extractor_config)
+    recipe = recipe.model_copy(update={"extractor_config": validated.model_dump(mode="json")})
+    with connection(ctx.settings.db_path) as conn:
+        images = images_repo.list_images_for_dataset(conn, dataset_id)
+    selected = [images[index] for index in preview_selection(images, recipe.sample_alignment)]
+    extractor = build_extractor(
+        recipe.extractor_type,
+        recipe.extractor_config,
+        assets=resolve_assets(ctx.settings, recipe.extractor_type),
+    )
+    ctx.log(
+        f"Check an unsaved {recipe.extractor_type} profile at {size[0]}x{size[1]} on "
+        f"{len(selected)} of {len(images)} images."
+    )
+    result = _preview_result(ctx, recipe, size, images, selected, extractor, None)
+    return {**result, "recipe": recipe.model_dump(mode="json")}
+
+
+def _preview_result(
+    ctx: JobContext,
+    profile: PreparationRecipe,
+    size: Size,
+    images: list[ImageEntity],
+    selected: list[ImageEntity],
+    extractor: Any,
+    profile_id: int | None,
+) -> dict[str, Any]:
+    # Bounded: a union preview can exceed the budget only through one sample larger
+    # than it, whose crop needs every image — so the result, not the work, is cut.
+    entries = _process_images(ctx, profile, size, selected, extractor=extractor, output_dir=None)[
+        :PREVIEW_LIMIT
+    ]
+    succeeded = sum(entry.status == "succeeded" for entry in entries)
+    return {
+        "mode": "preview",
+        "profile_id": profile_id,
+        "dataset_id": _integer_param(ctx, "dataset_id"),
+        "width": size[0],
+        "height": size[1],
+        "sampled": len(entries),
+        "dataset_images": len(images),
+        "succeeded": succeeded,
+        "failed": len(entries) - succeeded,
+        "entries": [entry.model_dump(mode="json") for entry in entries],
+    }
 
 
 def _build_all(
@@ -492,7 +568,7 @@ def _build_all(
 
 def _process_images(
     ctx: JobContext,
-    profile: RegionProfileRevision,
+    profile: PreparationRecipe,
     size: Size,
     images: list[ImageEntity],
     *,
@@ -510,7 +586,7 @@ def _process_images(
 
 def _process_each_image(
     ctx: JobContext,
-    profile: RegionProfileRevision,
+    profile: PreparationRecipe,
     size: Size,
     images: list[ImageEntity],
     *,
@@ -540,7 +616,7 @@ def _process_each_image(
             prepared_digest = None
             if output_dir is not None:
                 prepared = transform.prepare_image(
-                    source, resample=_RESAMPLE_FILTERS[profile.resample]
+                    source, resample=RESAMPLE_FILTERS[profile.resample]
                 )
                 image_path = output_dir / "images" / f"{image_record.id}.png"
                 prepared.save(image_path, format="PNG", optimize=False)
@@ -573,7 +649,7 @@ def _process_each_image(
 
 
 @dataclass
-class _Located:
+class Located:
     """One decoded image and its own extraction, held only while its sample is processed."""
 
     record: ImageEntity
@@ -586,7 +662,7 @@ class _Located:
 
 def _process_samples(
     ctx: JobContext,
-    profile: RegionProfileRevision,
+    profile: PreparationRecipe,
     size: Size,
     images: list[ImageEntity],
     *,
@@ -605,12 +681,12 @@ def _process_samples(
     done = 0
     total = len(images)
     for sample_id, indices in groups.items():
-        located: list[_Located] = []
+        located: list[Located] = []
         for index in indices:
             ctx.raise_if_cancelled()
-            located.append(_locate(profile, size, images[index], extractor))
+            located.append(locate(profile, size, images[index], extractor))
         for index, entry in zip(
-            indices, _unite_sample(profile, size, sample_id, located, output_dir), strict=True
+            indices, unite_sample(profile, size, sample_id, located, output_dir), strict=True
         ):
             by_index[index] = entry
             if entry.status == "failed":
@@ -620,10 +696,8 @@ def _process_samples(
     return [by_index[index] for index in range(total)]
 
 
-def _locate(
-    profile: RegionProfileRevision, size: Size, record: ImageEntity, extractor: Any
-) -> _Located:
-    located = _Located(record=record, started=time.perf_counter())
+def locate(profile: PreparationRecipe, size: Size, record: ImageEntity, extractor: Any) -> Located:
+    located = Located(record=record, started=time.perf_counter())
     try:
         source = decode.load(Path(record.path))
         if source.size != (record.width, record.height):
@@ -644,11 +718,11 @@ def _locate(
     return located
 
 
-def _unite_sample(
-    profile: RegionProfileRevision,
+def unite_sample(
+    profile: PreparationRecipe,
     size: Size,
     sample_id: int,
-    located: list[_Located],
+    located: list[Located],
     output_dir: Path | None,
 ) -> list[RegionPreparationEntry]:
     """Replace each image's crop with the union of its sample's crops, or fail the sample.
@@ -700,7 +774,7 @@ def _unite_sample(
             prepared_digest = None
             if output_dir is not None and item.source is not None:
                 prepared = shared.prepare_image(
-                    item.source, resample=_RESAMPLE_FILTERS[profile.resample]
+                    item.source, resample=RESAMPLE_FILTERS[profile.resample]
                 )
                 image_path = output_dir / "images" / f"{item.record.id}.png"
                 prepared.save(image_path, format="PNG", optimize=False)
@@ -725,7 +799,7 @@ def _unite_sample(
     return entries
 
 
-def _failed_entry(item: _Located, error: str) -> RegionPreparationEntry:
+def _failed_entry(item: Located, error: str) -> RegionPreparationEntry:
     return RegionPreparationEntry(
         image_id=item.record.id,
         source_sha256=item.record.sha256,
@@ -735,8 +809,9 @@ def _failed_entry(item: _Located, error: str) -> RegionPreparationEntry:
     )
 
 
-def _resolve_assets(settings: Settings, profile: RegionProfileRevision) -> dict[str, Path]:
-    extractor_type = get_extractor_class(profile.extractor_type)
+def resolve_assets(settings: Settings, extractor_key: str) -> dict[str, Path]:
+    """The verified local checkpoint of every asset an extractor needs, or an explicit failure."""
+    extractor_type = get_extractor_class(extractor_key)
     assets: dict[str, Path] = {}
     for key in extractor_type.required_assets:
         spec = get_spec(key)

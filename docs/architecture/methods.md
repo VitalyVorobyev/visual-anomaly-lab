@@ -251,13 +251,22 @@ failure; its pydantic schema drives the client as model schemas do.
   device as extractor metadata.
 
 Extractor confidence is method-specific and not comparable between entries. A profile has no size: a
-preview or build names one. Preview samples at most 24 images evenly and writes no pixels. A full build of
+preview or build names one. **The live preview** (`regions/live.py`, `POST
+/api/datasets/{id}/region-preview`) takes an *unsaved* recipe — the create request's fields, validated by
+the extractor's own schema — one image and a size, and answers synchronously with the extractor's box, the
+resolved transform, its confidence and metadata, and the prepared frame as an inline PNG. It resolves
+through the same `locate` and `unite_sample` a build runs, so what it shows is what a build writes; under a
+shared crop it locates every image of the sample. The classical extractors run in a worker thread of the
+API process, refusing a source over 40 megapixels; MobileSAM answers through the resident worker
+([jobs](jobs.md#the-resident-worker)). An extraction failure is an answer (`status = failed`, with the
+extractor's message), never a fallback. The sampled check samples at most 24 images evenly and writes no
+pixels, on a saved revision or an unsaved recipe (`POST /api/datasets/{id}/region-check`). A full build of
 one size is a cancellable `region_prepare` job — or part of the first train or infer job of a run at that
 size — that writes to a job-specific staging directory, records successes and failures in a deterministic
 JSON-lines manifest, and publishes atomically. A build is immutable; rebuilding needs a new profile
 revision, while another size is simply another build of the same revision. Each entry pins the
 source digest, realised transform, extractor metadata and prepared-image digest. The dataset's
-**Prepare** screen overlays each crop and can switch to the prepared pixels. The default-profile verdict
+**Prepare** screen previews one image live and overlays each checked crop. The default-profile verdict
 is in [measurements](../measurements.md).
 
 ## Seeding

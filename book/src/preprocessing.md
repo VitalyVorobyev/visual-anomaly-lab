@@ -21,8 +21,15 @@ transform, failure state, and hashes. A run's first **Train** (or, for a zero-sh
 its manifest; the run reads exactly those pixels for ever after. Two runs at the same size share one
 build.
 
-On **Prepare** you can preview a profile's crops and build it ahead of time. Preview and **Build all** name
-a size, 448 × 448 unless you change it; building there only saves the first run at that size the wait.
+**Prepare** is tuned on a live preview. Pick an extractor and its options, the padding, resampling and
+crop per sample, and the stage re-prepares the image in front of you as you type: the source with the
+extractor's box dashed and the padded crop solid, beside the frame the method will actually read. Step
+through images spread over the dataset with ← and →, or press **Random**. Nothing is saved while you tune.
+**Check 24** runs the same configuration on 24 images as a job and lists the failures first; click one to
+open it on the stage. When the configuration is right, **Save profile** — it only appears once the form
+differs from the saved revision you started from, under a name made from the settings that you can edit.
+The preview size is 448 × 448 unless you change it; **Build all** prepares the saved revision at that size,
+which only saves the first run at that size the wait.
 
 On a grouped dataset a content-based localizer can find a slightly different box in each channel of one
 part, which misregisters any method that fuses channels position by position. A profile's **crop per

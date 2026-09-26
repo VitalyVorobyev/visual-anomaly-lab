@@ -26,7 +26,9 @@ application.
 - **Prepare** an invertible region profile — object detection, crop and resample pinned as an
   immutable revision that says where a run looks, so its spatial input is reproducible. It is optional:
   every dataset has a "Full frame" profile, a run's size is its own (its method's measured frame unless
-  named), and a run's first job prepares the profile at that size. On a
+  named), and a run's first job prepares the profile at that size. A profile is tuned on a live
+  preview of one image at a time — every control re-prepares it, MobileSAM included — and checked on
+  24 before it is saved, so tuning leaves no revisions behind. On a
   grouped dataset the channels of one part can share one union crop, so they stay registered.
   MobileSAM can reject masks that wrap the frame border and unite the rest; that rule is opt-in, since
   on held-out public classes it localised the part but kept 0.92 of defect pixels, below the

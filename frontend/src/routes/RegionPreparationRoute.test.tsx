@@ -1,10 +1,11 @@
 /**
- * Removing a saved preset, and being told when it cannot be removed.
+ * The Prepare screen: a saved revision loads into the form, the form is previewed live, and
+ * only a form that differs from what is saved offers to be saved.
  *
- * A profile revision is immutable and experiments pin it with `ON DELETE RESTRICT`, so the
- * interesting case is not the deletion — it is the refusal. A greyed-out button that does
- * not say *which* runs are holding the profile leaves the operator with nothing to do next,
- * which is why the preview names them and the dialog prints what it says.
+ * Removing a revision is here too, and there the interesting case is not the deletion — it
+ * is the refusal. A profile revision is immutable and experiments pin it with `ON DELETE
+ * RESTRICT`; a greyed-out button that does not say *which* runs hold it leaves the operator
+ * with nothing to do next, which is why the preview names them and the dialog prints it.
  */
 
 import { fireEvent, render, screen, within } from "@testing-library/react";
@@ -100,27 +101,39 @@ describe("deleting a saved profile revision", () => {
   });
 });
 
-describe("the size a profile is prepared at", () => {
-  function mountSelected(seed: [readonly unknown[], unknown][] = []) {
-    return render(
-      withProviders(
-        <MemoryRouter initialEntries={[`/datasets/${DATASET_ID}/prepare?profile=${profile.id}`]}>
-          <Routes>
-            <Route path="datasets/:datasetId/prepare" element={<RegionPreparationRoute />} />
-          </Routes>
-        </MemoryRouter>,
-        [[queryKeys.regionProfiles(DATASET_ID), [profile]], ...seed],
-      ),
-    );
-  }
+const extractors = [
+  {
+    key: "mobile_sam",
+    title: "MobileSAM automatic region",
+    summary: "Masks.",
+    availability: { available: true, reason: null },
+    required_assets: [],
+    config_schema: { properties: {} },
+  },
+];
 
-  it("is not part of the profile: preview and build name it, 448 unless changed", () => {
+function mountSelected(seed: [readonly unknown[], unknown][] = [], saved: RegionProfileRevision = profile) {
+  return render(
+    withProviders(
+      <MemoryRouter initialEntries={[`/datasets/${DATASET_ID}/prepare?profile=${saved.id}`]}>
+        <Routes>
+          <Route path="datasets/:datasetId/prepare" element={<RegionPreparationRoute />} />
+        </Routes>
+      </MemoryRouter>,
+      [[queryKeys.regionProfiles(DATASET_ID), [saved]], ...seed],
+    ),
+  );
+}
+
+describe("the size a profile is prepared at", () => {
+  it("is not part of the profile: preview, check and build name it, 448 unless changed", () => {
     mountSelected();
 
     expect((screen.getByLabelText("Preview width") as HTMLInputElement).value).toBe("448");
     expect((screen.getByLabelText("Preview height") as HTMLInputElement).value).toBe("448");
-    expect(screen.getByText(/Preview and Build all prepare at 448×448/)).toBeTruthy();
-    // The revision form asks where to look, never how large.
+    expect(screen.getByText(/The preview, Check 24 and Build all prepare at 448×448/)).toBeTruthy();
+    expect(screen.getByText("Check 24 · 448×448")).toBeTruthy();
+    // The profile form asks where to look, never how large.
     expect(screen.queryByText("Width")).toBeNull();
     expect(screen.getByRole("button", { name: "Build all" }).hasAttribute("disabled")).toBe(false);
   });
@@ -141,25 +154,64 @@ describe("the size a profile is prepared at", () => {
   });
 });
 
-describe("sharing one crop across a sample", () => {
-  it("starts per image, and revising a shared profile carries the choice over", () => {
-    render(
-      withProviders(
-        <MemoryRouter initialEntries={[`/datasets/${DATASET_ID}/prepare?profile=${profile.id}`]}>
-          <Routes>
-            <Route path="datasets/:datasetId/prepare" element={<RegionPreparationRoute />} />
-          </Routes>
-        </MemoryRouter>,
-        [[queryKeys.regionProfiles(DATASET_ID), [{ ...profile, sample_alignment: "union" }]]],
-      ),
+describe("opening a saved revision", () => {
+  it("loads it into the form, shared crop included", () => {
+    mountSelected([], { ...profile, sample_alignment: "union" });
+
+    expect((screen.getByRole("radio", { name: "Shared" }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByText(/Showing r3 as saved · shared crop/)).toBeTruthy();
+  });
+
+  it("offers Save only once the form differs, under a name that says what it is", () => {
+    mountSelected([[queryKeys.regionExtractors(), extractors]]);
+
+    expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("Padding"), { target: { value: "0.1" } });
+
+    expect(screen.getByRole("button", { name: "Save profile" })).toBeTruthy();
+    expect(screen.getByText("Edited · not saved")).toBeTruthy();
+    expect(screen.getByLabelText("Profile name").getAttribute("placeholder")).toBe(
+      "MobileSAM automatic region · pad 10%",
     );
-    const shared = () => screen.getByRole("radio", { name: "Shared" }) as HTMLInputElement;
+    // Build all prepares what is saved, and says so rather than greying out in silence.
+    expect(screen.getByRole("button", { name: "Build all" }).hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/save these changes first/)).toBeTruthy();
 
-    expect(shared().checked).toBe(false);
-    expect(screen.getByText(/shared crop/)).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Revise" }));
-
-    expect(shared().checked).toBe(true);
+    fireEvent.change(screen.getByLabelText("Padding"), { target: { value: "0.05" } });
+    expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
   });
 });
+
+describe("the live stage", () => {
+  const strip = {
+    total: 30,
+    images: [1, 2, 3].map((index) => ({
+      image_id: 100 + index,
+      sample_id: index,
+      group_key: "good",
+      external_id: `00${index}`,
+      channel: null,
+      width: 64,
+      height: 48,
+    })),
+  };
+
+  it("steps through images spread over the dataset with the arrow keys", () => {
+    mountSelected([[queryKeys.regionPreviewImages(DATASET_ID, "per_image"), strip]]);
+
+    expect(screen.getByText("good/001")).toBeTruthy();
+    expect(screen.getByText("1 / 3 of 30")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "ArrowRight" });
+    expect(screen.getByText("good/002")).toBeTruthy();
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(screen.getByText("good/003")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "good/002" }));
+    expect(screen.getByText("2 / 3 of 30")).toBeTruthy();
+  });
+});
+

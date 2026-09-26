@@ -15,7 +15,12 @@ import type {
   RegionProfileCreate,
   RegionProfileDeletionPreview,
   RegionProfileDeletionResult,
+  RegionLivePreview,
+  RegionPreviewImage,
+  RegionPreviewImages,
   RegionProfileRevision,
+  RegionRecipe,
+  SampleAlignment,
 } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 
@@ -160,5 +165,83 @@ export function useRegionBuilds(profileId: number | undefined) {
         "the region builds",
       ),
     enabled: profileId !== undefined,
+  });
+}
+
+/** Images the live stage steps through, spread evenly over the dataset (and its channels). */
+export function useRegionPreviewImages(datasetId: number, alignment: SampleAlignment) {
+  return useQuery<RegionPreviewImages>({
+    queryKey: queryKeys.regionPreviewImages(datasetId, alignment),
+    queryFn: async () =>
+      unwrap(
+        await api.GET("/api/datasets/{dataset_id}/region-preview/images", {
+          params: { path: { dataset_id: datasetId }, query: { alignment } },
+        }),
+        "the preview images",
+      ),
+    placeholderData: (previous) => previous,
+  });
+}
+
+export function useRandomPreviewImage(datasetId: number) {
+  return useMutation<RegionPreviewImage, Error, void>({
+    mutationFn: async () =>
+      unwrap(
+        await api.GET("/api/datasets/{dataset_id}/region-preview/random", {
+          params: { path: { dataset_id: datasetId } },
+        }),
+        "a random image",
+      ),
+  });
+}
+
+export interface LivePreviewRequest {
+  recipe: RegionRecipe;
+  imageId: number;
+  size: FrameSize;
+}
+
+/**
+ * One image under the unsaved recipe, prepared on the request path.
+ *
+ * The caller debounces `request`; each distinct request is cached, so stepping back to an
+ * image or undoing a change answers at once. The previous answer stays on the stage while
+ * the next one is computed, and `isFetching` is what the stage shows as pending.
+ */
+export function useRegionLivePreview(datasetId: number, request: LivePreviewRequest | undefined) {
+  return useQuery<RegionLivePreview>({
+    queryKey: queryKeys.regionLivePreview(datasetId, request ?? null),
+    queryFn: async ({ signal }) =>
+      unwrap(
+        await api.POST("/api/datasets/{dataset_id}/region-preview", {
+          params: { path: { dataset_id: datasetId } },
+          body: {
+            ...(request as LivePreviewRequest).recipe,
+            image_id: (request as LivePreviewRequest).imageId,
+            ...(request as LivePreviewRequest).size,
+          },
+          signal,
+        }),
+        "the live preview",
+      ),
+    enabled: request !== undefined,
+    placeholderData: (previous) => previous,
+    retry: false,
+    staleTime: Infinity,
+    gcTime: 60_000,
+  });
+}
+
+/** "Check 24": the sampled preview job on the unsaved recipe. Nothing is saved. */
+export function useStartRegionCheck(datasetId: number) {
+  return useMutation<JobSummary, Error, { recipe: RegionRecipe; size: FrameSize }>({
+    mutationFn: async ({ recipe, size }) =>
+      unwrap(
+        await api.POST("/api/datasets/{dataset_id}/region-check", {
+          params: { path: { dataset_id: datasetId } },
+          body: { ...recipe, ...size },
+        }),
+        "the region check job",
+      ),
   });
 }
