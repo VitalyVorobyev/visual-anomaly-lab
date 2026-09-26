@@ -36,7 +36,9 @@ application.
   MobileSAM can reject masks that wrap the frame border and unite the rest; that rule is opt-in, since
   on held-out public classes it localised the part but kept 0.92 of defect pixels, below the
   predeclared 0.98 ([measurements.md](measurements.md)).
-- **Split** a dataset at sample level, or adopt the split a benchmark published.
+- **Split** a dataset at sample level, or adopt the split a benchmark published — from a preset
+  card per task with its dry-run composition and one press to create it, or by hand under **Custom
+  split** with a live preview. A split no experiment ran on can be deleted.
 - **Train and score** through one plugin interface. Eight anomaly methods ship: `pixel_reference`
   (numpy + Pillow, the floor), `efficientad_custom`, `patchcore_anomalib`,
   `dinomaly_custom`, `glass_anomalib`, `dino_memory`, `subspace_ad` and `anomalyvfm_anomalib`. `dino_memory` is a frozen

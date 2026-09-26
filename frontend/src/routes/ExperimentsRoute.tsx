@@ -37,6 +37,7 @@ import {
 import { Badge, Button, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, NumberInput, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { useAnnotationLabels } from "../hooks/useAnnotations";
+import { useCreateSplit, useSplitPresets } from "../hooks/useSplitPresets";
 import { TabScroll } from "./dataset/TabScroll";
 import {
   CATALOGUE_PAGE,
@@ -819,6 +820,15 @@ function CreateExperiment({
   };
 
   const noSplits = datasetId !== undefined && splits.data !== undefined && taskSplits.length === 0;
+  // With no split for the task, its default preset is offered in place: one press creates
+  // it, and the split effect above selects it once the list refetches.
+  const presets = useSplitPresets(noSplits ? datasetId : undefined);
+  const createSplit = useCreateSplit(datasetId ?? -1);
+  const preset = presets.data?.find((entry) => entry.tasks.includes(task));
+  const presetParams =
+    preset && targeted && preset.classes.some((entry) => entry.key === effectiveTarget)
+      ? { ...preset.params, label_key: effectiveTarget }
+      : preset?.params;
   // With one task there is nothing to choose, and the form starts at its inputs.
   const offset = tasks.length > 1 ? 1 : 0;
 
@@ -953,6 +963,23 @@ function CreateExperiment({
                       : supervised
                         ? "No split of annotated samples yet."
                         : "This dataset has no splits."}{" "}
+                    {preset && presetParams && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          loading={createSplit.isPending}
+                          onClick={() => createSplit.mutate({ params: presetParams })}
+                        >
+                          Use {preset.label}
+                          {presetParams.label_key ? ` · ${presetParams.label_key}` : ""} — create it
+                        </Button>
+                        {createSplit.error && (
+                          <span className="block text-defect">{createSplit.error.message}</span>
+                        )}{" "}
+                        or{" "}
+                      </>
+                    )}
                     <Link
                       className="text-signal underline underline-offset-2"
                       to={`/datasets/${datasetId}/splits${
@@ -963,7 +990,13 @@ function CreateExperiment({
                             : ""
                       }`}
                     >
-                      {targeted ? "Choose references" : supervised ? "Draw one by class" : "Create one"}
+                      {preset
+                        ? "tune one on Splits"
+                        : targeted
+                          ? "Choose references"
+                          : supervised
+                            ? "Draw one by class"
+                            : "Create one"}
                     </Link>
                     .
                   </>

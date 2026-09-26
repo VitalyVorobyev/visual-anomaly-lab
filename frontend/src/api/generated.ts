@@ -1945,6 +1945,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/datasets/{dataset_id}/split-presets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The zero-configuration splits this dataset can serve, with dry-run compositions
+         * @description Presets per task, each with the composition Create would produce. Writes nothing.
+         *
+         *     Anomaly presets need anomaly verdicts; class presets need class truth (ADR-0041). A
+         *     preset whose dry run fails on this dataset is left out.
+         */
+        get: operations["list_split_presets_api_datasets__dataset_id__split_presets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/datasets/{dataset_id}/splits/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * What a split with these params would contain, without creating it
+         * @description The dry run the custom form shows as it is edited.
+         *
+         *     A request that cannot be drawn answers 200 with `error` set, because an unfinished form
+         *     is an ordinary state, not a failed call.
+         */
+        post: operations["preview_split_api_datasets__dataset_id__splits_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/splits/{split_id}": {
         parameters: {
             query?: never;
@@ -1957,6 +2003,32 @@ export interface paths {
          * @description One split and its exact composition.
          */
         get: operations["get_split_api_splits__split_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete a split no experiment ran on
+         * @description Remove a split and its assignments; refuse while an experiment holds it.
+         *
+         *     `experiment.split_id` is `ON DELETE RESTRICT` and nothing cascades: an experiment's
+         *     results are only meaningful against the partition it ran on, so the experiments are
+         *     deleted first, deliberately, or the split stays. The check and the delete share one
+         *     write transaction, so an experiment cannot be created on the split in between.
+         */
+        delete: operations["delete_split_api_splits__split_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/splits/{split_id}/deletion-preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** What deleting a split removes, and the experiments that block it */
+        get: operations["preview_split_deletion_api_splits__split_id__deletion_preview_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2775,6 +2847,16 @@ export interface components {
          */
         ClassPresence: "present" | "absent" | "unlabeled";
         /**
+         * ClassShare
+         * @description How many samples of a subset show one class.
+         */
+        ClassShare: {
+            /** Key */
+            key: string;
+            /** Samples */
+            samples: number;
+        };
+        /**
          * ClassTableEntry
          * @description One class as a completed revision pinned it: its index in the class mask, and its area.
          */
@@ -3140,14 +3222,16 @@ export interface components {
         CreateSplitRequest: {
             /** Dataset Id */
             dataset_id: number;
-            /** Name */
-            name: string;
+            /**
+             * Name
+             * @description Leave empty for `<label> · seed <n>`, derived from the params.
+             */
+            name?: string | null;
             /**
              * Seed
-             * @description Same seed and params reproduce this split.
-             * @default 0
+             * @description Same seed and params reproduce this split. Leave empty for the first seed no split of the same params has used, so a repeated request is a new draw.
              */
-            seed: number;
+            seed?: number | null;
             params?: components["schemas"]["SplitParams-Input"];
         };
         /**
@@ -4865,6 +4949,18 @@ export interface components {
              */
             height: number;
         };
+        /**
+         * PresetClass
+         * @description A class a few-shot preset can draw references of, and how many samples show it.
+         */
+        PresetClass: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Samples */
+            samples: number;
+        };
         /** PreviewRequest */
         PreviewRequest: {
             /** Class Key */
@@ -5737,6 +5833,31 @@ export interface components {
             /** Pad Bottom */
             pad_bottom: number;
         };
+        /**
+         * SplitDeletionPreview
+         * @description What deleting a split removes, and what blocks it.
+         */
+        SplitDeletionPreview: {
+            /** Split Id */
+            split_id: number;
+            /** Name */
+            name: string;
+            /** Assignments */
+            assignments: number;
+            /** Experiments */
+            experiments: components["schemas"]["SplitHolder"][];
+            /** Can Delete */
+            can_delete: boolean;
+            /** Blocker */
+            blocker: string | null;
+        };
+        /** SplitDeletionResult */
+        SplitDeletionResult: {
+            /** Deleted */
+            deleted: boolean;
+            /** Assignments Removed */
+            assignments_removed: number;
+        };
         /** SplitDetail */
         SplitDetail: {
             /** Id */
@@ -5751,9 +5872,29 @@ export interface components {
             seed: number;
             /** Created At */
             created_at: string;
+            /**
+             * Tasks
+             * @description The tasks this split trains.
+             */
+            tasks: components["schemas"]["Task"][];
             /** Composition */
             composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Experiments
+             * @description The experiments that ran on this split, newest first.
+             */
+            experiments: components["schemas"]["SplitHolder"][];
             params: components["schemas"]["SplitParams-Output"];
+        };
+        /**
+         * SplitHolder
+         * @description An experiment that ran on a split, and so holds it.
+         */
+        SplitHolder: {
+            /** Experiment Id */
+            experiment_id: number;
+            /** Name */
+            name: string;
         };
         /**
          * SplitParams
@@ -5892,6 +6033,69 @@ export interface components {
             classes: string[];
         };
         /**
+         * SplitPreset
+         * @description A zero-configuration split that works on this dataset, with its dry-run composition.
+         */
+        SplitPreset: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Meaning
+             * @description One line saying what the split is for.
+             */
+            meaning: string;
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
+            params: components["schemas"]["SplitParams-Output"];
+            /**
+             * Seed
+             * @description The seed Create would draw with: the first one not yet used.
+             */
+            seed: number;
+            /**
+             * Name
+             * @description The name Create would give the split.
+             */
+            name: string;
+            /** Composition */
+            composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Classes
+             * @description For a few-shot preset: the classes with enough samples to draw from, most frequent first. `params.label_key` is the first of them.
+             */
+            classes: components["schemas"]["PresetClass"][];
+        };
+        /**
+         * SplitPreview
+         * @description What a create call with these params would produce, computed without writing it.
+         */
+        SplitPreview: {
+            /** Seed */
+            seed: number;
+            /** Name */
+            name: string;
+            /** Tasks */
+            tasks: components["schemas"]["Task"][];
+            /** Composition */
+            composition: components["schemas"]["SubsetComposition"][];
+            /**
+             * Error
+             * @description Why the request cannot be drawn on this dataset; composition is then empty.
+             */
+            error: string | null;
+        };
+        /** SplitPreviewRequest */
+        SplitPreviewRequest: {
+            /**
+             * Seed
+             * @description As on create.
+             */
+            seed?: number | null;
+            params?: components["schemas"]["SplitParams-Input"];
+        };
+        /**
          * SplitStrategy
          * @enum {string}
          */
@@ -5904,6 +6108,9 @@ export interface components {
         /**
          * SubsetComposition
          * @description What a subset actually contains, so a split can report itself honestly.
+         *
+         *     `normal`, `defect` and `unlabeled` count anomaly verdicts; `classes` counts the samples
+         *     whose completed annotation shows each class, for a dataset with class truth (ADR-0041).
          */
         SubsetComposition: {
             subset: components["schemas"]["Subset"];
@@ -5915,6 +6122,8 @@ export interface components {
             defect: number;
             /** Unlabeled */
             unlabeled: number;
+            /** Classes */
+            classes: components["schemas"]["ClassShare"][];
         };
         /**
          * Task
@@ -9621,6 +9830,72 @@ export interface operations {
             };
         };
     };
+    list_split_presets_api_datasets__dataset_id__split_presets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitPreset"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_split_api_datasets__dataset_id__splits_preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                dataset_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SplitPreviewRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitPreview"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_split_api_splits__split_id__get: {
         parameters: {
             query?: never;
@@ -9639,6 +9914,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SplitDetail"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_split_api_splits__split_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                split_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitDeletionResult"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_split_deletion_api_splits__split_id__deletion_preview_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                split_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SplitDeletionPreview"];
                 };
             };
             /** @description Validation Error */

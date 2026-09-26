@@ -6,6 +6,7 @@ import sqlite3
 
 import pytest
 
+from anomaly_lab.datasets.split_presets import compose, read_truth
 from anomaly_lab.db.repositories import (
     datasets,
     experiments,
@@ -262,7 +263,9 @@ def test_split_composition_reports_every_subset(
         },
     )
 
-    by_subset = {c.subset: c for c in splits.composition(migrated_db, split.id)}
+    truth = read_truth(migrated_db, catalog.dataset_id)
+    placed = splits.assignments(migrated_db, split.id)
+    by_subset = {c.subset: c for c in compose(placed, truth)}
 
     assert split.params == {"ratios": {"train": 0.5}}
     assert by_subset[Subset.TRAIN].normal == 1
