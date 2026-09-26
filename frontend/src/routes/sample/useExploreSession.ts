@@ -30,6 +30,7 @@ import type { RasterLayer } from "../../components/viewer/SampleStage";
 import { useAnnotationLabels, useSegmentAssist, useSegmentAssistCapability } from "../../hooks/useAnnotations";
 import { useExploreCapability, useExploreRequest, useExploreShape } from "../../hooks/useExplore";
 import { useExploreTextSession } from "./useExploreTextSession";
+import { defined } from "../../api/defined";
 
 export type ExploreMode = "similar" | "clusters" | "pca" | "sam" | "text";
 
@@ -284,7 +285,7 @@ export function useExploreSession({
           body:
             mode === "similar"
               ? { threshold, label_key: labelKey }
-              : { cluster: cluster ?? undefined, label_key: labelKey },
+              : { ...defined({ cluster: cluster ?? undefined }), label_key: labelKey },
         });
         carried = {
           imageId: target,

@@ -13,12 +13,11 @@
 #
 #   * The generator's TypeScript. openapi-typescript builds its output with the
 #     TypeScript *JS compiler API* and still declares `peerDependencies:
-#     {typescript: ^5.x}`. The 7.0 native compiler does not expose that API, so the
-#     tool crashes on `ts.factory`. Rather than hold the whole frontend back a major
-#     version for one build tool, the generator runs in its own throwaway project
-#     with its own TypeScript 5. The emitted file is plain type declarations and is
-#     consumed by TypeScript 7 without issue. Drop this isolation once
-#     openapi-typescript supports TS 7.
+#     {typescript: ^5.x}`, which the frontend's TypeScript 6 is outside. So the
+#     generator runs in its own throwaway project with its own TypeScript 5. The
+#     emitted file is plain type declarations and is consumed by the frontend's
+#     compiler without issue. Drop this isolation once openapi-typescript admits
+#     the frontend's TypeScript.
 set -euo pipefail
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"

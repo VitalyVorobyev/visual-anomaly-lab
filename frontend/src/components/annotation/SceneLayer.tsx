@@ -22,6 +22,7 @@ import type {
 import { clamp } from "./canvasView";
 import { withAlpha, type ScenePalette } from "./scenePalette";
 import { useHtmlImage } from "./useHtmlImage";
+import { defined } from "../../api/defined";
 
 interface Props {
   document: AnnotationDocument;
@@ -345,7 +346,7 @@ function BitmapLayer({
           height={shape.height}
           stroke={selected ? (suggestion ? palette.suggestion : palette.signal) : palette.cut}
           strokeWidth={(selected ? 1.5 : 1) / scale}
-          dash={cut && !selected ? [6 / scale, 4 / scale] : undefined}
+          {...defined({ dash: cut && !selected ? [6 / scale, 4 / scale] : undefined })}
         />
       )}
     </Group>

@@ -154,7 +154,7 @@ describe("the create-experiment form", () => {
     };
     renderForm(undefined, [memory]);
     expect(screen.getByText("448 × 448 · from dino_memory")).toBeTruthy();
-    const width = screen.getByRole("spinbutton", { name: "Input width" }) as HTMLInputElement;
+    const width = screen.getByRole<HTMLInputElement>("spinbutton", { name: "Input width" });
     expect(width.value).toBe("");
     expect(width.getAttribute("placeholder")).toBe("448");
 
@@ -362,7 +362,7 @@ describe("the create-experiment form", () => {
       JSON.stringify({ name: "kept from before", channels: [], configValues: {} }),
     );
     renderForm();
-    expect((screen.getByRole("textbox", { name: "Name" }) as HTMLInputElement).value).toBe(
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Name" }).value).toBe(
       "kept from before",
     );
   });
@@ -387,7 +387,7 @@ describe("the create-experiment form", () => {
     );
     renderForm([SPLIT], [METHOD, floor]);
     expect(
-      (screen.getByRole("radio", { name: "Few-shot segmentation" }) as HTMLInputElement).checked,
+      screen.getByRole<HTMLInputElement>("radio", { name: "Few-shot segmentation" }).checked,
     ).toBe(true);
     expect(screen.getByRole("combobox", { name: "Target class" }).textContent).toContain(
       "Scratch",

@@ -26,12 +26,12 @@ interface ShapeBase {
    * The label tag's fill, when it names something other than the outline's verdict — a
    * detection's class colour on a box toned by whether it matched.
    */
-  labelColour?: string;
+  labelColour?: string | undefined;
   /**
    * The outline's own colour, for a shape whose colour is data rather than a verdict — a
    * truth box in its class's taxonomy colour. Wins over `tone`.
    */
-  colour?: string;
+  colour?: string | undefined;
   /** 0–1, for a shape whose weight the reader sets (the sample view's truth opacity). */
   opacity?: number;
 }

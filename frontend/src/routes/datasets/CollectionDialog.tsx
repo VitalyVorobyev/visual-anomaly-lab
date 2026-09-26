@@ -32,7 +32,7 @@ export function CollectionDialog({
 }: {
   datasets: DatasetSummary[];
   /** The collection being edited; absent creates a new one. */
-  collection?: string;
+  collection?: string | undefined;
   onClose: () => void;
 }) {
   const move = useMoveDatasets();

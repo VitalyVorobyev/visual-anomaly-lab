@@ -27,7 +27,7 @@ function answer(failOn?: string): Call[] {
     async onRequest({ request }: { request: Request }) {
       const path = new URL(request.url).pathname;
       const text = await request.clone().text();
-      calls.push({ method: request.method, path, body: text ? JSON.parse(text) : null });
+      calls.push({ method: request.method, path, body: text ? (JSON.parse(text) as Record<string, unknown>) : null });
       if (path === failOn) {
         return new Response(JSON.stringify({ detail: "refused" }), {
           status: 422,

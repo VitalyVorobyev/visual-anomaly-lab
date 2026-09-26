@@ -20,4 +20,4 @@ afterEach(cleanup);
  * queries have not answered yet. The band and its tab strip have to be on screen in that
  * state, because arriving late is how they used to push the rest of the page down.
  */
-globalThis.fetch = (() => new Promise(() => {})) as typeof fetch;
+globalThis.fetch = (() => new Promise(() => {}));

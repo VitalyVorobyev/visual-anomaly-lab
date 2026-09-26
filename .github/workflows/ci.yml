@@ -129,7 +129,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: visual-anomaly-lab/frontend/package.json
 
       - name: Install
         run: bun install --frozen-lockfile
@@ -137,6 +137,10 @@ jobs:
 
       - name: Types
         run: bun run typecheck
+        working-directory: visual-anomaly-lab/frontend
+
+      - name: Lint
+        run: bun run lint
         working-directory: visual-anomaly-lab/frontend
 
       - name: Tests
@@ -160,7 +164,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: visual-anomaly-lab/frontend/package.json
 
       - run: uv sync --directory backend --locked
 
@@ -248,7 +252,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: visual-anomaly-lab/frontend/package.json
 
       # tauri-build reads tauri.conf.json, which points at the built frontend.
       - name: Build the frontend

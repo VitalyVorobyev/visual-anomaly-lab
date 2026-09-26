@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri": "tauri",
-    "test:screens": "playwright test"
+    "test:screens": "playwright test",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@fontsource-variable/ibm-plex-sans": "^5.3.0",
@@ -26,28 +27,33 @@
     "@tanstack/react-virtual": "^3.14.9",
     "@vitavision/lab-ui": "^0.5.0",
     "clsx": "^2.1.1",
-    "konva": "^10.3.0",
-    "lucide-react": "^1.30.0",
+    "konva": "^10.7.0",
+    "lucide-react": "^1.48.0",
     "openapi-fetch": "^0.17.0",
-    "react": "^19.2.8",
-    "react-dom": "^19.2.8",
-    "react-konva": "^19.2.5",
-    "react-router": "^8.3.0",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-konva": "^19.3.0",
+    "react-router": "^8.4.0",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
-    "@playwright/test": "1.63.0",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@tauri-apps/cli": "^2.11.4",
+    "@tauri-apps/cli": "^2.11.5",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/react": "^16.3.2",
-    "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4",
-    "@vitejs/plugin-react": "^6.0.5",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitavision/config-eslint": "^0.1.0",
+    "@vitavision/config-ts": "^0.1.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "eslint": "^10.11.0",
     "happy-dom": "^20.11.1",
     "tailwindcss": "^4.3.3",
-    "typescript": "^7",
-    "vite": "^8.2.1",
-    "vitest": "^4.1.10"
-  }
+    "typescript": "^6.0.3",
+    "typescript-eslint": "^8.70.1",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  },
+  "packageManager": "bun@1.4.2"
 }

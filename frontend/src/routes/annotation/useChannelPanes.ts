@@ -111,7 +111,7 @@ export function useChannelPanes({
           return false;
         }
       }
-      navigate(`/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`, {
+      void navigate(`/datasets/${datasetId}/annotate/${sample.id}/${image.id}?offset=${queueOffset}`, {
         replace: true,
       });
       return true;

@@ -44,7 +44,7 @@ function job(overrides: Partial<JobSummary>): JobSummary {
     finished_at: null,
     error: null,
     ...overrides,
-  } as JobSummary;
+  };
 }
 
 function wrap(node: ReactNode) {

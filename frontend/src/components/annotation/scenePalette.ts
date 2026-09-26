@@ -64,7 +64,7 @@ function read(): ScenePalette {
     const value = style.getPropertyValue(token).trim();
     return [key, value || FALLBACK[key as keyof ScenePalette]];
   });
-  return Object.fromEntries(entries) as unknown as ScenePalette;
+  return Object.fromEntries(entries) as ScenePalette;
 }
 
 export function useScenePalette(): ScenePalette {

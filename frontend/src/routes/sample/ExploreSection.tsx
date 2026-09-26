@@ -33,6 +33,7 @@ import { RailSection } from "../../components/viewer/RailSection";
 import { isTerminal } from "../../hooks/useJob";
 import type { ExploreMode, ExploreSession } from "./useExploreSession";
 import type { ExploreTextSession } from "./useExploreTextSession";
+import { defined } from "../../api/defined";
 
 const MODES: { value: ExploreMode; label: string }[] = [
   { value: "similar", label: "Similar" },
@@ -134,7 +135,7 @@ function EncoderControls({ session }: { session: ExploreSession }) {
           options={session.backbones.map((entry) => ({
             value: entry.key,
             label: entry.title,
-            note: entry.gated ? "gated" : undefined,
+            ...defined({ note: entry.gated ? "gated" : undefined }),
           }))}
           onValueChange={session.setBackbone}
         />

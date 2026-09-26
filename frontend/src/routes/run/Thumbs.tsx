@@ -31,7 +31,7 @@ export function SampleThumb({
   outline?: Outline;
   /** Under the picture; the sample's own id when omitted. */
   caption?: string;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | undefined;
 }) {
   const image = sample.images[preferredImageIndex(sample.images, defaultChannel)];
   const [outlineMissing, setOutlineMissing] = useState(false);
@@ -101,7 +101,7 @@ export function SampleThumbById({
   sampleId: number;
   defaultChannel?: string | null | undefined;
   outline?: Outline;
-  size?: "sm" | "md";
+  size?: "sm" | "md" | undefined;
 }) {
   const sample = useSample(datasetId, sampleId);
   if (!sample.data) {

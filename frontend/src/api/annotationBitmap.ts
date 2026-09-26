@@ -448,7 +448,7 @@ export function traceMask(
   const remaining = new Set(edges);
   const contours: AnnotationPoint[][] = [];
   while (remaining.size > 0) {
-    const first = remaining.values().next().value as Edge | undefined;
+    const first = remaining.values().next().value;
     if (!first) break;
     const contour = [first.start];
     let edge = first;

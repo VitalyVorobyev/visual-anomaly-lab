@@ -47,8 +47,8 @@ export function compositionMode(
 interface Segment {
   label: string;
   count: number;
-  className?: string;
-  style?: CSSProperties;
+  className?: string | undefined;
+  style?: CSSProperties | undefined;
   tone: Tone;
 }
 

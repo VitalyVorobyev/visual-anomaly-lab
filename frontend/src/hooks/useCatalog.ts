@@ -25,6 +25,7 @@ import type {
 } from "../api/client";
 import type { SampleQuery } from "../api/queryKeys";
 import { queryKeys } from "../api/queryKeys";
+import { defined } from "../api/defined";
 
 export function useDatasets() {
   return useQuery<DatasetSummary[]>({
@@ -73,7 +74,7 @@ export function useSamples(datasetId: number | undefined, query: SampleQuery) {
         await api.GET("/api/datasets/{dataset_id}/samples", {
           params: {
             path: { dataset_id: datasetId as number },
-            query: {
+            query: defined({
               label: query.label,
               channel_id: query.channelId,
               split_id: query.splitId,
@@ -83,7 +84,7 @@ export function useSamples(datasetId: number | undefined, query: SampleQuery) {
               presence: query.presence,
               limit: query.limit,
               offset: query.offset,
-            },
+            }),
           },
         }),
         "the sample page",

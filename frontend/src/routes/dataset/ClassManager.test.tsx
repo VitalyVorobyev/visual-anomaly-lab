@@ -51,10 +51,10 @@ describe("ClassManager", () => {
       ]),
     );
     screen.getByText("Classes").click();
-    expect((screen.getByRole("textbox", { name: "Name of scratch" }) as HTMLInputElement).value).toBe(
+    expect(screen.getByRole<HTMLInputElement>("textbox", { name: "Name of scratch" }).value).toBe(
       "Scratch",
     );
-    expect((screen.getByLabelText("Colour of Defect") as HTMLInputElement).value).toBe("#e03131");
+    expect(screen.getByLabelText<HTMLInputElement>("Colour of Defect").value).toBe("#e03131");
     expect(screen.getByRole("button", { name: "Move Defect up" })).toHaveProperty("disabled", true);
     expect(screen.getByRole("button", { name: "Move Scratch down" })).toHaveProperty("disabled", true);
   });

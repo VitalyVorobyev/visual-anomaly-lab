@@ -12,6 +12,7 @@
 
 import type { Curve } from "../../api/client";
 import { Empty, LineChart, type Scale } from "@vitavision/lab-ui";
+import { defined } from "../../api/defined";
 
 export interface CurveChartProps {
   curve: Curve | null | undefined;
@@ -44,7 +45,7 @@ export function CurveChart({ curve, kind, label, area, areaLabel, absent }: Curv
       xDomain={[0, 1]}
       yDomain={[0, 1]}
       showLegend={false}
-      underlay={kind === "roc" ? chanceDiagonal : undefined}
+      {...defined({ underlay: kind === "roc" ? chanceDiagonal : undefined })}
       footer={
         <div className="flex flex-wrap gap-x-4">
           {area !== undefined && (

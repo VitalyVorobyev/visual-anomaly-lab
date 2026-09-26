@@ -77,6 +77,7 @@ import { CheckGrid } from "./prepare/CheckGrid";
 import { Filmstrip, imageLabel } from "./prepare/Filmstrip";
 import { LiveStage, type StageTarget } from "./prepare/LiveStage";
 import { formValuesOf, recipeDiffers, recipeOf, suggestedName, type SavedRecipe } from "./prepare/recipe";
+import { defined } from "../api/defined";
 
 /** The size the preview, the check and "Build all" prepare at until another is typed. */
 export const DEFAULT_PREPARE_SIZE = 448;
@@ -258,7 +259,7 @@ export function RegionPreparationRoute() {
   const chooseExtractor = (key: string) => {
     setExtractorKey(key);
     const next = extractors.data?.find((item) => item.key === key);
-    const fields = describeFields((next?.config_schema ?? {}) as OptionsSchema);
+    const fields = describeFields((next?.config_schema ?? {}));
     setConfigValues(initialValues(fields));
   };
 
@@ -401,7 +402,9 @@ export function RegionPreparationRoute() {
               options={(extractors.data ?? []).map((item) => ({
                 value: item.key,
                 label: item.title,
-                note: item.availability.available ? undefined : (item.availability.reason ?? "unavailable"),
+                ...defined({
+                  note: item.availability.available ? undefined : (item.availability.reason ?? "unavailable"),
+                }),
                 disabled: !item.availability.available,
               }))}
             />

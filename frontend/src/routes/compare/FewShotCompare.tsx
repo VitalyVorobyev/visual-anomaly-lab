@@ -20,7 +20,6 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router";
 
 import type { FewShotComparison, FewShotRun } from "../../api/client";
-import type { MetricValue } from "../../api/metrics";
 import { comparisonRows, formatScore, segmentationRows, timingRows } from "../../api/metrics";
 import { Badge, Callout, Empty, Panel, SegmentedControl, Table, type Column } from "@vitavision/lab-ui";
 import { useModelTypes } from "../../hooks/useExperiments";
@@ -47,7 +46,7 @@ export function FewShotCompare({ report }: { report: FewShotComparison }) {
 }
 
 function iouOf(run: FewShotRun): number | null {
-  const value = (run.metrics as MetricValue).foreground_iou;
+  const value = (run.metrics).foreground_iou;
   return typeof value === "number" ? value : null;
 }
 
@@ -109,7 +108,7 @@ function ReferenceTable({ runs }: { runs: FewShotRun[] }) {
 }
 
 function RunMetrics({ runs }: { runs: FewShotRun[] }) {
-  const metrics = runs.map((run) => (run.metrics ?? {}) as MetricValue);
+  const metrics = runs.map((run) => (run.metrics ?? {}));
   const grid = runs.map((run) => ({
     id: run.id,
     name: run.name,

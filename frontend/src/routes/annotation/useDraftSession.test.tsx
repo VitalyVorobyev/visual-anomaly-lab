@@ -14,6 +14,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { api } from "../../api/client";
 import type { AnnotationDocument, AnnotationLabel, BitmapShape } from "../../api/client";
+import type * as AnnotationBitmap from "../../api/annotationBitmap";
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
 import type { DraftEnvelope } from "../../hooks/useAnnotations";
 import { useDocumentCommands } from "./useDocumentCommands";
@@ -22,7 +23,7 @@ import { isConflict, useDraftSession } from "./useDraftSession";
 const pending: { target: BitmapShape; resolve: (value: BitmapShape) => void }[] = [];
 
 vi.mock("../../api/annotationBitmap", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../../api/annotationBitmap")>()),
+  ...(await importOriginal<typeof AnnotationBitmap>()),
   // Each paint waits for the test to release it, and appends one mark to the region's PNG so
   // the committed document says which strokes landed.
   // Rasterising needs a canvas this DOM does not have; a new region is a fixed stub.
@@ -144,9 +145,9 @@ function renderEditor(initial: DraftEnvelope = { document: DOCUMENT, version: nu
 async function finishPaint(mark: string) {
   await waitFor(() => expect(pending.length).toBeGreaterThan(0));
   const paint = pending.shift();
-  await act(async () => {
-    paint?.resolve({ ...paint.target, png_base64: `${paint.target.png_base64}${mark}` });
-  });
+  await act(() =>
+    Promise.resolve(paint?.resolve({ ...paint.target, png_base64: `${paint.target.png_base64}${mark}` })),
+  );
 }
 
 describe("useDraftSession", () => {
@@ -183,7 +184,7 @@ describe("useDraftSession", () => {
       await expect(result.current.session.persist()).resolves.toBe('"annotation-draft-7-v1"');
     });
 
-    expect(calls).toEqual([{ method: "POST", url: expect.stringContaining("/images/7/annotations/draft") }]);
+    expect(calls).toEqual([{ method: "POST", url: expect.stringContaining("/images/7/annotations/draft") as string }]);
     expect(result.current.session.etag).toBe('"annotation-draft-7-v1"');
     expect(result.current.session.draftVersion).toBe(1);
     expect(result.current.session.dirty).toBe(false);

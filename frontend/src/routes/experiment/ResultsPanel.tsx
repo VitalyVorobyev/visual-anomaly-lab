@@ -11,7 +11,6 @@
 import { Link } from "react-router";
 
 import type { MetricSummary, SampleVerdict, Subset } from "../../api/client";
-import type { MetricValue } from "../../api/metrics";
 import { localizationTolerancePx } from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES, writeResultsState } from "../../api/resultsState";
@@ -134,7 +133,7 @@ export function Results({
 
   // This subset's stored metrics, read for the tolerance alone. `null` for a run evaluated
   // before the verdicts existed, which is why the strip has a phrasing that works without it.
-  const stored = (metrics?.find((entry) => entry.subset === subset)?.metrics ?? {}) as MetricValue;
+  const stored = (metrics?.find((entry) => entry.subset === subset)?.metrics ?? {});
 
   return (
     <Panel

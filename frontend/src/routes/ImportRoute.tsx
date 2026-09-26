@@ -175,7 +175,7 @@ function ConfigureStep({ onStarted }: { onStarted: (jobId: number) => void }) {
   const pickAdapter = (name: string) => {
     setAdapter(name);
     const next = adapters.data?.find((entry) => entry.name === name);
-    setOptions(next ? initialValues(describeFields(next.options_schema as OptionsSchema)) : {});
+    setOptions(next ? initialValues(describeFields(next.options_schema)) : {});
   };
 
   // The first render arrives before the adapter list does, so the defaults for the

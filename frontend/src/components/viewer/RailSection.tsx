@@ -11,7 +11,7 @@ export function RailSection({
   children,
 }: {
   title: string | null;
-  hint?: string;
+  hint?: string | undefined;
   children: ReactNode;
 }) {
   return (

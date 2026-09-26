@@ -39,7 +39,7 @@ function document(overrides: Partial<AnnotationDocument> = {}): AnnotationDocume
     base: "empty",
     shapes: [square, cut],
     ...overrides,
-  } as AnnotationDocument;
+  };
 }
 
 const masks = new Map([["cut-png", Uint8Array.from([1, 0, 0, 0])]]);

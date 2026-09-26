@@ -68,7 +68,7 @@ export function useQueueNavigation({
         nextOffset = queueOffset + QUEUE_PAGE;
       }
       if (!item) return;
-      navigate(
+      void navigate(
         `/datasets/${datasetId}/annotate/${item.sample.id}/${item.image.id}?offset=${nextOffset}`,
         { replace: true },
       );

@@ -145,7 +145,7 @@ afterEach(() => sessionStorage.clear());
 describe("the guided run", () => {
   it("opens on the goal with the task the truth answers already chosen", () => {
     renderRun();
-    const anomaly = screen.getByRole("radio", { name: /Anomaly detection/ }) as HTMLInputElement;
+    const anomaly = screen.getByRole<HTMLInputElement>("radio", { name: /Anomaly detection/ });
     expect(anomaly.checked).toBe(true);
     expect(screen.getByText("suggested")).toBeTruthy();
     // A dataset of verdicts is not offered tasks its truth cannot feed.
@@ -162,7 +162,7 @@ describe("the guided run", () => {
     };
     const { unmount } = renderRun({ ...classes, class_geometry: "boxes" }, "/datasets/7/run", []);
     expect(
-      (screen.getByRole("radio", { name: /Object detection/ }) as HTMLInputElement).checked,
+      screen.getByRole<HTMLInputElement>("radio", { name: /Object detection/ }).checked,
     ).toBe(true);
     // A dataset of classes alone is not offered anomaly detection (ADR-0041).
     expect(screen.queryByRole("radio", { name: /Anomaly detection/ })).toBeNull();
@@ -170,7 +170,7 @@ describe("the guided run", () => {
 
     renderRun({ ...classes, class_geometry: "regions" }, "/datasets/7/run", []);
     expect(
-      (screen.getByRole("radio", { name: /Few-shot segmentation/ }) as HTMLInputElement).checked,
+      screen.getByRole<HTMLInputElement>("radio", { name: /Few-shot segmentation/ }).checked,
     ).toBe(true);
     // The class defaults to the most frequent.
     expect(screen.getByRole("combobox", { name: "Target class" }).textContent).toContain("Spur");
@@ -180,11 +180,11 @@ describe("the guided run", () => {
     renderRun();
     fireEvent.click(screen.getByRole("button", { name: /Next: Look/ }));
     expect(screen.getByTestId("where").textContent).toBe("/datasets/7/run?step=look");
-    expect((screen.getByRole("radio", { name: /Full frame/ }) as HTMLInputElement).checked).toBe(true);
+    expect(screen.getByRole<HTMLInputElement>("radio", { name: /Full frame/ }).checked).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /Next: Split/ }));
     expect(
-      (screen.getByRole("radio", { name: /Standard · 60\/20\/20/ }) as HTMLInputElement).checked,
+      screen.getByRole<HTMLInputElement>("radio", { name: /Standard · 60\/20\/20/ }).checked,
     ).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: /Next: Method/ }));
@@ -217,14 +217,14 @@ describe("the guided run", () => {
     expect(screen.getByRole("textbox", { name: "Name" }).getAttribute("placeholder")).toBe(
       "Patch memory on candle",
     );
-    expect((screen.getByRole("button", { name: "Start run" }) as HTMLButtonElement).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start run" }).disabled).toBe(
       false,
     );
   });
 
   it("says what is missing instead of starting a run that cannot", () => {
     renderRun({}, "/datasets/7/run?step=run", []);
-    expect((screen.getByRole("button", { name: "Start run" }) as HTMLButtonElement).disabled).toBe(
+    expect(screen.getByRole<HTMLButtonElement>("button", { name: "Start run" }).disabled).toBe(
       true,
     );
     expect(screen.getByText(/Still needs a split/)).toBeTruthy();

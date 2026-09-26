@@ -199,11 +199,11 @@ export function useStartRun(experimentId: number) {
       thenScore,
     }: {
       kind: "train" | "infer";
-      subsets?: Subset[];
+      subsets?: Subset[] | undefined;
       /** Continue the stored model instead of retraining it (handbook jobs.md). */
-      additionalSteps?: number;
+      additionalSteps?: number | undefined;
       /** Queue scoring once training succeeds — one press for the whole first run. */
-      thenScore?: boolean;
+      thenScore?: boolean | undefined;
     }) => {
       const result =
         kind === "train"

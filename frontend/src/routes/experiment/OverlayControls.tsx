@@ -49,13 +49,13 @@ export function OverlayControls({
    * the truth are its label maps — one colour per class, a legend instead of a swatch, and
    * no cut, because the method's classes are its own decision.
    */
-  classes?: readonly string[];
+  classes?: readonly string[] | undefined;
   /**
    * An object detection run's pinned classes and the sentence its cut was resolved by
    * (ADR-0039, ADR-0028). Given, the prediction and the truth are boxes, toned by verdict,
    * with the classes as a legend and the cut printed beside them.
    */
-  boxes?: { classes: readonly string[]; rule: string | undefined };
+  boxes?: { classes: readonly string[]; rule: string | undefined } | undefined;
 }) {
   if (boxes !== undefined) {
     return <BoxControls state={state} onChange={onChange} hasMap={hasMap} boxes={boxes} />;

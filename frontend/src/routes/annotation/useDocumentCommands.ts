@@ -12,7 +12,6 @@
  * committed. See `applyStroke`.
  */
 
-import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useRef, useState } from "react";
 
 import {
@@ -365,7 +364,7 @@ export function useDocumentCommands({
     setSelectedId,
     selected,
     pendingPoints,
-    setPendingPoints: setPendingPoints as Dispatch<SetStateAction<AnnotationPoint[]>>,
+    setPendingPoints: setPendingPoints,
     addPendingPoint,
     finishPolygon,
     addBox,
