@@ -74,6 +74,7 @@ class PixelReferenceConfig(BaseModel):
     model_config = API_MODEL_CONFIG
 
     reference_scope: ReferenceScope = Field(
+        json_schema_extra={"x-primary": True},
         default=ReferenceScope.CHANNEL,
         description=(
             "What each per-pixel reference is built over. On a dataset whose samples are "
@@ -94,6 +95,7 @@ class PixelReferenceConfig(BaseModel):
         ),
     )
     smoothing_sigma: float = Field(
+        json_schema_extra={"x-primary": True},
         default=4.0,
         ge=0.0,
         le=32.0,
@@ -322,7 +324,7 @@ class PixelReferenceModel(AnomalyModel):
             deviation = np.abs(array - reference.median) / reference.scale
             # Across channels, not averaged: a defect that shows under one illumination
             # is a defect, which is the same reasoning the evaluation layer applies one
-            # level up when it aggregates a sample's images (ADR-0011).
+            # level up when it aggregates a sample's images (handbook evaluation.md).
             raw = deviation.max(axis=2)
             smoothed = gaussian_blur(raw.astype(np.float64), self.config.smoothing_sigma)
             score = float(np.percentile(smoothed, self.config.score_percentile))

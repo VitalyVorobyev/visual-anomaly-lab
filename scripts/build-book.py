@@ -33,13 +33,18 @@ def _methods(data: dict[str, Any]) -> str:
         meta = curated[item.key]
         capabilities = item.capabilities
         portable = ", ".join(value.value for value in capabilities.portable_formats) or "—"
+        status = item.status.value + (
+            " · default for " + ", ".join(f"`{task.value}`" for task in item.recommended_for)
+            if item.recommended_for
+            else ""
+        )
         rows.append(
-            f"| `{item.key}` | {item.title} | {meta['family']} | {meta['maturity']} | "
+            f"| `{item.key}` | {item.title} | {meta['family']} | {status} | "
             f"{'yes' if capabilities.supports_resume else 'no'} | {portable} |"
         )
         details.append(
             f"## {item.title}\n\n`{item.key}` · **{meta['family']}** · "
-            f"{meta['maturity']}\n\n{item.summary}\n\n"
+            f"{status}\n\n{item.summary}\n\n"
             f"- Tasks: {', '.join(f'`{task.value}`' for task in capabilities.tasks)}\n"
             f"- Preferred device: `{capabilities.preferred_device.value}`\n"
             f"- Requires fitting: {'yes' if capabilities.requires_training else 'no'}\n"
@@ -61,12 +66,14 @@ def _methods(data: dict[str, Any]) -> str:
             "Availability on one machine still depends on optional packages and local assets; the app "
             "reports that separately.",
             "",
-            "| Key | Method | Family | Maturity | Resume | ONNX/export |",
+            "| Key | Method | Family | Status | Resume | ONNX/export |",
             "|---|---|---|---|---:|---|",
             *rows,
             "",
-            "**Maturity is an evidence decision, not an upstream popularity label.** Experimental methods "
-            "remain usable for research but have not cleared this workbench's public promotion gate.",
+            "**Status is an evidence decision, not an upstream popularity label**, and the model registry "
+            "records it. Experimental methods remain usable for research but have not cleared this "
+            "workbench's public promotion gate; a floor is a task's numpy baseline, the one every other "
+            "method of the task has to beat. A task's default is the method a new experiment starts from.",
             "",
             *details,
             "## Adding another method",

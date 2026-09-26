@@ -49,7 +49,10 @@ class Evaluator(Protocol):
 
 
 class AnomalyEvaluator:
-    """Image- and pixel-level anomaly metrics over stored scores and maps (ADR-0011)."""
+    """Image- and pixel-level anomaly metrics over stored scores and maps.
+
+    The handbook's evaluation.md describes the protocol.
+    """
 
     headline = "sample_roc_auc"
 

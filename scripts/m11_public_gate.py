@@ -116,7 +116,7 @@ CANDIDATES = {
     ),
     # The wrapper's exact protocol row — 392 px, its pinned encoder, 5000 steps, the shared
     # seed — so the custom implementation's gate reads directly against the wrapper's
-    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0008/0029).
+    # recorded numbers in measurements.md.  Parity retires the wrapper (ADR-0029).
     "dinomaly_custom": CandidateSpec(
         key="dinomaly_custom",
         label="Dinomaly (ours)",

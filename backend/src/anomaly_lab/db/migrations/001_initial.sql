@@ -47,7 +47,7 @@ CREATE TABLE dataset (
     -- datasets that came from one.
     collection       TEXT,
     -- Whether annotation truth is edited per image or once per sample for every channel
-    -- of a part (ADR-0036). A property of the data, not a preference.
+    -- of a part (handbook annotations.md). A property of the data, not a preference.
     annotation_scope TEXT    NOT NULL DEFAULT 'image'
                              CHECK (annotation_scope IN ('image', 'sample')),
     -- The channel a part is normally read in, by name so it survives a re-import that
@@ -129,7 +129,7 @@ CREATE TABLE split (
     strategy    TEXT    NOT NULL,
     seed        INTEGER NOT NULL,
     -- Ratios and stratification key as JSON. A seed alone does not reproduce a split;
-    -- the parameters it was drawn under are part of the record (ADR-0011).
+    -- the parameters it was drawn under are part of the record (handbook evaluation.md).
     params      TEXT    NOT NULL DEFAULT '{}',
     created_at  TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Splits are immutable once created; changing one means creating a new one.
@@ -279,7 +279,7 @@ CREATE TABLE sample_result (
     sample_id     INTEGER NOT NULL REFERENCES sample (id) ON DELETE CASCADE,
     agg_score     REAL    NOT NULL,
     -- One of `Aggregation` and one of `ChannelNormalization`, recorded per row so a
-    -- stored result stays self-describing after a default changes (ADR-0011).
+    -- stored result stays self-describing after a default changes (handbook evaluation.md).
     aggregation   TEXT    NOT NULL,
     normalization TEXT    NOT NULL,
     -- The same three-valued verdict as `image_result.localized`, resolved from the image
@@ -295,7 +295,7 @@ CREATE TABLE metric_set (
     experiment_id       INTEGER NOT NULL REFERENCES experiment (id) ON DELETE CASCADE,
     subset              TEXT    NOT NULL CHECK (subset IN ('train', 'val', 'test')),
     -- Threshold-independent metrics only. Nothing that depends on a decision
-    -- threshold is persisted; those are computed on demand (ADR-0011).
+    -- threshold is persisted; those are computed on demand (handbook evaluation.md).
     metrics             TEXT    NOT NULL DEFAULT '{}',
     computed_at         TEXT    NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
     -- Which resolved labels and masks the metrics measured (ADR-0032); a different

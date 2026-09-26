@@ -25,7 +25,7 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
 **Before code**
 
 - [ ] If it depends on a new library or the accelerator, run `scripts/mps-smoke-test.py` (and write
-      a `scripts/<method>-smoke-test.py` like the existing ones) before any wrapper code (ADR-0008).
+      a `scripts/<method>-smoke-test.py` like the existing ones) before any wrapper code (ADR-0029).
 - [ ] Decide ours versus wrapped. A wrapper that reaches into a library's trainer or datamodule is
       a cost; say why it is worth it.
 
@@ -40,6 +40,13 @@ method fell into), `backend/src/anomaly_lab/models/base.py`, and the closest exi
 - [ ] The config is a pydantic model whose every field has a `description`, bounds where they
       exist, and a `Literal`/`StrEnum` for choices. The form is generated from it; if it renders
       wrong, fix the schema-to-control mapping, never special-case the method.
+- [ ] Mark the one to four fields a person actually decides — encoder or backbone, scoring rule,
+      training length, the axes a gate or sweep varied — with
+      `json_schema_extra={"x-primary": True}`; the rest fold. `tests/test_method_decisions.py`
+      fails a method with none or more than four.
+- [ ] Add the key to `STATUS` in `models/registry.py` (`experimental` until a gate says otherwise,
+      `floor` for a task's numpy baseline). Move it to `supported`, or into `RECOMMENDED` for its task,
+      only with the `docs/measurements.md` verdict that decides it, and rerun `scripts/build-book.py`.
 - [ ] **Pixels come only through `models/preprocessing.load_array`.** A method that decodes images
       any other way makes every comparison against it partly a measurement of its resize.
 - [ ] Standardisation for a backbone is the model's business (methods.md, "Standardizing for a

@@ -32,7 +32,7 @@ implementation source, not the specification of our method or evaluation contrac
 - [WinCLIP](https://arxiv.org/abs/2303.14814) — the established CLIP zero/few-shot baseline; robustness to
   industrial colour and illumination shifts must be measured, not assumed.
 - [SuperADD](https://arxiv.org/abs/2605.14808) — training-free DINOv3 multi-layer memory bank; its principle
-  is covered in-house by `dino_memory` (ADR-0037), so it is not a candidate.
+  is covered in-house by `dino_memory` (handbook `methods.md`), so it is not a candidate.
 
 ## Few-shot segmentation
 

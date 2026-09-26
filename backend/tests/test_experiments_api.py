@@ -280,7 +280,7 @@ def test_metrics_are_computed_and_stored_per_subset(
 def test_pixel_metrics_appear_because_this_dataset_has_masks(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
-    """The capability ADR-0011 said might never exist, now that a dataset supplies masks."""
+    """Pixel-level metrics, wherever a dataset supplies masks."""
     detail = client.get(f"/api/experiments/{scored['id']}").json()
     pixel = next(e for e in detail["metrics"] if e["subset"] == "test")["metrics"]["pixel"]
 
@@ -432,7 +432,7 @@ def test_the_verdict_does_not_move_when_the_threshold_does(
     client: TestClient, scored: dict[str, Any], seeded: Fixture, settings: Settings
 ) -> None:
     """Threshold-free by construction, which is what makes persisting it compatible with
-    ADR-0011 — and what makes the slider still cost no file read per tick."""
+    the evaluation layer — and what makes the slider still cost no file read per tick."""
     sample_id = _sample_of(settings, seeded.defect_image_ids[0])
     page = client.get(f"/api/experiments/{scored['id']}/results?subset=test").json()
 
@@ -649,7 +649,7 @@ def test_a_subset_with_one_class_has_no_curve_rather_than_an_empty_one(
 def test_diagnostics_are_self_describing_and_never_keyed_by_method_name(
     client: TestClient, scored: dict[str, Any]
 ) -> None:
-    """The property M4's visualization depends on (ADR-0018)."""
+    """The property M4's visualization depends on (handbook diagnostics.md)."""
     index = client.get(f"/api/experiments/{scored['id']}/diagnostics").json()
 
     kinds = {entry["kind"] for entry in index["entries"]}
@@ -1313,7 +1313,7 @@ def test_clearing_an_experiment_that_recorded_nothing_is_not_an_error(
     assert response.json()["removed_entries"] == 0
 
 
-# ------------------------------------------------------ channel selection (ADR-0035)
+# ------------------------------------------------------ channel selection (handbook evaluation.md)
 
 
 def test_an_experiment_reads_every_channel_by_default(client: TestClient, seeded: Fixture) -> None:

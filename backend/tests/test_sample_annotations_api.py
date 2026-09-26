@@ -1,4 +1,4 @@
-"""Sample-scoped annotation editing, fanned out to per-image truth (ADR-0036).
+"""Sample-scoped annotation editing, fanned out to per-image truth (handbook annotations.md).
 
 Every fixture here is a generated PNG. The point of the file is the seam: one document
 edited once must land as N image-keyed revisions that every existing consumer reads

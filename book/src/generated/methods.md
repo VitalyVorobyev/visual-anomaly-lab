@@ -3,29 +3,29 @@
 
 This page is generated from the live model registry and checked method metadata. Availability on one machine still depends on optional packages and local assets; the app reports that separately.
 
-| Key | Method | Family | Maturity | Resume | ONNX/export |
+| Key | Method | Family | Status | Resume | ONNX/export |
 |---|---|---|---|---:|---|
-| `pixel_reference` | Pixel reference (baseline) | statistical reference | supported | no | onnx |
+| `pixel_reference` | Pixel reference (baseline) | statistical reference | floor | no | onnx |
 | `efficientad_custom` | EfficientAD (ours) | student–teacher + reconstruction | supported | yes | onnx |
 | `patchcore_anomalib` | PatchCore (anomalib) | feature memory bank | supported | no | onnx |
 | `dinomaly_custom` | Dinomaly (ours) | transformer feature reconstruction | supported | yes | onnx |
 | `glass_anomalib` | GLASS (experimental) | learned anomaly synthesis | experimental | yes | onnx |
-| `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported | no | — |
+| `dino_memory` | DINO patch memory | frozen-backbone patch memory | supported · default for `anomaly` | no | — |
 | `subspace_ad` | SubspaceAD (frozen encoder) | frozen-backbone subspace | experimental | no | — |
 | `anomalyvfm_anomalib` | AnomalyVFM (zero-shot reference) | zero-shot adapted foundation model | supported | no | — |
-| `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | experimental | no | — |
+| `color_prototype` | Colour prototype (few-shot floor) | few-shot colour prototype | floor | no | — |
 | `fss_dino` | FSSDINO (few-shot) | few-shot DINO prototypes | experimental | no | — |
-| `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | experimental | no | — |
-| `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | experimental | no | — |
-| `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | supported | no | — |
-| `color_detector` | Colour detector (detection floor) | detection colour components | experimental | no | — |
+| `proto_seg` | Prototype segmenter (few-shot, ours) | few-shot debiased prototypes | supported · default for `few_shot_segmentation` | no | — |
+| `color_classifier` | Colour classifier (segmentation floor) | segmentation colour classifier | floor | no | — |
+| `dino_linear_seg` | DINO linear head (segmentation) | segmentation linear head on frozen DINO | supported · default for `semantic_segmentation` | no | — |
+| `color_detector` | Colour detector (detection floor) | detection colour components | floor | no | — |
 | `dino_linear_det` | DINO linear head (detection) | detection linear head on frozen DINO | experimental | no | — |
 
-**Maturity is an evidence decision, not an upstream popularity label.** Experimental methods remain usable for research but have not cleared this workbench's public promotion gate.
+**Status is an evidence decision, not an upstream popularity label**, and the model registry records it. Experimental methods remain usable for research but have not cleared this workbench's public promotion gate; a floor is a task's numpy baseline, the one every other method of the task has to beat. A task's default is the method a new experiment starts from.
 
 ## Pixel reference (baseline)
 
-`pixel_reference` · **statistical reference** · supported
+`pixel_reference` · **statistical reference** · floor
 
 Per-pixel median and MAD over the training normals, then a smoothed robust z-map. Trains in seconds on CPU and gives every deep result a floor to beat.
 
@@ -100,7 +100,7 @@ A frozen WRN-50 feature extractor with learned global and local anomaly synthesi
 
 ## DINO patch memory
 
-`dino_memory` · **frozen-backbone patch memory** · supported
+`dino_memory` · **frozen-backbone patch memory** · supported · default for `anomaly`
 
 A frozen DINOv2/DINOv3 backbone whose patch features are held as a memory of normal images and scored globally, per position, or as a per-position Gaussian. Nothing is trained; the memory is the model.
 
@@ -145,7 +145,7 @@ A foundation model adapted once for anomaly detection and used as published: it 
 
 ## Colour prototype (few-shot floor)
 
-`color_prototype` · **few-shot colour prototype** · experimental
+`color_prototype` · **few-shot colour prototype** · floor
 
 Fits one colour model to the class and one to everything else in the references, then paints each query pixel with the class's posterior. CPU, seconds, no torch.
 
@@ -175,7 +175,7 @@ Cosine prototypes and a Gram matrix for the class and its background, from froze
 
 ## Prototype segmenter (few-shot, ours)
 
-`proto_seg` · **few-shot debiased prototypes** · experimental
+`proto_seg` · **few-shot debiased prototypes** · supported · default for `few_shot_segmentation`
 
 Positionally debiased DINO patches matched against a mean-plus-cluster prototype bank per side, or a linear probe; refined to the image's edges.
 
@@ -190,7 +190,7 @@ Positionally debiased DINO patches matched against a mean-plus-cluster prototype
 
 ## Colour classifier (segmentation floor)
 
-`color_classifier` · **segmentation colour classifier** · experimental
+`color_classifier` · **segmentation colour classifier** · floor
 
 Fits one colour model to each annotated class and one to background, then gives each pixel the class with the highest posterior. CPU, seconds, no torch.
 
@@ -205,7 +205,7 @@ Fits one colour model to each annotated class and one to background, then gives 
 
 ## DINO linear head (segmentation)
 
-`dino_linear_seg` · **segmentation linear head on frozen DINO** · supported
+`dino_linear_seg` · **segmentation linear head on frozen DINO** · supported · default for `semantic_segmentation`
 
 A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounded sample of annotated pixels; logits are upsampled to the image and offset by one constant per class, fitted for IoU on held-out folds, before the argmax.
 
@@ -220,7 +220,7 @@ A per-pixel softmax classifier on frozen DINO patch features, fitted on a bounde
 
 ## Colour detector (detection floor)
 
-`color_detector` · **detection colour components** · experimental
+`color_detector` · **detection colour components** · floor
 
 Fits one colour model to the inside of each class's boxes and one to everything outside them, then boxes each connected region of a class. CPU, seconds, no torch.
 

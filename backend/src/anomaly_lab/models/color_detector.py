@@ -54,6 +54,7 @@ CLASSES_FILENAME = "color_detector.json"
 
 class ColorDetectorConfig(ColorClassifierConfig):
     min_area: int = Field(
+        json_schema_extra={"x-primary": True},
         default=4,
         ge=1,
         le=1_000_000,

@@ -193,6 +193,15 @@ With one task the form starts at its inputs. The band lists what is
 missing as links in order, using the form's rule for "built" (`isUsableBuild`); the unsent form is kept in
 `sessionStorage` (`api/experimentDraft.ts`). A lone profile or split is preselected; an empty name becomes
 `<method> on <dataset>`. Method, colour and evaluation forms are **generated from JSON Schema**.
+Method cards come in the registry's order of standing (`api/methodChoice.ts`): the task's recommended
+method first, then `supported`, `experimental`, and the `floor` last, registry order within each; the form
+starts on the first of them, so a task with a recommended method starts there. A card badges
+`recommended`, `experimental` and `floor` from the listing's `status` and `recommended_for` — the verdicts
+live in the registry ([methods](methods.md#status-and-the-task-default)), never here. Every method's
+schema marks its decisions `x-primary`; the method tab puts them in front and folds the rest from lab-ui
+0.5.0 on, and the 0.3 release this app is on renders the key inert. The evaluation tab shows only the
+fields the task's evaluator reads: a field carrying `x-tasks` is dropped for any other task
+(`schemaForTask`), and the tab is absent when none remains.
 `GET /api/experiments/model-types`, `POST /api/experiments`.
 
 **Run bar** — a draft's primary action is **Train & score** (`then_score`, [jobs](jobs.md)), with **Train
@@ -313,7 +322,7 @@ The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studi
 run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
 sample viewer.
 
-**Diagnostics** — rendered by `kind`, never by method name (ADR-0018): run-scoped entries in an
+**Diagnostics** — rendered by `kind`, never by method name ([diagnostics](diagnostics.md)): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
 beside the combined map on the sample page. Diagnostic panes are in the prepared frame
 ([diagnostics](diagnostics.md)), so their outline is fetched with `frame=prepared`.
@@ -357,9 +366,12 @@ them by class, and `refusalReason` refuses another task or another class by name
    **An empty control means unset:** `toOptions` sends nothing for an untouched field, so a default is
    defined in Python alone. A segmented control highlights the effective value and stores `""` when it is
    the schema default; a select carries an explicit `Default · <value>` entry. Do not pre-fill.
+   **The schema also says which fields matter:** `"x-primary": true` on a property shows it in front,
+   `false` folds it, and an unmarked field keeps the default rule — folded when it is optional with a
+   working default (lab-ui 0.5.0; earlier releases ignore the key).
 3. **Opacity is client state; the threshold is a server read.** Opacity is CSS over a fetched PNG. The
    rule `score >= threshold` lives in Python only, so the threshold endpoint returns counts **and**
-   classified rows together (ADR-0011).
+   classified rows together ([evaluation](evaluation.md)).
 4. **Layer registration is structural.** `ImageStage` lays out at the image's own pixel size and carries
    the whole transform, so a layer at `inset-0` covers exactly the source frame. All sample viewers are
    `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, raster layers in order, then
