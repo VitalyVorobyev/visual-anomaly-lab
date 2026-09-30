@@ -18,7 +18,7 @@ export type PaneMode = "single" | "compare" | "overlay";
  * expressed on: a reader who put `dark` beside `bright` still wants a second pane after
  * moving to the next part, where `dark` is a different image entirely. Two images of one
  * sample can also carry the same channel name, or none at all, so the name is not an
- * identity either (`ChannelTabs` makes the same choice).
+ * identity either (`channelTabItems` makes the same choice).
  *
  * The wrap is what stops a two-channel sample from merely swapping its panes: with `bright`
  * active and `dark` preferred, switching to `dark` would otherwise resolve the reference back

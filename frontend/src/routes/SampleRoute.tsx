@@ -29,7 +29,7 @@ import type { ImageSummary, ImageTruth, Label, SampleSummary } from "../api/clie
 import { preferredImageIndex } from "../api/defaultChannel";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { imageUrl } from "../api/imageUrl";
-import { ChannelTabs } from "../components/ChannelTabs";
+import { channelTabItems } from "../api/channelTabs";
 import {
   Badge,
   Button,
@@ -39,14 +39,15 @@ import {
   Empty,
   ErrorBox,
   focusRing,
+  Section,
   Skeleton,
   Slider,
   Switch,
+  Tabs,
   Tooltip,
 } from "@vitavision/ui";
 import type { StageView } from "@vitavision/stage2d";
 
-import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { labelsApply } from "../api/truth";
 import { useDataset, useSample, useSamples, useSetLabel } from "../hooks/useCatalog";
@@ -352,10 +353,10 @@ export function SampleRoute() {
 
         <aside
           data-scroll="rail"
-          className="flex w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-l border-line bg-ground"
+          className="flex w-72 shrink-0 flex-col divide-y divide-line overflow-y-auto overscroll-contain border-l border-line bg-ground"
         >
           {labelling ? (
-            <RailSection title="Label" hint="n · d · u">
+            <Section className="p-4" title="Label" hint="n · d · u">
               <div className="flex flex-col gap-1.5">
                 {LABELS.map((label) => (
                   <Button
@@ -384,9 +385,9 @@ export function SampleRoute() {
                 label="Advance after labelling"
               />
               {setLabel.error && <ErrorBox>{setLabel.error.message}</ErrorBox>}
-            </RailSection>
+            </Section>
           ) : (
-            <RailSection title="Anomaly label" hint="">
+            <Section className="p-4" title="Anomaly label" hint="">
               <p className="text-xs leading-relaxed text-fg-muted">
                 This dataset&apos;s truth is its classes. A normal or defect verdict is for
                 anomaly detection.
@@ -394,17 +395,23 @@ export function SampleRoute() {
               <Button size="sm" variant="ghost" onClick={() => setOptedIn(true)}>
                 Label for anomaly detection
               </Button>
-            </RailSection>
+            </Section>
           )}
 
           {/* "Channels (1)" was a section heading that counted to one. The section is about
               looking at the image; the channel controls are part of that, and only exist
               when a sample has more than one. */}
           {images.length > 0 && (
-            <RailSection title="View" hint={images.length > 1 ? `${images.length} channels` : ""}>
+            <Section className="p-4" title="View" hint={images.length > 1 ? `${images.length} channels` : ""}>
               {images.length > 1 && (
                 <>
-                  <ChannelTabs images={images} active={activeIndex} onSelect={setActive} />
+                  <Tabs
+                    className="flex-nowrap"
+                    label="Channels"
+                    active={String(activeIndex)}
+                    onSelect={(id) => setActive(Number(id))}
+                    items={channelTabItems(images)}
+                  />
                   <Button size="sm" onClick={() => setSideBySide((value) => !value)}>
                     {sideBySide ? "One at a time" : "Side by side"}
                   </Button>
@@ -446,13 +453,13 @@ export function SampleRoute() {
                 pending={truthQueries.some((query) => query.isPending)}
                 error={truthQueries.find((query) => query.error)?.error ?? null}
               />
-            </RailSection>
+            </Section>
           )}
 
           {images.length > 0 && <ExploreSection session={explore} />}
 
           {current && (
-            <RailSection title={null}>
+            <div className="flex flex-col gap-3 p-4">
               {/* The path is here rather than on screen for the same reason the dataset
                   band moved its root path behind a mark: it is consulted, not read. */}
               <Disclosure summary="Files" count={images.length}>
@@ -474,7 +481,7 @@ export function SampleRoute() {
                 </ul>
               </Disclosure>
               <SampleNotes sample={current} />
-            </RailSection>
+            </div>
           )}
         </aside>
       </div>

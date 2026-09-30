@@ -7,8 +7,8 @@ import { Copy } from "lucide-react";
 
 import type { PaneMode } from "../../api/annotationPanes";
 import type { SampleSummary } from "../../api/client";
-import { ChannelTabs } from "../../components/ChannelTabs";
-import { Button, SegmentedControl, Slider } from "@vitavision/ui";
+import { channelTabItems } from "../../api/channelTabs";
+import { Button, SegmentedControl, Slider, Tabs } from "@vitavision/ui";
 import type { ChannelPanes } from "./useChannelPanes";
 import type { Workspace } from "./useWorkspace";
 
@@ -35,10 +35,12 @@ export function ChannelToolbar({
           a few pixels of track once the view switch stopped wrapping — a slider narrower than
           its own thumb is a rendering fault, not a tight fit. */}
       <div className="min-w-0 flex-1 overflow-x-auto">
-        <ChannelTabs
-          images={sample.images}
-          active={activeIndex}
-          onSelect={(index) => void panes.openChannel(index)}
+        <Tabs
+          className="flex-nowrap"
+          label="Channels"
+          active={String(activeIndex)}
+          onSelect={(id) => void panes.openChannel(Number(id))}
+          items={channelTabItems(sample.images)}
         />
       </div>
       <div className="flex shrink-0 items-center gap-2">
@@ -83,12 +85,15 @@ export function ChannelToolbar({
           // disabled tab shows is `resolveReference`'s wrap made visible — the reason a
           // two-channel part cannot put the same photograph in both panes.
           <div className="shrink-0">
-            <ChannelTabs
+            <Tabs
+              className="flex-nowrap"
               label="Second channel"
-              images={sample.images}
-              active={referenceIndex}
-              onSelect={(index) => workspace.setReferenceIndex(index)}
-              unavailable={{ index: activeIndex, reason: "Already in the left pane" }}
+              active={String(referenceIndex)}
+              onSelect={(id) => workspace.setReferenceIndex(Number(id))}
+              items={channelTabItems(sample.images, {
+                index: activeIndex,
+                reason: "Already in the left pane",
+              })}
             />
           </div>
         )}
