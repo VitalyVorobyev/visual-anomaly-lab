@@ -18,15 +18,7 @@ import { FolderOpen, Trash2 } from "lucide-react";
 import type { ArtifactGroup } from "../../api/client";
 import { onDemandNote } from "../../api/diagnostics";
 import { hasRevealPath, revealPath } from "../../api/shell";
-import {
-  Button,
-  ConfirmDialog,
-  Disclosure,
-  Empty,
-  Panel,
-  SkeletonRows,
-  Tooltip,
-} from "@vitavision/lab-ui";
+import { Button, ConfirmDialog, Disclosure, Empty, Panel, SkeletonRows, Tooltip } from "@vitavision/ui";
 import {
   useArtifacts,
   useClearDiagnostics,

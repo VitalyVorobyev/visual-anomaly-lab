@@ -8,7 +8,7 @@
  * created here: a preset becomes a split only when the run starts.
  */
 
-import { Badge, Callout, Skeleton } from "@vitavision/lab-ui";
+import { Badge, Callout, Skeleton } from "@vitavision/ui";
 import { Link } from "react-router";
 
 import { SplitComposition } from "../../components/SplitComposition";

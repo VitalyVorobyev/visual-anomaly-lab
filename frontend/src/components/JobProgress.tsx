@@ -12,7 +12,7 @@ import { api } from "../api/client";
 import type { JobDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows } from "@vitavision/lab-ui";
+import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows } from "@vitavision/ui";
 import { jobStatusTone } from "../api/statusTone";
 
 /** How much of the log is worth seeing without asking for the rest. */

@@ -28,7 +28,7 @@ import {
   Select,
   Skeleton,
   Slider,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import {
   compositionMode,
   SplitComposition,

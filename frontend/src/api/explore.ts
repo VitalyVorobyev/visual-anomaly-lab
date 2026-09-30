@@ -9,7 +9,7 @@
  * followed by a floor division — the same arithmetic `explore/grid.source_cell` does.
  */
 
-import { classColour, rgbOf } from "../components/viewer/labelPaint";
+import { classColour, colourHex } from "../components/viewer/labelPaint";
 import { apiBaseUrl, type BitmapShape, type SpatialTransform } from "./client";
 
 export interface ImagePoint {
@@ -56,11 +56,9 @@ export function clusterAt(
   return value > 0 ? value : null;
 }
 
-/** `#rrggbb` as the six digits the server's `colours` parameter takes. */
+/** A CSS colour (a series token included) as the six digits the server's `colours` parameter takes. */
 export function hexDigits(colour: string): string {
-  return rgbOf(colour)
-    .map((byte) => byte.toString(16).padStart(2, "0"))
-    .join("");
+  return colourHex(colour).slice(1);
 }
 
 /** Cluster `i` (1-based) is drawn in the design system's `i`th series colour. */

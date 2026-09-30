@@ -21,7 +21,7 @@ import { Link } from "react-router";
 
 import type { FewShotComparison, FewShotRun } from "../../api/client";
 import { comparisonRows, formatScore, segmentationRows, timingRows } from "../../api/metrics";
-import { Badge, Callout, Empty, Panel, SegmentedControl, Table, type Column } from "@vitavision/lab-ui";
+import { Badge, Callout, Empty, Panel, SegmentedControl, Table, type Column } from "@vitavision/ui";
 import { useModelTypes } from "../../hooks/useExperiments";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "../experiment/ResultsPanel";
 import { Grid, SectionRows } from "./MetricTable";

@@ -14,7 +14,7 @@
  */
 
 import type { ComparedRun } from "../../api/client";
-import { Disclosure, Panel, cn } from "@vitavision/lab-ui";
+import { Disclosure, Panel, cn } from "@vitavision/ui";
 
 type Block = "preprocessing" | "evaluation" | "config";
 

@@ -1,6 +1,4 @@
-import { describe, expect, it } from "vitest";
-
-import { SERIES_COLOURS } from "@vitavision/lab-ui";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { BitmapShape, SpatialTransform } from "./client";
 import { carriedFrom, cellAt, clusterAt, exploreMapUrl, hexDigits } from "./explore";
@@ -53,11 +51,18 @@ describe("clusterAt", () => {
 });
 
 describe("exploreMapUrl", () => {
+  // The series palette is @vitavision/charts' stylesheet, which a test document does not
+  // load: defining the first token here is what the theme on screen would do.
+  beforeEach(() => document.documentElement.style.setProperty("--series-1", "#0f92c5"));
+  afterEach(() => document.documentElement.style.removeProperty("--series-1"));
+
   it("adds a threshold and the first series colour for a mask", () => {
     const url = new URL(exploreMapUrl("/api/explore/maps/abc.png", { threshold: 0.6 }));
     expect(url.pathname).toBe("/api/explore/maps/abc.png");
     expect(url.searchParams.get("threshold")).toBe("0.600");
-    expect(url.searchParams.get("colours")).toBe(hexDigits(SERIES_COLOURS[0] as string));
+    // The token, resolved: the server cannot read `var(--series-1)`.
+    expect(url.searchParams.get("colours")).toBe("0f92c5");
+    expect(hexDigits("var(--series-1)")).toBe("0f92c5");
   });
 
   it("names one colour per cluster and keeps a picked one", () => {
@@ -70,7 +75,7 @@ describe("exploreMapUrl", () => {
     const url = new URL(exploreMapUrl("/m.png", { instances: 4, instance: 3 }));
     const colours = url.searchParams.get("colours")?.split(",");
     expect(colours).toHaveLength(4);
-    expect(colours?.[0]).toBe(hexDigits(SERIES_COLOURS[0] as string));
+    expect(colours?.[0]).toBe("0f92c5");
     expect(url.searchParams.get("instance")).toBe("3");
     expect(url.searchParams.get("cluster")).toBeNull();
     expect(new URL(exploreMapUrl("/m.png", { instances: 2, instance: null })).searchParams.has("instance")).toBe(

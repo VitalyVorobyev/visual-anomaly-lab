@@ -10,12 +10,11 @@
 
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import type { SamplePreview, SampleVerdict, Task } from "../../api/client";
 import { queryKeys } from "../../api/queryKeys";
 import { readResultsState } from "../../api/resultsState";
-import { classColour } from "../../components/viewer/labelPaint";
 import { withProviders } from "../../test-harness";
 import { GalleryTab } from "./GalleryTab";
 import type { Verdicts } from "./useVerdicts";
@@ -73,9 +72,18 @@ function renderGallery(task: Task, classes?: readonly string[]) {
   );
 }
 
-const hex = (colour: string) => colour.replace("#", "").toLowerCase();
-
 describe("a supervised segmentation run's gallery", () => {
+  // The series palette is @vitavision/charts' stylesheet, which a test document does not
+  // load: defining the two tokens here is what the theme on screen would do.
+  beforeEach(() => {
+    document.documentElement.style.setProperty("--series-1", "#0f92c5");
+    document.documentElement.style.setProperty("--series-2", "#b57c38");
+  });
+  afterEach(() => {
+    document.documentElement.style.removeProperty("--series-1");
+    document.documentElement.style.removeProperty("--series-2");
+  });
+
   it("draws the server's label maps in the pinned classes' colours", () => {
     const { container } = renderGallery("semantic_segmentation", ["rust", "moss"]);
 
@@ -86,9 +94,8 @@ describe("a supervised segmentation run's gallery", () => {
 
     const url = new URL(predicted?.src ?? "", "http://localhost");
     expect(url.pathname).toMatch(/\/api\/experiments\/3\/images\/70\/label-map$/);
-    expect(url.searchParams.get("colours")).toBe(
-      [hex(classColour(1)), hex(classColour(2))].join(","),
-    );
+    // The series tokens, resolved: the server cannot read `var(--series-1)`.
+    expect(url.searchParams.get("colours")).toBe("0f92c5,b57c38");
     expect(url.searchParams.has("truth")).toBe(false);
     expect(new URL(truth?.src ?? "", "http://localhost").searchParams.get("truth")).toBe("true");
 

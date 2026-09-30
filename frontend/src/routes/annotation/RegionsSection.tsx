@@ -3,7 +3,7 @@
 import { CircleDot, Eye, EyeOff } from "lucide-react";
 
 import type { AnnotationLabel, AnnotationShape } from "../../api/client";
-import { Badge, Empty, Slider, Tooltip, cn, focusRing } from "@vitavision/lab-ui";
+import { Badge, Empty, Slider, Tooltip, cn, focusRing } from "@vitavision/ui";
 import { useUpdateAnnotationLabel } from "../../hooks/useAnnotations";
 
 export function RegionsSection({

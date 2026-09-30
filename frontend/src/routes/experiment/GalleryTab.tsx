@@ -31,7 +31,7 @@ import {
 } from "../../api/imageUrl";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue, writeResultsState } from "../../api/resultsState";
-import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
+import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/ui";
 import { boxToneColours } from "../../components/viewer/boxTones";
 import { useSamplePreviews } from "../../hooks/useExperiments";
 import { OverlayControls } from "./OverlayControls";

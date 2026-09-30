@@ -53,8 +53,8 @@ import {
   Skeleton,
   Switch,
   Tooltip,
-  type StageView,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
+import type { StageView } from "@vitavision/stage2d";
 import { SampleTile } from "./dataset/SampleTile";
 
 const PRESENCES: ClassPresence[] = ["present", "absent", "unlabeled"];

@@ -13,7 +13,8 @@
  * into a band at 800 % hides the pixels it is pointing at.
  */
 
-import { toneColor, useStage, type MeasureTone } from "@vitavision/lab-ui";
+import { toneColor, type MeasureTone } from "@vitavision/ui";
+import { useStage } from "@vitavision/stage2d";
 
 interface ShapeBase {
   id: string;

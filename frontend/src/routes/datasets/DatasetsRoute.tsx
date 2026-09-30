@@ -15,6 +15,7 @@
 
 import { FolderPlus, Plus } from "lucide-react";
 import { useState } from "react";
+import { Link } from "react-router";
 
 import type { DatasetSummary } from "../../api/client";
 import {
@@ -26,7 +27,7 @@ import {
   Input,
   PageHeader,
   SkeletonRows,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import {
   useDatasetDeletionPreview,
   useDatasets,
@@ -69,12 +70,11 @@ export function DatasetsRoute() {
                 New collection
               </Button>
             )}
-            <ButtonLink
-              to="/import"
+            <ButtonLink asChild
               variant="primary"
               icon={<Plus />}
             >
-              Import
+              <Link to="/import">Import</Link>
             </ButtonLink>
           </>
         }
@@ -89,12 +89,11 @@ export function DatasetsRoute() {
       {datasets.data?.length === 0 && (
         <Empty
           action={
-            <ButtonLink
-              to="/import"
+            <ButtonLink asChild
               variant="primary"
               icon={<Plus />}
             >
-              Import a dataset
+              <Link to="/import">Import a dataset</Link>
             </ButtonLink>
           }
         >

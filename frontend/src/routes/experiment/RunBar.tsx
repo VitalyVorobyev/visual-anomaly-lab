@@ -14,14 +14,7 @@
 
 import { useState } from "react";
 
-import {
-  Button,
-  ConfirmDialog,
-  ErrorBox,
-  NumberInput,
-  ProgressBar,
-  StatusDot,
-} from "@vitavision/lab-ui";
+import { Button, ConfirmDialog, ErrorBox, NumberInput, ProgressBar, StatusDot } from "@vitavision/ui";
 import type { ExperimentDetail, JobDetail, JobSummary } from "../../api/client";
 import { isTerminal } from "../../hooks/useJob";
 import { useCancelJob, useStartExport, useStartRun } from "../../hooks/useExperiments";

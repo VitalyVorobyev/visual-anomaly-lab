@@ -30,7 +30,21 @@ import { preferredImageIndex } from "../api/defaultChannel";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { imageUrl } from "../api/imageUrl";
 import { ChannelTabs } from "../components/ChannelTabs";
-import { Badge, Button, ButtonLink, cn, Disclosure, Empty, ErrorBox, focusRing, Skeleton, Slider, Switch, Tooltip, type StageView } from "@vitavision/lab-ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  cn,
+  Disclosure,
+  Empty,
+  ErrorBox,
+  focusRing,
+  Skeleton,
+  Slider,
+  Switch,
+  Tooltip,
+} from "@vitavision/ui";
+import type { StageView } from "@vitavision/stage2d";
 
 import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
@@ -293,12 +307,11 @@ export function SampleRoute() {
           </span>
 
           {shown && (
-            <ButtonLink
-              to={`/datasets/${datasetId}/annotate/${sampleId}/${shown.id}`}
+            <ButtonLink asChild
               size="sm"
               icon={<PenLine />}
             >
-              Open in editor
+              <Link to={`/datasets/${datasetId}/annotate/${sampleId}/${shown.id}`}>Open in editor</Link>
             </ButtonLink>
           )}
         </div>

@@ -13,7 +13,8 @@
 
 import { useLayoutEffect, useRef, type MutableRefObject, type PointerEvent, type ReactNode } from "react";
 
-import { ImageStage, StageToolbar, cn, useStage, type StageView } from "@vitavision/lab-ui";
+import { cn } from "@vitavision/ui";
+import { ImageStage, StageToolbar, useStage, type StageView } from "@vitavision/stage2d";
 
 import { imageUrl, tierFor } from "../../api/imageUrl";
 import { VectorLayer, type VectorShape } from "./VectorLayer";

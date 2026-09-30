@@ -3,11 +3,11 @@
  * a prediction solid, truth dashed, background and ignored pixels clear.
  */
 
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { SERIES_COLOURS } from "@vitavision/lab-ui";
+import { SERIES_COLOURS } from "@vitavision/charts";
 
-import { classColour, paintLabels, rgbOf } from "./labelPaint";
+import { classColour, classRgb, colourHex, paintLabels, rgbOf } from "./labelPaint";
 
 function plane(rows: number[][]) {
   return {
@@ -22,10 +22,28 @@ function alphaAt(pixels: Uint8ClampedArray, width: number, x: number, y: number)
 }
 
 describe("label painting", () => {
+  // The series palette is @vitavision/charts' stylesheet, which a test document does not
+  // load: defining the tokens here is what the theme on screen would do.
+  beforeEach(() => {
+    document.documentElement.style.setProperty("--series-1", "#0f92c5");
+    document.documentElement.style.setProperty("--series-2", "#b57c38");
+  });
+  afterEach(() => {
+    document.documentElement.style.removeProperty("--series-1");
+    document.documentElement.style.removeProperty("--series-2");
+  });
+
   it("colours class i with the palette's i-th series, never a colour of the dataset's", () => {
     expect(classColour(1)).toBe(SERIES_COLOURS[0]);
     expect(classColour(2)).toBe(SERIES_COLOURS[1]);
     expect(rgbOf("#3bc9db")).toEqual([0x3b, 0xc9, 0xdb]);
+  });
+
+  it("resolves a series token to the value the theme on screen defines", () => {
+    expect(classRgb(1)).toEqual([0x0f, 0x92, 0xc5]);
+    expect(colourHex(classColour(2))).toBe("#b57c38");
+    // A token no stylesheet defines reads as neutral grey rather than as a colour it is not.
+    expect(classRgb(5)).toEqual([139, 148, 155]);
   });
 
   it("fills a prediction faintly and outlines it, leaving background clear", () => {
@@ -42,9 +60,9 @@ describe("label painting", () => {
     const inside = alphaAt(pixels, 5, 2, 2);
     expect(border).toBeGreaterThan(inside);
     expect(inside).toBeGreaterThan(0);
-    expect(Array.from(pixels.slice((1 * 5 + 1) * 4, (1 * 5 + 1) * 4 + 3))).toEqual(
-      rgbOf(SERIES_COLOURS[0]),
-    );
+    expect(Array.from(pixels.slice((1 * 5 + 1) * 4, (1 * 5 + 1) * 4 + 3))).toEqual([
+      0x0f, 0x92, 0xc5,
+    ]);
   });
 
   it("draws truth as a broken outline with nothing inside, and ignores NaN", () => {
@@ -61,8 +79,8 @@ describe("label painting", () => {
     const top = Array.from({ length: 18 }, (_, index) => alphaAt(pixels, size, 3 + index, 3));
     expect(top.some((alpha) => alpha > 0)).toBe(true);
     expect(top.some((alpha) => alpha === 0)).toBe(true);
-    expect(Array.from(pixels.slice((3 * size + 5) * 4, (3 * size + 5) * 4 + 3))).toEqual(
-      rgbOf(SERIES_COLOURS[1]),
-    );
+    expect(Array.from(pixels.slice((3 * size + 5) * 4, (3 * size + 5) * 4 + 3))).toEqual([
+      0xb5, 0x7c, 0x38,
+    ]);
   });
 });

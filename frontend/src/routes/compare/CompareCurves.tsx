@@ -17,7 +17,8 @@
  */
 
 import type { ComparedRun, Subset } from "../../api/client";
-import { Callout, Empty, LineChart, Panel, SkeletonRows, seriesColour, type Scale, type Series } from "@vitavision/lab-ui";
+import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/ui";
+import { LineChart, seriesColour, type Scale, type Series } from "@vitavision/charts";
 import { useCurveSets } from "../../hooks/useComparison";
 
 export function CompareCurves({

@@ -22,7 +22,7 @@ import {
   AnnotationCanvas,
   type AnnotationCanvasHandle,
 } from "../components/annotation/AnnotationCanvas";
-import { Button, ErrorBox, SkeletonRows } from "@vitavision/lab-ui";
+import { Button, ErrorBox, SkeletonRows } from "@vitavision/ui";
 import {
   type DraftEnvelope,
   type DraftTarget,

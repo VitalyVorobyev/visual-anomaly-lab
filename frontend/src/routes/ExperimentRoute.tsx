@@ -27,7 +27,17 @@ import type { TabId } from "../api/experimentTabs";
 import { parseTab } from "../api/experimentTabs";
 import type { ResultsState } from "../api/resultsState";
 import { readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
-import { Badge, Button, Callout, Empty, ErrorBox, PageHeader, ReadoutStrip, SkeletonRows, Tabs } from "@vitavision/lab-ui";
+import {
+  Badge,
+  Button,
+  Callout,
+  Empty,
+  ErrorBox,
+  PageHeader,
+  ReadoutStrip,
+  SkeletonRows,
+  Tabs,
+} from "@vitavision/ui";
 import { experimentStatusTone } from "../api/statusTone";
 import { useJob, isTerminal } from "../hooks/useJob";
 import { useDiagnostics, useExperiment, useModelTypes } from "../hooks/useExperiments";
@@ -157,10 +167,11 @@ export function ExperimentRoute() {
       <PageHeader
         // Back to where the run lives. The global catalogue is one click away in the top
         // bar; the dataset is not, and every other screen here is dataset-scoped.
-        back={{
-          to: `/datasets/${detail.dataset_id}/experiments`,
-          label: `${detail.dataset_name} experiments`,
-        }}
+        back={
+          <Link to={`/datasets/${detail.dataset_id}/experiments`}>
+            {detail.dataset_name} experiments
+          </Link>
+        }
         title={detail.name}
         actions={
           <div className="flex items-center gap-3">
@@ -184,11 +195,11 @@ export function ExperimentRoute() {
              name in the heading. */
           <ReadoutStrip
             items={[
-              { label: "dataset", value: detail.dataset_name, to: `/datasets/${detail.dataset_id}` },
+              { label: "dataset", value: detail.dataset_name, link: <Link to={`/datasets/${detail.dataset_id}`} /> },
               {
                 label: "split",
                 value: detail.split_name,
-                to: `/datasets/${detail.dataset_id}/splits`,
+                link: <Link to={`/datasets/${detail.dataset_id}/splits`} />,
               },
               // A targeted run is about one class, and says which (ADR-0040).
               ...(detail.target_label
@@ -197,7 +208,7 @@ export function ExperimentRoute() {
               {
                 label: "input",
                 value: detail.region_profile_name,
-                to: `/datasets/${detail.dataset_id}/prepare`,
+                link: <Link to={`/datasets/${detail.dataset_id}/prepare`} />,
               },
               // The method's title, as the picker and the catalogue print it; the key is
               // what a config diff needs, not what a reader recognises.

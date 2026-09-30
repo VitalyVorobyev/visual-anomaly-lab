@@ -25,7 +25,7 @@ import {
   ToggleChip,
   cn,
   focusRing,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 
 import { ApiError } from "../../api/client";
 import { clusterColour } from "../../api/explore";

@@ -14,10 +14,36 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 
 import { api, unwrap } from "../api/client";
-import { Badge, Button, ButtonLink, Checkbox, cn, CountRun, describeFields, Disclosure, Empty, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, PageHeader, Panel, SchemaForm, Section, Select, toOptions, type OptionsSchema, type RawValues } from "@vitavision/lab-ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Checkbox,
+  cn,
+  CountRun,
+  Disclosure,
+  Empty,
+  ErrorBox,
+  Field,
+  Input,
+  PageHeader,
+  Panel,
+  Section,
+  Select,
+} from "@vitavision/ui";
+import {
+  describeFields,
+  initialValues,
+  jsonErrors,
+  missingRequired,
+  SchemaForm,
+  toOptions,
+  type OptionsSchema,
+  type RawValues,
+} from "@vitavision/forms";
 import type {
   AdapterInfo,
   ChannelMapping,
@@ -691,11 +717,11 @@ function CommittedStep({
         )}
 
         <div className="flex flex-wrap gap-2">
-          <ButtonLink variant="primary" icon={<Play />} to={`/datasets/${result.dataset_id}/run`}>
-            Start a run
+          <ButtonLink asChild variant="primary" icon={<Play />}>
+            <Link to={`/datasets/${result.dataset_id}/run`}>Start a run</Link>
           </ButtonLink>
-          <ButtonLink variant="secondary" to={`/datasets/${result.dataset_id}`}>
-            Browse the dataset
+          <ButtonLink asChild variant="secondary">
+            <Link to={`/datasets/${result.dataset_id}`}>Browse the dataset</Link>
           </ButtonLink>
           <Button variant="ghost" onClick={onRestart}>
             Import another

@@ -1,7 +1,7 @@
 /**
  * The value-plane endpoints this app fetches from — the addressing half of handbook diagnostics.md.
  *
- * `@vitavision/lab-ui`'s `api/mapValues` owns the wire format (decode, index); it knows
+ * `@vitavision/stage2d`'s `api/mapValues` owns the wire format (decode, index); it knows
  * nothing about this backend's routes. Those routes are application-specific, so they stay
  * here rather than in the shared package.
  */

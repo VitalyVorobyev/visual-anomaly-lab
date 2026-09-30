@@ -2,14 +2,15 @@
  * Step 4, the method: the task's methods in the registry's order of standing, the one it
  * recommends chosen, and the decisions its schema marks `x-primary` in front of the rest.
  *
- * The cards are the create form's (`MethodCard`), and the options are its `SchemaForm`: lab-ui
+ * The cards are the create form's (`MethodCard`), and the options are its `SchemaForm`: @vitavision/forms
  * shows a field marked `x-primary` and folds the others under Advanced, so the form asks only
  * what a person decides. An untouched field is sent as nothing and Python's default applies.
  * The options sit beside the cards on a wide window, held in view while the list scrolls, and
  * say the input size this configuration resolves to.
  */
 
-import { Callout, SchemaForm, SkeletonRows } from "@vitavision/lab-ui";
+import { Callout, SkeletonRows } from "@vitavision/ui";
+import { SchemaForm } from "@vitavision/forms";
 
 import { isRecommended } from "../../api/methodChoice";
 import { MethodCard } from "../../components/MethodCard";

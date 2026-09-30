@@ -38,7 +38,7 @@ import type {
   AssistPoint,
   BitmapShape,
 } from "../../api/client";
-import { formatScale } from "@vitavision/lab-ui";
+import { formatScale } from "@vitavision/stage2d";
 
 import { decodeShapeMask, imageMask, tintedMask } from "../../api/annotationBitmap";
 import { imageUrl, sourceMaskUrl } from "../../api/imageUrl";

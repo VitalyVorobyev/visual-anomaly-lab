@@ -22,7 +22,7 @@
 
 import { NavLink } from "react-router";
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 
 const LINK = ({ isActive }: { isActive: boolean }) =>
   cn(

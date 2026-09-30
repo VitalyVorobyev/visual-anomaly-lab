@@ -12,7 +12,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 
-import { fetchPlane, type ValuePlane } from "@vitavision/lab-ui";
+import { fetchPlane, type ValuePlane } from "@vitavision/stage2d";
 import { anomalyMapValuesUrl, labelPlaneUrl, sourceValuesUrl } from "../api/valuesUrl";
 
 const FOREVER = {

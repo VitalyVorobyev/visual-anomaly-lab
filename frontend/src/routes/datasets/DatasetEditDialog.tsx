@@ -27,16 +27,7 @@
 import { useId, useState } from "react";
 
 import type { DatasetSummary } from "../../api/client";
-import {
-  Button,
-  Dialog,
-  DialogClose,
-  ErrorBox,
-  Field,
-  Input,
-  Select,
-  Textarea,
-} from "@vitavision/lab-ui";
+import { Button, Dialog, DialogClose, ErrorBox, Field, Input, Select, Textarea } from "@vitavision/ui";
 import { useDataset, useUpdateDataset } from "../../hooks/useCatalog";
 
 export function DatasetEditDialog({

@@ -21,7 +21,7 @@ import type { ComparedRun, ComparedSample } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
 import { writeCompareState } from "../../api/compareState";
 import { OUTCOMES } from "../../api/resultsState";
-import { Badge, Empty, Panel, Switch, Tabs } from "@vitavision/lab-ui";
+import { Badge, Empty, Panel, Switch, Tabs } from "@vitavision/ui";
 import { OUTCOME_LABEL, OUTCOME_TONE } from "../experiment/ResultsPanel";
 
 export function AgreementTable({

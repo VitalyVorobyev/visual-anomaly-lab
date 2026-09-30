@@ -8,7 +8,7 @@ import { Copy } from "lucide-react";
 import type { PaneMode } from "../../api/annotationPanes";
 import type { SampleSummary } from "../../api/client";
 import { ChannelTabs } from "../../components/ChannelTabs";
-import { Button, SegmentedControl, Slider } from "@vitavision/lab-ui";
+import { Button, SegmentedControl, Slider } from "@vitavision/ui";
 import type { ChannelPanes } from "./useChannelPanes";
 import type { Workspace } from "./useWorkspace";
 

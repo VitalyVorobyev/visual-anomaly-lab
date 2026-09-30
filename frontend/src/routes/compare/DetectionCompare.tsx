@@ -9,7 +9,7 @@
 
 import type { DetectionComparison, Subset } from "../../api/client";
 import { comparisonRows, objectDetectionRows, timingRows } from "../../api/metrics";
-import { Callout, Panel, Select } from "@vitavision/lab-ui";
+import { Callout, Panel, Select } from "@vitavision/ui";
 import { Grid, SectionRows } from "./MetricTable";
 
 export function DetectionCompare({

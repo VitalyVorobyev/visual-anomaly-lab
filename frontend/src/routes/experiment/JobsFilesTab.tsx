@@ -16,7 +16,7 @@ import { useState } from "react";
 
 import type { JobSummary } from "../../api/client";
 import { JobProgress } from "../../components/JobProgress";
-import { Badge, Empty, Panel } from "@vitavision/lab-ui";
+import { Badge, Empty, Panel } from "@vitavision/ui";
 import { useJob } from "../../hooks/useJob";
 import { ArtifactsPanel } from "./ArtifactsPanel";
 import { jobStatusTone } from "../../api/statusTone";

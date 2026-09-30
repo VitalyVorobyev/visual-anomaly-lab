@@ -11,7 +11,7 @@
 
 import type { CSSProperties, ReactNode } from "react";
 
-import { cn, CountRun, type Tone } from "@vitavision/lab-ui";
+import { cn, CountRun, type Tone } from "@vitavision/ui";
 
 import type { SplitParams, SubsetComposition } from "../api/client";
 

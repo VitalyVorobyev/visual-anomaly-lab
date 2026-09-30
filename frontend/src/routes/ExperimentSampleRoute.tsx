@@ -53,7 +53,8 @@ import type {
 } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
-import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, StageReadout, Tooltip, type StageView } from "@vitavision/lab-ui";
+import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, Tooltip } from "@vitavision/ui";
+import { StageReadout, type StageView } from "@vitavision/stage2d";
 import { SampleStage, type RasterLayer } from "../components/viewer/SampleStage";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { LabelLayer } from "../components/viewer/LabelLayer";

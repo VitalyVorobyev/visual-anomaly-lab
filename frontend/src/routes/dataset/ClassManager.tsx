@@ -17,7 +17,7 @@ import { useState } from "react";
 import { Link } from "react-router";
 
 import type { AnnotationLabel } from "../../api/client";
-import { Button, cn, Disclosure, ErrorBox, Field, focusRing, Input } from "@vitavision/lab-ui";
+import { Button, cn, Disclosure, ErrorBox, Field, focusRing, Input } from "@vitavision/ui";
 import {
   useAnnotationLabels,
   useCreateAnnotationLabel,

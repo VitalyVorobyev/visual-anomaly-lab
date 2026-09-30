@@ -6,7 +6,7 @@
  * composition — goes in the body, where the reader weighs it.
  */
 
-import { cn } from "@vitavision/lab-ui";
+import { cn } from "@vitavision/ui";
 import type { ReactNode } from "react";
 
 export function ChoiceCard({

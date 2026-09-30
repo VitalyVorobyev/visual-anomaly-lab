@@ -24,7 +24,7 @@ import {
   ErrorBox,
   SegmentedControl,
   SkeletonRows,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { useAnnotationScope, useSetAnnotationScope } from "../hooks/useAnnotations";
 import { useDataset, useSamples } from "../hooks/useCatalog";
 import { TabScroll } from "./dataset/TabScroll";
@@ -112,12 +112,11 @@ export function AnnotationQueueRoute() {
               />
             )}
             {first && (
-              <ButtonLink
-                to={`/datasets/${datasetId}/annotate/${first.sample.id}/${first.image.id}?${query}`}
+              <ButtonLink asChild
                 variant="primary"
                 icon={<PenTool />}
               >
-                Start queue
+                <Link to={`/datasets/${datasetId}/annotate/${first.sample.id}/${first.image.id}?${query}`}>Start queue</Link>
               </ButtonLink>
             )}
           </span>

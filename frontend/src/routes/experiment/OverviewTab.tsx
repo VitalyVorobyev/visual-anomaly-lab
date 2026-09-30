@@ -21,7 +21,7 @@ import {
 } from "../../api/metrics";
 import type { MetricRow } from "../../api/metrics";
 import type { MetricSummary, Subset, TrainingState } from "../../api/client";
-import { Button, Callout, CountRun, Disclosure, Panel } from "@vitavision/lab-ui";
+import { Button, Callout, CountRun, Disclosure, Panel } from "@vitavision/ui";
 import { useReevaluate } from "../../hooks/useExperiments";
 
 

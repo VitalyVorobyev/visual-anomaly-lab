@@ -10,7 +10,7 @@
 import type { MetricSummary, Subset } from "../../api/client";
 import type { ResultsState } from "../../api/resultsState";
 import { groupingNote } from "../../api/metrics";
-import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/lab-ui";
+import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/ui";
 import { CurveChart } from "../../components/charts/CurveChart";
 import { useCurves } from "../../hooks/useExperiments";
 import { Results } from "./ResultsPanel";

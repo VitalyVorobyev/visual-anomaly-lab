@@ -15,7 +15,7 @@ import {
   SkeletonRows,
   cn,
   focusRing,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 import { isTerminal } from "../../hooks/useJob";
 import type { AssistMode, SegmentAssistSession } from "./useSegmentAssistSession";
 

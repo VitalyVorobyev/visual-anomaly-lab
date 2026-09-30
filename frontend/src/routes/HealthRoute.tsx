@@ -1,4 +1,4 @@
-import { Callout, PageHeader, Panel, SkeletonRows } from "@vitavision/lab-ui";
+import { Callout, PageHeader, Panel, SkeletonRows } from "@vitavision/ui";
 import { apiBaseUrl } from "../api/client";
 import { useHealth } from "../hooks/useHealth";
 

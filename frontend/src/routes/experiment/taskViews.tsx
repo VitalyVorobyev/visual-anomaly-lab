@@ -27,19 +27,8 @@ import {
 } from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES } from "../../api/resultsState";
-import {
-  CountRun,
-  DEFECT_COLOUR,
-  Empty,
-  ErrorBox,
-  NORMAL_COLOUR,
-  Panel,
-  SkeletonRows,
-  StackedBars,
-  Table,
-  cn,
-  type Column,
-} from "@vitavision/lab-ui";
+import { CountRun, Empty, ErrorBox, Panel, SkeletonRows, Table, cn, type Column } from "@vitavision/ui";
+import { DEFECT_COLOUR, NORMAL_COLOUR, StackedBars } from "@vitavision/charts";
 import { classColour } from "../../components/viewer/labelPaint";
 import { BenchmarkTab } from "./BenchmarkTab";
 import { Headline, MetricList, Metrics } from "./OverviewTab";

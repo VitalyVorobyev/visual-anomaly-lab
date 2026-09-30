@@ -8,7 +8,7 @@
  * shows none.
  */
 
-import { cn, Skeleton } from "@vitavision/lab-ui";
+import { cn, Skeleton } from "@vitavision/ui";
 import { Children, useState, type ReactNode } from "react";
 
 import type { SampleSummary } from "../../api/client";

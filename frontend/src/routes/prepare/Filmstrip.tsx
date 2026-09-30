@@ -5,7 +5,7 @@
  * It scrolls sideways on its own; the page is the only thing that scrolls vertically.
  */
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 
 import type { RegionPreviewImage } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";

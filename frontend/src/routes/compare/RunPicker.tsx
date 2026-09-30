@@ -15,7 +15,7 @@
 import { formatHeadline } from "../../api/headline";
 import type { ExperimentSummary } from "../../api/client";
 import { MAX_RUNS, refusalReason } from "../../api/compareState";
-import { Badge, Checkbox, Empty, SkeletonRows, cn } from "@vitavision/lab-ui";
+import { Badge, Checkbox, Empty, SkeletonRows, cn } from "@vitavision/ui";
 import { useSplitNames } from "../../hooks/useComparison";
 import { useDatasets } from "../../hooks/useCatalog";
 import { useExperiments, useModelTypes } from "../../hooks/useExperiments";

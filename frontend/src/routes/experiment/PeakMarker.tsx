@@ -20,7 +20,8 @@
  * declared at one screen pixel stays one screen pixel at 8x.
  */
 
-import { MeasureOverlay, useStage, type MeasurePrimitive, type MeasureTone } from "@vitavision/lab-ui";
+import type { MeasureTone } from "@vitavision/ui";
+import { MeasureOverlay, useStage, type MeasurePrimitive } from "@vitavision/stage2d";
 
 import type { ImageScore } from "../../api/client";
 

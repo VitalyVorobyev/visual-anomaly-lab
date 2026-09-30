@@ -6,7 +6,7 @@
  * line links back to the step that decided it.
  */
 
-import { Button, ErrorBox, Field, Input, Skeleton, cn, focusRing } from "@vitavision/lab-ui";
+import { Button, ErrorBox, Field, Input, Skeleton, cn, focusRing } from "@vitavision/ui";
 import { Play } from "lucide-react";
 import type { ReactNode } from "react";
 
