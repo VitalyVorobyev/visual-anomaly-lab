@@ -16,9 +16,10 @@ defined in one app and copied into the next stops agreeing within a release.
 
 ## Decision
 
-**A semantic token layer and a primitive set, defined once in the shared `@vitavision/lab-ui`
-package for every lab application, with Radix underneath only the controls that are hard to build
-correctly.**
+**A semantic token layer and a primitive set, defined once in the shared `@vitavision/ui` package
+for every lab application — with `@vitavision/forms`, `@vitavision/charts` and `@vitavision/stage2d`
+beside it, all from the lab-ui repository — and Radix underneath only the controls that are hard to
+build correctly.**
 
 - **The direction is *instrument*: the chrome is grey so the data can be loud.** One accent,
   `signal`, means "you can act here". `normal`, `defect` and `warn` are reserved for verdicts and
@@ -57,7 +58,8 @@ every pydantic shape, so an enum option costs no frontend work.
 - **Two rendering models for controls.** A Radix select is a button with a portalled listbox, and a
   Radix checkbox has no `.checked`; tests must reach for ARIA roles.
 - **The token layer pays off only if components stop naming raw colours.** A ramp step compiles and
-  looks almost right; only a grep ratchet in the test suite holds the line.
+  looks almost right; ESLint's `tokensOnly` over `src/` and a grep ratchet in the test suite hold
+  the line.
 - **Dropping the UA `<summary>` marker is a trap.** A raw `<details>` renders with no caret and
   reads as a dead panel.
 - **Self-hosted fonts add bundle weight** — irrelevant from disk, a real cost on the browser path.

@@ -15,7 +15,7 @@ cost. They are not the system's documentation: to learn how the workbench works,
 | [0007](0007-common-model-plugin-interface-with-capability-flags.md) | Every method is one plugin behind one interface, with capability flags |
 | [0009](0009-job-execution-subprocess-per-job-single-fifo-queue.md) | Every job is its own subprocess, drawn from one FIFO queue |
 | [0012](0012-frontend-stack-and-generated-api-client.md) | Hash routing, TanStack Query, and an API client generated from OpenAPI |
-| [0021](0021-design-token-layer-and-primitive-set.md) | Semantic tokens and primitives live once, in the shared `lab-ui` package |
+| [0021](0021-design-token-layer-and-primitive-set.md) | Semantic tokens and primitives live once, in the shared `@vitavision/ui` package |
 | [0022](0022-private-source-data-lives-outside-the-working-tree.md) | Private source data lives outside the working tree |
 | [0026](0026-a-resident-inference-worker-beside-the-job-queue.md) | One resident inference worker beside the queue, kept off the device by a lock |
 | [0028](0028-comparing-runs-whose-scores-are-not-in-the-same-units.md) | Nothing is compared in score units; runs share a rule, never a number |

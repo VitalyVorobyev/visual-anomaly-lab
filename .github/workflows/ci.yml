@@ -119,8 +119,9 @@ jobs:
     name: Frontend
     runs-on: ubuntu-latest
     steps:
-      # @vitavision/lab-ui is a published npm package now, so this is an ordinary
-      # single-repo job. It used to be a `file:../../lab-ui` path dependency, which
+      # The @vitavision packages (ui, forms, charts, stage2d) are published on npm,
+      # so this is an ordinary single-repo job. The design system used to be a
+      # `file:../../lab-ui` path dependency, which
       # meant checking out *two* repos as siblings inside $GITHUB_WORKSPACE and
       # building the package first, because it ships no dist/ in git.
       - uses: actions/checkout@v7
@@ -244,8 +245,8 @@ jobs:
     runs-on: macos-latest
     steps:
       # The nested `path:` is kept because the steps below address paths relative
-      # to it; nothing else needs checking out now that @vitavision/lab-ui comes
-      # from npm (see the Frontend job).
+      # to it; nothing else needs checking out now that the @vitavision packages
+      # come from npm (see the Frontend job).
       - uses: actions/checkout@v7
         with:
           path: visual-anomaly-lab
