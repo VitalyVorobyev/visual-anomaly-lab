@@ -4,7 +4,7 @@
  * Rendered once, by `DatasetLayout`, and nowhere else -- five copies in five routes is what
  * made it move between tabs.
  *
- * An underline rather than the pill used by `components/Tabs.tsx`. These are real
+ * An underline rather than the pill of @vitavision/ui's `Tabs`. These are real
  * navigations to real URLs, and the pill is what marks an in-page state switch; giving the
  * two mechanisms the same shape would say they were the same thing. Anchored to the band's
  * bottom border by `-mb-px`, so the active mark reads as the section owning the surface
@@ -22,7 +22,7 @@
 
 import { NavLink } from "react-router";
 
-import { cn, focusRing } from "@vitavision/lab-ui";
+import { cn, focusRing } from "@vitavision/ui";
 
 const LINK = ({ isActive }: { isActive: boolean }) =>
   cn(

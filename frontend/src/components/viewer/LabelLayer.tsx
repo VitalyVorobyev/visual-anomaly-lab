@@ -12,7 +12,7 @@
 
 import { useEffect, useRef } from "react";
 
-import type { ValuePlane } from "@vitavision/lab-ui";
+import type { ValuePlane } from "@vitavision/stage2d";
 
 import { paintLabels, type LabelStyle } from "./labelPaint";
 

@@ -12,7 +12,7 @@
  * editor is a lazy chunk, and a chunk that fails to load rejects into a render that has
  * no boundary above it.
  *
- * So this file deliberately depends on **nothing**: no `@vitavision/lab-ui` import, no
+ * So this file deliberately depends on **nothing**: no `@vitavision/ui` import, no
  * Tailwind class, no design token, no router, no query client. Inline styles only, with
  * its own colours. A crash screen that needs the stylesheet is another black window on
  * the day the stylesheet is what failed.

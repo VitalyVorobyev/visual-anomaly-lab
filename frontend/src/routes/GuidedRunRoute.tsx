@@ -16,7 +16,7 @@
  * region that scrolls.
  */
 
-import { Button, ButtonLink, cn, ErrorBox, focusRing } from "@vitavision/lab-ui";
+import { Button, ButtonLink, cn, ErrorBox, focusRing } from "@vitavision/ui";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 import { useEffect } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router";
@@ -141,8 +141,8 @@ export function GuidedRunRoute() {
             </Link>
             <h1 className="text-xl font-semibold tracking-tight text-fg">Start a run</h1>
           </div>
-          <ButtonLink to={`/datasets/${datasetId}/experiments/new`} size="sm" variant="ghost">
-            Open the full form
+          <ButtonLink asChild size="sm" variant="ghost">
+            <Link to={`/datasets/${datasetId}/experiments/new`}>Open the full form</Link>
           </ButtonLink>
         </div>
         <StepRail run={run} step={step} reached={reached} onGo={go} />

@@ -12,7 +12,7 @@
  * Every access is guarded: storage can be absent or refuse, and the run must work without it.
  */
 
-import type { RawValues } from "@vitavision/lab-ui";
+import type { RawValues } from "@vitavision/forms";
 
 import type { ClassGeometry, Task, TruthKind } from "./client";
 import { hasClasses, labelsApply } from "./truth";

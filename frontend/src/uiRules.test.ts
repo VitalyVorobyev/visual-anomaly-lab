@@ -13,7 +13,7 @@
 import { describe, expect, it } from "vitest";
 
 const RULES = {
-  /** A raw `<table>` instead of lab-ui's `Table`, which carries the density and the rules. */
+  /** A raw `<table>` instead of @vitavision/ui's `Table`, which carries the density and the rules. */
   "raw-table": /<table\b/g,
   /** A literal colour ignores the theme; tokens are `surface`, `line`, `fg-muted`, `signal`… */
   "hex-colour": /\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|shadow)-\[#/g,
@@ -22,13 +22,15 @@ const RULES = {
     /\b(?:bg|text|border|ring|fill|stroke|from|to|via|outline|divide|placeholder|accent|caret|decoration)-(?:slate|gray|zinc|neutral|stone|red|orange|amber|yellow|lime|green|emerald|teal|cyan|sky|blue|indigo|violet|purple|fuchsia|pink|rose)-\d{2,3}\b/g,
   /** A window shortcut goes through `useHotkeys`, which owns the one guard. */
   "bare-keydown": /addEventListener\(\s*["']keydown/g,
-  /** Bare form controls: lab-ui has `Select`, `Slider`, `Checkbox`, `Switch`. */
+  /** Bare form controls: @vitavision/ui has `Select`, `Slider`, `Checkbox`, `Switch`. */
   "bare-control": /<select\b|<input[^>]*type=["'](?:range|checkbox)/g,
   /** A raw `<details>` renders with no caret; use `Disclosure`. */
   "raw-details": /<details\b/g,
   /** A control never nests inside a link — the click has to be cancelled to stop navigation.
-   *  lab-ui's `ButtonLink` is the one element that looks like a button and navigates. */
+   *  @vitavision/ui's `ButtonLink` is the one element that looks like a button and navigates. */
   "link-wraps-button": /<Link\b[^>]*>\s*<Button\b/g,
+  /** The frozen pre-split design system; each part now comes from ui, forms, charts or stage2d. */
+  "lab-ui-import": /from\s+["']@vitavision\/lab-ui["']/g,
 } as const;
 
 type Rule = keyof typeof RULES;
@@ -43,12 +45,6 @@ const KNOWN: Partial<Record<Rule, Record<string, number>>> = {
     "routes/compare/ConfigDiff.tsx": 1,
     "routes/compare/MetricTable.tsx": 1,
     "routes/experiment/ResultsPanel.tsx": 1,
-  },
-  "hex-colour": {
-    "components/JobProgress.tsx": 2,
-    "components/diagnostics/DiagnosticViews.tsx": 1,
-    "routes/ExperimentSampleRoute.tsx": 1,
-    "routes/experiment/GalleryTab.tsx": 1,
   },
   // The one listener every other screen goes through.
   "bare-keydown": { "hooks/useHotkeys.ts": 1 },

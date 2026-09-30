@@ -6,7 +6,7 @@
  * no control inside it to nest.
  */
 
-import { Badge, cn, focusRing } from "@vitavision/lab-ui";
+import { Badge, cn, focusRing } from "@vitavision/ui";
 
 import type { RegionPreparationEntry } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";

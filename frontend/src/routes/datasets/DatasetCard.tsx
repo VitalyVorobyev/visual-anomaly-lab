@@ -22,7 +22,7 @@ import { Link } from "react-router";
 
 import type { DatasetSummary } from "../../api/client";
 import { imageUrl } from "../../api/imageUrl";
-import { Button, ButtonLink, cn, focusRing, Tooltip } from "@vitavision/lab-ui";
+import { Button, ButtonLink, cn, focusRing, Tooltip } from "@vitavision/ui";
 import { truthLine } from "../../components/DatasetTruth";
 
 export function DatasetCard({
@@ -71,13 +71,11 @@ export function DatasetCard({
         )}
       >
         <Tooltip content="Start a run">
-          <ButtonLink
-            to={`/datasets/${dataset.id}/run`}
+          <ButtonLink asChild
             variant="ghost"
             size="sm"
             aria-label={`Start a run on ${dataset.name}`}
-            icon={<Play />}
-          />
+            icon={<Play />}><Link to={`/datasets/${dataset.id}/run`} /></ButtonLink>
         </Tooltip>
         <Button
           variant="ghost"

@@ -6,7 +6,7 @@
  * because a profile says where to look and a run says how large (ADR-0033).
  */
 
-import { toOptions, type FieldSpec, type RawValues } from "@vitavision/lab-ui";
+import { toOptions, type FieldSpec, type RawValues } from "@vitavision/forms";
 
 import type {
   RegionPreparationEntry,

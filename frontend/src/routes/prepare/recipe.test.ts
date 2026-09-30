@@ -3,7 +3,7 @@
  * was touched, and "differs" has to mean the same thing on both sides of that.
  */
 
-import { describeFields, type OptionsSchema } from "@vitavision/lab-ui";
+import { describeFields, type OptionsSchema } from "@vitavision/forms";
 import { describe, expect, it } from "vitest";
 
 import type { RegionPreparationEntry } from "../../api/client";

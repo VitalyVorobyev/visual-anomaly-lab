@@ -99,7 +99,7 @@ export const SceneLayer = memo(function SceneLayer({
           width={width}
           height={height}
           fill={palette.canvas}
-          shadowColor="#000000"
+          shadowColor={palette.canvas}
           shadowBlur={16 / scale}
           shadowOpacity={0.4}
         />

@@ -10,7 +10,15 @@
  * dataset.
  */
 
-import { describeFields, initialValues, jsonErrors, missingRequired, outOfRange, toOptions, type RawValues } from "@vitavision/lab-ui";
+import {
+  describeFields,
+  initialValues,
+  jsonErrors,
+  missingRequired,
+  outOfRange,
+  toOptions,
+  type RawValues,
+} from "@vitavision/forms";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import type {

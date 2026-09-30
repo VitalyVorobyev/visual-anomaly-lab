@@ -128,10 +128,10 @@ def test_classes_are_added_after_the_default_in_the_editors_palette(
 
 def test_the_import_palette_is_the_editors() -> None:
     """One palette, written twice: an imported class must look like one added by hand."""
-    manager = (
-        Path(__file__).resolve().parents[2] / "frontend/src/routes/dataset/ClassManager.tsx"
-    ).read_text(encoding="utf-8")
-    block = manager.split("export const CLASS_PALETTE = [", 1)[1].split("]", 1)[0]
+    palette = (Path(__file__).resolve().parents[2] / "frontend/src/api/classPalette.ts").read_text(
+        encoding="utf-8"
+    )
+    block = palette.split("export const CLASS_PALETTE = [", 1)[1].split("]", 1)[0]
     assert tuple(re.findall(r'"(#[0-9a-f]{6})"', block)) == CLASS_PALETTE
 
 

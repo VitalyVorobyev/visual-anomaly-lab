@@ -11,7 +11,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
-import { TooltipProvider } from "@vitavision/lab-ui";
+import { TooltipProvider } from "@vitavision/ui";
 
 export function withProviders(
   children: ReactNode,

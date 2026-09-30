@@ -6,7 +6,7 @@
  * the one tone that means "this went wrong", so a failure gets it everywhere or nowhere.
  */
 
-import type { Tone } from "@vitavision/lab-ui";
+import type { Tone } from "@vitavision/ui";
 
 import type { ExperimentStatus, JobStatus } from "./client";
 

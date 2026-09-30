@@ -11,10 +11,10 @@
  * cut, and this only reads `kept`, `matched` and `found` (ADR-0028).
  */
 
-import { DEFECT_COLOUR, NORMAL_COLOUR, seriesColour, type MeasureTone } from "@vitavision/lab-ui";
+import { toneColor, type MeasureTone } from "@vitavision/ui";
 
 import type { ImageBoxes } from "../../api/client";
-import { classColour } from "./labelPaint";
+import { classColour, colourHex } from "./labelPaint";
 import type { VectorShape } from "./VectorLayer";
 
 export const BOX_TONE = {
@@ -69,20 +69,13 @@ export function boxShapes(
 /**
  * The three tones as `#rrggbb`, for the server-drawn tile, which cannot read a CSS variable.
  *
- * Read from the theme's own custom properties, so the tile follows the theme it is drawn
- * in. Outside a styled document (a test) they fall back to lab-ui's exported constants;
- * lab-ui exports no warn constant, so the missed tone falls back to a series colour.
+ * Read from the theme's own custom properties (`toneColor` names them), so the tile follows
+ * the theme it is drawn in and matches the viewer's own outlines.
  */
 export function boxToneColours(): [string, string, string] {
   return [
-    tokenHex("--normal") ?? NORMAL_COLOUR,
-    tokenHex("--defect") ?? DEFECT_COLOUR,
-    tokenHex("--warn") ?? seriesColour(1),
+    colourHex(toneColor(BOX_TONE.match)),
+    colourHex(toneColor(BOX_TONE.false_positive)),
+    colourHex(toneColor(BOX_TONE.missed)),
   ];
-}
-
-function tokenHex(name: string): string | null {
-  if (typeof document === "undefined") return null;
-  const value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-  return /^#[0-9a-f]{6}$/i.test(value) ? value : null;
 }

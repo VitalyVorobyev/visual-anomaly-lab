@@ -1,8 +1,9 @@
 /**
  * A label map, painted: one colour per class, from the design system's palette.
  *
- * A class's colour belongs to the interface — the lab-ui chart palette by the class's pinned
- * position, so the same run reads the same on every screen and no dataset decides it. The
+ * A class's colour belongs to the interface — the @vitavision/charts series palette by the
+ * class's pinned position, so the same run reads the same on every screen and no dataset
+ * decides it. The
  * sample page fetches class indices (a value plane) and paints them here, once per plane,
  * into RGBA at the plane's own size; the stage stretches that over the photograph, which is
  * exact because the plane is in the source frame and any decimation is an integer stride.
@@ -15,16 +16,44 @@
  * that are background (0) or ignored (NaN — a class the run does not know) are left clear.
  */
 
-import { seriesColour } from "@vitavision/lab-ui";
+import { seriesColour } from "@vitavision/charts";
 
 export type LabelStyle = "prediction" | "truth";
 
 const FILL_ALPHA = 80;
 const LINE_ALPHA = 235;
 
-/** The colour of label index `index` — `classes[index - 1]` — as a CSS colour. */
+/**
+ * The colour of label index `index` — `classes[index - 1]` — as a CSS colour: a
+ * `var(--series-n)` reference, so a swatch or an SVG stroke follows the theme by itself.
+ */
 export function classColour(index: number): string {
   return seriesColour(Math.max(0, index - 1));
+}
+
+/**
+ * A `var(--token)` colour as the value the document defines for it now, for the two
+ * consumers that cannot read a custom property: a canvas painted byte by byte, and the
+ * server, which draws tiles in the colours a URL names. It is read from the theme on screen,
+ * so a painted map matches the swatches beside it. Anything that is not a `var()` reference,
+ * or a token no stylesheet defines (a test's document), is returned as it came.
+ */
+export function resolveColour(colour: string): string {
+  const token = /^var\((--[\w-]+)\)$/.exec(colour)?.[1];
+  if (token === undefined || typeof document === "undefined") return colour;
+  return getComputedStyle(document.documentElement).getPropertyValue(token).trim() || colour;
+}
+
+/** Label index `index`'s colour as three bytes, resolved against the theme on screen. */
+export function classRgb(index: number): [number, number, number] {
+  return rgbOf(resolveColour(classColour(index)));
+}
+
+/** A CSS colour (a token reference included) as `#rrggbb`, resolved against the theme on screen. */
+export function colourHex(colour: string): string {
+  return `#${rgbOf(resolveColour(colour))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")}`;
 }
 
 /** `#rrggbb` as three bytes; anything else reads as a neutral grey. */
@@ -99,7 +128,7 @@ export function paintLabels(
       if (alpha === 0) continue;
       let rgb = palette.get(label);
       if (rgb === undefined) {
-        rgb = rgbOf(classColour(label));
+        rgb = classRgb(label);
         palette.set(label, rgb);
       }
       out[index * 4] = rgb[0];

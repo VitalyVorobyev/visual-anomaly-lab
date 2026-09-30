@@ -14,7 +14,7 @@ client generated rather than written (**ADR-0012**).
   compiler options from `@vitavision/config-ts` (strict, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`) and the lint rules from `@vitavision/config-eslint`. Under
   `exactOptionalPropertyTypes`, our own optional props say `?: T | undefined`; a prop or request body typed
-  elsewhere (lab-ui, Konva, the generated client) is passed through `defined()` (`src/api/defined.ts`),
+  elsewhere (the `@vitavision` packages, Konva, the generated client) is passed through `defined()` (`src/api/defined.ts`),
   which leaves out the keys that have no value. The React Compiler rules (`react-hooks/set-state-in-effect`,
   `react-hooks/refs`, `react-hooks/immutability`) report as warnings until each screen is reworked; everything else is an error.
 - **Every main route has a screenshot** (`bun run test:screens`): Playwright against a throwaway backend
@@ -32,21 +32,34 @@ client generated rather than written (**ADR-0012**).
 
 ## Design system
 
-Colour, type, radius and the controls come from **`@vitavision/lab-ui`** (**ADR-0021**), shared by every
-lab app. `frontend/src/styles.css` only imports it, plus this app's one rule: `html`, `body` and `#root`
-are `height: 100%; overflow: hidden`.
+Colour, type, radius and the controls come from the **`@vitavision/*` packages** of the lab-ui repository
+(**ADR-0021**), shared by every lab app: `@vitavision/ui` (tokens, IBM Plex through its `fonts.css`, the
+theme, the primitives), `@vitavision/forms` (`SchemaForm`), `@vitavision/charts` (the chart set and the
+`--series-1…6` palette) and `@vitavision/stage2d` (`ImageStage`, `MeasureOverlay`, value planes).
+`frontend/src/styles.css` only imports their stylesheets — each declares its own Tailwind `@source` — plus
+this app's one rule: `html`, `body` and `#root` are `height: 100%; overflow: hidden`.
 
 - **The chrome is grey so the data can be loud.** One accent, `signal`, means "you can act here".
   `normal` / `defect` / `warn` are reserved for verdicts. Greys are true neutral, so they do not shift how
   a colormap's cool end reads.
-- **Components name tokens — `surface`, `line`, `fg-muted`, `signal` — never a Tailwind ramp step.** A raw
-  colour compiles, looks almost right, and ignores the theme.
+- **Components name tokens — `surface`, `line`, `fg-muted`, `signal` — never a Tailwind ramp step or a hex
+  literal.** A raw colour compiles, looks almost right, and ignores the theme. `tokensOnly` from
+  `@vitavision/config-eslint` holds it for all of `src/` (gate G5.1); `eslint.config.js` names the two
+  files exempt on purpose — the class palette (`api/classPalette.ts`, colours stored as data) and
+  `CrashScreen` — and `uiRules.test.ts` keeps the ratchets a grep can hold.
+- **Where a token cannot be read, it is resolved, not copied.** A canvas and a server-drawn tile take a
+  colour string, not a `var(--…)`: `labelPaint.ts` resolves a token against the theme on screen
+  (`resolveColour`, `classRgb`, `colourHex`) and `scenePalette.ts` does the same for the annotation
+  scene, repainting when the theme changes.
 - **Light and dark both ship**, with `light` / `dark` / `system` applied by an inline script before first
-  paint, so `system` survives a reload as itself. The choice is stored under `anomaly-lab-theme`
-  (`src/themeStorageKey.ts`); the script in `index.html` repeats the literal and must agree with it.
-- **Controls are lab-ui primitives** (`Select`, `Dialog`, `Tooltip`, `Slider`, `Checkbox`, `Switch` on
-  Radix; `Disclosure`, `Table`, `SchemaForm`, `ImageStage` and the rest). A raw `<details>` renders with no
-  caret, because the base layer drops the UA marker. A primitive that needs improving is improved upstream.
+  paint, so `system` survives a reload as itself; `main.tsx` then calls `@vitavision/ui`'s `initTheme`.
+  The choice is stored under `anomaly-lab-theme` (`src/themeStorageKey.ts`); the script in `index.html`
+  repeats the literal and ui's resolution rule, and must agree with both.
+- **Controls are `@vitavision/ui` primitives** (`Select`, `Dialog`, `Tooltip`, `Slider`, `Checkbox`, `Switch`
+  on Radix, which ui carries — this app has no Radix dependency of its own; `Disclosure`, `Table`, `Tabs`,
+  `Section` and the rest), with `SchemaForm` from forms and `ImageStage` from stage2d. A raw `<details>`
+  renders with no caret, because the base layer drops the UA marker. A primitive that needs improving is
+  improved upstream, never wrapped in a local variant.
   Tests query ARIA roles: a Radix `Select` is a `button[role="combobox"]` with a portalled listbox, and a
   Radix `Checkbox` is a `button[role="checkbox"]` with no `.checked`.
 - **Focus is `focus-visible:outline-2 outline-signal`** — an outline, so it follows the element's radius.
@@ -73,7 +86,7 @@ hung shell. `components/CrashScreen.tsx`, wired in `main.tsx`, has two halves:
   `unhandledrejection` (a module throwing at evaluation, a lazy chunk that never arrives), and paints the
   same panel **only when the root is empty**.
 
-The file imports nothing — no lab-ui, no Tailwind, no token — so it works when the stylesheet is what
+The file imports nothing — no `@vitavision` package, no Tailwind, no token — so it works when the stylesheet is what
 failed.
 
 **A backend that never started uses the same panel.** The shell always builds its window and injects
@@ -111,8 +124,9 @@ asserts it.
 **A control never nests inside a link.** Card actions and grid selection boxes are absolutely-positioned
 siblings of their `<Link>`: a control inside an anchor must cancel the click, and cancelling a checkbox's
 click makes the browser restore its old state after React writes the new one. A navigation that looks
-like a button is lab-ui's `ButtonLink` — one anchor with the button's variants — never a `<Button>`
-inside a `<Link>`.
+like a button is ui's `ButtonLink` — one anchor with the button's variants, rendered onto the router's
+link with `asChild` (`<ButtonLink asChild><Link to=…>…</Link></ButtonLink>`, since no package imports a
+router) — never a `<Button>` inside a `<Link>`.
 
 **Navigation.** The main navigation is `Datasets`, `Experiments` and `Compare`; import is an action in the
 catalogue, and backend health stays visible in the shell. Inside a dataset the strip is grouped by the stage
@@ -425,7 +439,7 @@ Benchmark shows present samples by IoU band and absent samples by outcome. How o
 number of references is a question across runs, and is open. A `semantic_segmentation` run's verdict
 is per sample, pooled over its labelled images ([evaluation](evaluation.md)): `miss`, `false_class`,
 `false_presence`, `correct_absence`, or `hit` / `low_iou` by mean IoU. Overview promotes mean IoU,
-pixel accuracy, mean class accuracy and frequency-weighted IoU, then a lab-ui `Table` of each class's
+pixel accuracy, mean class accuracy and frequency-weighted IoU, then a ui `Table` of each class's
 IoU across the scored subsets (background and the mean beside them), the stored confusion matrix of the
 current subset drawn as a `Table` whose cells are each true row's share, toned `normal` on the diagonal
 and `defect` off it at five token strengths, and the outcome tally. Its tables are `semanticRows` — the
@@ -435,18 +449,18 @@ On the sample page its layers are label maps, not a cut and a mask: `GET
 /api/experiments/{id}/images/{iid}/labels[?truth=true]` serves the method's map or the truth over the
 pinned classes as a value plane of class indices, and `LabelLayer` paints it on a canvas inside the
 `SampleStage` (`components/viewer/labelPaint.ts`) — prediction solid (faint fill, full outline), truth
-dashed (outline only), background and ignored pixels clear. Class `i` is lab-ui's `seriesColour(i - 1)`,
+dashed (outline only), background and ignored pixels clear. Class `i` is charts' `seriesColour(i - 1)` (a `var(--series-i)` token, resolved to bytes for the canvas),
 by pinned position, never the dataset's own label colour, and the overlay row carries the legend.
 The Samples tab is the same set: `GalleryTab` passes the run's `classes` to `OverlayControls`, so its
 toggles are prediction / truth / foreground with the class legend, and each tile lays
 `GET /api/experiments/{id}/images/{iid}/label-map?colours=[&truth=true]` over its thumbnail — the server
 drawing `labelPaint`'s rule at the thumbnail's size, because a tile cannot afford a value plane each.
-The colours travel in the URL, one per pinned class, from `classColour` (`labelMapUrl`), so lab-ui stays
-the palette's only home. An anomaly or few-shot tile draws the cut and the outline.
+The colours travel in the URL, one per pinned class, from `classColour` resolved against the theme on
+screen (`labelMapUrl`), so `@vitavision/charts` stays the palette's only home. An anomaly or few-shot tile draws the cut and the outline.
 An `object_detection` run's verdicts are read at its subset's **confidence cut**, resolved by the
 evaluator by one rule and stored beside the metrics ([evaluation](evaluation.md#object-detection)); every
 screen that draws a verdict prints that rule and value (ADR-0028). Overview promotes AP@[.5:.95], AP50,
-AP75 and recall, then a lab-ui `Table` of each class's AP, AP50, AP75 and recall across the scored
+AP75 and recall, then a ui `Table` of each class's AP, AP50, AP75 and recall across the scored
 subsets (the mean beside them, class swatches from `classColour`), the cut per subset with the F1,
 precision and recall it reaches and the rule printed, and the outcome tally (`hit`, `miss`,
 `false_presence`, `mixed`, `correct_absence`; `mistakes` is the middle three). Its tables are
@@ -498,8 +512,8 @@ The region is read from the preview's own map on the server, never sent by the c
 eligible as a reference; the pseudo-label loop is accept, then tick.
 
 The session is the URL (`refs`, `focus`, `method`, `profile`, `show`). The studio evaluates nothing: the
-run page is the one place a run is read. Both rails are `RailSection`s (`components/viewer/`), shared with the
-sample viewer.
+run page is the one place a run is read. Both rails are ui `Section`s, the same as the
+sample viewer's.
 
 **Diagnostics** — rendered by `kind`, never by method name ([diagnostics](diagnostics.md)): run-scoped entries in an
 *Architecture* tab (`graph`, `table`) and an *Inspector* tab (`map`, `image`, `grid`); image-scoped entries
@@ -538,7 +552,7 @@ them by class, and `refusalReason` refuses another task or another class by name
 1. **No channel count is hard-coded.** Layouts render from the dataset's channel dictionary; a two-channel
    sample needs no special case.
 2. **No method is named.** Picker, forms and capability-driven affordances come from
-   `GET /api/experiments/model-types` (ADR-0007). lab-ui's `SchemaForm` maps a pydantic JSON Schema to
+   `GET /api/experiments/model-types` (ADR-0007). `@vitavision/forms`' `SchemaForm` maps a pydantic JSON Schema to
    controls: `enum` is read before `type` and `$ref` is resolved through `$defs`, so `Literal` and
    `StrEnum` both become pickers — three or fewer values a segmented control, more a select; `minimum`,
    `maximum` and `multipleOf` reach the control, and a float without `multipleOf` steps `any`.
@@ -555,7 +569,7 @@ them by class, and `refusalReason` refuses another task or another class by name
    the whole transform, so a layer at `inset-0` covers exactly the source frame. All sample viewers are
    `components/viewer/SampleStage.tsx`: the photograph at `tierFor(view)`, raster layers in order, then
    `VectorLayer` (boxes and polygons in image pixels, polygons filled even-odd, non-scaling strokes, toned
-   by lab-ui's `toneColor`), then screen-specific overlays such as the peak marker.
+   by ui's `toneColor`), then screen-specific overlays such as the peak marker.
    `frontend/src/routes/ExperimentSampleRoute.test.tsx` pins it.
 5. **A window shortcut goes through `useHotkeys`.** `hotkeyBlocked` (`hooks/useHotkeys.ts`) is the one
    guard — text entry, lists and menus, navigation keys on a slider, tab strip or radio group, any open
@@ -584,7 +598,7 @@ builds from it.
 photograph, blended channel, base mask, committed regions) and a live layer (`LiveLayer`: brush trail, open
 polygon, assist prompts, cursors) fed by a small external store, so a pointer move re-renders only the live
 layer. A brush trail is appended in place. `canvasView.ts` stores zoom as a multiple of fit, capped at
-lab-ui's `MAX_SCALE` — 32 screen pixels per source pixel — with smoothing off above 1:1.
+stage2d's `MAX_SCALE` — 32 screen pixels per source pixel — with smoothing off above 1:1.
 
 ## UI rule ratchet
 

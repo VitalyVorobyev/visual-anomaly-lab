@@ -12,7 +12,7 @@ import {
   type EditorBinding,
   type KeyGroup,
 } from "../../components/annotation/editorKeys";
-import { Dialog } from "@vitavision/lab-ui";
+import { Dialog } from "@vitavision/ui";
 
 const ORDER: KeyGroup[] = ["Tools", "Document", "Navigation", "View", "Label", "Canvas", "Pointer"];
 

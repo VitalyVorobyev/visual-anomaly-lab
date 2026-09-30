@@ -8,7 +8,7 @@
  * rather than being offered. Few-shot adds the class, the most frequent by default.
  */
 
-import { Badge, Field, Select, Skeleton } from "@vitavision/lab-ui";
+import { Badge, Field, Select, Skeleton } from "@vitavision/ui";
 import { Fragment } from "react";
 import { Link } from "react-router";
 

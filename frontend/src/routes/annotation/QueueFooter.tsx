@@ -2,7 +2,7 @@
 
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
-import { Button } from "@vitavision/lab-ui";
+import { Button } from "@vitavision/ui";
 import type { QueueNavigation } from "./useQueueNavigation";
 
 export function QueueFooter({

@@ -20,7 +20,7 @@ import { Link } from "react-router";
 import type { SampleSummary } from "../../api/client";
 import { preferredImageIndex } from "../../api/defaultChannel";
 import { imageUrl } from "../../api/imageUrl";
-import { Badge, Checkbox, cn, focusRing } from "@vitavision/lab-ui";
+import { Badge, Checkbox, cn, focusRing } from "@vitavision/ui";
 import type { Label } from "../../api/client";
 
 const LABEL_TONE: Record<Label, "normal" | "defect" | "unlabeled"> = {

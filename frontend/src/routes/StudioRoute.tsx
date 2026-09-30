@@ -9,7 +9,7 @@
  * run page is the one place a run is read, so the studio cannot grow a second one.
  *
  * Built from what the other viewers use: `SampleTile` for the candidates, `SampleStage` for
- * the picture, `RailSection` for the rails, the lab-ui controls for the rest. The session is
+ * the picture, @vitavision/ui's `Section` for the rails and its controls for the rest. The session is
  * the URL (`refs`, `focus`, `method`, `profile`, `show`, `order`), so a reload or a shared link
  * keeps it.
  *
@@ -27,7 +27,6 @@ import { apiBaseUrl, type ClassPresence, type SampleSummary } from "../api/clien
 import { preferredImageIndex } from "../api/defaultChannel";
 import { fullFrameProfile } from "../api/inputSize";
 import { classMaskUrl } from "../api/imageUrl";
-import { RailSection } from "../components/viewer/RailSection";
 import { SampleStage } from "../components/viewer/SampleStage";
 import { useAnnotationLabels, useClassCoverage } from "../hooks/useAnnotations";
 import { useDataset, useSample, useSamples } from "../hooks/useCatalog";
@@ -48,13 +47,14 @@ import {
   ErrorBox,
   focusRing,
   ReadoutStrip,
+  Section,
   SegmentedControl,
   Select,
   Skeleton,
   Switch,
   Tooltip,
-  type StageView,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
+import type { StageView } from "@vitavision/stage2d";
 import { SampleTile } from "./dataset/SampleTile";
 
 const PRESENCES: ClassPresence[] = ["present", "absent", "unlabeled"];
@@ -292,9 +292,10 @@ export function StudioRoute() {
         <aside
           data-scroll="rail"
           aria-label="Samples that show the class"
-          className="flex w-80 shrink-0 flex-col overflow-y-auto overscroll-contain border-r border-line"
+          className="flex w-80 shrink-0 flex-col divide-y divide-line overflow-y-auto overscroll-contain border-r border-line"
         >
-          <RailSection
+          <Section
+            className="p-4"
             title={RAIL_TITLE[show]}
             hint={candidates.data ? `${candidates.data.total}` : undefined}
           >
@@ -391,7 +392,7 @@ export function StudioRoute() {
                 </Button>
               </div>
             )}
-          </RailSection>
+          </Section>
         </aside>
 
         <main className="flex min-w-0 flex-1 flex-col overflow-hidden bg-canvas p-3">
@@ -418,9 +419,9 @@ export function StudioRoute() {
         <aside
           data-scroll="rail"
           aria-label="References"
-          className="flex w-72 shrink-0 flex-col overflow-y-auto overscroll-contain border-l border-line"
+          className="flex w-72 shrink-0 flex-col divide-y divide-line overflow-y-auto overscroll-contain border-l border-line"
         >
-          <RailSection title="References" hint={`${references.length} of ${MAX_REFERENCES}`}>
+          <Section className="p-4" title="References" hint={`${references.length} of ${MAX_REFERENCES}`}>
             {references.length === 0 ? (
               <p className="text-xs text-fg-muted">
                 Tick a sample on the left to use it as a reference. One to ten, each showing the
@@ -440,9 +441,9 @@ export function StudioRoute() {
                 ))}
               </ul>
             )}
-          </RailSection>
+          </Section>
 
-          <RailSection title="Preview">
+          <Section className="p-4" title="Preview">
             <Switch
               checked={previewOn}
               onCheckedChange={setPreviewOn}
@@ -480,9 +481,9 @@ export function StudioRoute() {
               A look, not a result: nothing is stored or evaluated until the references are
               frozen into a run — or until it is accepted below.
             </p>
-          </RailSection>
+          </Section>
 
-          <RailSection title="This image's truth">
+          <Section className="p-4" title="This image's truth">
             <div className="flex flex-col gap-1.5">
               <Button
                 disabled={!shown || !preview.data || setRegion.isPending}
@@ -514,9 +515,9 @@ export function StudioRoute() {
                 left as they are.
               </p>
             )}
-          </RailSection>
+          </Section>
 
-          <RailSection title="Run">
+          <Section className="p-4" title="Run">
             <Select
               aria-label="Method"
               value={methodKey ?? ""}
@@ -569,7 +570,7 @@ export function StudioRoute() {
               </p>
             )}
             {freeze.error && <ErrorBox>{freeze.error.message}</ErrorBox>}
-          </RailSection>
+          </Section>
         </aside>
       </div>
     </div>

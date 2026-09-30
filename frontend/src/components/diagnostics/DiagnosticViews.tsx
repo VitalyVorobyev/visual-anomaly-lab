@@ -11,7 +11,7 @@ import { useState } from "react";
 
 import type { DiagnosticEntry } from "../../api/client";
 import { diagnosticPayloadUrl, gridFrameCount } from "../../api/diagnostics";
-import { Empty } from "@vitavision/lab-ui";
+import { Empty } from "@vitavision/ui";
 
 /** A `map` or an `image`: one server-rendered PNG, on a black field so it reads as data. */
 export function DiagnosticImage({
@@ -26,7 +26,7 @@ export function DiagnosticImage({
   caption?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded border border-line bg-[#08090a] ">
+    <div className="overflow-hidden rounded border border-line bg-canvas ">
       <img
         src={diagnosticPayloadUrl(experimentId, entry, frame)}
         alt={caption ?? entry.title}

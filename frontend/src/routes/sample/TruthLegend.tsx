@@ -6,7 +6,7 @@
  * arrive as data and are applied as a style, never as a design token.
  */
 
-import { ErrorBox, Skeleton } from "@vitavision/lab-ui";
+import { ErrorBox, Skeleton } from "@vitavision/ui";
 
 import type { ImageTruth } from "../../api/client";
 import { legendClasses, truthSummary } from "./truthLayers";

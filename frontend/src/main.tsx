@@ -1,17 +1,11 @@
-// Self-hosted rather than fetched: the desktop shell serves from tauri://localhost with no
-// network guarantee, so a webfont request is a font that sometimes does not arrive.
 import { shouldRetry } from "./api/retry";
-import "@fontsource-variable/ibm-plex-sans/wght.css";
-import "@fontsource/ibm-plex-mono/latin-400.css";
-import "@fontsource/ibm-plex-mono/latin-500.css";
-import "@fontsource/ibm-plex-mono/latin-600.css";
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { HashRouter } from "react-router";
 
-import { initTheme } from "@vitavision/lab-ui";
+import { initTheme } from "@vitavision/ui";
 
 import { shellStartupError } from "./api/shell";
 import { CrashBoundary, CrashScreen, installCrashHandlers } from "./components/CrashScreen";

@@ -53,7 +53,8 @@ import type {
 } from "../api/client";
 import type { ResultsState } from "../api/resultsState";
 import { cutValue, readResultsState, resolveSubset, writeResultsState } from "../api/resultsState";
-import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, StageReadout, Tooltip, type StageView } from "@vitavision/lab-ui";
+import { Badge, Button, Disclosure, Empty, ErrorBox, SkeletonRows, Tooltip } from "@vitavision/ui";
+import { StageReadout, type StageView } from "@vitavision/stage2d";
 import { SampleStage, type RasterLayer } from "../components/viewer/SampleStage";
 import { useHotkeys } from "../hooks/useHotkeys";
 import { LabelLayer } from "../components/viewer/LabelLayer";
@@ -680,7 +681,7 @@ function DiagnosticPane({
 }) {
   return (
     <figure className="flex flex-col gap-1">
-      <div className="relative overflow-hidden rounded border border-line bg-[#08090a] ">
+      <div className="relative overflow-hidden rounded border border-line bg-canvas ">
         <img src={src} alt={title} className="block w-full" loading="lazy" />
         {maskSrc && (
           <img

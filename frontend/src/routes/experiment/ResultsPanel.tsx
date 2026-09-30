@@ -15,7 +15,8 @@ import { localizationTolerancePx } from "../../api/metrics";
 import type { Outcome, ResultsState } from "../../api/resultsState";
 import { MISTAKE_OUTCOMES, writeResultsState } from "../../api/resultsState";
 import { ThresholdCurve } from "../../components/charts/ThresholdCurve";
-import { DEFECT_COLOUR, Empty, ErrorBox, InfoHint, NORMAL_COLOUR, Panel, ScoreHistogram, Select, Slider, StackedBars, type Tone } from "@vitavision/lab-ui";
+import { Empty, ErrorBox, InfoHint, Panel, Select, Slider, type Tone } from "@vitavision/ui";
+import { DEFECT_COLOUR, NORMAL_COLOUR, ScoreHistogram, StackedBars } from "@vitavision/charts";
 import { useCurves, useResults, useThreshold } from "../../hooks/useExperiments";
 
 export const OUTCOME_TONE: Record<string, Tone> = {

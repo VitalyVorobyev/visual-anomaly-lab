@@ -13,23 +13,23 @@ import { Download, Eraser, PenLine, Search } from "lucide-react";
 import {
   Button,
   Callout,
+  cn,
   ErrorBox,
+  focusRing,
   InfoHint,
   Input,
   ProgressBar,
+  Section,
   SegmentedControl,
   Select,
   SkeletonRows,
   Slider,
   Switch,
   ToggleChip,
-  cn,
-  focusRing,
-} from "@vitavision/lab-ui";
+} from "@vitavision/ui";
 
 import { ApiError } from "../../api/client";
 import { clusterColour } from "../../api/explore";
-import { RailSection } from "../../components/viewer/RailSection";
 import { isTerminal } from "../../hooks/useJob";
 import type { ExploreMode, ExploreSession } from "./useExploreSession";
 import type { ExploreTextSession } from "./useExploreTextSession";
@@ -64,7 +64,7 @@ export function ExploreSection({ session }: { session: ExploreSession }) {
   const { capability, on, mode } = session;
 
   return (
-    <RailSection title="Explore" hint={answeredBy(session)}>
+    <Section className="p-4" title="Explore" hint={answeredBy(session)}>
       {capability.isPending ? (
         <SkeletonRows rows={2} />
       ) : capability.error ? (
@@ -114,7 +114,7 @@ export function ExploreSection({ session }: { session: ExploreSession }) {
           )}
         </>
       )}
-    </RailSection>
+    </Section>
   );
 }
 

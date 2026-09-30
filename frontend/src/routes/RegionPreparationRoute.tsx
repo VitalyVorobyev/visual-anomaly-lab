@@ -15,7 +15,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Check, ChevronLeft, ChevronRight, Eye, Play, Shuffle, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 
 import {
   Badge,
@@ -23,23 +23,25 @@ import {
   ButtonLink,
   Callout,
   ConfirmDialog,
-  describeFields,
   Empty,
   ErrorBox,
   Field,
-  initialValues,
   Input,
-  jsonErrors,
   NumberInput,
-  outOfRange,
   Panel,
   ReadoutStrip,
-  SchemaForm,
   SegmentedControl,
   Select,
+} from "@vitavision/ui";
+import {
+  describeFields,
+  initialValues,
+  jsonErrors,
+  outOfRange,
+  SchemaForm,
   type OptionsSchema,
   type RawValues,
-} from "@vitavision/lab-ui";
+} from "@vitavision/forms";
 
 import type {
   JobDetail,
@@ -328,15 +330,14 @@ export function RegionPreparationRoute() {
             Tuning where a guided run looks. Save a profile if it should differ, then go back —
             the run takes the profile open here.
           </p>
-          <ButtonLink
-            size="sm"
-            variant="primary"
-            icon={<ArrowLeft />}
-            to={`/datasets/${datasetId}/run?step=look${
-              selected && !dirty ? `&profile=${selected.id}` : ""
-            }`}
-          >
-            Back to the run{selected && !dirty ? ` with ${selected.name}` : ""}
+          <ButtonLink asChild size="sm" variant="primary" icon={<ArrowLeft />}>
+            <Link
+              to={`/datasets/${datasetId}/run?step=look${
+                selected && !dirty ? `&profile=${selected.id}` : ""
+              }`}
+            >
+              Back to the run{selected && !dirty ? ` with ${selected.name}` : ""}
+            </Link>
           </ButtonLink>
         </div>
       )}

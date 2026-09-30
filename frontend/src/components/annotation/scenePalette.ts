@@ -45,25 +45,23 @@ const TOKENS: Record<keyof ScenePalette, string> = {
   suggestion: "--warn",
 };
 
-/** What to paint before the stylesheet has resolved, and in a non-DOM test environment. */
-const FALLBACK: ScenePalette = {
-  canvas: "#08090a",
-  frame: "#2a2f36",
-  signal: "#3bc9db",
-  cut: "#f87171",
-  unknownLabel: "#3bc9db",
-  positive: "#4ade80",
-  negative: "#f87171",
-  suggestion: "#fbbf24",
-};
+/**
+ * What a token paints as before a stylesheet defines it — a non-DOM test environment, or a
+ * document whose stylesheet failed to load: nothing, rather than a copy of one theme's
+ * values that would quietly go stale (the copy that stood here was lab-ui 0.5's dark theme).
+ * `styles.css` is imported before the first render, so the app itself never sees it.
+ */
+const UNRESOLVED = "transparent";
 
 function read(): ScenePalette {
-  if (typeof globalThis.getComputedStyle !== "function") return FALLBACK;
-  const style = globalThis.getComputedStyle(globalThis.document.documentElement);
-  const entries = Object.entries(TOKENS).map(([key, token]) => {
-    const value = style.getPropertyValue(token).trim();
-    return [key, value || FALLBACK[key as keyof ScenePalette]];
-  });
+  const style =
+    typeof globalThis.getComputedStyle === "function"
+      ? globalThis.getComputedStyle(globalThis.document.documentElement)
+      : null;
+  const entries = Object.entries(TOKENS).map(([key, token]) => [
+    key,
+    style?.getPropertyValue(token).trim() || UNRESOLVED,
+  ]);
   return Object.fromEntries(entries) as ScenePalette;
 }
 

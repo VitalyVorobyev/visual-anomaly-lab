@@ -20,7 +20,8 @@
 import { useState } from "react";
 
 import type { JobDetail, JobSummary } from "../../api/client";
-import { Disclosure, Empty, LineChart, Panel, Switch } from "@vitavision/lab-ui";
+import { Disclosure, Empty, Panel, Switch } from "@vitavision/ui";
+import { LineChart } from "@vitavision/charts";
 import { JobProgress } from "../../components/JobProgress";
 import type { Series } from "../../hooks/useJob";
 

@@ -16,25 +16,14 @@ import { ArrowDown, ArrowUp, Plus } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 
+import { nextClassColour } from "../../api/classPalette";
 import type { AnnotationLabel } from "../../api/client";
-import { Button, cn, Disclosure, ErrorBox, Field, focusRing, Input } from "@vitavision/lab-ui";
+import { Button, cn, Disclosure, ErrorBox, Field, focusRing, Input } from "@vitavision/ui";
 import {
   useAnnotationLabels,
   useCreateAnnotationLabel,
   useUpdateAnnotationLabel,
 } from "../../hooks/useAnnotations";
-
-/** Distinct in both themes and from each other; a new class takes the first one unused. */
-export const CLASS_PALETTE = [
-  "#e8590c",
-  "#1c7ed6",
-  "#2f9e44",
-  "#ae3ec9",
-  "#f59f00",
-  "#0c8599",
-  "#d6336c",
-  "#5c940d",
-] as const;
 
 /** `Surface scratch` → `surface_scratch`, made unique against the keys already taken. */
 export function classKeyFor(name: string, taken: readonly string[]): string {
@@ -52,11 +41,6 @@ export function classKeyFor(name: string, taken: readonly string[]): string {
   let key = base;
   for (let n = 2; taken.includes(key); n += 1) key = `${base}_${n}`;
   return key;
-}
-
-export function nextClassColour(labels: readonly { color: string }[]): string {
-  const used = new Set(labels.map((label) => label.color.toLowerCase()));
-  return CLASS_PALETTE.find((colour) => !used.has(colour)) ?? CLASS_PALETTE[labels.length % CLASS_PALETTE.length]!;
 }
 
 export function ClassManager({ datasetId }: { datasetId: number }) {

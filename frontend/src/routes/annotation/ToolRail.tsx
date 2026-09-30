@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 
 import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
 import { type EditorCommand, withKeys } from "../../components/annotation/editorKeys";
-import { Tooltip, cn, focusRing } from "@vitavision/lab-ui";
+import { Tooltip, cn, focusRing } from "@vitavision/ui";
 
 const TOOLS: { tool: EditorTool; command: EditorCommand; icon: ReactNode; label: string }[] = [
   { tool: "select", command: "tool.select", icon: <MousePointer2 />, label: "Select" },

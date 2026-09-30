@@ -3,7 +3,7 @@
 import { Trash2, WandSparkles } from "lucide-react";
 
 import type { AnnotationLabel } from "../../api/client";
-import { Button, Select } from "@vitavision/lab-ui";
+import { Button, Select } from "@vitavision/ui";
 import type { DocumentCommands } from "./useDocumentCommands";
 
 export function SelectionSection({

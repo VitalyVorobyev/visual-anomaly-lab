@@ -11,7 +11,7 @@
 
 import { useEffect, useState } from "react";
 
-import { MeasureOverlay, useStage, type MeasurePrimitive } from "@vitavision/lab-ui";
+import { MeasureOverlay, useStage, type MeasurePrimitive } from "@vitavision/stage2d";
 
 import { tintedMask } from "../../api/annotationBitmap";
 import type { BitmapShape } from "../../api/client";

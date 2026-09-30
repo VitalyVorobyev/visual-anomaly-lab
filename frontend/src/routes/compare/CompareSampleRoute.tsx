@@ -23,7 +23,7 @@
  */
 
 import { useState } from "react";
-import { useParams, useSearchParams } from "react-router";
+import { Link, useParams, useSearchParams } from "react-router";
 
 import type { ComparedRun, ComparedSample, ImageScore } from "../../api/client";
 import type { CompareState } from "../../api/compareState";
@@ -31,7 +31,8 @@ import { cutFor, readCompareState, writeCompareState } from "../../api/compareSt
 import { preferredImageIndex } from "../../api/defaultChannel";
 import { anomalyMapUrl, maskUrl, predictionUrl } from "../../api/imageUrl";
 import { SampleStage, type RasterLayer } from "../../components/viewer/SampleStage";
-import { Badge, Empty, ErrorBox, PageHeader, SkeletonRows, Slider, StageReadout, Tabs, ToggleChip, type StageView } from "@vitavision/lab-ui";
+import { Badge, Empty, ErrorBox, PageHeader, SkeletonRows, Slider, Tabs, ToggleChip } from "@vitavision/ui";
+import { StageReadout, type StageView } from "@vitavision/stage2d";
 import { useDataset } from "../../hooks/useCatalog";
 import { useComparison, useSampleImageSets } from "../../hooks/useComparison";
 import {
@@ -99,7 +100,7 @@ export function CompareSampleRoute() {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-3 px-6 py-4">
       <PageHeader
-        back={{ to: back, label: "Comparison" }}
+        back={<Link to={back}>Comparison</Link>}
         title={row ? row.external_id : `Sample ${sampleId}`}
         actions={
           row && (

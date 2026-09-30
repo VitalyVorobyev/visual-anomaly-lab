@@ -97,6 +97,6 @@ problems usually show up:
 ## 5. Report
 
 Group findings by screen, most severe first, each with the screenshot filename, what is wrong and the
-file that renders it. Fixes that belong in a shared primitive go upstream to `@vitavision/lab-ui`,
+file that renders it. Fixes that belong in a shared primitive go upstream to lab-ui's `@vitavision/ui`,
 never into a local copy. Open items that are not fixed now go into `docs/backlog.md` under
 Interface.

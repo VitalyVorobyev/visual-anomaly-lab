@@ -11,7 +11,8 @@
  */
 
 import type { Curve } from "../../api/client";
-import { Empty, LineChart, type Scale } from "@vitavision/lab-ui";
+import { Empty } from "@vitavision/ui";
+import { LineChart, type Scale } from "@vitavision/charts";
 import { defined } from "../../api/defined";
 
 export interface CurveChartProps {

@@ -8,7 +8,8 @@
  * pending on the stage rather than blanked.
  */
 
-import { Badge, cn, ErrorBox, ImageStage, ReadoutStrip, Skeleton, StageToolbar, type StageView } from "@vitavision/lab-ui";
+import { Badge, cn, ErrorBox, ReadoutStrip, Skeleton } from "@vitavision/ui";
+import { ImageStage, StageToolbar, type StageView } from "@vitavision/stage2d";
 import { useEffect, useState } from "react";
 
 import type { RegionLivePreview } from "../../api/client";

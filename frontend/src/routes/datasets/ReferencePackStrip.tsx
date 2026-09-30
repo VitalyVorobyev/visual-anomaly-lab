@@ -15,10 +15,11 @@
 import { ExternalLink, LibraryBig, Play } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import { queryKeys } from "../../api/queryKeys";
 import { JobProgress } from "../../components/JobProgress";
-import { Button, ButtonLink, ErrorBox, Skeleton } from "@vitavision/lab-ui";
+import { Button, ButtonLink, ErrorBox, Skeleton } from "@vitavision/ui";
 import { useDatasets, useReferencePacks, useRegisterReferencePacks } from "../../hooks/useCatalog";
 import { isTerminal, useJob } from "../../hooks/useJob";
 
@@ -148,11 +149,11 @@ function RegisteredDatasets({ ids }: { ids: number[] }) {
         <li key={id} className="flex min-w-0 items-center justify-between gap-2 text-xs">
           <span className="truncate text-fg">{named.get(id) ?? `Dataset ${id}`}</span>
           <span className="flex shrink-0 items-center gap-1">
-            <ButtonLink to={`/datasets/${id}`} size="sm" variant="ghost">
-              Browse
+            <ButtonLink asChild size="sm" variant="ghost">
+              <Link to={`/datasets/${id}`}>Browse</Link>
             </ButtonLink>
-            <ButtonLink to={`/datasets/${id}/run`} size="sm" variant="secondary" icon={<Play />}>
-              Start a run
+            <ButtonLink asChild size="sm" variant="secondary" icon={<Play />}>
+              <Link to={`/datasets/${id}/run`}>Start a run</Link>
             </ButtonLink>
           </span>
         </li>

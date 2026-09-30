@@ -9,7 +9,7 @@
  * CSS pixels per source pixel.
  */
 
-import { MAX_SCALE } from "@vitavision/lab-ui";
+import { MAX_SCALE } from "@vitavision/stage2d";
 
 import type { AnnotationPoint } from "../../api/client";
 
@@ -31,7 +31,7 @@ const FIT_MARGIN = 0.94;
 /** How far below fit zooming out may go: room around the part, not a lost image. */
 export const MIN_ZOOM_VS_FIT = 0.25;
 /**
- * The most a view may magnify, in screen pixels per *source* pixel — lab-ui's `MAX_SCALE`,
+ * The most a view may magnify, in screen pixels per *source* pixel — @vitavision/stage2d's `MAX_SCALE`,
  * the one ceiling every viewer in the lab family shares.
  *
  * It used to be twelve times *fit*, which is a different ceiling for every image: a frame

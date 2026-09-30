@@ -35,15 +35,7 @@ import {
 import type { DatasetDetail, Label, SampleSummary, SplitDetail, Subset } from "../api/client";
 import { SlidersHorizontal } from "lucide-react";
 
-import {
-  Button,
-  Disclosure,
-  Empty,
-  ErrorBox,
-  Field,
-  Select,
-  SkeletonRows,
-} from "@vitavision/lab-ui";
+import { Button, Disclosure, Empty, ErrorBox, Field, Select, SkeletonRows } from "@vitavision/ui";
 import { hasClasses, hasLabels, labelsApply } from "../api/truth";
 import { useDataset, useSamples, useSetLabels, useSplits } from "../hooks/useCatalog";
 import { SampleTile, type SelectModifiers } from "./dataset/SampleTile";

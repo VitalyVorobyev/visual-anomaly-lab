@@ -8,9 +8,9 @@
  * back over itself re-renders from cache without touching the network.
  */
 
-import type { StageView } from "@vitavision/lab-ui";
+import type { StageView } from "@vitavision/stage2d";
 
-import { classColour, rgbOf } from "../components/viewer/labelPaint";
+import { classRgb } from "../components/viewer/labelPaint";
 import { apiBaseUrl } from "./client";
 import type { ImageTier } from "./client";
 
@@ -97,7 +97,7 @@ export function labelMapUrl(
 ): string {
   const colours = classes
     .map((_, index) =>
-      rgbOf(classColour(index + 1))
+      classRgb(index + 1)
         .map((byte) => byte.toString(16).padStart(2, "0"))
         .join(""),
     )

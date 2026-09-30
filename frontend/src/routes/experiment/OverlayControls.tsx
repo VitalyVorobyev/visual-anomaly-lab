@@ -14,7 +14,7 @@
 import type { MapScale } from "../../api/client";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue } from "../../api/resultsState";
-import { Slider, ToggleChip, cn } from "@vitavision/lab-ui";
+import { Slider, ToggleChip, cn } from "@vitavision/ui";
 
 import { classColour } from "../../components/viewer/labelPaint";
 

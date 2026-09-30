@@ -9,9 +9,10 @@
  * back here with the profile it saved.
  */
 
-import { Badge, ButtonLink, Button, Skeleton } from "@vitavision/lab-ui";
+import { Badge, ButtonLink, Button, Skeleton } from "@vitavision/ui";
 import { ChevronLeft, ChevronRight, SlidersHorizontal } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Link } from "react-router";
 
 import type { RegionPreviewImage, RegionProfileRevision } from "../../api/client";
 import { useHotkeys } from "../../hooks/useHotkeys";
@@ -128,8 +129,8 @@ export function LookStep({ run, datasetId }: { run: GuidedRun; datasetId: number
               disabled={strip.length < 2}
               onClick={() => step(1)}
             />
-            <ButtonLink to={adjust} size="sm" variant="secondary" icon={<SlidersHorizontal />}>
-              Adjust on Prepare
+            <ButtonLink asChild size="sm" variant="secondary" icon={<SlidersHorizontal />}>
+              <Link to={adjust}>Adjust on Prepare</Link>
             </ButtonLink>
           </div>
         </div>

@@ -7,7 +7,7 @@
  * method.
  */
 
-import { Badge, cn } from "@vitavision/lab-ui";
+import { Badge, cn } from "@vitavision/ui";
 
 import type { ModelDescription } from "../api/client";
 

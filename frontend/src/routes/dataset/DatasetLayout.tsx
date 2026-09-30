@@ -37,16 +37,10 @@
  */
 
 import { Info, Play, Plus } from "lucide-react";
-import { Outlet, useParams } from "react-router";
+import { Link, Outlet, useParams } from "react-router";
 
 import { DatasetSectionNav } from "../../components/DatasetSectionNav";
-import {
-  ButtonLink,
-  InfoHint,
-  ReadoutStrip,
-  Skeleton,
-  Tooltip,
-} from "@vitavision/lab-ui";
+import { ButtonLink, InfoHint, ReadoutStrip, Skeleton, Tooltip } from "@vitavision/ui";
 import { ClassHint, LabelRun, classCountText } from "../../components/DatasetTruth";
 import { useDataset } from "../../hooks/useCatalog";
 
@@ -111,21 +105,19 @@ export function DatasetLayout() {
                 advance, so there is no checklist to read before pressing it. The full form
                 stays one press away for a reader who knows what they want. */}
             <div className="flex shrink-0 items-center gap-2">
-              <ButtonLink
+              <ButtonLink asChild
                 className="shrink-0"
-                to={`/datasets/${datasetId}/experiments/new`}
                 variant="ghost"
                 icon={<Plus />}
               >
-                New experiment
+                <Link to={`/datasets/${datasetId}/experiments/new`}>New experiment</Link>
               </ButtonLink>
-              <ButtonLink
+              <ButtonLink asChild
                 className="shrink-0"
-                to={`/datasets/${datasetId}/run`}
                 variant="primary"
                 icon={<Play />}
               >
-                Start a run
+                <Link to={`/datasets/${datasetId}/run`}>Start a run</Link>
               </ButtonLink>
             </div>
           </div>

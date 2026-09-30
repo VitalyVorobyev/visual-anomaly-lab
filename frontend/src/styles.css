@@ -1,9 +1,14 @@
 @import "tailwindcss";
-@import "@vitavision/lab-ui/styles.css";
-
-/* See @vitavision/lab-ui's README "Consumer wiring" #1: Tailwind's @source only scans
-   literal source text, and dist/index.js is where the package's own class names live. */
-@source "../node_modules/@vitavision/lab-ui/dist";
+/* The vitavision design system. @vitavision/ui: IBM Plex, the semantic tokens (ground/
+   surface/raised/overlay, line, fg, signal, the verdicts), the radii and the `.dark` variant.
+   @vitavision/charts: the series palette (`--series-1…6`, per theme). Each stylesheet,
+   forms' and stage2d's included, declares its own Tailwind `@source`, so every package's
+   class names are compiled without an `@source` line here. */
+@import "@vitavision/ui/fonts.css";
+@import "@vitavision/ui/styles.css";
+@import "@vitavision/forms/styles.css";
+@import "@vitavision/charts/styles.css";
+@import "@vitavision/stage2d/styles.css";
 
 @layer base {
   /*
@@ -21,7 +26,7 @@
    * area. `overflow` is set on `html` itself and not only on `body`, because the
    * body-to-viewport propagation rule applies only while `html`'s own `overflow` is `visible`.
    *
-   * It lives here rather than in @vitavision/lab-ui because `#root` is this application's
+   * It lives here rather than in @vitavision/ui because `#root` is this application's
    * mount point, not the design system's business. Everything else that used to be in this
    * file -- the token layer, the base typography, the disclosure marker -- is the shared
    * visual language and now comes from the package.

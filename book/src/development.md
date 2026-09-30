@@ -62,7 +62,7 @@ It must pass before every commit and push.
 - **Data.** Channel count is data, never schema. A missing metric is `None`, never a fabricated zero.
 - **Dataset-linear work.** Bound it before it runs, sample it evenly, and report what was dropped.
 - **Frontend.**
-  - Colours and controls come from `@vitavision/lab-ui`.
+  - Colours and controls come from `@vitavision/ui` (and `forms`, `charts`, `stage2d` for their parts).
   - An empty schema control means unset, so Python stays the only authority on defaults.
 
 ## Documentation model

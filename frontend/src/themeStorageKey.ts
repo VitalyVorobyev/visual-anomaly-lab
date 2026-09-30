@@ -1,7 +1,7 @@
 /**
  * This app's own `localStorage` key for its theme choice.
  *
- * `@vitavision/lab-ui`'s `initTheme`/`readThemeChoice`/`setThemeChoice` take the key as an
+ * `@vitavision/ui`'s `initTheme`/`readThemeChoice`/`setThemeChoice` take the key as an
  * argument rather than assuming one, precisely so a consumer that already had a stored
  * preference under its own key does not lose it when it starts sharing the theme module.
  * Kept in agreement with the inline no-flash script in `index.html`, which cannot import

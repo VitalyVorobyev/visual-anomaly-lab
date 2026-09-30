@@ -18,7 +18,8 @@
  */
 
 import type { Curve } from "../../api/client";
-import { Empty, LineChart, seriesColour, type Scale } from "@vitavision/lab-ui";
+import { Empty } from "@vitavision/ui";
+import { LineChart, seriesColour, type Scale } from "@vitavision/charts";
 
 export interface ThresholdCurveProps {
   /** The PR curve, whose `t` carries the score at each point. */

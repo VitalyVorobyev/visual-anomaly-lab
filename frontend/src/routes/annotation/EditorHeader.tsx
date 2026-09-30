@@ -4,7 +4,7 @@ import { ArrowLeft, Check, Save, Trash2, TriangleAlert } from "lucide-react";
 import { Link } from "react-router";
 
 import type { ImageSummary, Label, SampleSummary } from "../../api/client";
-import { Button, InfoHint, SegmentedControl, cn, focusRing } from "@vitavision/lab-ui";
+import { Button, InfoHint, SegmentedControl, cn, focusRing } from "@vitavision/ui";
 import type { QueueNavigation } from "./useQueueNavigation";
 
 /**

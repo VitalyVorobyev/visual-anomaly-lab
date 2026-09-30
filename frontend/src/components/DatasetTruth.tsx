@@ -10,7 +10,7 @@ import { Tags } from "lucide-react";
 
 import type { DatasetSummary } from "../api/client";
 import { hasClasses, hasLabels } from "../api/truth";
-import { CountRun, InfoHint } from "@vitavision/lab-ui";
+import { CountRun, InfoHint } from "@vitavision/ui";
 
 type Truthful = Pick<DatasetSummary, "truth" | "label_counts" | "class_counts">;
 

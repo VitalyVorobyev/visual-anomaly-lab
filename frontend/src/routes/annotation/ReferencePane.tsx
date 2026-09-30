@@ -12,7 +12,7 @@ import { ArrowLeftRight } from "lucide-react";
 
 import type { AnnotationDocument, AnnotationLabel, ImageSummary } from "../../api/client";
 import { AnnotationCanvas, type CanvasView } from "../../components/annotation/AnnotationCanvas";
-import { Button } from "@vitavision/lab-ui";
+import { Button } from "@vitavision/ui";
 
 const ignore = () => undefined;
 

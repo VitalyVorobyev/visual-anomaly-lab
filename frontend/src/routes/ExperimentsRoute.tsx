@@ -34,7 +34,41 @@ import {
   toExperimentListQuery,
   writeExperimentCatalogState,
 } from "../api/experimentState";
-import { Badge, Button, ButtonLink, Callout, Checkbox, cn, SegmentedControl, Tooltip, ConfirmDialog, describeFields, ErrorBox, Field, initialValues, Input, jsonErrors, missingRequired, NumberInput, outOfRange, overrideCount, PageHeader, Panel, SchemaForm, Section, Select, SkeletonRows, Table, Tabs, ToggleChip, toOptions, type Column, type RawValues } from "@vitavision/lab-ui";
+import {
+  Badge,
+  Button,
+  ButtonLink,
+  Callout,
+  Checkbox,
+  cn,
+  SegmentedControl,
+  Tooltip,
+  ConfirmDialog,
+  ErrorBox,
+  Field,
+  Input,
+  NumberInput,
+  PageHeader,
+  Panel,
+  Section,
+  Select,
+  SkeletonRows,
+  Table,
+  Tabs,
+  ToggleChip,
+  type Column,
+} from "@vitavision/ui";
+import {
+  describeFields,
+  initialValues,
+  jsonErrors,
+  missingRequired,
+  outOfRange,
+  overrideCount,
+  SchemaForm,
+  toOptions,
+  type RawValues,
+} from "@vitavision/forms";
 import { useDataset, useDatasets, useSplits } from "../hooks/useCatalog";
 import { useAnnotationLabels } from "../hooks/useAnnotations";
 import { useCreateSplit, useSplitPresets } from "../hooks/useSplitPresets";
@@ -449,12 +483,11 @@ export function ExperimentsRoute() {
       <PageHeader
         title="Experiments"
         actions={
-          <ButtonLink
-            to="/experiments/new"
+          <ButtonLink asChild
             variant="primary"
             icon={<Plus />}
           >
-            New experiment
+            <Link to="/experiments/new">New experiment</Link>
           </ButtonLink>
         }
       />
@@ -485,7 +518,7 @@ export function CreateExperimentRoute() {
   return (
     <div className="flex flex-col gap-4">
       <PageHeader
-        back={{ to: "/experiments", label: "Back to experiments" }}
+        back={<Link to="/experiments">Back to experiments</Link>}
         title="New experiment"
       />
       <CreateExperiment />

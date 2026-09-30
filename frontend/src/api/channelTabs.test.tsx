@@ -9,8 +9,10 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
-import type { ImageSummary } from "../api/client";
-import { ChannelTabs } from "./ChannelTabs";
+import { Tabs } from "@vitavision/ui";
+
+import { channelTabItems } from "./channelTabs";
+import type { ImageSummary } from "./client";
 
 function image(id: number, channel: string | null): ImageSummary {
   return {
@@ -25,7 +27,30 @@ function image(id: number, channel: string | null): ImageSummary {
   };
 }
 
-describe("ChannelTabs", () => {
+/** A channel strip as the screens render one: `Tabs` over `channelTabItems`, ids read back as indices. */
+function ChannelTabs({
+  images,
+  active,
+  onSelect,
+  unavailable,
+}: {
+  images: ImageSummary[];
+  active: number;
+  onSelect: (index: number) => void;
+  unavailable?: { index: number; reason: string };
+}) {
+  return (
+    <Tabs
+      className="flex-nowrap"
+      label="Channels"
+      active={String(active)}
+      onSelect={(id) => onSelect(Number(id))}
+      items={channelTabItems(images, unavailable)}
+    />
+  );
+}
+
+describe("channel tabs", () => {
   it("renders one tab per image, whatever the count", () => {
     const three = [image(1, "bright"), image(2, "dark"), image(3, "dome")];
 
@@ -75,4 +100,14 @@ describe("ChannelTabs", () => {
     expect(onSelect).toHaveBeenCalledWith(1);
   });
 
+  it("shows an unavailable channel with its reason instead of dropping it", () => {
+    const items = channelTabItems([image(1, "bright"), image(2, "dark")], {
+      index: 0,
+      reason: "Already in the left pane",
+    });
+
+    expect(items.map((item) => item.label)).toEqual(["bright", "dark"]);
+    expect(items[0]).toMatchObject({ disabled: true, title: "Already in the left pane" });
+    expect(items[1]?.disabled).toBeUndefined();
+  });
 });

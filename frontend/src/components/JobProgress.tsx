@@ -12,7 +12,7 @@ import { api } from "../api/client";
 import type { JobDetail } from "../api/client";
 import { queryKeys } from "../api/queryKeys";
 import { isTerminal } from "../hooks/useJob";
-import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows } from "@vitavision/lab-ui";
+import { Badge, Button, cn, Disclosure, ErrorBox, ProgressBar, SkeletonRows } from "@vitavision/ui";
 import { jobStatusTone } from "../api/statusTone";
 
 /** How much of the log is worth seeing without asking for the rest. */
@@ -96,7 +96,9 @@ function LogPre({ lines, className }: { lines: string[]; className?: string }) {
   return (
     <pre
       className={cn(
-        "rounded-control border border-line bg-[#08090a] p-3 font-mono text-xs whitespace-pre-wrap text-[#c9d1d9]",
+        // `dark` scopes the dark theme's tokens to this element, so `canvas` and `fg` are
+        // the terminal's near-black and light grey in either theme.
+        "dark rounded-control border border-line bg-canvas p-3 font-mono text-xs whitespace-pre-wrap text-fg",
         className,
       )}
     >

@@ -14,7 +14,7 @@
  */
 
 import type { MapScale } from "../../api/client";
-import { fractionOf, valueAt, valuesAt, type ValuePlane } from "@vitavision/lab-ui";
+import { fractionOf, valueAt, valuesAt, type ValuePlane } from "@vitavision/stage2d";
 
 export interface HoverPosition {
   u: number;

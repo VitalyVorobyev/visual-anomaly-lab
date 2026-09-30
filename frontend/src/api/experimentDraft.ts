@@ -9,7 +9,7 @@
  * profile) and the form must work the same without it.
  */
 
-import type { RawValues } from "@vitavision/lab-ui";
+import type { RawValues } from "@vitavision/forms";
 
 import type { Task } from "./client";
 

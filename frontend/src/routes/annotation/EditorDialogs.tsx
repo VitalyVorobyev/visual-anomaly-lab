@@ -4,7 +4,7 @@ import { Copy } from "lucide-react";
 
 import type { ImageSummary } from "../../api/client";
 import type { DraftEnvelope } from "../../hooks/useAnnotations";
-import { Button, Checkbox, ConfirmDialog, Dialog, ErrorBox } from "@vitavision/lab-ui";
+import { Button, Checkbox, ConfirmDialog, Dialog, ErrorBox } from "@vitavision/ui";
 import type { ChannelPanes } from "./useChannelPanes";
 import { isConflict } from "./useDraftSession";
 

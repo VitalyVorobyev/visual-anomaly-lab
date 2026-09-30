@@ -31,7 +31,7 @@ import {
 } from "../../api/imageUrl";
 import type { ResultsState } from "../../api/resultsState";
 import { cutValue, writeResultsState } from "../../api/resultsState";
-import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/lab-ui";
+import { Badge, Empty, ErrorBox, SegmentedControl, Select, Skeleton, Tabs, cn } from "@vitavision/ui";
 import { boxToneColours } from "../../components/viewer/boxTones";
 import { useSamplePreviews } from "../../hooks/useExperiments";
 import { OverlayControls } from "./OverlayControls";
@@ -224,7 +224,7 @@ function Tile({
           "group flex flex-col gap-1 rounded-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
         )}
       >
-        <div className="relative aspect-square overflow-hidden rounded border border-line bg-[#08090a] transition-colors group-hover:border-line-strong">
+        <div className="relative aspect-square overflow-hidden rounded border border-line bg-canvas transition-colors group-hover:border-line-strong">
           {preview === undefined ? (
             <Skeleton className="h-full w-full" />
           ) : (

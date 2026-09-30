@@ -10,7 +10,7 @@
 
 import { NavLink, Outlet } from "react-router";
 
-import { ThemeToggle, Tooltip, TooltipProvider, cn, focusRing } from "@vitavision/lab-ui";
+import { ThemeToggle, Tooltip, TooltipProvider, cn, focusRing } from "@vitavision/ui";
 import { useHealth } from "./hooks/useHealth";
 import { THEME_STORAGE_KEY } from "./themeStorageKey";
 
