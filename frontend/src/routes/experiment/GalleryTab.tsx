@@ -224,7 +224,7 @@ function Tile({
           "group flex flex-col gap-1 rounded-panel focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-signal",
         )}
       >
-        <div className="relative aspect-square overflow-hidden rounded border border-line bg-[#08090a] transition-colors group-hover:border-line-strong">
+        <div className="relative aspect-square overflow-hidden rounded border border-line bg-canvas transition-colors group-hover:border-line-strong">
           {preview === undefined ? (
             <Skeleton className="h-full w-full" />
           ) : (

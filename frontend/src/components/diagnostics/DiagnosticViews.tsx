@@ -26,7 +26,7 @@ export function DiagnosticImage({
   caption?: string;
 }) {
   return (
-    <div className="overflow-hidden rounded border border-line bg-[#08090a] ">
+    <div className="overflow-hidden rounded border border-line bg-canvas ">
       <img
         src={diagnosticPayloadUrl(experimentId, entry, frame)}
         alt={caption ?? entry.title}

@@ -29,6 +29,8 @@ const RULES = {
   /** A control never nests inside a link — the click has to be cancelled to stop navigation.
    *  @vitavision/ui's `ButtonLink` is the one element that looks like a button and navigates. */
   "link-wraps-button": /<Link\b[^>]*>\s*<Button\b/g,
+  /** The frozen pre-split design system; each part now comes from ui, forms, charts or stage2d. */
+  "lab-ui-import": /from\s+["']@vitavision\/lab-ui["']/g,
 } as const;
 
 type Rule = keyof typeof RULES;
@@ -43,12 +45,6 @@ const KNOWN: Partial<Record<Rule, Record<string, number>>> = {
     "routes/compare/ConfigDiff.tsx": 1,
     "routes/compare/MetricTable.tsx": 1,
     "routes/experiment/ResultsPanel.tsx": 1,
-  },
-  "hex-colour": {
-    "components/JobProgress.tsx": 2,
-    "components/diagnostics/DiagnosticViews.tsx": 1,
-    "routes/ExperimentSampleRoute.tsx": 1,
-    "routes/experiment/GalleryTab.tsx": 1,
   },
   // The one listener every other screen goes through.
   "bare-keydown": { "hooks/useHotkeys.ts": 1 },

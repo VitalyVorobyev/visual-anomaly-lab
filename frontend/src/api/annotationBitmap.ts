@@ -274,6 +274,7 @@ export async function paintStroke(
   // a white-on-transparent brush layer and an opaque backend mask land the same way.
   const existing = await loadBitmap(target.png_base64);
   const context = context2d(width, height);
+  // eslint-disable-next-line vitavision/tokens-only -- mask arithmetic: black is the mask's 0, not a colour
   context.fillStyle = "#000000";
   context.fillRect(0, 0, width, height);
   context.drawImage(existing, target.x - minX, target.y - minY, target.width, target.height);

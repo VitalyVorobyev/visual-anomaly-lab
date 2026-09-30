@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { queryKeys } from "../../api/queryKeys";
 import { withProviders } from "../../test-harness";
-import { CLASS_PALETTE, ClassManager, classKeyFor, nextClassColour } from "./ClassManager";
+import { CLASS_PALETTE, nextClassColour } from "../../api/classPalette";
+import { ClassManager, classKeyFor } from "./ClassManager";
 
 describe("classKeyFor", () => {
   it("derives the stable key a region stores from a name", () => {

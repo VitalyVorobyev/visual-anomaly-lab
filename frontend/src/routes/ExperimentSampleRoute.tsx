@@ -681,7 +681,7 @@ function DiagnosticPane({
 }) {
   return (
     <figure className="flex flex-col gap-1">
-      <div className="relative overflow-hidden rounded border border-line bg-[#08090a] ">
+      <div className="relative overflow-hidden rounded border border-line bg-canvas ">
         <img src={src} alt={title} className="block w-full" loading="lazy" />
         {maskSrc && (
           <img

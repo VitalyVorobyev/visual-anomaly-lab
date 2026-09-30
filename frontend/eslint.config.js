@@ -1,5 +1,5 @@
 // @ts-check
-import { recommended } from "@vitavision/config-eslint";
+import { recommended, tokensOnly } from "@vitavision/config-eslint";
 
 export default [
   { ignores: ["src-tauri/**", "e2e/.state/**", "test-results/**", "playwright-report/**"] },
@@ -15,6 +15,17 @@ export default [
       "react-hooks/immutability": "warn",
     },
   },
-  // Gate G5.1 (`tokensOnly` from @vitavision/config-eslint) is enabled per directory as the
-  // screens migrate to the shared visual language, from L3 on.
+  // Gate G5.1 (lab-ui PLAN §5): in src/, colour comes from the @vitavision/ui design tokens —
+  // no raw Tailwind palette classes, no hex literals (tests and stories are exempt by the rule).
+  tokensOnly(["src/**"]),
+  {
+    // Literal colours on purpose, one reason each:
+    files: [
+      // Class colours are data: stored per class by the backend and edited with a colour picker.
+      "src/api/classPalette.ts",
+      // Draws when the app failed to start — possibly without its stylesheet, so no tokens.
+      "src/components/CrashScreen.tsx",
+    ],
+    rules: { "vitavision/tokens-only": "off" },
+  },
 ];
