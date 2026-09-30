@@ -6,17 +6,18 @@
     <meta name="color-scheme" content="dark light" />
     <title>visual-anomaly-lab</title>
     <script>
-      // Duplicated from src/theme.ts on purpose, and it must stay in agreement with it.
-      // The class has to be on <html> before the first paint, which is before any module
+      // Duplicated from @vitavision/ui's theme.ts on purpose, and it must stay in agreement
+      // with it (see the package README): anything stored but "light" or "dark" follows the
+      // OS. The class has to be on <html> before the first paint, which is before any module
       // has been fetched -- importing the real one here would mean a flash of the wrong
-      // palette on every load. Kept to the smallest expression of the same rule.
+      // palette on every load. main.tsx then calls initTheme("anomaly-lab-theme")
+      // (src/themeStorageKey.ts) so a "system" choice keeps following the OS.
       (function () {
         try {
           var stored = localStorage.getItem("anomaly-lab-theme");
           var dark =
             stored === "dark" ||
-            ((stored === null || stored === "system") &&
-              window.matchMedia("(prefers-color-scheme: dark)").matches);
+            (stored !== "light" && window.matchMedia("(prefers-color-scheme: dark)").matches);
           if (dark) document.documentElement.classList.add("dark");
         } catch (_) {
           // Storage unavailable: fall through to the light palette defined on :root.
