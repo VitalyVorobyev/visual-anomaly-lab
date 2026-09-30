@@ -50,7 +50,7 @@ from anomaly_lab.domain.annotations import (
 )
 
 # The editor's palette for a class added by hand (`CLASS_PALETTE` in
-# `frontend/src/routes/dataset/ClassManager.tsx`), so an imported class looks like one a
+# `frontend/src/api/classPalette.ts`), so an imported class looks like one a
 # person added. Taken in order, skipping colours the dataset already uses.
 CLASS_PALETTE = (
     "#e8590c",
