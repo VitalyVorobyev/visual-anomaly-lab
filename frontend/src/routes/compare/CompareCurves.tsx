@@ -18,7 +18,8 @@
 
 import type { ComparedRun, Subset } from "../../api/client";
 import { Callout, Empty, Panel, SkeletonRows } from "@vitavision/ui";
-import { LineChart, seriesColour, type Scale, type Series } from "@vitavision/charts";
+import { LineChart, seriesColour, type Series } from "@vitavision/charts";
+import { chanceDiagonal } from "../../components/charts/chanceDiagonal";
 import { useCurveSets } from "../../hooks/useComparison";
 
 export function CompareCurves({
@@ -94,20 +95,4 @@ export function CompareCurves({
 
 function pointsOf(curve: { x: number[]; y: number[] }): { x: number; y: number }[] {
   return curve.x.map((x, index) => ({ x, y: curve.y[index] ?? 0 }));
-}
-
-/** The line a coin-flip classifier would draw, for the eye to measure every curve against. */
-function chanceDiagonal(x: Scale, y: Scale) {
-  return (
-    <line
-      x1={x.project(0)}
-      y1={y.project(0)}
-      x2={x.project(1)}
-      y2={y.project(1)}
-      stroke="currentColor"
-      strokeWidth={0.75}
-      strokeDasharray="4 3"
-      opacity={0.4}
-    />
-  );
 }
