@@ -15,7 +15,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import type { AnnotationDocument, AnnotationLabel, BitmapShape } from "../../api/client";
 import type * as AnnotationBitmap from "../../api/annotationBitmap";
-import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import type { EditorTool } from "../../components/annotation/tools";
 import type { DraftEnvelope } from "../../hooks/useAnnotations";
 import { useDocumentCommands } from "./useDocumentCommands";
 import { isConflict, useDraftSession } from "./useDraftSession";

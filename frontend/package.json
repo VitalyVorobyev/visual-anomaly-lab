@@ -20,14 +20,12 @@
     "@tanstack/react-virtual": "^3.14.9",
     "@vitavision/charts": "^0.7.1",
     "@vitavision/forms": "^0.7.0",
-    "@vitavision/stage2d": "^0.10.0",
+    "@vitavision/stage2d": "^0.12.0",
     "@vitavision/ui": "^0.11.0",
-    "konva": "^10.7.0",
     "lucide-react": "^1.48.0",
     "openapi-fetch": "^0.17.0",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-konva": "^19.3.0",
     "react-router": "^8.4.0"
   },
   "devDependencies": {

@@ -12,7 +12,7 @@
  * maskless `defect` image into `skipped_unannotated`, and drops `unlabeled` samples from
  * image-level ROC and average precision entirely.
  *
- * The rule lives here, apart from the route, so it is assertable without a Konva harness — the
+ * The rule lives here, apart from the route, so it is assertable without rendering the editor — the
  * same reason `annotationPanes.ts` and `annotationQueue.ts` exist.
  */
 

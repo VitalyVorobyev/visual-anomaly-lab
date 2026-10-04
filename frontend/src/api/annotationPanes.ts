@@ -4,7 +4,7 @@
  * Both decisions used to be implicit in component state that a remount silently reset:
  * changing the second channel of a side-by-side comparison dropped the whole workspace back
  * to one pane, because the editor was keyed by image id and every `useState` in it went with
- * the key. Pulling the rules out here makes them assertable without a Konva harness, and
+ * the key. Pulling the rules out here makes them assertable without rendering the editor, and
  * makes it obvious which state belongs to the reader rather than to the document.
  */
 

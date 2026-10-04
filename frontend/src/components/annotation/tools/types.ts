@@ -2,7 +2,7 @@
  * What an editing tool is, to the canvas: a set of pure functions from pointer and key input
  * to *effects*.
  *
- * A tool never touches Konva, React state or the document. It is handed a source-pixel point
+ * A tool never touches the stage, React state or the document. It is handed a source-pixel point
  * and the little context it needs (the open polygon, the view scale, the assist mode), and it
  * answers with the gesture it is now tracking and the effects the canvas should emit through
  * its callbacks. That is what makes each tool testable as arithmetic, and what keeps the

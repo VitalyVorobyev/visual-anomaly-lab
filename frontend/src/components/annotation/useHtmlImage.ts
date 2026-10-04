@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 
-/** An `<img>` decoded off-DOM, for Konva. `null` until it has loaded, or when it failed. */
+/**
+ * An `<img>` decoded off-DOM, for a canvas to read: a mask raster is tinted from its pixels.
+ * `null` until it has loaded, or when it failed.
+ */
 export function useHtmlImage(
   src: string | undefined,
   crossOrigin?: "anonymous",

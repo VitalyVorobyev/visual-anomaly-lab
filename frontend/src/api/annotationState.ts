@@ -1,7 +1,7 @@
 /** Pure editing operations for annotation documents.
  *
- * Keeping history independent of Konva makes undo/redo deterministic and testable. The
- * scene is controlled: it renders this document and emits another document; it never
+ * Keeping history independent of the renderer makes undo/redo deterministic and testable. The
+ * stage is controlled: it renders this document and emits another document; it never
  * becomes a second, hidden source of annotation truth.
  */
 
@@ -89,27 +89,41 @@ export function replaceShape(
 }
 
 /**
- * Move one vertex of a vector region. A polygon's point moves; a box's corner is dragged with
- * the opposite corner held, so it resizes and stays axis-aligned.
+ * A polygon's ring replaced: a vertex dragged, inserted or removed. A ring needs three points,
+ * so a shorter one leaves the document as it was; so does an id that is not a polygon.
  */
-export function withShapePoint(
+export function withPolygonPoints(
   document: AnnotationDocument,
   shapeId: string,
-  pointIndex: number,
-  point: AnnotationPoint,
+  points: readonly AnnotationPoint[],
 ): AnnotationDocument {
+  if (points.length < 3) return document;
   return {
     ...document,
-    shapes: document.shapes.map((shape) => {
-      if (shape.id !== shapeId) return shape;
-      if (shape.kind === "polygon") {
-        const points = [...shape.points];
-        points[pointIndex] = point;
-        return { ...shape, points } satisfies PolygonShape;
-      }
-      if (shape.kind === "box") return boxWithCorner(shape, pointIndex, point);
-      return shape;
-    }),
+    shapes: document.shapes.map((shape) =>
+      shape.id === shapeId && shape.kind === "polygon"
+        ? ({ ...shape, points: points.map(({ x, y }) => ({ x, y })) } satisfies PolygonShape)
+        : shape,
+    ),
+  };
+}
+
+/**
+ * A box given a new extent: a corner or an edge dragged, the box moved by its interior. A box
+ * without area is one a document refuses, so it leaves the document as it was.
+ */
+export function withBoxRect(
+  document: AnnotationDocument,
+  shapeId: string,
+  rect: Pick<BoxShape, "x" | "y" | "width" | "height">,
+): AnnotationDocument {
+  if (!(rect.width > 0) || !(rect.height > 0)) return document;
+  const { x, y, width, height } = rect;
+  return {
+    ...document,
+    shapes: document.shapes.map((shape) =>
+      shape.id === shapeId && shape.kind === "box" ? { ...shape, x, y, width, height } : shape,
+    ),
   };
 }
 
@@ -138,18 +152,6 @@ export function boxBetween(
   const height = Math.abs(b.y - a.y);
   if (width === 0 || height === 0) return null;
   return { x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), width, height };
-}
-
-/**
- * A box with one corner (in `shapeOutline` order) dragged to `point` and the opposite corner
- * held. Dragging past the opposite corner flips the box rather than inverting it; a drag
- * that would leave no area keeps the box as it was.
- */
-export function boxWithCorner(box: BoxShape, cornerIndex: number, point: AnnotationPoint): BoxShape {
-  const opposite = shapeOutline(box)[(cornerIndex + 2) % 4];
-  if (!opposite) return box;
-  const spanned = boxBetween(opposite, point);
-  return spanned ? { ...box, ...spanned } : box;
 }
 
 /**

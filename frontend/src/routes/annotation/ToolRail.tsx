@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 
-import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import type { EditorTool } from "../../components/annotation/tools";
 import { type EditorCommand, withKeys } from "../../components/annotation/editorKeys";
 import { Tooltip, cn, focusRing } from "@vitavision/ui";
 

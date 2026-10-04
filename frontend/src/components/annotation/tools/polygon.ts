@@ -17,9 +17,8 @@ export const polygonTool: ToolModule = {
   pansWithPrimary: false,
   cursor: "crosshair",
   down: (context, point) => {
-    // Source pixels are themselves Konva Image nodes, so a useful canvas click almost never
-    // targets the Stage object. Shape handlers stop propagation; anything reaching a tool is
-    // the image or the background, and therefore an empty-scene gesture.
+    // Under a drawing tool the stage's surface takes every press, over a region or not, so a
+    // press here is always the ring's: it places or closes, and drops the selection.
     const effects: ToolEffect[] = [{ type: "deselect" }];
     const decision = polygonClick(context.pendingPoints, point, snapTolerance(context.scale));
     if (decision === "close") effects.push({ type: "closePolygon" });

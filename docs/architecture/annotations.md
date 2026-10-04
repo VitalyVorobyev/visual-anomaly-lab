@@ -12,10 +12,11 @@ a brush stroke, an accepted MobileSAM candidate, an imported PNG / LabelMe / COC
 converts luminance to alpha only when painting, so one contract serves both an editor overlay and an
 opaque stored mask.
 
-Regions are painted in their label's colour; cuts (`operation: "subtract"`) in one fixed colour with a
-dashed outline. The scene resolves its colours from the design tokens at runtime — Konva cannot take a
-class name, so `scenePalette.ts` reads `styles.css` and repaints on a theme change (ADR-0021). Mask
-weight is a persisted per-reader preference; the label colour is dataset taxonomy.
+Regions are painted in their label's colour; cuts (`operation: "subtract"`) in one fixed colour, a cut
+bitmap with a dashed outline. Polygons and boxes are SVG and name the design token; a painted mask is a
+canvas raster, which cannot take one, so `scenePalette.ts` resolves the tokens it is tinted with and
+repaints on a theme change (ADR-0021). Mask weight is a persisted per-reader preference; the label
+colour is dataset taxonomy.
 
 The Annotate tab's **Classes** section (`routes/dataset/ClassManager.tsx`) adds a class — its key
 derived once from the name, unique within the dataset, never changed — and renames, recolours and
@@ -279,13 +280,19 @@ The dataset-local queue filters by label and to samples still missing ground tru
 with whether every, some or none of the sample's images resolve to truth — by the same SQL predicate the
 filter uses. Under sample scope a part is one card. Keyboard traversal prefetches adjacent queue pages.
 
-The editor is a full-height controlled Konva scene: polygon/vertex, box and brush/eraser editing,
-add/subtract, undo/redo, `ETag`-guarded save and completion. Dirty drafts autosave after a short idle; a `412` keeps the
+The editor is a full-height controlled scene on one `@vitavision/stage2d` `ImageStage`: polygon/vertex,
+box and brush/eraser editing, add/subtract, undo/redo, `ETag`-guarded save and completion. Everything the
+editor records is in the document's pixel-edge coordinates; the stage draws in pixel centres, and
+`stageFrame.ts` is the one place the half pixel between them is converted (frontend handbook). Dirty drafts autosave after a short idle; a `412` keeps the
 local edit visible and offers an explicit reload of the server draft rather than choosing a winner.
 
-**Navigation and view.** Left-drag pans while Select is active; right-drag pans from every tool. Fit and
-source-pixel 1:1 are explicit views; a Select-mode double-click toggles Fit and the previous view. Zoom
-tops out at 32 screen pixels per source pixel, and above 1:1 the image is drawn without smoothing. A
+**Navigation and view.** Left-drag on bare image pans while Select is active; right- and middle-drag pan
+from every tool. Fit (with a 24-pixel margin) and source-pixel 1:1 are explicit views; a Select-mode
+double-click toggles Fit and the previous view. Zoom tops out at 32 screen pixels per source pixel, and
+from 1:1 up the image is drawn without smoothing. A pan stops only once no part of the image would
+reach the pane's centre (stage2d's `panBounds: "center"`), so an edge or a corner can be brought to the
+middle of the screen to be traced, and a wheel step holds the pixel under the pointer even while the
+image is narrower than the pane. A
 per-pane readout names the source pixel under the pointer, the mask value the document resolves to there
 (base, then each shape in order) and the region on top — a readout, not truth; evaluation reads the
 backend's renderer.
@@ -348,21 +355,29 @@ carrying truth, so the mark never accuses somebody of leaving a drawn defect und
   — label count is data. The inspector section shows the tool in hand (brush size, vertex readout) and is
   not drawn when empty.
 - **A box is dragged corner to corner** with the box tool (`R`), normalised whichever corner the drag
-  began from; a drag with no area draws nothing. Under Select a box moves like any region and its four
-  corners are vertex handles: dragging one resizes the box against the opposite corner, and dragging past
-  it flips the box rather than inverting it. `shapeOutline` is the one place a box becomes points, for
-  the scene and the resize. The pixel readout tests a box half-open, and a polygon even-odd, at the
-  pixel's centre — the rules completion owns their pixels by.
+  began from; a drag with no area draws nothing. Under Select the selected box has eight handles: a
+  corner or an edge resizes it against the opposite side, dragging past that side flips the box rather
+  than inverting it, and the box stays inside the frame and at least a pixel wide. Its interior moves it.
+  `shapeOutline` is the one place a box becomes points, for the scene. The pixel readout tests a box
+  half-open, and a polygon even-odd, at the pixel's centre — the rules completion owns their pixels by.
 - **Class keys.** `2`–`9` pick the class for new regions, in the order the class picker lists them, which
   prints each class's key beside its name; `0` and `1` stay Fit and 1:1. They are one entry in
   `EDITOR_BINDINGS`, so the shortcut sheet lists them.
+- **A press picks what is painted.** Under Select a polygon or a box is picked by its outline and
+  interior, a bitmap by its painted pixels rather than its crop; among the regions under the pointer the
+  nearest wins, and on a tie the one painted last — the one on top.
 - **A region moves.** Select-drag translates; arrow keys nudge by 1 px, 10 with Shift. The offset is clamped
-  once against the shape's extent, never per coordinate, so a polygon at an edge is not deformed.
+  once against the shape's extent, never per coordinate, so a polygon at an edge is not deformed. A press
+  on a region that stays within three screen pixels selects it without moving it. The selected box's
+  interior and handles and the selected polygon's vertices have no such slop: they commit any movement.
 - **A polygon closes itself.** A click near the first vertex closes the ring; a click on the last vertex is
   dropped as a duplicate, so a double-click adds and closes. Backspace removes the last vertex, Escape
   discards the ring, and the tool stays active. There is no Close button.
-- **A vertex drag is live.** The dragged point is transient scene state applied during the gesture and
-  committed once on release; the scene is never a second store of truth.
+- **A vertex drag is live.** The selected polygon's vertices are handles, under Select: a vertex may lie
+  exactly on the frame's border, a focused one nudges with the arrows (a tenth of a pixel with Shift),
+  Insert adds a vertex after it and Delete removes it while three remain, and a double-click on the
+  outline adds one there. A drag, a move or a resize is previewed through the same pure edit that commits
+  it, once, on release — one gesture, one undo step; the scene is never a second store of truth.
 - **Tracing.** A bitmap layer can be traced deterministically into simplified editable outer and hole
   polygons; this is raster-to-vector only, not the image-aware refinement MobileSAM provides.
 

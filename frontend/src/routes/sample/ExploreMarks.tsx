@@ -4,18 +4,15 @@
  *
  * Points are dots of constant on-screen size — a positive in the `normal` tone, a negative in
  * `defect`, the editor's own convention for include and exclude. The candidate is a cropped
- * binary PNG in the source frame, painted in the suggestion colour through the same
- * `tintedMask` the editor uses, so a candidate reads the same here and after it is carried
- * there.
+ * binary PNG in the source frame, painted in the suggestion colour by the same raster the
+ * editor uses, so a candidate reads the same here and after it is carried there.
  */
-
-import { useEffect, useState } from "react";
 
 import { MeasureOverlay, useStage, type MeasurePrimitive } from "@vitavision/stage2d";
 
-import { tintedMask } from "../../api/annotationBitmap";
 import type { BitmapShape } from "../../api/client";
 import type { ImagePoint } from "../../api/explore";
+import { ShapeRaster } from "../../components/annotation/MaskRaster";
 import { useScenePalette } from "../../components/annotation/scenePalette";
 
 const DOT_PX = 5;
@@ -68,37 +65,5 @@ export function ExploreMarks({
 
 function CandidateMask({ shape, opacity }: { shape: BitmapShape; opacity: number }) {
   const palette = useScenePalette();
-  const [painted, setPainted] = useState<string | null>(null);
-
-  useEffect(() => {
-    let live = true;
-    const source = new globalThis.Image();
-    source.onload = () => {
-      if (!live) return;
-      setPainted(tintedMask(source, shape.width, shape.height, palette.suggestion).toDataURL());
-    };
-    source.src = `data:image/png;base64,${shape.png_base64}`;
-    return () => {
-      live = false;
-    };
-  }, [shape, palette.suggestion]);
-
-  if (!painted) return null;
-  return (
-    <img
-      src={painted}
-      alt=""
-      aria-hidden
-      draggable={false}
-      className="pointer-events-none absolute"
-      style={{
-        left: shape.x,
-        top: shape.y,
-        width: shape.width,
-        height: shape.height,
-        opacity: opacity * 0.7,
-        imageRendering: "pixelated",
-      }}
-    />
-  );
+  return <ShapeRaster shape={shape} color={palette.suggestion} opacity={opacity * 0.7} />;
 }
