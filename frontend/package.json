@@ -11,7 +11,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "tauri": "tauri",
-    "test:screens": "playwright test",
+    "test:screens": "playwright test screens",
+    "test:e2e": "playwright test annotation-editor",
     "lint": "eslint ."
   },
   "dependencies": {

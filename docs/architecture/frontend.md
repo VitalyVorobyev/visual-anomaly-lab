@@ -20,6 +20,12 @@ client generated rather than written (**ADR-0012**).
 - **Every main route has a screenshot** (`bun run test:screens`): Playwright against a throwaway backend
   seeded once through the real API by `scripts/e2e-seed.py`, in light and dark. The baseline is local and
   uncommitted — capture it before a change, compare after it, on the same machine.
+- **The annotation editor has a behavioural contract** (`bun run test:e2e`, `e2e/annotation-editor.spec.ts`), run
+  against the same seeded backend. It pins what the polygon, box, brush, eraser and Select tools, the keyboard
+  (nudge, undo, close, delete) and the view (wheel, Fit, 1:1, pan) do, and reads the result only through the pixel
+  readout and the persisted draft — never a `<canvas>` or a renderer's nodes — so it holds for any scene that draws
+  the editor. Coordinates are calibrated from the readout, not assumed. The reference-pane case needs a
+  multi-channel sample, which the seed does not have, and is skipped.
 
 - **Routing is `react-router`'s `HashRouter`.** The bundle is served from Vite's dev server at `/`, the
   desktop WebView at `…/index.html` and `tauri://localhost`; a path-based router matches no route at the
