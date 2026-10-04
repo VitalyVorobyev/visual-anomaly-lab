@@ -3,7 +3,7 @@
  *
  * Every rule the scene used to carry inline — a polygon closing on its first vertex, a
  * double-click leaving no duplicate vertex, a box normalised whichever corner it began from, a
- * Shift-click being a negative prompt — is asserted here without Konva or a DOM.
+ * Shift-click being a negative prompt — is asserted here without a stage or a DOM.
  */
 
 import { describe, expect, it } from "vitest";

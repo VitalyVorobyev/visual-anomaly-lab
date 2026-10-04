@@ -11,7 +11,7 @@
  */
 
 import type { AnnotationDocument, AnnotationLabel } from "../../api/client";
-import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
+import type { EditorTool } from "../../components/annotation/tools";
 import { classKeyAt } from "../../components/annotation/editorKeys";
 import { MAX_BRUSH_SIZE, MIN_BRUSH_SIZE } from "../../hooks/useBrushSize";
 import { Field, NumberInput, Select, Slider } from "@vitavision/ui";

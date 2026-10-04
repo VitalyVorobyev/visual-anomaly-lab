@@ -52,7 +52,7 @@ export function maskFromPixels(pixels: Uint8ClampedArray, length: number): Uint8
 }
 
 /**
- * The mask painted in one colour, ready for a Konva `Image`.
+ * The mask painted in one colour, ready to draw on the stage (`MaskRaster`).
  *
  * Alpha comes from the mask, never from the source PNG, which is what lets an opaque
  * backend-produced mask render as an overlay instead of a filled rectangle.

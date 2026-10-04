@@ -3,7 +3,7 @@
  *
  * With `exactOptionalPropertyTypes` (from `@vitavision/config-ts`), `{ note: undefined }` is
  * not a `{ note?: string }`. Our own types say `?: T | undefined` where a value may be
- * absent; this is for the props and request bodies typed elsewhere — the @vitavision packages, Konva, the
+ * absent; this is for the props and request bodies typed elsewhere — the @vitavision packages, the
  * generated API client — so a call site can pass "maybe a value" without a spread per key.
  * The result is what those call sites always meant: the key is left out.
  */

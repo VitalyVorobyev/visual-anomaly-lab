@@ -19,9 +19,9 @@ import { labelNote } from "../api/annotationLabelNote";
 import { carriedFrom } from "../api/explore";
 import type { AnnotationLabel, Label, SampleSummary } from "../api/client";
 import {
-  AnnotationCanvas,
-  type AnnotationCanvasHandle,
-} from "../components/annotation/AnnotationCanvas";
+  AnnotationStage,
+  type AnnotationStageHandle,
+} from "../components/annotation/AnnotationStage";
 import { Button, ErrorBox, SkeletonRows } from "@vitavision/ui";
 import {
   type DraftEnvelope,
@@ -175,7 +175,7 @@ function EditorReady({
 }) {
   const perSample = target.scope === "sample";
   const { tool, setTool, brushSize, setBrushSize, view, setView, regionsHidden } = workspace;
-  const canvasRef = useRef<AnnotationCanvasHandle>(null);
+  const canvasRef = useRef<AnnotationStageHandle>(null);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [message, flash] = useFlashMessage();
@@ -371,7 +371,7 @@ function EditorReady({
           )}
 
           <div className="flex min-h-0 flex-1 overflow-hidden">
-            <AnnotationCanvas
+            <AnnotationStage
               ref={canvasRef}
               imageId={imageId}
               overlayImageId={workspace.paneMode === "overlay" ? reference?.id : undefined}
@@ -393,7 +393,8 @@ function EditorReady({
               onView={setView}
               onSelect={commands.setSelectedId}
               onPoint={commands.addPendingPoint}
-              onMovePoint={commands.movePoint}
+              onReshapePolygon={commands.reshapePolygon}
+              onReshapeBox={commands.reshapeBox}
               onMoveShape={commands.moveShape}
               onBrush={(points) => void commands.applyStroke(points)}
               onFinishPolygon={commands.finishPolygon}

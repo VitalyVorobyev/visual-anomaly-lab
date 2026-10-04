@@ -12,12 +12,10 @@
 import type { Dispatch, SetStateAction } from "react";
 import { useCallback, useMemo, useState } from "react";
 
+import type { StageView } from "@vitavision/stage2d";
+
 import type { PaneMode } from "../../api/annotationPanes";
-import {
-  INITIAL_CANVAS_VIEW,
-  type CanvasView,
-  type EditorTool,
-} from "../../components/annotation/AnnotationCanvas";
+import type { EditorTool } from "../../components/annotation/tools";
 import { useBrushSize } from "../../hooks/useBrushSize";
 import { useMaskOpacity } from "../../hooks/useMaskOpacity";
 
@@ -46,8 +44,9 @@ export interface Workspace {
   setTool: (tool: EditorTool) => void;
   brushSize: number;
   setBrushSize: (radius: number) => void;
-  view: CanvasView;
-  setView: (view: CanvasView) => void;
+  /** Shared by the editor and a reference pane beside it; `null` opens at Fit. */
+  view: StageView | null;
+  setView: (view: StageView) => void;
 }
 
 export function useWorkspace(frame: string): Workspace {
@@ -61,9 +60,12 @@ export function useWorkspace(frame: string): Workspace {
   // The view is stamped with the frame it was expressed on and derived back out, so moving
   // to another part resets it during render rather than in an effect that would first paint
   // the previous part's zoom over the new photograph.
-  const [viewMemo, setViewMemo] = useState({ frame, view: INITIAL_CANVAS_VIEW });
-  const view = viewMemo.frame === frame ? viewMemo.view : INITIAL_CANVAS_VIEW;
-  const setView = useCallback((next: CanvasView) => setViewMemo({ frame, view: next }), [frame]);
+  const [viewMemo, setViewMemo] = useState<{ frame: string; view: StageView | null }>({
+    frame,
+    view: null,
+  });
+  const view = viewMemo.frame === frame ? viewMemo.view : null;
+  const setView = useCallback((next: StageView) => setViewMemo({ frame, view: next }), [frame]);
 
   return useMemo(
     () => ({

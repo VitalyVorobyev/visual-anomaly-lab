@@ -3,7 +3,7 @@
  * trace, undo and redo — and the selection and open polygon those gestures act on.
  *
  * Every edit becomes one `commit` on the draft session's history, so one gesture is one undo
- * step. The Konva scene never holds a second copy of the truth; it reports gestures in source
+ * step. The stage never holds a second copy of the truth; it reports gestures in source
  * pixels and this hook turns them into documents.
  *
  * **Every edit is built from `latest()`, never from a render's `history.present`.** Most edits
@@ -20,7 +20,8 @@ import {
   nextShapeId,
   replaceShape,
   translateShape,
-  withShapePoint,
+  withBoxRect,
+  withPolygonPoints,
   withShape,
   withoutShape,
 } from "../../api/annotationState";
@@ -40,8 +41,7 @@ import type {
   BoxShape,
   PolygonShape,
 } from "../../api/client";
-import type { EditorTool } from "../../components/annotation/AnnotationCanvas";
-import type { BoxRect } from "../../components/annotation/tools";
+import type { BoxRect, EditorTool } from "../../components/annotation/tools";
 import type { Flash } from "./useFlashMessage";
 
 /** How often a stroke is repainted because the document moved under it before it gives up. */
@@ -158,9 +158,18 @@ export function useDocumentCommands({
     [commit, latest],
   );
 
-  const movePoint = useCallback(
-    (shapeId: string, pointIndex: number, point: AnnotationPoint) => {
-      commit(withShapePoint(latest(), shapeId, pointIndex, point));
+  /** A polygon's ring after a vertex was dragged, inserted or removed: one gesture, one step. */
+  const reshapePolygon = useCallback(
+    (shapeId: string, points: AnnotationPoint[]) => {
+      commit(withPolygonPoints(latest(), shapeId, points));
+    },
+    [commit, latest],
+  );
+
+  /** A box after a corner or an edge was dragged, or its interior moved. */
+  const reshapeBox = useCallback(
+    (shapeId: string, rect: BoxRect) => {
+      commit(withBoxRect(latest(), shapeId, rect));
     },
     [commit, latest],
   );
@@ -370,7 +379,8 @@ export function useDocumentCommands({
     addBox,
     pickClass,
     moveShape,
-    movePoint,
+    reshapePolygon,
+    reshapeBox,
     applyStroke,
     removeSelected,
     updateSelected,

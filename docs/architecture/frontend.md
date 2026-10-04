@@ -7,14 +7,15 @@ or colour.
 
 ## Stack
 
-A small one — `react-router`, TanStack Query, Tailwind, Konva for the annotation canvas — with the API
-client generated rather than written (**ADR-0012**).
+A small one — `react-router`, TanStack Query, Tailwind and the `@vitavision` packages, whose
+`@vitavision/stage2d` draws every image surface, the annotation editor included — with the API client
+generated rather than written (**ADR-0012**).
 
 - **The toolchain is the shared vitavision baseline**: the versions every lab frontend is on, the
   compiler options from `@vitavision/config-ts` (strict, `noUncheckedIndexedAccess`,
   `exactOptionalPropertyTypes`) and the lint rules from `@vitavision/config-eslint`. Under
   `exactOptionalPropertyTypes`, our own optional props say `?: T | undefined`; a prop or request body typed
-  elsewhere (the `@vitavision` packages, Konva, the generated client) is passed through `defined()` (`src/api/defined.ts`),
+  elsewhere (the `@vitavision` packages, the generated client) is passed through `defined()` (`src/api/defined.ts`),
   which leaves out the keys that have no value. The React Compiler rules (`react-hooks/set-state-in-effect`,
   `react-hooks/refs`, `react-hooks/immutability`) report as warnings until each screen is reworked; everything else is an error.
 - **Every main route has a screenshot** (`bun run test:screens`): Playwright against a throwaway backend
@@ -56,7 +57,7 @@ this app's one rule: `html`, `body` and `#root` are `height: 100%; overflow: hid
 - **Where a token cannot be read, it is resolved, not copied.** A canvas and a server-drawn tile take a
   colour string, not a `var(--…)`: `labelPaint.ts` resolves a token against the theme on screen
   (`resolveColour`, `classRgb`, `colourHex`) and `scenePalette.ts` does the same for the annotation
-  scene, repainting when the theme changes.
+  editor's mask rasters, repainting when the theme changes. Its vector layers are SVG and name the token.
 - **Light and dark both ship**, with `light` / `dark` / `system` applied by an inline script before first
   paint, so `system` survives a reload as itself; `main.tsx` then calls `@vitavision/ui`'s `initTheme`.
   The choice is stored under `anomaly-lab-theme` (`src/themeStorageKey.ts`); the script in `index.html`
@@ -599,12 +600,39 @@ they follow the reader across one part's channels and reset elsewhere.
 eagerly as well as in React, and `latest()` returns that document; every edit in `useDocumentCommands`
 builds from it.
 
-**The canvas re-renders what moved.** `AnnotationCanvas` wires pure per-tool modules
-(`components/annotation/tools/`) that turn input into effects, a memoised static layer (`SceneLayer`:
-photograph, blended channel, base mask, committed regions) and a live layer (`LiveLayer`: brush trail, open
-polygon, assist prompts, cursors) fed by a small external store, so a pointer move re-renders only the live
-layer. A brush trail is appended in place. `canvasView.ts` stores zoom as a multiple of fit, capped at
-stage2d's `MAX_SCALE` — 32 screen pixels per source pixel — with smoothing off above 1:1.
+**The canvas is one `ImageStage`.** `AnnotationStage` (`components/annotation/`) wraps a single
+`@vitavision/stage2d` stage in the `region` the editor's keys and readouts live on: the stage owns the view,
+the wheel, the pan and the hit-tests, and the editor owns Space, the arrows and the digits (`shortcuts` is
+off). Inside it:
+
+- **The scene** (`StageScene`, memoised): the photograph and a blended channel as `ImageLayer`s, pixelated
+  above 1:1; the imported base, every bitmap region and the MobileSAM suggestion as tinted canvas rasters
+  (`MaskRaster`); polygons and boxes as `AreaSet`s, filled even-odd. `sceneRuns` splits the shapes into
+  document-order runs — each stretch of polygons and boxes one `AreaSet`, each bitmap one raster — so a cut
+  paints over what it cuts. A cut or selected bitmap's crop is a `PolylineSet` outline.
+- **The tool surface** (`StageTools`): one `StageSurface` across the viewport, which hands a press to the
+  tool in hand — the pure modules in `components/annotation/tools/` turn it into effects — or, under Select,
+  asks the stage's hit-test what is under it (`shapePick`: the nearest region, the one painted last on a
+  tie, a bitmap by its painted pixels) and selects and moves that, or declines so the stage pans. The
+  selected polygon's vertices are a `ContourEditor`, the selected box's corners and edges a
+  `RectRoiEditor`; an edit is previewed through the same pure function that commits it (`liveEdit`).
+- **The drafts** (`LiveDrafts`): the open polygon, the box and assist box being dragged, the brush trail
+  and footprint and the keyboard cursor as `DraftShape`s, the assist prompts as a `PointSet`, fed by a
+  small external store so a pointer move re-renders only them. A brush trail is appended in place.
+
+**One coordinate boundary.** The document, the tools, the readout and the keyboard cursor use the area
+convention — pixel `i` covers `[i, i + 1)` — and stage2d's vector layers the centre convention, pixel
+`i`'s centre at `i`. `stageFrame.ts` is the one place the half pixel is converted: every vector item goes
+out through `toStage`, every press, hover, drag and editor vertex comes back through `fromStage`, and a
+raster positioned in CSS pixels inside the stage box needs neither. `AnnotationStage.test.tsx` holds it at
+four screen pixels per source pixel, where a half-pixel error is two.
+
+**One view for both panes.** The workspace holds a `StageView | null` — `null` opens at Fit, with a 24 px
+margin — shared by the editor and the reference pane beside it, stamped with the part it was taken on.
+Both stages clamp with `panBounds: "center"`: some image point stays at or past the pane's centre, so a
+corner can be panned to the middle of the screen and a wheel zoom keeps the pixel under the pointer. The
+reference pane does not report its own measurements, so mounting beside the editor cannot re-anchor the
+view being edited. Zoom tops out at stage2d's `MAX_SCALE`, 32 screen pixels per source pixel.
 
 ## UI rule ratchet
 

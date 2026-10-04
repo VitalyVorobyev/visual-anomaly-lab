@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import type { AnnotationDocument, BoxShape, PolygonShape } from "./client";
 import {
-  boxWithCorner,
   createHistory,
   historyReducer,
   replaceShape,
   shapeOutline,
   translateShape,
-  withShapePoint,
+  withBoxRect,
+  withPolygonPoints,
   withShape,
   withoutShape,
 } from "./annotationState";
@@ -47,12 +47,22 @@ describe("annotation history", () => {
     expect(historyReducer(undone, { type: "redo" }).present.shapes).toHaveLength(1);
   });
 
-  it("moves polygon vertices and removes shapes without mutation", () => {
+  it("reshapes a polygon's ring and removes shapes without mutation", () => {
     const document = withShape(empty, polygon);
-    const moved = withShapePoint(document, "p1", 1, { x: 8, y: 2 });
+    const ring = [polygon.points[0]!, { x: 8, y: 2 }, polygon.points[2]!];
+    const moved = withPolygonPoints(document, "p1", ring);
     expect((moved.shapes[0] as PolygonShape).points[1]).toEqual({ x: 8, y: 2 });
     expect((document.shapes[0] as PolygonShape).points[1]).toEqual({ x: 5, y: 1 });
     expect(withoutShape(moved, "p1").shapes).toHaveLength(0);
+  });
+
+  it("keeps a ring of three or more, and only on a polygon", () => {
+    const document = withShape(empty, polygon);
+    // A vertex inserted or removed is the same edit as one moved.
+    const four = [...polygon.points, { x: 1, y: 4 }];
+    expect((withPolygonPoints(document, "p1", four).shapes[0] as PolygonShape).points).toEqual(four);
+    expect(withPolygonPoints(document, "p1", polygon.points.slice(0, 2))).toBe(document);
+    expect(withPolygonPoints(document, "nope", four).shapes).toEqual(document.shapes);
   });
 
   it("replaces one raster region with its derived contours in place", () => {
@@ -160,18 +170,18 @@ describe("boxes", () => {
     });
   });
 
-  it("resize by a corner against the opposite one, and flip rather than invert", () => {
-    // Bottom-right dragged out: the top-left holds.
-    expect(boxWithCorner(box, 2, { x: 9, y: 8 })).toMatchObject({ x: 2, y: 3, width: 7, height: 5 });
-    // Top-left dragged past the bottom-right: normalised, never a negative width.
-    expect(boxWithCorner(box, 0, { x: 8, y: 7 })).toMatchObject({ x: 6, y: 5, width: 2, height: 2 });
-    // A drag that would leave no area keeps the box.
-    expect(boxWithCorner(box, 2, { x: 2, y: 9 })).toBe(box);
+  it("take a new extent, and keep their identity and class", () => {
+    const document = { ...empty, shapes: [box] };
+    const resized = withBoxRect(document, "r1", { x: 2, y: 1, width: 8, height: 4 });
+    expect(resized.shapes[0]).toEqual({ ...box, x: 2, y: 1, width: 8, height: 4 });
+    expect(document.shapes[0]).toBe(box);
   });
 
-  it("take a corner drag through the same edit a polygon vertex does", () => {
-    const document = { ...empty, shapes: [box] };
-    const resized = withShapePoint(document, "r1", 1, { x: 10, y: 1 });
-    expect(resized.shapes[0]).toMatchObject({ kind: "box", x: 2, y: 1, width: 8, height: 4 });
+  it("refuse an extent without area, and leave every other shape alone", () => {
+    const document = { ...empty, shapes: [box, polygon] };
+    expect(withBoxRect(document, "r1", { x: 2, y: 3, width: 0, height: 2 })).toBe(document);
+    expect(withBoxRect(document, "p1", { x: 0, y: 0, width: 1, height: 1 }).shapes).toEqual(
+      document.shapes,
+    );
   });
 });

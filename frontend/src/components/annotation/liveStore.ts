@@ -1,11 +1,11 @@
 /**
  * The scene's fast-changing state, outside React's render of the scene.
  *
- * A pointer move used to be a `setState` on the canvas component, which re-rendered the
- * whole Konva tree — every region, every vertex handle, the photograph — to draw one more
- * segment of a brush trail. What changes at pointer rate now lives here, and only the
- * components that draw it (the live layer, the readout) subscribe. The static layer re-renders
- * when the document, the view or the selection changes, and not otherwise.
+ * What changes at pointer rate — the gesture being drawn, the pointer, the keyboard cursor —
+ * lives here, and only the components that draw it (the drafts, the readouts) subscribe. A
+ * `setState` on the stage component instead would re-render every region and editor to draw
+ * one more segment of a brush trail. The committed scene re-renders when the document, the
+ * view or the selection changes, and not otherwise.
  *
  * Still no second store of annotation truth: everything here is a gesture in progress or a
  * cursor, and none of it is committed until the gesture ends.
@@ -21,12 +21,10 @@ export interface LiveState {
   gesture: Gesture | null;
   revision: number;
   /**
-   * The source coordinate under the mouse, unclamped, or `null` when it is off the stage. The
-   * brush cursor is drawn here and the pixel readout reads it.
+   * The source coordinate under the mouse, or `null` when it is off the frame. The brush
+   * footprint is drawn here, the open polygon reaches to it, and the pixel readout reads it.
    */
   pointer: AnnotationPoint | null;
-  /** Whether the pointer is over the open ring's first vertex. */
-  snapReady: boolean;
   /** The keyboard cursor, in source pixels. */
   keyboardPoint: AnnotationPoint;
   keyboardFocused: boolean;

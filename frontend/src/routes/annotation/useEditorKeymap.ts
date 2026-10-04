@@ -16,7 +16,7 @@
 import { type RefObject, useEffect, useRef } from "react";
 
 import type { Label } from "../../api/client";
-import type { AnnotationCanvasHandle } from "../../components/annotation/AnnotationCanvas";
+import type { AnnotationStageHandle } from "../../components/annotation/AnnotationStage";
 import {
   CANVAS_BINDINGS,
   classSlotFor,
@@ -72,7 +72,7 @@ export function editorKeyActions({
   panes: ChannelPanes;
   assist: SegmentAssistSession;
   workspace: Workspace;
-  canvas: RefObject<AnnotationCanvasHandle | null>;
+  canvas: RefObject<AnnotationStageHandle | null>;
   applyLabel: (label: Label) => void;
   complete: () => Promise<void>;
   openShortcuts: () => void;

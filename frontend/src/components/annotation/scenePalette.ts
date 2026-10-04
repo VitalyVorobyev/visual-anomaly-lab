@@ -1,12 +1,12 @@
 /**
- * The design tokens, as literal colours a canvas can paint with.
+ * The design tokens a mask raster is tinted with, resolved to literal colours.
  *
- * ADR-0021 puts colour in `styles.css` and nowhere else, and every component names a token
- * rather than a ramp step. Konva is the one surface that cannot honour that directly: it paints
- * into a canvas and takes colour strings, not class names. The answer is not to give up and
- * hardcode — which is what the scene did, with fifteen literals copied out of the *dark* palette,
- * so the whole editor ignored the light theme — but to read the tokens at runtime and repaint
- * when they change.
+ * ADR-0021 puts colour in the tokens and nowhere else. The stage's vector layers are SVG and
+ * name a token directly (`var(--defect)`), but a painted region, the imported base and a
+ * MobileSAM suggestion are rasters: their pixels are tinted on a canvas, and a canvas takes a
+ * colour string, not a custom property. So the few tokens a raster needs are read at runtime
+ * and re-read when they change, rather than copied out of one theme — which is how a canvas
+ * ends up ignoring the light theme.
  *
  * Resolution happens against `document.documentElement`, where `theme.ts` puts the `dark` class,
  * and is re-read on both signals that can move it: the class itself, and the OS preference while
@@ -15,41 +15,27 @@
 
 import { useEffect, useState } from "react";
 
-/** Every colour the annotation scene paints with, resolved for the theme on screen. */
+/** Every colour a mask raster is tinted with, resolved for the theme on screen. */
 export interface ScenePalette {
-  /** Behind the source image — the "paper" the photograph sits on. */
-  canvas: string;
-  /** The 1px outline marking the source frame's true extent. */
-  frame: string;
-  /** Interaction accent: selection outlines, pending geometry, the keyboard cursor. */
-  signal: string;
   /** A region that removes from the mask, rather than adding to it. */
   cut: string;
-  /** Fallback for a shape whose label key is not in the taxonomy. */
+  /** A region whose class is not in the taxonomy, and the imported base of a classless dataset. */
   unknownLabel: string;
-  /** Assist prompts: include and exclude. */
-  positive: string;
-  negative: string;
   /** A suggested, not-yet-accepted region. */
   suggestion: string;
 }
 
 const TOKENS: Record<keyof ScenePalette, string> = {
-  canvas: "--canvas",
-  frame: "--line-strong",
-  signal: "--signal",
   cut: "--defect",
   unknownLabel: "--signal",
-  positive: "--normal",
-  negative: "--defect",
   suggestion: "--warn",
 };
 
 /**
  * What a token paints as before a stylesheet defines it — a non-DOM test environment, or a
- * document whose stylesheet failed to load: nothing, rather than a copy of one theme's
- * values that would quietly go stale (the copy that stood here was lab-ui 0.5's dark theme).
- * `styles.css` is imported before the first render, so the app itself never sees it.
+ * document whose stylesheet failed to load: nothing, rather than a copy of one theme's values
+ * that would quietly go stale. `styles.css` is imported before the first render, so the app
+ * itself never sees it.
  */
 const UNRESOLVED = "transparent";
 
@@ -93,17 +79,4 @@ export function useScenePalette(): ScenePalette {
   }, []);
 
   return palette;
-}
-
-/**
- * `#rrggbb` plus an alpha byte, for a fill that should tint rather than cover.
- *
- * Tolerates a token that resolved to something other than six hex digits — a themed value can
- * legitimately be `oklch(...)` — by returning it unchanged rather than producing a colour string
- * the canvas will silently ignore.
- */
-export function withAlpha(color: string, alpha: number): string {
-  if (!/^#[0-9a-fA-F]{6}$/.test(color)) return color;
-  const byte = Math.round(Math.min(1, Math.max(0, alpha)) * 255);
-  return `${color}${byte.toString(16).padStart(2, "0")}`;
 }

@@ -3,16 +3,20 @@
  *
  * It shares the one controlled `view`, so panning or zooming either keeps both showing the
  * same source pixels — which is the entire point of putting two illuminations of one part
- * side by side. Editing happens in one pane, always the left one, so there is never a
- * question of which document a stroke lands in. Wanting to draw on the right is answered by
- * making it the left: `Edit this channel` swaps the two.
+ * side by side. Its own measurements are not reported: the editor's pane holds the view, and a
+ * second pane re-anchoring it to its own viewport as it mounts would move the one being edited.
+ * Editing happens in one pane, always the left one, so there is never a question of which
+ * document a stroke lands in. Wanting to draw on the right is answered by making it the left:
+ * `Edit this channel` swaps the two.
  */
 
 import { ArrowLeftRight } from "lucide-react";
 
 import type { AnnotationDocument, AnnotationLabel, ImageSummary } from "../../api/client";
-import { AnnotationCanvas, type CanvasView } from "../../components/annotation/AnnotationCanvas";
+import type { StageView } from "@vitavision/stage2d";
 import { Button } from "@vitavision/ui";
+
+import { AnnotationStage } from "../../components/annotation/AnnotationStage";
 
 const ignore = () => undefined;
 
@@ -36,8 +40,8 @@ export function ReferencePane({
   maskOpacity: number;
   showRegions: boolean;
   brushSize: number;
-  view: CanvasView;
-  onView: (view: CanvasView) => void;
+  view: StageView | null;
+  onView: (view: StageView) => void;
   onSwap: () => void;
 }) {
   return (
@@ -56,7 +60,7 @@ export function ReferencePane({
           </span>
         )}
       </div>
-      <AnnotationCanvas
+      <AnnotationStage
         imageId={reference.id}
         maskOpacity={maskOpacity}
         showRegions={showRegions}
@@ -73,10 +77,13 @@ export function ReferencePane({
         assistBox={null}
         assistShape={null}
         view={view}
-        onView={onView}
+        onView={(next, change) => {
+          if (change.cause !== "measure") onView(next);
+        }}
         onSelect={ignore}
         onPoint={ignore}
-        onMovePoint={ignore}
+        onReshapePolygon={ignore}
+        onReshapeBox={ignore}
         onMoveShape={ignore}
         onBrush={ignore}
         onFinishPolygon={ignore}
