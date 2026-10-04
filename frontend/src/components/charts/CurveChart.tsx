@@ -12,7 +12,8 @@
 
 import type { Curve } from "../../api/client";
 import { Empty } from "@vitavision/ui";
-import { LineChart, type Scale } from "@vitavision/charts";
+import { LineChart } from "@vitavision/charts";
+import { chanceDiagonal } from "./chanceDiagonal";
 import { defined } from "../../api/defined";
 
 export interface CurveChartProps {
@@ -59,22 +60,6 @@ export function CurveChart({ curve, kind, label, area, areaLabel, absent }: Curv
           {dropped && <span>{dropped}</span>}
         </div>
       }
-    />
-  );
-}
-
-/** The line a coin-flip classifier would draw, for the eye to measure the curve against. */
-function chanceDiagonal(x: Scale, y: Scale) {
-  return (
-    <line
-      x1={x.project(0)}
-      y1={y.project(0)}
-      x2={x.project(1)}
-      y2={y.project(1)}
-      stroke="currentColor"
-      strokeWidth={0.75}
-      strokeDasharray="4 3"
-      opacity={0.4}
     />
   );
 }
